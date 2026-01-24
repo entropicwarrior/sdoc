@@ -1,0 +1,107 @@
+@document {
+  title: "SDOC Quick Reference"
+  author: "SDOC Documentation Team"
+  version: "1.0"
+}
+
+@section {
+  title: "Document Structure"
+  
+  @text {
+    Every SDOC document starts with a `@document` block containing metadata.
+  }
+  
+  @code {
+    lang: "sdoc"
+    
+    @document {
+      title: "My Document"
+      author: "Your Name"
+      version: "1.0"
+    }
+  }
+}
+
+@section {
+  title: "Sections"
+  
+  @text {
+    Sections create the main structure of your document and are automatically numbered.
+  }
+  
+  @section {
+    title: "Top-Level Sections"
+    
+    @text {
+      Top-level sections are numbered 1, 2, 3, etc.
+    }
+  }
+  
+  @section {
+    title: "Nested Sections"
+    
+    @text {
+      Nested sections create a hierarchy like 1.1, 1.2, 2.1, etc.
+    }
+  }
+}
+
+@section {
+  title: "Text Formatting"
+  
+  @text {
+    SDOC supports common inline formatting options:
+  }
+  
+  @list {
+    - Use *single asterisks* for italic text
+    - Use **double asterisks** for bold text
+    - Use `backticks` for inline code
+  }
+  
+  @text {
+    You can **combine** *multiple* formatting `options` in the same paragraph.
+  }
+}
+
+@section {
+  title: "Lists"
+  
+  @text {
+    Create bulleted lists using the `@list` block:
+  }
+  
+  @list {
+    - First item
+    - Second item
+    - Third item
+  }
+}
+
+@section {
+  title: "Code Blocks"
+  
+  @text {
+    Code blocks support syntax highlighting by specifying the language:
+  }
+  
+  @code {
+    lang: "python"
+    
+    def hello_world():
+        print("Hello, SDOC!")
+        
+    if __name__ == "__main__":
+        hello_world()
+  }
+  
+  @code {
+    lang: "javascript"
+    
+    function greet(name) {
+      console.log(`Hello, ${name}!`);
+    }
+    
+    greet("SDOC");
+  }
+}
