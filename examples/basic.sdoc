@@ -1,0 +1,144 @@
+@document {
+  title: "Getting Started with SDOC"
+  author: "SDOC Team"
+  version: "1.0"
+}
+
+@section {
+  title: "Introduction"
+  
+  @text {
+    SDOC (Smart Documentation) is a modern documentation format designed to be both human-readable and machine-friendly. Unlike traditional markdown, SDOC provides explicit scoping, automatic numbering, and unique IDs for all entities.
+  }
+  
+  @text {
+    This document will guide you through the key features of SDOC and show you how to create your own documentation.
+  }
+}
+
+@section {
+  title: "Key Features"
+  
+  @section {
+    title: "Explicit Scoping"
+    
+    @text {
+      All content in SDOC is explicitly scoped within blocks using the `@blocktype` syntax. This makes the document structure clear and unambiguous for both humans and parsers.
+    }
+    
+    @list {
+      - Every block has a clear beginning and end
+      - Nesting is explicit and easy to understand
+      - No ambiguity in document structure
+    }
+  }
+  
+  @section {
+    title: "Automatic Numbering"
+    
+    @text {
+      Sections are automatically numbered based on their hierarchy. You don't need to manually maintain section numbers - SDOC does it for you!
+    }
+    
+    @text {
+      Notice how this section is automatically numbered as *2.2* because it's the second subsection of the second main section.
+    }
+  }
+  
+  @section {
+    title: "Unique Identifiers"
+    
+    @text {
+      Every block in an SDOC document receives a unique identifier. These IDs can be used for cross-referencing, linking, and programmatic access.
+    }
+    
+    @code {
+      lang: "json"
+      
+      {
+        "type": "section",
+        "id": "section-2-3",
+        "properties": {
+          "title": "Unique Identifiers"
+        }
+      }
+    }
+  }
+}
+
+@section {
+  title: "Block Types"
+  
+  @text {
+    SDOC supports several block types for different kinds of content:
+  }
+  
+  @list {
+    - **Document**: Metadata block for the entire document
+    - **Section**: Creates numbered sections and subsections
+    - **Text**: Paragraphs of formatted text
+    - **List**: Bulleted or numbered lists
+    - **Code**: Code blocks with syntax highlighting
+  }
+}
+
+@section {
+  title: "Inline Formatting"
+  
+  @text {
+    SDOC supports common inline formatting options:
+  }
+  
+  @list {
+    - *Italic text* using single asterisks
+    - **Bold text** using double asterisks
+    - `Inline code` using backticks
+  }
+  
+  @text {
+    You can combine these formats to create rich, expressive documentation that's still easy to read in its source form.
+  }
+}
+
+@section {
+  title: "Example Code"
+  
+  @text {
+    Here's an example of how to use SDOC in your projects:
+  }
+  
+  @code {
+    lang: "javascript"
+    
+    import { renderToHtml } from 'sdoc';
+    
+    const sdocContent = `
+      @document {
+        title: "My Document"
+      }
+      
+      @section {
+        title: "Hello World"
+        
+        @text {
+          This is my first SDOC document!
+        }
+      }
+    `;
+    
+    const html = renderToHtml(sdocContent);
+    console.log(html);
+  }
+}
+
+@section {
+  title: "Conclusion"
+  
+  @text {
+    SDOC provides a modern, structured approach to documentation that combines the readability of markdown with the precision needed for machine processing.
+  }
+  
+  @text {
+    Start creating your own SDOC documents today and experience the benefits of explicit structure, automatic numbering, and unique identifiers!
+  }
+}

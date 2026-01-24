@@ -1,0 +1,25 @@
+{
+  "name": "sdoc",
+  "version": "0.1.0",
+  "description": "Smart Documentation - A modern, machine-ready documentation format",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "sdoc": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "example": "node src/cli.js examples/basic.sdoc"
+  },
+  "keywords": [
+    "documentation",
+    "markdown",
+    "parser",
+    "renderer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

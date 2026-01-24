@@ -1,0 +1,30 @@
+{
+  "name": "sdoc-language",
+  "displayName": "SDOC Language Support",
+  "description": "Syntax highlighting and language support for SDOC (Smart Documentation) files",
+  "version": "0.1.0",
+  "publisher": "sdoc",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sdoc",
+        "aliases": ["SDOC", "sdoc"],
+        "extensions": [".sdoc"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sdoc",
+        "scopeName": "source.sdoc",
+        "path": "./syntaxes/sdoc.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SDOC",
+  "scopeName": "source.sdoc",
+  "patterns": [
+    {
+      "include": "#block-declaration"
+    },
+    {
+      "include": "#property"
+    },
+    {
+      "include": "#inline-formatting"
+    },
+    {
+      "include": "#comments"
+    }
+  ],
+  "repository": {
+    "block-declaration": {
+      "patterns": [
+        {
+          "match": "^\\s*(@)(document|section|text|list|code)\\s*({)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.block.sdoc"
+            },
+            "2": {
+              "name": "entity.name.type.block.sdoc"
+            },
+            "3": {
+              "name": "punctuation.section.block.begin.sdoc"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(})",
+          "captures": {
+            "1": {
+              "name": "punctuation.section.block.end.sdoc"
+            }
+          }
+        }
+      ]
+    },
+    "property": {
+      "patterns": [
+        {
+          "match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(\"[^\"]*\"|'[^']*'|[^\\n]*)",
+          "captures": {
+            "1": {
+              "name": "variable.other.property.sdoc"
+            },
+            "2": {
+              "name": "punctuation.separator.key-value.sdoc"
+            },
+            "3": {
+              "name": "string.quoted.sdoc"
+            }
+          }
+        }
+      ]
+    },
+    "inline-formatting": {
+      "patterns": [
+        {
+          "name": "markup.bold.sdoc",
+          "match": "\\*\\*[^*]+\\*\\*"
+        },
+        {
+          "name": "markup.italic.sdoc",
+          "match": "\\*[^*]+\\*"
+        },
+        {
+          "name": "markup.inline.raw.sdoc",
+          "match": "`[^`]+`"
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.sdoc",
+          "match": "//.*$"
+        }
+      ]
+    }
+  }
+}
