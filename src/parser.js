@@ -3,15 +3,12 @@
  * Parses .sdoc files into an Abstract Syntax Tree (AST)
  */
 
-let globalIdCounter = 0;
-
 export class SdocParser {
   constructor() {
     this.reset();
   }
 
   reset() {
-    globalIdCounter = 0;
     this.idCounters = {};
   }
 

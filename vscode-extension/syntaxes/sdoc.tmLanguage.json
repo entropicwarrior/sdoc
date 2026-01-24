@@ -65,11 +65,11 @@
       "patterns": [
         {
           "name": "markup.bold.sdoc",
-          "match": "\\*\\*[^*]+\\*\\*"
+          "match": "\\*\\*([^*]|\\*(?!\\*))+\\*\\*"
         },
         {
           "name": "markup.italic.sdoc",
-          "match": "\\*[^*]+\\*"
+          "match": "(?<!\\*)\\*([^*]+)\\*(?!\\*)"
         },
         {
           "name": "markup.inline.raw.sdoc",
