@@ -1,0 +1,2 @@
+# sdoc
+Smart Documentation
