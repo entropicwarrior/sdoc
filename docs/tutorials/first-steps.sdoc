@@ -1,0 +1,14 @@
+# Tutorial: First Steps
+{
+    # Checklist
+    {[.]
+        - [ ] Create a new SDOC file
+        - [ ] Add a scope
+        - [x] Preview it in VS Code
+    }
+
+    # Next
+    {
+        Try split view comparisons in the static viewer.
+    }
+}

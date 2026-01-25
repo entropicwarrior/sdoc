@@ -1,0 +1,14 @@
+# Guide: Introduction
+{
+    # Purpose
+    {
+        SDOC combines explicit scopes with familiar Markdown patterns.
+    }
+
+    # Highlights
+    {[.]
+        - Explicit scopes with braces
+        - Familiar inline formatting
+        - Easy references with @id
+    }
+}

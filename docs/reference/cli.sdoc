@@ -1,0 +1,14 @@
+# Reference: CLI
+{
+    # Build Viewer
+    {
+        ```bash
+        python3 tools/build_site.py
+        ```
+    }
+
+    # Output
+    {
+        Generated files land in `web/`.
+    }
+}

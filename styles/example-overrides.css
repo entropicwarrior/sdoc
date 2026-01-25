@@ -1,0 +1,8 @@
+:root {
+  --sdoc-accent: #2a6f97;
+  --sdoc-accent-soft: rgba(42, 111, 151, 0.18);
+}
+
+.sdoc-page-header {
+  border-bottom-style: dashed;
+}

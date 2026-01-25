@@ -1,0 +1,43 @@
+{
+  "name": "sdoc",
+  "displayName": "SDOC",
+  "description": "Preview SDOC files.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:sdoc",
+    "onCommand:sdoc.preview",
+    "onCommand:sdoc.previewToSide"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "sdoc",
+        "aliases": [
+          "SDOC"
+        ],
+        "extensions": [
+          ".sdoc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "sdoc.preview",
+        "title": "SDOC: Open Preview"
+      },
+      {
+        "command": "sdoc.previewToSide",
+        "title": "SDOC: Open Preview to the Side"
+      }
+    ]
+  }
+}

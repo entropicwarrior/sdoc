@@ -1,0 +1,13 @@
+# Reference: API
+{
+    # Core Concepts
+    {
+        *Scopes* are explicit and always opened with `{`.
+        References look like @overview.
+    }
+
+    # Inline
+    {
+        **Strong**, *em*, `code`, and ~~strike~~ are supported.
+    }
+}

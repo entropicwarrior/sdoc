@@ -1,0 +1,112 @@
+# Meta @meta
+{
+    # StyleAppend
+    {
+        styles/example-overrides.css
+    }
+    # Header
+    {
+        Example *page* header (overrides the global header)
+    }
+    # Footer
+    {
+        Example footer for this file
+    }
+}
+
+# Example Simple/Smart Document
+{
+    # Overview @overview
+    {
+        This is an example document. Scopes are explicit.
+        The style of a heading is based on its nesting depth.
+        References look like @overview.
+
+        You can use *emphasis*, **strong**, and `inline code`.
+        External links look like [SDOC](https://example.com).
+    }
+    # Examples
+    {
+        There can be multiple scoped entities at a particular level.
+
+        # Lists
+        {
+            It is very very easy to create numbered lists.
+
+            # Example Bulleted List
+            {[.]
+                - Item 1
+                {
+                    This is information about item 1
+                }
+                - Item 2 @interestingItem
+                {
+                    This is information about item 2 and it can be multi-line
+                    Like this with a nice paragraph space.
+
+                    # Item 2.2
+                    {
+                        This is nested item information for item 2
+                    }
+                }
+            }
+
+            # Example simple bulleted list
+            {
+                - item 1
+                - item 2
+                - item 3
+            }
+
+            # Example simple numbered list
+            {
+                1. Item 1
+                2. Item 2
+            }
+
+            # Example Nested numbered lists
+            {[#]
+                #Item 1
+                {
+                    Item 1 information. Can point at @interestingItem.
+                }
+                - Item 2
+                {
+                    Item 2 information
+                    # Item 2.1
+                    {
+                        Nested item 2.1
+                    }
+                }
+                {
+                    Item 3 has no heading
+                }
+            }
+
+            # Task list
+            {[.]
+                - [ ] Write the parser
+                - [x] Wire up the preview
+            }
+
+            # Extras
+            {
+                Inline formatting: *emphasis*, **strong**, ~~strike~~, `code`.
+                External links: [SDOC](https://example.com), <https://example.com>, and <mailto:hello@example.com>.
+                Image example: ![Mountains](https://example.com/image.png).
+
+                ---
+
+                > This is a quote block.
+                > It can span multiple lines.
+                >
+                > This is a second paragraph in the same quote.
+
+                ```txt
+                # This is raw text inside a code block
+                {[.] not parsed as a list }
+                ```
+            }
+        }
+    }
+}

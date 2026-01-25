@@ -1,0 +1,15 @@
+# Guide: Setup
+{
+    # Install
+    {
+        1. Install VS Code
+        2. Open the SDOC workspace
+        3. Use SDOC: Open Preview
+    }
+
+    # Tips
+    {
+        > Keep files organized by topic.
+        > Put sdoc.config.json at the root of a doc set.
+    }
+}
