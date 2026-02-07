@@ -123,8 +123,9 @@ function parseBlock(cursor, kind) {
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
       flushParagraph();
-      cursor.error("Unexpected '{' without a heading.");
       cursor.next();
+      const children = parseBlock(cursor, "normal");
+      nodes.push({ type: "scope", title: "", id: undefined, children, hasHeading: false });
       continue;
     }
 
@@ -814,10 +815,15 @@ function renderInlineNodes(nodes) {
 
 function renderScope(scope, depth, isTitleScope = false) {
   const level = Math.min(6, Math.max(1, depth));
-  const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
-  const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}">${renderInline(scope.title)}</h${level}>`;
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
   const rootClass = isTitleScope ? " sdoc-root" : "";
+
+  if (scope.hasHeading === false) {
+    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}">${children}</section>`;
+  }
+
+  const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
+  const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}">${renderInline(scope.title)}</h${level}>`;
   return `<section class="sdoc-scope${rootClass}">${heading}${children ? `\n${children}` : ""}</section>`;
 }
 

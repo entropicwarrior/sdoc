@@ -18,6 +18,24 @@
             - IDs may contain letters, digits, underscores, and hyphens (must start with a letter or underscore)
         }
 
+        # Headingless Scopes
+        {
+            A bare `{` block without a preceding heading creates a scope with no heading:
+
+            ```
+# Outer
+{
+    Some text.
+
+    {
+        This content is indented one level deeper, with no heading.
+    }
+}
+            ```
+
+            Headingless scopes nest like normal scopes and are useful for grouping paragraphs or adding visual indentation without a title.
+        }
+
         # Inline Blocks
         {
             For simple content, a scope body can be written on one line:

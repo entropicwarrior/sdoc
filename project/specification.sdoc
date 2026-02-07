@@ -65,6 +65,24 @@
 
             `{` opens a scope block and `}` closes it. Indentation is cosmetic.
 
+            # Headingless Scopes @headingless-scopes
+            {
+                A bare `{` block without a preceding heading creates a headingless scope:
+
+                ```
+{
+    Grouped content here.
+}
+                ```
+
+                {[.]
+                    - Headingless scopes render as sections without a heading element
+                    - They inherit the same nesting/indentation as headed scopes
+                    - Useful for grouping paragraphs or creating visual indentation without a title
+                    - Can be nested arbitrarily
+                }
+            }
+
             # Inline Blocks @inline-blocks
             {
                 For simple content, blocks can be written on a single line:
@@ -408,9 +426,11 @@
         id            = "@" ident ;
         block         = "{" ws? block_body "}" ;
 
-        block_body    = { blank | paragraph | scope | list_scope | table_scope
+        block_body    = { blank | paragraph | scope | headingless_scope
+                        | list_scope | table_scope
                         | implicit_list | blockquote | horizontal_rule
                         | code_block | comma_sep } ;
+        headingless_scope = "{" ws? block_body "}" ;
         list_scope    = list_open ws? list_body "}" ;
         list_open     = "{[.]" | "{[#]" ;
         table_scope   = "{[table]" ws? table_body "}" ;

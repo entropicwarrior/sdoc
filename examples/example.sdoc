@@ -83,6 +83,17 @@
                 }
             }
 
+            # Anonymous List Items (no headings)
+            {[.]
+                {
+                    This item has no heading — just body content inside a bare block.
+                }
+                {
+                    Another headingless item. Useful for simple lists where
+                    items are paragraphs rather than titled entries.
+                }
+            }
+
             # Task list
             {[.]
                 - [ ] Write the parser
@@ -127,6 +138,21 @@
                 A remote image (direct URL):
 
                 ![Distant galaxy](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/NGC_4414_%28NASA-med%29.jpg/600px-NGC_4414_%28NASA-med%29.jpg)
+            }
+
+            # Headingless Scopes
+            {
+                A bare block (no heading) groups content with indentation:
+
+                {
+                    This paragraph is nested one level deeper.
+
+                    {
+                        And this is nested two levels deep.
+                    }
+                }
+
+                Back to the outer level.
             }
 
             # Extras
