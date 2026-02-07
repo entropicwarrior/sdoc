@@ -1,0 +1,139 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SDOC",
+  "scopeName": "source.sdoc",
+  "patterns": [
+    { "include": "#code-block" },
+    { "include": "#heading" },
+    { "include": "#block-opener" },
+    { "include": "#scope-close" },
+    { "include": "#horizontal-rule" },
+    { "include": "#blockquote" },
+    { "include": "#task-checkbox" },
+    { "include": "#list-marker" },
+    { "include": "#inline" }
+  ],
+  "repository": {
+    "code-block": {
+      "begin": "^\\s*(```)(.*)$",
+      "end": "^\\s*(```)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.code.fence.sdoc" },
+        "2": { "name": "entity.name.tag.language.sdoc" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.code.fence.sdoc" }
+      },
+      "contentName": "markup.raw.block.sdoc"
+    },
+    "heading": {
+      "match": "^\\s*(#+)\\s+(.+?)(?:\\s+(@[A-Za-z_][A-Za-z0-9_-]*))?\\s*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.heading.sdoc" },
+        "2": { "name": "markup.heading.sdoc" },
+        "3": { "name": "entity.name.tag.id.sdoc" }
+      }
+    },
+    "block-opener": {
+      "match": "^\\s*(\\{\\[(?:\\.|#|table)\\])\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.block-opener.sdoc" }
+      }
+    },
+    "scope-close": {
+      "match": "^\\s*(\\})\\s*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.scope.close.sdoc" }
+      }
+    },
+    "horizontal-rule": {
+      "match": "^\\s*([-*_]{3,})\\s*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.thematic-break.sdoc" }
+      }
+    },
+    "blockquote": {
+      "match": "^\\s*(>)(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.definition.quote.sdoc" },
+        "2": { "name": "markup.quote.sdoc" }
+      }
+    },
+    "task-checkbox": {
+      "match": "(\\[[ xX]\\])",
+      "captures": {
+        "1": { "name": "keyword.control.checkbox.sdoc" }
+      }
+    },
+    "list-marker": {
+      "match": "^\\s*(-|\\d+[.)]) ",
+      "captures": {
+        "1": { "name": "punctuation.definition.list.sdoc" }
+      }
+    },
+    "inline": {
+      "patterns": [
+        { "include": "#escape" },
+        { "include": "#reference" },
+        { "include": "#inline-code" },
+        { "include": "#image" },
+        { "include": "#link" },
+        { "include": "#autolink" },
+        { "include": "#strong" },
+        { "include": "#emphasis" },
+        { "include": "#strikethrough" }
+      ]
+    },
+    "escape": {
+      "match": "\\\\[\\\\{}@\\[\\]()*`#!~<>]",
+      "name": "constant.character.escape.sdoc"
+    },
+    "reference": {
+      "match": "(?<!\\\\)@[A-Za-z_][A-Za-z0-9_-]*",
+      "name": "entity.name.tag.id.sdoc"
+    },
+    "inline-code": {
+      "match": "`[^`]+`",
+      "name": "markup.raw.inline.sdoc"
+    },
+    "image": {
+      "match": "(!)\\[([^\\]]*)\\]\\(([^)]+)\\)",
+      "captures": {
+        "1": { "name": "punctuation.definition.image.sdoc" },
+        "2": { "name": "string.other.image.alt.sdoc" },
+        "3": { "name": "markup.underline.link.sdoc" }
+      }
+    },
+    "link": {
+      "match": "\\[([^\\]]*)\\]\\(([^)]+)\\)",
+      "captures": {
+        "1": { "name": "string.other.link.title.sdoc" },
+        "2": { "name": "markup.underline.link.sdoc" }
+      }
+    },
+    "autolink": {
+      "match": "<(https?://[^>]+|mailto:[^>]+)>",
+      "captures": {
+        "1": { "name": "markup.underline.link.sdoc" }
+      }
+    },
+    "strong": {
+      "match": "\\*\\*([^*]+)\\*\\*",
+      "captures": {
+        "0": { "name": "markup.bold.sdoc" }
+      }
+    },
+    "emphasis": {
+      "match": "(?<!\\*)\\*([^*]+)\\*(?!\\*)",
+      "captures": {
+        "0": { "name": "markup.italic.sdoc" }
+      }
+    },
+    "strikethrough": {
+      "match": "~~([^~]+)~~",
+      "captures": {
+        "0": { "name": "markup.strikethrough.sdoc" }
+      }
+    }
+  }
+}
