@@ -1,13 +1,109 @@
-# Reference: API
+# JavaScript API Reference
 {
-    # Core Concepts
+    The SDOC parser and renderer are in `src/sdoc.js`. All functions are exported via CommonJS.
+
+    # parseSdoc(text)
     {
-        *Scopes* are explicit and always opened with `{`.
-        References look like @overview.
+        Parses an SDOC string into an AST.
+
+        ```javascript
+const { parseSdoc } = require("./src/sdoc");
+const { nodes, errors } = parseSdoc(sdocText);
+        ```
+
+        {[.]
+            - `text` -- the SDOC source string
+            - Returns `{ nodes, errors }` where `nodes` is an array of AST nodes and `errors` is an array of `{ message, line }` objects
+        }
     }
 
-    # Inline
+    # extractMeta(nodes)
     {
-        **Strong**, *em*, `code`, and ~~strike~~ are supported.
+        Extracts the `@meta` scope from parsed nodes and returns the remaining body nodes.
+
+        ```javascript
+const { parseSdoc, extractMeta } = require("./src/sdoc");
+const parsed = parseSdoc(text);
+const { nodes, meta } = extractMeta(parsed.nodes);
+        ```
+
+        {[.]
+            - `nodes` -- the AST node array from `parseSdoc`
+            - Returns `{ nodes, meta }` where `meta` contains `stylePath`, `styleAppendPath`, `headerNodes`, and `footerNodes`
+        }
+    }
+
+    # renderHtmlDocument(text, title, options)
+    {
+        Parses and renders a complete HTML page from SDOC source.
+
+        ```javascript
+const { renderHtmlDocument } = require("./src/sdoc");
+const html = renderHtmlDocument(sdocText, "Page Title", {
+    config: { header: "My Header", footer: "My Footer" },
+    cssOverride: customCssString,
+    cssAppend: additionalCssString
+});
+        ```
+
+        {[.]
+            - `text` -- SDOC source string
+            - `title` -- HTML page title
+            - `options.config` -- object with `header` and `footer` strings
+            - `options.cssOverride` -- replaces the default stylesheet
+            - `options.cssAppend` -- appended after the base stylesheet
+            - Automatically extracts and applies `@meta` scope settings
+        }
+    }
+
+    # renderHtmlDocumentFromParsed(parsed, title, options)
+    {
+        Renders a complete HTML page from pre-parsed data. Use this when you need to parse and extract meta separately.
+
+        ```javascript
+const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed } = require("./src/sdoc");
+const parsed = parseSdoc(text);
+const metaResult = extractMeta(parsed.nodes);
+const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Page Title",
+    { meta: metaResult.meta }
+);
+        ```
+    }
+
+    # renderFragment(nodes, depth)
+    {
+        Renders an array of AST nodes to an HTML fragment (no `<html>` wrapper).
+
+        ```javascript
+const { parseSdoc, renderFragment } = require("./src/sdoc");
+const { nodes } = parseSdoc(text);
+const html = renderFragment(nodes, 2);
+        ```
+
+        {[.]
+            - `nodes` -- array of AST nodes
+            - `depth` -- starting heading depth (default: 2)
+        }
+    }
+
+    # renderTextParagraphs(text)
+    {
+        Renders a plain text string as HTML paragraphs with inline formatting. Used internally for header/footer rendering from config values.
+    }
+
+    # AST Node Types
+    {
+        The parser produces these node types:
+
+        {[.]
+            - `scope` -- a section with `title`, `id`, `children`, `hasHeading`, and optional `task`
+            - `paragraph` -- a text block with `text`
+            - `list` -- a list with `listType` (`"bullet"` or `"number"`) and `items`
+            - `blockquote` -- a quote with `paragraphs` (array of strings)
+            - `code` -- a code block with `lang` and `text`
+            - `hr` -- a horizontal rule
+        }
     }
 }

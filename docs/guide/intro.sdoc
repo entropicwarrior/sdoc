@@ -1,14 +1,89 @@
-# Guide: Introduction
+# Introduction to SDOC
 {
-    # Purpose
+    # What is SDOC?
     {
-        SDOC combines explicit scopes with familiar Markdown patterns.
+        SDOC is a plain text format for writing structured documentation. It uses explicit brace scoping instead of relying on whitespace or indentation to define document structure.
+
+        Every SDOC document is a tree of scopes. A scope has a heading and a body enclosed in braces:
+
+        ```
+# My Section
+{
+    Content goes here.
+}
+        ```
+
+        Scopes nest naturally:
+
+        ```
+# Outer
+{
+    # Inner
+    {
+        Nested content.
+    }
+}
+        ```
+
+        Heading depth is determined by nesting, not by the number of `#` characters. A single `#` is all you need.
     }
 
-    # Highlights
+    # Why SDOC?
     {[.]
-        - Explicit scopes with braces
-        - Familiar inline formatting
-        - Easy references with @id
+        - Explicit structure: braces make scope boundaries unambiguous
+        - Familiar formatting: emphasis, links, code, and lists work like Markdown
+        - Easy references: tag any scope with `@id` and link to it with `@id` in text
+        - No hidden metadata: only IDs you write exist in the document
+        - Simple parsing: line-oriented grammar, easy to implement in any language
+    }
+
+    # Core Concepts
+    {
+        # Scopes
+        {
+            A scope is the fundamental building block. It has a heading line starting with `#`, an optional `@id` tag, and a body block in braces.
+
+            ```
+# Section Title @section-id
+{
+    Body text here.
+}
+            ```
+        }
+
+        # Inline Formatting
+        {
+            Inside paragraphs and headings, SDOC supports:
+
+            {[.]
+                - `*emphasis*` for *emphasis*
+                - `**strong**` for **strong**
+                - `~~strikethrough~~` for ~~strikethrough~~
+                - `` `code` `` for `code`
+                - `[label](url)` for links
+                - `![alt](url)` for images
+                - `<https://example.com>` for autolinks
+                - `@id` for references to other scopes
+            }
+        }
+
+        # Lists
+        {
+            Bulleted and numbered lists can be written with explicit list blocks or with shorthand:
+
+            ```
+# Explicit list
+{[.]
+    - Item one
+    - Item two
+}
+
+# Implicit list (inside a normal scope)
+{
+    - Also works
+    - Like this
+}
+            ```
+        }
     }
 }

@@ -1,15 +1,74 @@
-# Guide: Setup
+# Setup
 {
-    # Install
+    # Requirements
     {
-        1. Install VS Code
-        2. Open the SDOC workspace
-        3. Use SDOC: Open Preview
+        {[.]
+            - [Visual Studio Code](https://code.visualstudio.com/) (v1.80 or later)
+            - The SDOC extension (`.vsix` file)
+        }
     }
 
-    # Tips
+    # Installing the Extension
     {
-        > Keep files organized by topic.
-        > Put sdoc.config.json at the root of a doc set.
+        Build the extension from source:
+
+        ```bash
+npm install
+npm run package
+        ```
+
+        This produces a `.vsix` file in the `dist/` folder. Install it:
+
+        ```bash
+code --install-extension dist/sdoc-0.0.3.vsix
+        ```
+
+        Or install from within VS Code: open the Command Palette, run "Extensions: Install from VSIX...", and select the `.vsix` file.
+    }
+
+    # Previewing Documents
+    {
+        Once installed, open any `.sdoc` file and use one of:
+
+        {[.]
+            - **SDOC: Open Preview** to preview in the current pane
+            - **SDOC: Open Preview to the Side** for a side-by-side view
+        }
+
+        The preview updates live as you edit.
+    }
+
+    # Configuration
+    {
+        Place a `sdoc.config.json` in your project root to set defaults for all documents:
+
+        ```json
+{
+    "style": "path/to/custom.css",
+    "header": "My Project",
+    "footer": "Footer text"
+}
+        ```
+
+        {[.]
+            - `style` replaces the default stylesheet (path relative to the config file)
+            - `styleAppend` adds CSS after the base stylesheet
+            - `header` and `footer` set page-level text with inline formatting
+        }
+
+        Configs are hierarchical: place `sdoc.config.json` in subfolders to override parent settings for documents in that folder.
+
+        See `examples/sdoc.config.json` for a sample config and `examples/sdoc.template.css` for the default theme.
+    }
+
+    # Static Site Viewer
+    {
+        To build a browsable HTML viewer for all `.sdoc` files in the project:
+
+        ```bash
+python3 tools/build_site.py
+        ```
+
+        Open `web/index.html` in a browser. The viewer has a sidebar, split-pane comparison, and renders all discovered `.sdoc` files.
     }
 }

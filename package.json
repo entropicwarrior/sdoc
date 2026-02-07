@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "Preview SDOC files.",
-  "version": "0.0.1",
+  "version": "0.0.6",
   "publisher": "local",
   "engines": {
     "vscode": "^1.80.0"
@@ -15,6 +15,9 @@
     "onCommand:sdoc.preview",
     "onCommand:sdoc.previewToSide"
   ],
+  "scripts": {
+    "package": "npx vsce package --out dist/ --allow-missing-repository"
+  },
   "main": "./src/extension.js",
   "contributes": {
     "languages": [
@@ -39,5 +42,8 @@
         "title": "SDOC: Open Preview to the Side"
       }
     ]
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.7.1"
   }
 }

@@ -1,0 +1,237 @@
+:root {
+  --sdoc-bg: #ffffff;
+  --sdoc-fg: #2a2a2a;
+  --sdoc-muted: #555555;
+  --sdoc-accent: #c1662f;
+  --sdoc-accent-soft: rgba(193, 102, 47, 0.12);
+  --sdoc-border: rgba(127, 120, 112, 0.35);
+}
+
+body {
+  margin: 0;
+  color: var(--sdoc-fg);
+  font-family: "Source Sans 3", "Noto Sans", "Segoe UI", "Helvetica Neue", "Arial", sans-serif;
+  background: var(--sdoc-bg);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sdoc-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sdoc-page-header,
+.sdoc-page-footer {
+  background: var(--sdoc-bg);
+  border-bottom: 1px solid var(--sdoc-border);
+  padding: 16px 24px;
+}
+
+.sdoc-page-footer {
+  border-top: 1px solid var(--sdoc-border);
+  border-bottom: none;
+  color: var(--sdoc-muted);
+}
+
+.sdoc-main {
+  flex: 1;
+  overflow: auto;
+}
+
+main {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: clamp(20px, 2.5vw, 36px) clamp(24px, 4vw, 72px) clamp(28px, 4vw, 56px);
+  box-sizing: border-box;
+}
+
+.sdoc-heading {
+  margin: 1.6rem 0 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.sdoc-depth-1 {
+  font-size: 2.2rem;
+  border-bottom: 2px solid var(--sdoc-border);
+  padding-bottom: 0.4rem;
+}
+
+.sdoc-depth-2 { font-size: 1.8rem; color: var(--sdoc-fg); }
+.sdoc-depth-3 { font-size: 1.5rem; color: var(--sdoc-fg); }
+.sdoc-depth-4 { font-size: 1.2rem; color: var(--sdoc-muted); letter-spacing: 0.04em; }
+.sdoc-depth-5,
+.sdoc-depth-6 { font-size: 1rem; color: var(--sdoc-muted); letter-spacing: 0.04em; }
+
+.sdoc-paragraph {
+  margin: 0.6rem 0;
+  line-height: 1.6;
+}
+
+.sdoc-scope > .sdoc-scope {
+  margin-left: 1.4rem;
+}
+
+.sdoc-root > .sdoc-scope {
+  margin-left: 0;
+}
+
+.sdoc-list-item-body > .sdoc-paragraph:first-child {
+  margin-top: 0.2rem;
+}
+
+.sdoc-scope-noheading .sdoc-list-item-body > .sdoc-paragraph:first-child {
+  margin-top: 0;
+}
+
+.sdoc-blockquote {
+  border-left: 3px solid var(--sdoc-border);
+  padding: 0.4rem 1rem;
+  margin: 1rem 0;
+  color: var(--sdoc-muted);
+}
+
+.sdoc-blockquote .sdoc-paragraph {
+  margin: 0.4rem 0;
+}
+
+.sdoc-rule {
+  border: none;
+  border-top: 1px solid var(--sdoc-border);
+  margin: 1.4rem 0;
+}
+
+.sdoc-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sdoc-task-box {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--sdoc-accent);
+}
+
+.sdoc-task-label {
+  display: inline-block;
+}
+
+.sdoc-list {
+  margin: 0.8rem 0 0.8rem;
+}
+
+.sdoc-list-bullet {
+  padding-left: 1.4rem;
+  list-style: disc;
+}
+
+.sdoc-list-bullet .sdoc-list-bullet {
+  list-style: circle;
+}
+
+.sdoc-list-number {
+  list-style: none;
+  padding-left: 0;
+  margin-left: 0;
+  counter-reset: sdoc-item;
+}
+
+.sdoc-list-number .sdoc-list-number {
+  margin-left: 1.4rem;
+}
+
+.sdoc-list-number > .sdoc-list-item {
+  counter-increment: sdoc-item;
+  position: relative;
+  padding-left: 2rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.sdoc-list-number > .sdoc-list-item::before {
+  content: counters(sdoc-item, ".") ".";
+  position: absolute;
+  left: 0;
+  top: 0.2rem;
+  color: var(--sdoc-muted);
+  font-weight: 600;
+}
+
+.sdoc-list-item {
+  margin: 0.4rem 0 0.8rem;
+}
+
+.sdoc-list-item-text {
+  line-height: 1.6;
+}
+
+.sdoc-ref {
+  color: var(--sdoc-accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--sdoc-accent-soft);
+}
+
+.sdoc-ref:hover {
+  border-bottom-color: var(--sdoc-accent);
+}
+
+.sdoc-link {
+  color: var(--sdoc-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--sdoc-accent-soft);
+  text-underline-offset: 2px;
+}
+
+.sdoc-link:hover {
+  text-decoration-color: var(--sdoc-accent);
+}
+
+.sdoc-inline-code {
+  font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
+  font-size: 0.95em;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--sdoc-border);
+  border-radius: 4px;
+  padding: 0 0.2em;
+}
+
+.sdoc-image {
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--sdoc-border);
+  margin: 0.4rem 0;
+}
+
+.sdoc-code {
+  background: rgba(22, 21, 19, 0.06);
+  border: 1px solid var(--sdoc-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
+  font-size: 0.9rem;
+}
+
+.sdoc-code code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.sdoc-errors {
+  background: rgba(187, 112, 68, 0.12);
+  border: 1px solid rgba(187, 112, 68, 0.4);
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
+}
+
+.sdoc-errors ul {
+  margin: 0.6rem 0 0;
+  padding-left: 1.2rem;
+}

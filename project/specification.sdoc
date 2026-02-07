@@ -1,0 +1,434 @@
+# SDOC Specification v0.1 @sdoc-spec
+{
+    # Meta @meta
+    {
+        # Version
+        { 0.1 }
+        # Status
+        { Draft }
+    }
+
+    # Overview @overview
+    {
+        SDOC ("Simple/Smart Documentation") is a plain text documentation format with explicit scoping.
+
+        # Goals @goals
+        {
+            {[.]
+                - Explicit scoping with braces; whitespace and indentation are cosmetic
+                - Minimal syntax, easy to parse and render
+                - Automatic heading styles based on nesting depth
+                - Easy lists and easy references
+                - No hidden metadata: only user-provided IDs exist
+            }
+        }
+
+        # Core Concepts @core-concepts
+        {
+            {[.]
+                - A document is a tree of scopes
+                - A scope has a heading line and a block (`{ ... }`)
+                - Headings are explicit and always start with `#`
+                - A scope may have an optional human ID (e.g., `@overview`)
+                - References use `@id` in text
+                - Paragraphs are separated by blank lines or by a new scope at the same level
+                - Whitespace (spaces/tabs) is ignored except where noted
+            }
+        }
+    }
+
+    # Syntax @syntax
+    {
+        # Heading Line @heading-line
+        {
+            ```
+            # Title text @id
+            ```
+
+            {[.]
+                - The line must start with `#` (after optional indentation)
+                - Multiple `#` characters are allowed but do not affect depth. Depth comes only from scope nesting
+                - The optional `@id` must appear at the end of the line, separated by whitespace
+                - If no `@id` is present, the scope has no ID
+                - If you need a literal `@` in the title, escape it (`\@`)
+            }
+        }
+
+        # Scope Block @scope-block
+        {
+            ```
+            # Title
+            {
+                ...
+            }
+            ```
+
+            `{` opens a scope block and `}` closes it. Indentation is cosmetic.
+
+            # Inline Blocks @inline-blocks
+            {
+                For simple content, blocks can be written on a single line:
+
+                ```
+                # Name
+                { John Doe }
+
+                # Count
+                { 42 }
+                ```
+
+                {[.]
+                    - Inline blocks must not contain unescaped `{` or `}` characters
+                    - Multi-line blocks are always supported and sometimes clearer for longer content
+                }
+            }
+        }
+
+        # Lists @lists
+        {
+            Lists are declared by a list block type:
+
+            ```
+            # Bulleted List
+            {[.]
+                # Item 1
+                { ... }
+                # Item 2
+                { ... }
+            }
+
+            # Numbered List
+            {[#]
+                # Item 1
+                { ... }
+                # Item 2
+                { ... }
+            }
+            ```
+
+            {[.]
+                - `{[.]` creates a bulleted list
+                - `{[#]` creates a numbered list
+                - List items are scopes inside the list block
+                - Commas between list items are allowed but ignored
+            }
+
+            # List Item Shorthand @list-shorthand
+            {
+                Inside a list block, `- Title text` is shorthand for a list item scope:
+
+                ```
+                {[.]
+                    - Item 1
+                    - Item 2
+                }
+                ```
+
+                {[.]
+                    - A shorthand item may optionally be followed by a block (`{ ... }` or list opener)
+                    - If no block follows, the item has no body
+                    - Outside list blocks, leading list-item lines form implicit lists (see @implicit-lists)
+                }
+
+                Numbered shorthand is also supported:
+
+                ```
+                {[#]
+                    1. Item 1
+                    2. Item 2
+                }
+                ```
+            }
+
+            # Implicit Lists @implicit-lists
+            {
+                Inside a normal scope block, a run of list-item lines is treated as a list:
+
+                ```
+                # Simple bulleted list
+                {
+                    - Item 1
+                    - Item 2
+                }
+
+                # Simple numbered list
+                {
+                    1. First
+                    2. Second
+                }
+                ```
+
+                {[.]
+                    - The list type is chosen by the first item marker (`-` for bulleted, `1.` / `1)` for numbered)
+                    - Mixed markers end the implicit list
+                    - Each item may optionally be followed by a block (`{ ... }` or list opener)
+                }
+            }
+
+            # Anonymous List Items @anonymous-list-items
+            {
+                Inside a list block, a list item can start with a block directly:
+
+                ```
+                {[.]
+                    {
+                        This item has no heading line.
+                    }
+                }
+                ```
+
+                The block contents are rendered as the list item body.
+            }
+
+            # Task Lists @task-lists
+            {
+                Inside a list block, task items use Markdown-style checkboxes:
+
+                ```
+                {[.]
+                    - [ ] Pending task
+                    - [x] Completed task
+                }
+                ```
+
+                Works in both bulleted and numbered list blocks.
+            }
+        }
+
+        # Paragraphs @paragraphs
+        {
+            {[.]
+                - Consecutive text lines are joined into a single paragraph
+                - A blank line ends the paragraph
+                - A new scope or list at the same level also ends the paragraph
+            }
+        }
+
+        # References @references
+        {
+            {[.]
+                - A reference is `@id` in text (unescaped)
+                - References link to the scope with that ID
+                - ID uniqueness is strongly recommended; tooling may warn on duplicates
+            }
+        }
+
+        # External Links @external-links
+        {
+            Markdown-style links:
+
+            ```
+            [label](https://example.com)
+            ```
+        }
+
+        # Autolinks @autolinks
+        {
+            Angle-bracket links:
+
+            ```
+            <https://example.com>
+            <mailto:hello@example.com>
+            ```
+
+            Only `http`, `https`, and `mailto` schemes are recognised.
+        }
+
+        # Images @images
+        {
+            Markdown-style images:
+
+            ```
+            ![Alt text](https://example.com/image.png)
+            ```
+        }
+
+        # Blockquotes @blockquotes
+        {
+            ```
+            > A quoted line.
+            > Another line in the same quote.
+            ```
+
+            {[.]
+                - Consecutive `>` lines form a single blockquote
+                - A blank `>` line breaks paragraphs within the blockquote
+            }
+        }
+
+        # Horizontal Rules @horizontal-rules
+        {
+            A line of three or more `-`, `*`, or `_` characters:
+
+            ```
+            ---
+            ```
+        }
+
+        # Inline Formatting @inline-formatting
+        {
+            {[.]
+                - Emphasis: `*em*`
+                - Strong: `**strong**`
+                - Strikethrough: `~~strike~~`
+                - Inline code: `` `code` ``
+            }
+        }
+
+        # Escaping @escaping
+        {
+            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` and `` \` ``.
+
+            Escapes are processed before reference detection.
+
+            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`).
+        }
+
+        # Code Blocks @code-blocks
+        {
+            Fenced blocks for code or raw text:
+
+            `````
+            ```lang
+            raw text here { # @ } is not parsed
+            ```
+            `````
+
+            {[.]
+                - The opening and closing fences must be on their own lines
+                - Anything inside is treated as raw text (no parsing, no escapes)
+                - Optional language tag after the opening fence
+            }
+        }
+    }
+
+    # Styles, Header, and Footer @styling
+    {
+        # Hierarchical Config @hierarchical-config
+        {
+            Place `sdoc.config.json` in any folder. When rendering a file, configs are merged from the workspace root down to the file's folder.
+
+            ```json
+            {
+                "style": "styles/sdoc.custom.css",
+                "styleAppend": "styles/overrides.css",
+                "header": "My Project Docs",
+                "footer": "© 2026 My Company"
+            }
+            ```
+
+            {[.]
+                - The closest config to the file overrides parent configs
+                - `style` replaces the default stylesheet
+                - `styleAppend` is appended after the base stylesheet (string or array)
+                - `header` and `footer` are plain text with inline formatting supported
+                - Paths in `style` and `styleAppend` are resolved relative to the config file
+            }
+
+            A starter stylesheet template is provided at `examples/sdoc.template.css`.
+        }
+
+        # Per-File Overrides (Meta Scope) @meta-scope
+        {
+            A reserved meta scope overrides header/footer and styles:
+
+            ```
+            # Meta @meta
+            {
+                # Style
+                { styles/sdoc.custom.css }
+                # StyleAppend
+                { styles/overrides.css }
+                # Header
+                { My *custom* header }
+                # Footer
+                { Page-specific footer text }
+            }
+            ```
+
+            {[.]
+                - The `@meta` scope is not rendered in the document body
+                - The meta scope should appear at the top level of the document
+                - `Style` and `StyleAppend` are treated as file paths (relative to the SDOC file)
+                - `Header` and `Footer` render their scope contents at the top/bottom of the page
+                - Per-file meta settings override the merged `sdoc.config.json` values
+                - `@meta` is reserved and should not be used for normal references
+            }
+        }
+    }
+
+    # Parsing Rules @parsing-rules
+    {
+        Command tokens are recognised only at the start of a line (after optional indentation):
+
+        {[.]
+            - `#` heading line
+            - `{` scope open
+            - `}` scope close
+            - `{[.]` / `{[#]` list open
+            - `>` blockquote line
+            - `---` / `***` / `___` horizontal rule
+            - `` ``` `` code fence
+        }
+
+        Blank lines are allowed anywhere and are ignored.
+    }
+
+    # Formal Grammar @grammar
+    {
+        Informal EBNF grammar:
+
+        ```
+        document      = scope ;
+
+        scope         = heading ws? block ;
+        heading       = "#" { "#" } ws title (ws id)? ;
+        id            = "@" ident ;
+        block         = "{" ws? block_body "}" ;
+
+        block_body    = { blank | paragraph | scope | list_scope | implicit_list
+                        | blockquote | horizontal_rule | code_block | comma_sep } ;
+        list_scope    = list_open ws? list_body "}" ;
+        list_open     = "{[.]" | "{[#]" ;
+        list_body     = { blank | comma_sep | scope | list_item_shorthand } ;
+        implicit_list = list_item_shorthand { list_item_shorthand } ;
+        list_item_shorthand = bullet_item | numbered_item ;
+        bullet_item   = "-" ws title [ws? block]? ;
+        numbered_item = number ("." | ")") ws title [ws? block]? ;
+        number        = DIGIT { DIGIT } ;
+
+        paragraph     = text_line { ws? text_line } ;
+        text_line     = line_not_starting_with_command ;
+
+        blockquote    = quote_line { quote_line | blank } ;
+        quote_line    = ">" text_line ;
+
+        horizontal_rule = "---" | "***" | "___" ;
+
+        code_block    = fence_open raw_text fence_close ;
+        fence_open    = "```" [lang] newline ;
+        fence_close   = "```" newline ;
+
+        comma_sep     = "," ;
+        blank         = newline ;
+
+        ident         = (ALPHA | "_") { ALPHA | DIGIT | "_" | "-" } ;
+        ```
+
+        {[.]
+            - `title` is the remainder of the heading line, excluding the optional trailing `@id`
+            - If a line starts with a command token, it is not a paragraph line
+            - The grammar is line-oriented; practical parsers should operate on lines
+        }
+    }
+
+    # Open Questions @open-questions
+    {
+        {[.]
+            - Comment syntax (if any)
+            - Duplicate ID resolution (error vs warning vs nearest-scope)
+            - Additional list types (checkboxes, alpha, roman)
+            - Additional inline formatting (underline, highlight)
+        }
+    }
+}

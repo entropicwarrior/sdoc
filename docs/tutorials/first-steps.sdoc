@@ -1,14 +1,105 @@
-# Tutorial: First Steps
+# First Steps with SDOC
 {
-    # Checklist
-    {[.]
-        - [ ] Create a new SDOC file
-        - [ ] Add a scope
-        - [x] Preview it in VS Code
+    # Step 1: Create a File
+    {
+        Create a new file with a `.sdoc` extension, for example `notes.sdoc`:
+
+        ```
+# My Notes
+{
+    Hello, this is my first SDOC document.
+}
+        ```
+
+        Every SDOC file starts with a top-level scope: a heading followed by a brace block.
     }
 
-    # Next
+    # Step 2: Add Nested Sections
     {
-        Try split view comparisons in the static viewer.
+        Add structure by nesting scopes inside the top-level block:
+
+        ```
+# My Notes
+{
+    # Introduction
+    {
+        This is the introduction.
+    }
+
+    # Details
+    {
+        Here are the details.
+    }
+}
+        ```
+
+        Each nested scope renders as a subsection with a smaller heading.
+    }
+
+    # Step 3: Preview in VS Code
+    {
+        Open your `.sdoc` file in VS Code and run the command **SDOC: Open Preview to the Side**. You should see a rendered view that updates as you type.
+    }
+
+    # Step 4: Add Formatting
+    {
+        Try adding inline formatting and a list:
+
+        ```
+# My Notes
+{
+    # Introduction
+    {
+        SDOC supports *emphasis*, **strong**, `code`, and ~~strikethrough~~.
+    }
+
+    # To Do
+    {[.]
+        - [ ] Learn the basics
+        - [ ] Write a real document
+        - [x] Install the extension
+    }
+}
+        ```
+    }
+
+    # Step 5: Use References
+    {
+        Tag sections with `@id` and cross-reference them:
+
+        ```
+# Overview @overview
+{
+    This section introduces the project.
+}
+
+# Details
+{
+    As described in @overview, the project has three parts.
+}
+        ```
+
+        The `@overview` in the text becomes a clickable link to the tagged section.
+    }
+
+    # Step 6: Add Blockquotes and Code
+    {
+        Blockquotes use `>` at the start of each line:
+
+        ```
+> Documentation is a love letter
+> that you write to your future self.
+        ```
+
+        Code blocks use three backticks as opening and closing fences, with an optional language tag. Everything inside is raw text -- braces, `#`, and `@` are not parsed.
+    }
+
+    # What's Next
+    {
+        {[.]
+            - Read the [Syntax Reference](#docs/reference/syntax.sdoc) for all available features
+            - Try the [Static Site Viewer](#docs/reference/cli.sdoc) to build a browsable HTML viewer
+            - Look at `examples/example.sdoc` for a quick-reference document
+        }
     }
 }

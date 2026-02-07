@@ -1,0 +1,142 @@
+# SDOC Requirements @sdoc-requirements
+{
+    # Why SDOC Exists @why
+    {
+        Existing lightweight markup formats (Markdown, AsciiDoc, reStructuredText) infer structure from indentation, heading levels, or whitespace. This makes them ambiguous: the same input can reasonably be parsed into different trees. For simple documents this is fine, but it breaks down for deeply nested structures, formal documents, and AI agent consumption.
+
+        SDOC solves this with one core principle: explicit scoping using braces. Structure is never inferred. A scope begins with `{` and ends with `}`. Everything else follows from this.
+
+        SDOC targets three primary use cases:
+        {[#]
+            - Quick capture and personal notes
+            {
+                Unlimited nesting, readable as plain text, minimal syntax overhead. Usable in any plain text editor including on mobile devices.
+            }
+            - Project and organisational documentation
+            {
+                Comprehensive structured documents for companies, teams, and projects. Must support collaboration with non-technical people via export to common formats (Google Docs, DOCX, PDF). Must handle formal and legal document structures.
+            }
+            - Software development documentation
+            {
+                Lives alongside code in git repositories. Requirements, specifications, validation plans, testing, project context, and AI agent instructions. Must be programmatically parseable.
+            }
+        }
+    }
+
+    # Abstract Requirements @abstract-requirements
+    {
+        These requirements describe what SDOC must achieve regardless of how the syntax evolves. They are the stable reference against which all spec changes should be evaluated.
+
+        # R1: Unambiguous Structure @r1
+        {
+            Every document must parse into an unambiguous tree. There must be no situation where two reasonable parsers would produce different scope hierarchies from the same input. This is the foundational requirement that differentiates SDOC from Markdown.
+
+            Implication: scope boundaries must be explicit, not inferred from indentation or heading levels.
+        }
+
+        # R2: Human Readability as Plain Text @r2
+        {
+            An SDOC file must be readable and writable in any plain text editor with no rendering. The structure should be visually apparent from the raw text. A person seeing an SDOC file for the first time should be able to understand the hierarchy without reading the spec.
+
+            Implication: syntax should be minimal and use familiar conventions where possible. Indentation should be cosmetic but conventional.
+        }
+
+        # R3: Content-Presentation Separation @r3
+        {
+            Authors should be able to focus entirely on content and structure without making layout or styling decisions. All presentation concerns should be handled by the rendering pipeline, not embedded in the document.
+
+            Implication: no inline styling, no font directives, no layout instructions in the document body. The @meta scope and config system handle presentation.
+        }
+
+        # R4: Arbitrary Nesting Depth @r4
+        {
+            Documents must support unlimited nesting depth with no artificial limits. This is essential for brainstorming, legal documents with deep clause structures, and complex technical specifications.
+
+            Implication: the scope mechanism must be recursive with no hardcoded depth limits.
+        }
+
+        # R5: AI Agent Parseability @r5
+        {
+            AI tools must be able to parse an SDOC file and navigate its scope tree programmatically. An agent should be able to answer questions like "what are the children of scope X", "find all scopes tagged as requirements", and "extract the content of section Y and its descendants".
+
+            Implication: the parsed AST must be a clean, well-defined tree. Scope IDs and any semantic annotations must be machine-readable. The parser should produce structured data, not just HTML.
+        }
+
+        # R6: Format Interoperability @r6
+        {
+            SDOC must be convertible to and from common document formats, at minimum: HTML, Google Docs, PDF, and DOCX. Conversion from simple documents in those formats back to SDOC should be feasible. Perfect round-tripping is not required, but the structural intent should survive conversion.
+
+            Implication: SDOC's structural primitives (scopes, lists, paragraphs, inline formatting) must map cleanly to the structural primitives of target formats.
+        }
+
+        # R7: Expressiveness for Formal Documents @r7
+        {
+            SDOC must be expressive enough for formal and legal documents including contracts, patents, regulatory filings, and government proposals. These documents have deep numbered hierarchies, cross-references, tables, definitions, and strict structural requirements.
+
+            Implication: the numbered list system, reference system, and structural depth must handle these cases. Features like tables and definition lists may be necessary.
+        }
+
+        # R8: Quick Capture Simplicity @r8
+        {
+            For ad-hoc note taking, SDOC must be fast to type. Common patterns should require minimal syntax. A person on a phone call should be able to capture structured thoughts without the syntax slowing them down.
+
+            Implication: shortcuts and implicit behaviours (like implicit lists) are justified where they don't conflict with @r1.
+        }
+
+        # R9: Multi-File Project Support @r9
+        {
+            Large projects will span multiple SDOC files in a folder hierarchy. The format and tooling must support navigation across files, cross-file references, and project-level configuration.
+
+            Implication: the config hierarchy system, cross-file references, and build tools must address this. The spec should formalise cross-file reference conventions.
+        }
+
+        # R10: Extensibility Without Breaking @r10
+        {
+            The spec will evolve. New features will be added. Existing documents must remain valid or be mechanically migrateable. The core scoping mechanism is the stable foundation that new features build on.
+
+            Implication: new syntax should be additive. Reserved characters or patterns should be documented so that future extensions don't break existing documents.
+        }
+    }
+
+    # Concrete Requirements @concrete-requirements
+    {
+        These are specific implementation constraints derived from the abstract requirements and from observations on the v0.1 implementation.
+
+        # C1: Single Root Scope @c1
+        {
+            Supports: @r1, @r5
+
+            Every SDOC document must have exactly one root scope. This ensures every document has a title and a well-defined tree root. The parser should warn if multiple top-level scopes are found.
+
+            The EBNF grammar defines `document = scope`. The parser must enforce this.
+        }
+
+        # C2: Format-Neutral AST @c2
+        {
+            Supports: @r5, @r6
+
+            The parser must produce a format-neutral abstract syntax tree. Rendering to HTML, DOCX, PDF, or Google Docs should be handled by separate renderer modules that consume the same AST. No rendering assumptions should leak into the parsed representation.
+        }
+
+        # C3: Explicit Form Preferred for Formal Documents @c3
+        {
+            Supports: @r1, @r7
+
+            Implicit lists (a run of "- " lines inside a normal scope) are permitted for @r8 (quick capture), but the explicit form ({[.]} or {[#]}) is the canonical representation. Tooling should support a linting mode that flags implicit lists in documents tagged as formal.
+        }
+
+        # C4: Line-Based Parsing @c4
+        {
+            Supports: @r2, @r5
+
+            The parser operates on lines. Command tokens are recognised only at the start of a line (after optional indentation). This keeps parsing simple, predictable, and easy for both humans and AI agents to reason about.
+        }
+
+        # C5: Cosmetic Indentation @c5
+        {
+            Supports: @r1, @r2
+
+            Whitespace and indentation have no structural meaning. They are cosmetic conventions to aid readability. The parser must never use indentation to determine scope depth or structure.
+        }
+    }
+}

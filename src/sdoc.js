@@ -162,6 +162,38 @@ function parseScope(cursor) {
   };
 }
 
+function tryParseInlineBlock(trimmed) {
+  // Check if line matches pattern { ... }
+  if (!trimmed.startsWith(COMMAND_SCOPE_OPEN) || !trimmed.endsWith(COMMAND_SCOPE_CLOSE)) {
+    return null;
+  }
+
+  // Extract content between { and }
+  const content = trimmed.slice(1, -1).trim();
+
+  // Check for nested braces - if there are any unescaped { or }, this isn't a simple inline block
+  let depth = 0;
+  let i = 0;
+  while (i < content.length) {
+    if (content[i] === "\\" && i + 1 < content.length && ESCAPABLE.has(content[i + 1])) {
+      i += 2;
+      continue;
+    }
+    if (content[i] === "{" || content[i] === "}") {
+      depth++;
+    }
+    i++;
+  }
+
+  // If we have nested braces, this isn't a simple inline block
+  if (depth > 0) {
+    return null;
+  }
+
+  // Return the content as text
+  return content;
+}
+
 function parseScopeBlock(cursor) {
   while (!cursor.eof()) {
     const line = cursor.current();
@@ -170,6 +202,16 @@ function parseScopeBlock(cursor) {
     if (trimmed === "") {
       cursor.next();
       continue;
+    }
+
+    // Try to parse as inline block: { content }
+    const inlineContent = tryParseInlineBlock(trimmed);
+    if (inlineContent !== null) {
+      cursor.next();
+      if (inlineContent === "") {
+        return { blockType: "normal", children: [] };
+      }
+      return { blockType: "normal", children: [{ type: "paragraph", text: inlineContent }] };
     }
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
@@ -334,6 +376,16 @@ function parseOptionalBlock(cursor) {
     if (trimmed === "") {
       cursor.next();
       continue;
+    }
+
+    // Try to parse as inline block: { content }
+    const inlineContent = tryParseInlineBlock(trimmed);
+    if (inlineContent !== null) {
+      cursor.next();
+      if (inlineContent === "") {
+        return { blockType: "normal", children: [] };
+      }
+      return { blockType: "normal", children: [{ type: "paragraph", text: inlineContent }] };
     }
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
@@ -748,9 +800,15 @@ function renderListItem(scope, listType, depth) {
     const checked = task.checked ? " checked" : "";
     headingInner = `<span class="sdoc-task"><input class="sdoc-task-box" type="checkbox"${checked} disabled /><span class="sdoc-task-label">${headingInner}</span></span>`;
   }
-  const heading = hasHeading
-    ? `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}">${headingInner}</h${level}>`
-    : "";
+  const isSimple = hasHeading && scope.children.length === 0;
+  let heading;
+  if (!hasHeading) {
+    heading = "";
+  } else if (isSimple) {
+    heading = `<span${idAttr} class="sdoc-list-item-text">${headingInner}</span>`;
+  } else {
+    heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}">${headingInner}</h${level}>`;
+  }
   const bodyParts = [];
   let pendingScopes = [];
 
@@ -1042,6 +1100,10 @@ const DEFAULT_STYLE = `
     margin: 0.4rem 0 0.8rem;
   }
 
+  .sdoc-list-item-text {
+    line-height: 1.6;
+  }
+
   .sdoc-ref {
     color: var(--sdoc-accent);
     text-decoration: none;
@@ -1088,6 +1150,12 @@ const DEFAULT_STYLE = `
     overflow-x: auto;
     font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
     font-size: 0.9rem;
+  }
+
+  .sdoc-code code {
+    background: none;
+    border: none;
+    padding: 0;
   }
 
   .sdoc-errors {

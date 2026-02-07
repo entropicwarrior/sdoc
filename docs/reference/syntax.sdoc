@@ -1,0 +1,255 @@
+# Syntax Reference
+{
+    # Scopes
+    {
+        A scope is a heading line followed by a brace-delimited block:
+
+        ```
+# Heading @optional-id
+{
+    Body content here.
+}
+        ```
+
+        {[.]
+            - The heading starts with `#` (after optional indentation)
+            - Multiple `#` characters are allowed but do not affect depth; depth comes from nesting
+            - The optional `@id` must be the last token on the heading line, separated by whitespace
+            - IDs may contain letters, digits, underscores, and hyphens (must start with a letter or underscore)
+        }
+
+        # Inline Blocks
+        {
+            For simple content, a scope body can be written on one line:
+
+            ```
+# Name
+{ John Doe }
+
+# Count
+{ 42 }
+            ```
+
+            Inline blocks must not contain unescaped `{` or `}` characters.
+        }
+    }
+
+    # Paragraphs
+    {
+        Consecutive text lines are joined into a single paragraph. A blank line, a new scope, or a list ends the current paragraph.
+
+        ```
+# Example
+{
+    This is one paragraph
+    that spans two lines.
+
+    This is a second paragraph.
+}
+        ```
+    }
+
+    # Lists
+    {
+        # Explicit Lists
+        {
+            Use `{[.]` for bulleted lists and `{[#]` for numbered lists:
+
+            ```
+# Fruits
+{[.]
+    - Apples
+    - Bananas
+    - Cherries
+}
+
+# Steps
+{[#]
+    1. First step
+    2. Second step
+    3. Third step
+}
+            ```
+
+            List items can have bodies:
+
+            ```
+{[.]
+    - Item title
+    {
+        Body text for this item.
+    }
+}
+            ```
+
+            Commas between list items are allowed but ignored.
+        }
+
+        # Implicit Lists
+        {
+            Inside a normal scope, a run of `- ` lines automatically forms a bulleted list, and a run of `1. ` lines forms a numbered list:
+
+            ```
+# Notes
+{
+    - First point
+    - Second point
+    - Third point
+}
+            ```
+
+            Mixed markers end the implicit list.
+        }
+
+        # Task Lists
+        {
+            Checkboxes work inside list blocks:
+
+            ```
+{[.]
+    - [ ] Pending task
+    - [x] Completed task
+}
+            ```
+        }
+
+        # Anonymous List Items
+        {
+            A list item can start with a block directly, without a heading:
+
+            ```
+{[.]
+    {
+        This item has no heading line.
+    }
+}
+            ```
+        }
+    }
+
+    # Inline Formatting
+    {
+        {[.]
+            - `*emphasis*` renders as *emphasis*
+            - `**strong**` renders as **strong**
+            - `~~strikethrough~~` renders as ~~strikethrough~~
+            - `` `code` `` renders as `code`
+        }
+    }
+
+    # Links and Images
+    {
+        # Links
+        {
+            ```
+[Link text](https://example.com)
+            ```
+        }
+
+        # Autolinks
+        {
+            ```
+<https://example.com>
+<mailto:hello@example.com>
+            ```
+
+            Only `http`, `https`, and `mailto` schemes are recognised.
+        }
+
+        # Images
+        {
+            ```
+![Alt text](https://example.com/image.png)
+            ```
+        }
+    }
+
+    # References
+    {
+        Tag a scope with `@id` on its heading line, then reference it anywhere with `@id` in text:
+
+        ```
+# Overview @overview
+{
+    This section is tagged.
+}
+
+# Details
+{
+    See @overview for the introduction.
+}
+        ```
+
+        References render as clickable links to the target scope.
+    }
+
+    # Blockquotes
+    {
+        Lines starting with `>` form a blockquote:
+
+        ```
+> A quoted line.
+> Another line in the same quote.
+        ```
+
+        A blank `>` line breaks paragraphs within the blockquote. Escape with `\>` to use a literal `>` at the start of a line.
+    }
+
+    # Code Blocks
+    {
+        Fenced code blocks use three backticks to delimit raw text. An optional language tag follows the opening fence.
+
+        {[.]
+            - Opening fence: three backticks, optionally followed by a language name (e.g. `javascript`, `python`)
+            - Closing fence: three backticks on their own line
+            - Content inside is raw text -- no parsing, no escapes, no inline formatting
+            - Braces, `#`, `@`, and all other special characters are treated as literal text inside code blocks
+        }
+    }
+
+    # Horizontal Rules
+    {
+        A line of three or more identical characters (`-`, `*`, or `_`):
+
+        ```
+---
+        ```
+    }
+
+    # Escaping
+    {
+        A backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` and `` \` ``.
+
+        {[.]
+            - `\#` at the start of a line makes it a paragraph line instead of a heading
+            - `\>` at the start of a line makes it a paragraph line instead of a blockquote
+            - Escapes are processed before reference detection
+        }
+    }
+
+    # Meta Scope
+    {
+        A reserved `@meta` scope at the top level overrides rendering options per file:
+
+        ```
+# Meta @meta
+{
+    # Style
+    { path/to/custom.css }
+    # StyleAppend
+    { path/to/overrides.css }
+    # Header
+    { My *custom* header }
+    # Footer
+    { Page-specific footer }
+}
+        ```
+
+        {[.]
+            - The `@meta` scope is not rendered in the document body
+            - `Style` and `StyleAppend` are file paths relative to the SDOC file
+            - `Header` and `Footer` support inline formatting
+            - Per-file meta overrides `sdoc.config.json` values
+        }
+    }
+}

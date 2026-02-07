@@ -1,24 +1,29 @@
-# Documentation Home
+# SDOC Documentation
 {
     # Overview
     {
-        This is the root of the example SDOC hierarchy.
-        Use the sidebar to navigate. Shift+Click two docs to compare.
+        SDOC ("Simple/Smart Documentation") is a plain text documentation format with explicit scoping. Documents are trees of nested scopes delimited by braces, with familiar inline formatting borrowed from Markdown.
+
+        Use the sidebar to navigate. Shift+Click two docs to compare them side by side.
     }
 
     # Quick Links
     {
-        - [Guide: Intro](#docs/guide/intro.sdoc)
+        - [Guide: Introduction](#docs/guide/intro.sdoc)
         - [Guide: Setup](#docs/guide/setup.sdoc)
         - [Tutorial: First Steps](#docs/tutorials/first-steps.sdoc)
-        - [Reference: CLI](#docs/reference/cli.sdoc)
+        - [Reference: Syntax](#docs/reference/syntax.sdoc)
         - [Reference: API](#docs/reference/api.sdoc)
+        - [Reference: CLI](#docs/reference/cli.sdoc)
     }
 
     # Sections
     {[.]
         - Guide
+        { Getting started with SDOC: what it is and how to set it up. }
         - Reference
+        { Syntax details, the JavaScript API, and CLI tools. }
         - Tutorials
+        { Step-by-step walkthroughs for common tasks. }
     }
 }
