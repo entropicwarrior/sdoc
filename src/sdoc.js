@@ -3,6 +3,7 @@ const COMMAND_SCOPE_OPEN = "{";
 const COMMAND_SCOPE_CLOSE = "}";
 const COMMAND_LIST_BULLET = "{[.]";
 const COMMAND_LIST_NUMBER = "{[#]";
+const COMMAND_TABLE = "{[table]";
 const COMMAND_CODE_FENCE = "```";
 
 const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">"]);
@@ -111,6 +112,12 @@ function parseBlock(cursor, kind) {
     if (trimmed === COMMAND_LIST_BULLET || trimmed === COMMAND_LIST_NUMBER) {
       flushParagraph();
       nodes.push(parseListBlock(cursor, trimmed === COMMAND_LIST_BULLET ? "bullet" : "number"));
+      continue;
+    }
+
+    if (trimmed === COMMAND_TABLE) {
+      flushParagraph();
+      nodes.push(parseTableBlock(cursor));
       continue;
     }
 
@@ -225,6 +232,10 @@ function parseScopeBlock(cursor) {
         blockType: "list",
         children: parseListBody(cursor, trimmed === COMMAND_LIST_BULLET ? "bullet" : "number")
       };
+    }
+
+    if (trimmed === COMMAND_TABLE) {
+      return { blockType: "normal", children: [parseTableBlock(cursor)] };
     }
 
     cursor.error("Expected '{' or list opener after heading.");
@@ -368,6 +379,34 @@ function parseImplicitListBlock(cursor, listType) {
   return { type: "list", listType, items };
 }
 
+function parseTableBlock(cursor) {
+  cursor.next();
+  const rows = [];
+
+  while (!cursor.eof()) {
+    const line = cursor.current();
+    const trimmed = line.replace(/^\s+/, "").trim();
+
+    if (trimmed === "") {
+      cursor.next();
+      continue;
+    }
+
+    if (trimmed === COMMAND_SCOPE_CLOSE) {
+      cursor.next();
+      break;
+    }
+
+    const cells = trimmed.split("|").map((cell) => cell.trim());
+    rows.push(cells);
+    cursor.next();
+  }
+
+  const headers = rows.length > 0 ? rows[0] : [];
+  const body = rows.slice(1);
+  return { type: "table", headers, rows: body };
+}
+
 function parseOptionalBlock(cursor) {
   while (!cursor.eof()) {
     const line = cursor.current();
@@ -399,6 +438,10 @@ function parseOptionalBlock(cursor) {
         blockType: "list",
         children: parseListBody(cursor, trimmed === COMMAND_LIST_BULLET ? "bullet" : "number")
       };
+    }
+
+    if (trimmed === COMMAND_TABLE) {
+      return { blockType: "normal", children: [parseTableBlock(cursor)] };
     }
 
     return null;
@@ -838,12 +881,33 @@ function renderListItem(scope, listType, depth) {
   return `<section class="${scopeClass}">${heading}${bodyWrapper}</section>`;
 }
 
+function renderTable(table) {
+  const headerCells = table.headers
+    .map((cell) => `<th class="sdoc-table-th">${renderInline(cell)}</th>`)
+    .join("");
+  const thead = `<thead class="sdoc-table-head"><tr>${headerCells}</tr></thead>`;
+
+  const bodyRows = table.rows
+    .map((row) => {
+      const cells = row
+        .map((cell) => `<td class="sdoc-table-td">${renderInline(cell)}</td>`)
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .join("\n");
+  const tbody = bodyRows ? `<tbody class="sdoc-table-body">${bodyRows}</tbody>` : "";
+
+  return `<table class="sdoc-table">${thead}\n${tbody}</table>`;
+}
+
 function renderNode(node, depth) {
   switch (node.type) {
     case "scope":
       return renderScope(node, depth);
     case "list":
       return renderList(node, depth);
+    case "table":
+      return renderTable(node);
     case "blockquote": {
       const paragraphs = node.paragraphs
         .map((text) => `<p class="sdoc-paragraph">${renderInline(text)}</p>`)
@@ -1037,6 +1101,37 @@ const DEFAULT_STYLE = `
     border: none;
     border-top: 1px solid var(--sdoc-border);
     margin: 1.4rem 0;
+  }
+
+  .sdoc-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    margin: 1rem 0;
+    border: 1px solid var(--sdoc-border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .sdoc-table-th {
+    background: rgba(0, 0, 0, 0.06);
+    font-weight: 600;
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--sdoc-border);
+  }
+
+  .sdoc-table-td {
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(127, 120, 112, 0.15);
+  }
+
+  .sdoc-table-body tr:nth-child(even) {
+    background: rgba(0, 0, 0, 0.025);
+  }
+
+  .sdoc-table-body tr:last-child .sdoc-table-td {
+    border-bottom: none;
   }
 
   .sdoc-task {

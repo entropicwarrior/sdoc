@@ -127,6 +127,26 @@
         }
     }
 
+    # Tables
+    {
+        Use `{[table]` to create a table. The first row is the header:
+
+        ```
+{[table]
+    Name | Age | City
+    Alice | 30 | New York
+    Bob | 25 | Los Angeles
+}
+        ```
+
+        {[.]
+            - Columns are separated by `|`
+            - The first row is always the header
+            - Cell contents support inline formatting
+            - Leading and trailing whitespace in cells is trimmed
+        }
+    }
+
     # Inline Formatting
     {
         {[.]

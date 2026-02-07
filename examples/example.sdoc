@@ -89,6 +89,15 @@
                 - [x] Wire up the preview
             }
 
+            # Table
+            {[table]
+                Name | Age | City
+                Alice | 30 | New York
+                Bob | 25 | Los Angeles
+                Charlie | 35 | Chicago
+                Diana | 28 | Seattle
+            }
+
             # Inline Blocks
             {
                 Scopes can use single-line inline blocks for short content:

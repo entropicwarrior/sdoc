@@ -195,6 +195,27 @@
             }
         }
 
+        # Tables @tables
+        {
+            Tables are declared with `{[table]`:
+
+            ```
+{[table]
+    Name | Age | City
+    Alice | 30 | NYC
+    Bob | 25 | LA
+}
+            ```
+
+            {[.]
+                - The first row is always the header
+                - Columns are separated by `|`
+                - Each row is a single line
+                - Cell contents support inline formatting
+                - Leading and trailing whitespace in cells is trimmed
+            }
+        }
+
         # Paragraphs @paragraphs
         {
             {[.]
@@ -366,6 +387,7 @@
             - `{` scope open
             - `}` scope close
             - `{[.]` / `{[#]` list open
+            - `{[table]` table open
             - `>` blockquote line
             - `---` / `***` / `___` horizontal rule
             - `` ``` `` code fence
@@ -386,10 +408,14 @@
         id            = "@" ident ;
         block         = "{" ws? block_body "}" ;
 
-        block_body    = { blank | paragraph | scope | list_scope | implicit_list
-                        | blockquote | horizontal_rule | code_block | comma_sep } ;
+        block_body    = { blank | paragraph | scope | list_scope | table_scope
+                        | implicit_list | blockquote | horizontal_rule
+                        | code_block | comma_sep } ;
         list_scope    = list_open ws? list_body "}" ;
         list_open     = "{[.]" | "{[#]" ;
+        table_scope   = "{[table]" ws? table_body "}" ;
+        table_body    = table_row { table_row } ;
+        table_row     = cell { "|" cell } ;
         list_body     = { blank | comma_sep | scope | list_item_shorthand } ;
         implicit_list = list_item_shorthand { list_item_shorthand } ;
         list_item_shorthand = bullet_item | numbered_item ;

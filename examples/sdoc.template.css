@@ -104,6 +104,37 @@ main {
   margin: 1.4rem 0;
 }
 
+.sdoc-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  margin: 1rem 0;
+  border: 1px solid var(--sdoc-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sdoc-table-th {
+  background: rgba(0, 0, 0, 0.06);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sdoc-border);
+}
+
+.sdoc-table-td {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(127, 120, 112, 0.15);
+}
+
+.sdoc-table-body tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.sdoc-table-body tr:last-child .sdoc-table-td {
+  border-bottom: none;
+}
+
 .sdoc-task {
   display: inline-flex;
   align-items: center;

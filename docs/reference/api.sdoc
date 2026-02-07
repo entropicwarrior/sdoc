@@ -102,6 +102,7 @@ const html = renderFragment(nodes, 2);
             - `paragraph` -- a text block with `text`
             - `list` -- a list with `listType` (`"bullet"` or `"number"`) and `items`
             - `blockquote` -- a quote with `paragraphs` (array of strings)
+            - `table` -- a table with `headers` (array of strings) and `rows` (array of string arrays)
             - `code` -- a code block with `lang` and `text`
             - `hr` -- a horizontal rule
         }
