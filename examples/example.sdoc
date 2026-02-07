@@ -118,11 +118,21 @@
                 A literal brace: \{ and \}, a literal at-sign: \@, and backtick: \`.
             }
 
+            # Images
+            {
+                A local image (relative path):
+
+                ![Waterfall pool](PXL_20230816_195120268.jpg)
+
+                A remote image (direct URL):
+
+                ![Distant galaxy](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/NGC_4414_%28NASA-med%29.jpg/600px-NGC_4414_%28NASA-med%29.jpg)
+            }
+
             # Extras
             {
                 Inline formatting: *emphasis*, **strong**, ~~strike~~, `code`.
                 External links: [SDOC](https://example.com), <https://example.com>, and <mailto:hello@example.com>.
-                Image example: ![Mountains](https://example.com/image.png).
 
                 ---
 

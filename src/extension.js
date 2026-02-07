@@ -91,13 +91,21 @@ function showPreview(document, viewColumn) {
     return;
   }
 
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+  const docDir = vscode.Uri.file(path.dirname(document.uri.fsPath));
+  const localRoots = [docDir];
+  if (workspaceFolder) {
+    localRoots.push(workspaceFolder.uri);
+  }
+
   const panel = vscode.window.createWebviewPanel(
     PREVIEW_VIEW_TYPE,
     buildTitle(document.uri),
     viewColumn ?? vscode.ViewColumn.Active,
     {
       enableScripts: false,
-      retainContextWhenHidden: true
+      retainContextWhenHidden: true,
+      localResourceRoots: localRoots
     }
   );
 
@@ -116,7 +124,7 @@ function updatePreview(document) {
     return;
   }
   panel.title = buildTitle(document.uri);
-  panel.webview.html = buildHtml(document, panel.title);
+  panel.webview.html = buildHtml(document, panel.title, panel.webview);
 }
 
 function buildTitle(uri) {
@@ -124,7 +132,7 @@ function buildTitle(uri) {
   return `SDOC Preview: ${name}`;
 }
 
-function buildHtml(document, title) {
+function buildHtml(document, title, webview) {
   const parsed = parseSdoc(document.getText());
   const metaResult = extractMeta(parsed.nodes);
   const config = loadConfigForDocument(document);
@@ -144,7 +152,7 @@ function buildHtml(document, title) {
     cssAppendParts.push(metaStyles.styleAppendCss);
   }
 
-  return renderHtmlDocumentFromParsed(
+  let html = renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
     title,
     {
@@ -154,6 +162,25 @@ function buildHtml(document, title) {
       cssAppend: cssAppendParts.join("\n")
     }
   );
+
+  if (webview) {
+    const docDir = path.dirname(document.uri.fsPath);
+    html = rewriteLocalImages(html, docDir, webview);
+  }
+
+  return html;
+}
+
+function rewriteLocalImages(html, docDir, webview) {
+  return html.replace(/(<img\s[^>]*src=")([^"]+)(")/g, (match, before, src, after) => {
+    if (/^https?:\/\//i.test(src) || src.startsWith("data:")) {
+      return match;
+    }
+    const absPath = path.isAbsolute(src) ? src : path.join(docDir, src);
+    const fileUri = vscode.Uri.file(absPath);
+    const webviewUri = webview.asWebviewUri(fileUri);
+    return before + webviewUri.toString() + after;
+  });
 }
 
 function updateAllPreviews() {
@@ -161,7 +188,7 @@ function updateAllPreviews() {
     const uri = vscode.Uri.parse(key);
     vscode.workspace.openTextDocument(uri).then((doc) => {
       panel.title = buildTitle(uri);
-      panel.webview.html = buildHtml(doc, panel.title);
+      panel.webview.html = buildHtml(doc, panel.title, panel.webview);
     });
   }
 }
