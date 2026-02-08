@@ -1,4 +1,5 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const vscode = require("vscode");
 const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed } = require("./sdoc");
@@ -36,7 +37,15 @@ function activate(context) {
     showPreview(editor.document, vscode.ViewColumn.Beside);
   });
 
-  context.subscriptions.push(previewCommand, previewToSideCommand);
+  const exportHtmlCommand = vscode.commands.registerCommand("sdoc.exportHtml", () => {
+    exportHtml();
+  });
+
+  const openInBrowserCommand = vscode.commands.registerCommand("sdoc.openInBrowser", () => {
+    openInBrowser();
+  });
+
+  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand);
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
@@ -527,6 +536,92 @@ function readJson(filePath) {
   } catch {
     return null;
   }
+}
+
+function getActivePreviewDocument() {
+  for (const [key, panel] of panels.entries()) {
+    if (panel.active) {
+      return vscode.workspace.openTextDocument(vscode.Uri.parse(key));
+    }
+  }
+  return null;
+}
+
+function buildCleanHtml(document) {
+  const parsed = parseSdoc(document.getText());
+  const metaResult = extractMeta(parsed.nodes);
+  const config = loadConfigForDocument(document);
+  const metaStyles = resolveMetaStyles(metaResult.meta, document.uri.fsPath);
+
+  const cssOverride = metaStyles.styleCss ?? loadCss(config.style);
+  const cssAppendParts = [];
+  if (config.styleAppend && config.styleAppend.length) {
+    for (const stylePath of config.styleAppend) {
+      const css = loadCss(stylePath);
+      if (css) {
+        cssAppendParts.push(css);
+      }
+    }
+  }
+  if (metaStyles.styleAppendCss) {
+    cssAppendParts.push(metaStyles.styleAppendCss);
+  }
+
+  const title = path.basename(document.uri.fsPath, ".sdoc");
+
+  return renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    title,
+    {
+      meta: metaResult.meta,
+      config,
+      cssOverride: cssOverride || undefined,
+      cssAppend: cssAppendParts.length ? cssAppendParts.join("\n") : undefined
+    }
+  );
+}
+
+async function exportHtml() {
+  const docPromise = getActivePreviewDocument();
+  if (!docPromise) {
+    vscode.window.showInformationMessage("No SDOC preview is active.");
+    return;
+  }
+
+  const document = await docPromise;
+  const baseName = path.basename(document.uri.fsPath, ".sdoc") + ".html";
+  const defaultUri = vscode.Uri.file(path.join(path.dirname(document.uri.fsPath), baseName));
+
+  const target = await vscode.window.showSaveDialog({
+    defaultUri,
+    filters: { "HTML": ["html"] }
+  });
+
+  if (!target) {
+    return;
+  }
+
+  const html = buildCleanHtml(document);
+  fs.writeFileSync(target.fsPath, html, "utf8");
+  vscode.window.showInformationMessage(`Exported: ${path.basename(target.fsPath)}`);
+}
+
+async function openInBrowser() {
+  const docPromise = getActivePreviewDocument();
+  if (!docPromise) {
+    vscode.window.showInformationMessage("No SDOC preview is active.");
+    return;
+  }
+
+  const document = await docPromise;
+  const html = buildCleanHtml(document);
+
+  const tmpDir = os.tmpdir();
+  const baseName = path.basename(document.uri.fsPath, ".sdoc") + ".html";
+  const tmpPath = path.join(tmpDir, `sdoc-${baseName}`);
+  fs.writeFileSync(tmpPath, html, "utf8");
+
+  vscode.env.openExternal(vscode.Uri.file(tmpPath));
 }
 
 module.exports = {

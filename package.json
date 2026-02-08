@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "Preview SDOC files.",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "publisher": "local",
   "engines": {
     "vscode": "^1.80.0"
@@ -13,7 +13,9 @@
   "activationEvents": [
     "onLanguage:sdoc",
     "onCommand:sdoc.preview",
-    "onCommand:sdoc.previewToSide"
+    "onCommand:sdoc.previewToSide",
+    "onCommand:sdoc.exportHtml",
+    "onCommand:sdoc.openInBrowser"
   ],
   "scripts": {
     "package": "npx vsce package --out dist/ --allow-missing-repository"
@@ -47,8 +49,32 @@
       {
         "command": "sdoc.previewToSide",
         "title": "SDOC: Open Preview to the Side"
+      },
+      {
+        "command": "sdoc.exportHtml",
+        "title": "SDOC: Export HTML",
+        "icon": "$(desktop-download)"
+      },
+      {
+        "command": "sdoc.openInBrowser",
+        "title": "SDOC: Open in Browser",
+        "icon": "$(link-external)"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "sdoc.exportHtml",
+          "when": "activeWebviewPanelId == 'sdoc.preview'",
+          "group": "navigation"
+        },
+        {
+          "command": "sdoc.openInBrowser",
+          "when": "activeWebviewPanelId == 'sdoc.preview'",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "devDependencies": {
     "@vscode/vsce": "^3.7.1"
