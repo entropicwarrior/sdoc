@@ -42,6 +42,7 @@ function parseSdoc(text) {
 function parseBlock(cursor, kind) {
   const nodes = [];
   let paragraphLines = [];
+  let paragraphStartLine = 0;
 
   const flushParagraph = () => {
     if (!paragraphLines.length) {
@@ -49,7 +50,7 @@ function parseBlock(cursor, kind) {
     }
     const text = paragraphLines.join(" ").trim();
     if (text) {
-      nodes.push({ type: "paragraph", text });
+      nodes.push({ type: "paragraph", text, lineStart: paragraphStartLine, lineEnd: cursor.index });
     }
     paragraphLines = [];
   };
@@ -79,7 +80,8 @@ function parseBlock(cursor, kind) {
 
     if (isHorizontalRule(trimmed)) {
       flushParagraph();
-      nodes.push({ type: "hr" });
+      const hrLine = cursor.index + 1;
+      nodes.push({ type: "hr", lineStart: hrLine, lineEnd: hrLine });
       cursor.next();
       continue;
     }
@@ -123,9 +125,10 @@ function parseBlock(cursor, kind) {
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
       flushParagraph();
+      const scopeStartLine = cursor.index + 1;
       cursor.next();
       const children = parseBlock(cursor, "normal");
-      nodes.push({ type: "scope", title: "", id: undefined, children, hasHeading: false });
+      nodes.push({ type: "scope", title: "", id: undefined, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index });
       continue;
     }
 
@@ -136,6 +139,9 @@ function parseBlock(cursor, kind) {
       continue;
     }
 
+    if (!paragraphLines.length) {
+      paragraphStartLine = cursor.index + 1;
+    }
     paragraphLines.push(trimmedLeft.trim());
     cursor.next();
   }
@@ -145,6 +151,7 @@ function parseBlock(cursor, kind) {
 }
 
 function parseScope(cursor) {
+  const scopeStartLine = cursor.index + 1;
   const headingLine = cursor.current();
   cursor.next();
 
@@ -157,7 +164,9 @@ function parseScope(cursor) {
       title: parsedHeading.title,
       id: parsedHeading.id,
       children: [blockResult.children],
-      hasHeading: true
+      hasHeading: true,
+      lineStart: scopeStartLine,
+      lineEnd: cursor.index
     };
   }
 
@@ -166,7 +175,9 @@ function parseScope(cursor) {
     title: parsedHeading.title,
     id: parsedHeading.id,
     children: blockResult.children,
-    hasHeading: true
+    hasHeading: true,
+    lineStart: scopeStartLine,
+    lineEnd: cursor.index
   };
 }
 
@@ -215,11 +226,12 @@ function parseScopeBlock(cursor) {
     // Try to parse as inline block: { content }
     const inlineContent = tryParseInlineBlock(trimmed);
     if (inlineContent !== null) {
+      const inlineLine = cursor.index + 1;
       cursor.next();
       if (inlineContent === "") {
         return { blockType: "normal", children: [] };
       }
-      return { blockType: "normal", children: [{ type: "paragraph", text: inlineContent }] };
+      return { blockType: "normal", children: [{ type: "paragraph", text: inlineContent, lineStart: inlineLine, lineEnd: inlineLine }] };
     }
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
@@ -254,6 +266,7 @@ function parseListBlock(cursor, listType) {
 }
 
 function parseListBody(cursor, listType) {
+  const listStartLine = cursor.index + 1;
   const items = [];
 
   while (!cursor.eof()) {
@@ -296,21 +309,22 @@ function parseListBody(cursor, listType) {
     cursor.next();
   }
 
-  return { type: "list", listType, items };
+  return { type: "list", listType, items, lineStart: listStartLine, lineEnd: cursor.index };
 }
 
 function parseAnonymousListItem(cursor) {
+  const itemStartLine = cursor.index + 1;
   const line = cursor.current();
   const trimmed = line.replace(/^\s+/, "").trim();
   if (trimmed !== COMMAND_SCOPE_OPEN) {
     cursor.error("Expected '{' to start an anonymous list item.");
     cursor.next();
-    return { type: "scope", title: "", id: undefined, children: [], hasHeading: false };
+    return { type: "scope", title: "", id: undefined, children: [], hasHeading: false, lineStart: itemStartLine, lineEnd: cursor.index };
   }
 
   cursor.next();
   const children = parseBlock(cursor, "normal");
-  return { type: "scope", title: "", id: undefined, children, hasHeading: false };
+  return { type: "scope", title: "", id: undefined, children, hasHeading: false, lineStart: itemStartLine, lineEnd: cursor.index };
 }
 
 function getListItemInfo(line) {
@@ -326,6 +340,7 @@ function getListItemInfo(line) {
 }
 
 function parseListItemLine(cursor, info) {
+  const itemStartLine = cursor.index + 1;
   const raw = info.text;
   const task = parseTaskPrefix(raw);
   const parsed = task ? parseHeadingText(task.text) : parseHeadingText(raw);
@@ -339,7 +354,9 @@ function parseListItemLine(cursor, info) {
       id: parsed.id,
       children: [],
       hasHeading: true,
-      task: task ? { checked: task.checked } : undefined
+      task: task ? { checked: task.checked } : undefined,
+      lineStart: itemStartLine,
+      lineEnd: cursor.index
     };
   }
 
@@ -350,7 +367,9 @@ function parseListItemLine(cursor, info) {
       id: parsed.id,
       children: [block.children],
       hasHeading: true,
-      task: task ? { checked: task.checked } : undefined
+      task: task ? { checked: task.checked } : undefined,
+      lineStart: itemStartLine,
+      lineEnd: cursor.index
     };
   }
 
@@ -360,11 +379,14 @@ function parseListItemLine(cursor, info) {
     id: parsed.id,
     children: block.children,
     hasHeading: true,
-    task: task ? { checked: task.checked } : undefined
+    task: task ? { checked: task.checked } : undefined,
+    lineStart: itemStartLine,
+    lineEnd: cursor.index
   };
 }
 
 function parseImplicitListBlock(cursor, listType) {
+  const listStartLine = cursor.index + 1;
   const items = [];
   while (!cursor.eof()) {
     const line = cursor.current();
@@ -377,10 +399,11 @@ function parseImplicitListBlock(cursor, listType) {
     }
     items.push(parseListItemLine(cursor, info));
   }
-  return { type: "list", listType, items };
+  return { type: "list", listType, items, lineStart: listStartLine, lineEnd: cursor.index };
 }
 
 function parseTableBlock(cursor) {
+  const tableStartLine = cursor.index + 1;
   cursor.next();
   const rows = [];
 
@@ -405,7 +428,7 @@ function parseTableBlock(cursor) {
 
   const headers = rows.length > 0 ? rows[0] : [];
   const body = rows.slice(1);
-  return { type: "table", headers, rows: body };
+  return { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
 }
 
 function parseOptionalBlock(cursor) {
@@ -421,11 +444,12 @@ function parseOptionalBlock(cursor) {
     // Try to parse as inline block: { content }
     const inlineContent = tryParseInlineBlock(trimmed);
     if (inlineContent !== null) {
+      const inlineLine = cursor.index + 1;
       cursor.next();
       if (inlineContent === "") {
         return { blockType: "normal", children: [] };
       }
-      return { blockType: "normal", children: [{ type: "paragraph", text: inlineContent }] };
+      return { blockType: "normal", children: [{ type: "paragraph", text: inlineContent, lineStart: inlineLine, lineEnd: inlineLine }] };
     }
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
@@ -460,6 +484,7 @@ function parseTaskPrefix(raw) {
 }
 
 function parseCodeBlock(cursor) {
+  const codeStartLine = cursor.index + 1;
   const line = cursor.current();
   const trimmedLeft = line.replace(/^\s+/, "");
   const lang = trimmedLeft.slice(COMMAND_CODE_FENCE.length).trim() || undefined;
@@ -472,17 +497,18 @@ function parseCodeBlock(cursor) {
     const nextTrimmed = nextLine.replace(/^\s+/, "");
     if (nextTrimmed.startsWith(COMMAND_CODE_FENCE)) {
       cursor.next();
-      return { type: "code", lang, text: contentLines.join("\n") };
+      return { type: "code", lang, text: contentLines.join("\n"), lineStart: codeStartLine, lineEnd: cursor.index };
     }
     contentLines.push(nextLine);
     cursor.next();
   }
 
   cursor.error("Unterminated code fence.");
-  return { type: "code", lang, text: contentLines.join("\n") };
+  return { type: "code", lang, text: contentLines.join("\n"), lineStart: codeStartLine, lineEnd: cursor.index };
 }
 
 function parseBlockquote(cursor) {
+  const bqStartLine = cursor.index + 1;
   const paragraphs = [];
   let paragraphLines = [];
 
@@ -517,7 +543,7 @@ function parseBlockquote(cursor) {
   }
 
   flushParagraph();
-  return { type: "blockquote", paragraphs };
+  return { type: "blockquote", paragraphs, lineStart: bqStartLine, lineEnd: cursor.index };
 }
 
 function parseHeading(line) {
@@ -765,6 +791,19 @@ function findUnescaped(text, start, token) {
   return -1;
 }
 
+let _renderOptions = {};
+
+function dataLineAttrs(node) {
+  if (node.lineStart == null) {
+    return "";
+  }
+  let attrs = ` data-line="${node.lineStart}"`;
+  if (node.lineEnd != null && node.lineEnd !== node.lineStart) {
+    attrs += ` data-line-end="${node.lineEnd}"`;
+  }
+  return attrs;
+}
+
 function escapeHtml(value) {
   return value
     .replace(/&/g, "&amp;")
@@ -817,26 +856,31 @@ function renderScope(scope, depth, isTitleScope = false) {
   const level = Math.min(6, Math.max(1, depth));
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
   const rootClass = isTitleScope ? " sdoc-root" : "";
+  const dl = dataLineAttrs(scope);
 
   if (scope.hasHeading === false) {
-    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}">${children}</section>`;
+    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}"${dl}>${children}</section>`;
   }
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
-  const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}">${renderInline(scope.title)}</h${level}>`;
-  return `<section class="sdoc-scope${rootClass}">${heading}${children ? `\n${children}` : ""}</section>`;
+  const hasChildren = scope.children.length > 0;
+  const toggle = hasChildren ? `<span class="sdoc-toggle"></span>` : "";
+  const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}"${dl}>${toggle}${renderInline(scope.title)}</h${level}>`;
+  const childrenHtml = children ? `\n<div class="sdoc-scope-children">${children}</div>` : "";
+  return `<section class="sdoc-scope${rootClass}">${heading}${childrenHtml}</section>`;
 }
 
 function renderList(list, depth) {
-  return renderListFromItems(list.listType, list.items, depth);
+  return renderListFromItems(list.listType, list.items, depth, list);
 }
 
-function renderListFromItems(listType, items, depth) {
+function renderListFromItems(listType, items, depth, list) {
   const tag = listType === "number" ? "ol" : "ul";
+  const dl = list ? dataLineAttrs(list) : "";
   const renderedItems = items
     .map((item) => `<li class="sdoc-list-item">${renderListItem(item, listType, depth + 1)}</li>`)
     .join("\n");
-  return `<${tag} class="sdoc-list sdoc-list-${listType}">${renderedItems}</${tag}>`;
+  return `<${tag} class="sdoc-list sdoc-list-${listType}"${dl}>${renderedItems}</${tag}>`;
 }
 
 function renderListItem(scope, listType, depth) {
@@ -844,6 +888,7 @@ function renderListItem(scope, listType, depth) {
   const task = scope.task ? scope.task : null;
   const hasHeading = scope.hasHeading !== false && (scope.title.trim() !== "" || task);
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
+  const dl = dataLineAttrs(scope);
   let headingInner = renderInline(scope.title);
   if (task) {
     const checked = task.checked ? " checked" : "";
@@ -854,9 +899,10 @@ function renderListItem(scope, listType, depth) {
   if (!hasHeading) {
     heading = "";
   } else if (isSimple) {
-    heading = `<span${idAttr} class="sdoc-list-item-text">${headingInner}</span>`;
+    heading = `<span${idAttr} class="sdoc-list-item-text"${dl}>${headingInner}</span>`;
   } else {
-    heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}">${headingInner}</h${level}>`;
+    const toggle = `<span class="sdoc-toggle"></span>`;
+    heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}"${dl}>${toggle}${headingInner}</h${level}>`;
   }
   const bodyParts = [];
   let pendingScopes = [];
@@ -882,12 +928,13 @@ function renderListItem(scope, listType, depth) {
   flushPending();
 
   const body = bodyParts.join("\n");
-  const bodyWrapper = body ? `\n<div class="sdoc-list-item-body">${body}</div>` : "";
+  const bodyWrapper = body ? `\n<div class="sdoc-list-item-body sdoc-scope-children">${body}</div>` : "";
   const scopeClass = hasHeading ? "sdoc-scope" : "sdoc-scope sdoc-scope-noheading";
   return `<section class="${scopeClass}">${heading}${bodyWrapper}</section>`;
 }
 
 function renderTable(table) {
+  const dl = dataLineAttrs(table);
   const headerCells = table.headers
     .map((cell) => `<th class="sdoc-table-th">${renderInline(cell)}</th>`)
     .join("");
@@ -903,10 +950,11 @@ function renderTable(table) {
     .join("\n");
   const tbody = bodyRows ? `<tbody class="sdoc-table-body">${bodyRows}</tbody>` : "";
 
-  return `<table class="sdoc-table">${thead}\n${tbody}</table>`;
+  return `<table class="sdoc-table"${dl}>${thead}\n${tbody}</table>`;
 }
 
 function renderNode(node, depth) {
+  const dl = dataLineAttrs(node);
   switch (node.type) {
     case "scope":
       return renderScope(node, depth);
@@ -918,15 +966,17 @@ function renderNode(node, depth) {
       const paragraphs = node.paragraphs
         .map((text) => `<p class="sdoc-paragraph">${renderInline(text)}</p>`)
         .join("\n");
-      return `<blockquote class="sdoc-blockquote">${paragraphs}</blockquote>`;
+      return `<blockquote class="sdoc-blockquote"${dl}>${paragraphs}</blockquote>`;
     }
     case "hr":
-      return `<hr class="sdoc-rule" />`;
-    case "paragraph":
-      return `<p class="sdoc-paragraph">${renderInline(node.text)}</p>`;
+      return `<hr class="sdoc-rule"${dl} />`;
+    case "paragraph": {
+      const editable = _renderOptions.editable ? ` contenteditable="true"` : "";
+      return `<p class="sdoc-paragraph"${dl}${editable}>${renderInline(node.text)}</p>`;
+    }
     case "code": {
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
-      return `<pre class="sdoc-code"><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
+      return `<pre class="sdoc-code"${dl}><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
     }
     default:
       return "";
@@ -1274,6 +1324,7 @@ const DEFAULT_STYLE = `
 `;
 
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
+  _renderOptions = options.renderOptions ?? {};
   const body = parsed.nodes
     .map((node, index) => {
       if (node.type === "scope" && index === 0) {
@@ -1282,6 +1333,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
       return renderNode(node, 1);
     })
     .join("\n");
+  _renderOptions = {};
   const errorHtml = renderErrors(parsed.errors);
 
   const meta = options.meta ?? {};
@@ -1291,6 +1343,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
+  const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1312,7 +1365,7 @@ ${cssBase}${cssAppend}
       </main>
     </div>
     ${footerHtml ? `<footer class="sdoc-page-footer">${footerHtml}</footer>` : ""}
-  </div>
+  </div>${scriptTag}
 </body>
 </html>`;
 }

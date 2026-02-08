@@ -38,6 +38,17 @@ code --install-extension dist/sdoc-0.0.3.vsix
         The preview updates live as you edit.
     }
 
+    # Interactive Preview
+    {
+        The preview panel supports interactive features:
+
+        {[.]
+            - **Click-to-navigate**: click any element in the preview to jump to its source line in the editor
+            - **Collapsible scopes**: hover over a heading with children to reveal a toggle triangle. Click it to collapse or expand the section. Collapse state persists across refreshes.
+            - **Inline editing**: click a paragraph to edit it directly in the preview. Press Enter or click away to save changes back to the source file. Press Escape to cancel.
+        }
+    }
+
     # Configuration
     {
         Place a `sdoc.config.json` in your project root to set defaults for all documents:

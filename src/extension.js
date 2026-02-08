@@ -7,6 +7,7 @@ const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
 
 const panels = new Map();
+let suppressNextUpdate = false;
 
 function activate(context) {
   const previewCommand = vscode.commands.registerCommand("sdoc.preview", () => {
@@ -40,6 +41,10 @@ function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.languageId !== "sdoc") {
+        return;
+      }
+      if (suppressNextUpdate) {
+        suppressNextUpdate = false;
         return;
       }
       updatePreview(event.document);
@@ -103,11 +108,15 @@ function showPreview(document, viewColumn) {
     buildTitle(document.uri),
     viewColumn ?? vscode.ViewColumn.Active,
     {
-      enableScripts: false,
+      enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: localRoots
     }
   );
+
+  panel.webview.onDidReceiveMessage((message) => {
+    handleWebviewMessage(message, document);
+  });
 
   panel.onDidDispose(() => {
     panels.delete(key);
@@ -115,6 +124,51 @@ function showPreview(document, viewColumn) {
 
   panels.set(key, panel);
   updatePreview(document);
+}
+
+function handleWebviewMessage(message, document) {
+  switch (message.type) {
+    case "navigateToLine":
+      navigateToLine(document, message.line);
+      break;
+    case "editParagraph":
+      editParagraphInSource(document, message.lineStart, message.lineEnd, message.newText);
+      break;
+  }
+}
+
+function navigateToLine(document, line) {
+  const lineIndex = Math.max(0, line - 1);
+  const position = new vscode.Position(lineIndex, 0);
+  const selection = new vscode.Selection(position, position);
+  vscode.window.showTextDocument(document.uri, {
+    viewColumn: vscode.ViewColumn.One,
+    selection,
+    preserveFocus: false
+  });
+}
+
+function editParagraphInSource(document, lineStart, lineEnd, newText) {
+  const startIndex = Math.max(0, lineStart - 1);
+  const endIndex = Math.max(0, lineEnd - 1);
+
+  const firstLine = document.lineAt(startIndex);
+  const indentMatch = firstLine.text.match(/^(\s*)/);
+  const indent = indentMatch ? indentMatch[1] : "";
+
+  const newLines = newText.split("\n").map((l, i) => (i === 0 ? indent + l : indent + l));
+  const newContent = newLines.join("\n");
+
+  const range = new vscode.Range(
+    new vscode.Position(startIndex, 0),
+    new vscode.Position(endIndex, document.lineAt(endIndex).text.length)
+  );
+
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(document.uri, range, newContent);
+
+  suppressNextUpdate = true;
+  vscode.workspace.applyEdit(edit);
 }
 
 function updatePreview(document) {
@@ -130,6 +184,176 @@ function updatePreview(document) {
 function buildTitle(uri) {
   const name = uri.fsPath ? path.basename(uri.fsPath) : uri.path.split("/").pop() ?? "SDOC";
   return `SDOC Preview: ${name}`;
+}
+
+function buildWebviewScript() {
+  return `
+(function() {
+  const vscodeApi = acquireVsCodeApi();
+
+  // Click-to-navigate
+  document.addEventListener('click', function(e) {
+    // Skip if clicking inside contenteditable or toggle
+    if (e.target.closest('[contenteditable]') && !e.target.classList.contains('sdoc-toggle')) {
+      return;
+    }
+    if (e.target.classList.contains('sdoc-toggle')) {
+      return;
+    }
+    const el = e.target.closest('[data-line]');
+    if (el) {
+      const line = parseInt(el.getAttribute('data-line'), 10);
+      if (!isNaN(line)) {
+        vscodeApi.postMessage({ type: 'navigateToLine', line: line });
+      }
+    }
+  });
+
+  // Collapsible scopes
+  document.addEventListener('click', function(e) {
+    if (!e.target.classList.contains('sdoc-toggle')) {
+      return;
+    }
+    e.stopPropagation();
+    const scope = e.target.closest('.sdoc-scope');
+    if (scope) {
+      scope.classList.toggle('sdoc-collapsed');
+      saveCollapseState();
+    }
+  });
+
+  function saveCollapseState() {
+    const collapsed = [];
+    document.querySelectorAll('.sdoc-scope.sdoc-collapsed').forEach(function(el) {
+      const heading = el.querySelector(':scope > .sdoc-heading');
+      if (!heading) return;
+      const id = heading.getAttribute('id');
+      const line = heading.getAttribute('data-line');
+      collapsed.push(id || ('line:' + line));
+    });
+    vscodeApi.setState({ collapsed: collapsed });
+  }
+
+  function restoreCollapseState() {
+    const state = vscodeApi.getState();
+    if (!state || !state.collapsed) return;
+    state.collapsed.forEach(function(key) {
+      var el;
+      if (key.startsWith('line:')) {
+        var line = key.slice(5);
+        var heading = document.querySelector('.sdoc-heading[data-line="' + line + '"]');
+        el = heading ? heading.closest('.sdoc-scope') : null;
+      } else {
+        var heading = document.getElementById(key);
+        el = heading ? heading.closest('.sdoc-scope') : null;
+      }
+      if (el) {
+        el.classList.add('sdoc-collapsed');
+      }
+    });
+  }
+
+  restoreCollapseState();
+
+  // Inline editing
+  document.addEventListener('focusout', function(e) {
+    var el = e.target;
+    if (el.tagName !== 'P' || !el.classList.contains('sdoc-paragraph') || !el.hasAttribute('contenteditable')) {
+      return;
+    }
+    var lineStart = parseInt(el.getAttribute('data-line'), 10);
+    var lineEnd = parseInt(el.getAttribute('data-line-end') || el.getAttribute('data-line'), 10);
+    if (isNaN(lineStart)) return;
+    var newText = el.innerText;
+    vscodeApi.postMessage({ type: 'editParagraph', lineStart: lineStart, lineEnd: lineEnd, newText: newText });
+  });
+
+  document.addEventListener('keydown', function(e) {
+    var el = e.target;
+    if (!el.hasAttribute('contenteditable')) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      el.blur();
+    }
+    if (e.key === 'Escape') {
+      el.blur();
+    }
+  });
+})();
+`;
+}
+
+function buildInteractiveCss() {
+  return `
+  /* Interactive preview styles */
+  [data-line] {
+    cursor: pointer;
+  }
+
+  [data-line]:hover {
+    outline: 1px dashed var(--sdoc-border);
+    outline-offset: 2px;
+  }
+
+  p.sdoc-paragraph[contenteditable]:hover {
+    outline: 1px solid var(--sdoc-border);
+    outline-offset: 2px;
+  }
+
+  p.sdoc-paragraph[contenteditable]:focus {
+    outline: 2px solid var(--sdoc-accent);
+    outline-offset: 2px;
+    cursor: text;
+  }
+
+  /* Collapsible scope toggles */
+  .sdoc-heading:has(.sdoc-toggle) {
+    position: relative;
+  }
+
+  .sdoc-toggle {
+    position: absolute;
+    left: -1.4em;
+    top: 0;
+    bottom: 0;
+    width: 1.2em;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .sdoc-toggle::before {
+    content: '';
+    display: block;
+    width: 0.45em;
+    height: 0.45em;
+    border-right: 2px solid var(--sdoc-muted);
+    border-bottom: 2px solid var(--sdoc-muted);
+    transition: transform 0.15s;
+    transform: rotate(45deg);
+    position: absolute;
+    top: 0.18em;
+    left: 50%;
+    margin-left: -0.3em;
+  }
+
+  .sdoc-scope:hover > .sdoc-heading > .sdoc-toggle {
+    opacity: 1;
+  }
+
+  .sdoc-scope.sdoc-collapsed > .sdoc-heading > .sdoc-toggle {
+    opacity: 0.6;
+  }
+
+  .sdoc-scope.sdoc-collapsed > .sdoc-heading > .sdoc-toggle::before {
+    transform: rotate(-45deg);
+    margin-left: -0.15em;
+  }
+
+  .sdoc-scope.sdoc-collapsed > .sdoc-scope-children {
+    display: none;
+  }
+`;
 }
 
 function buildHtml(document, title, webview) {
@@ -151,6 +375,7 @@ function buildHtml(document, title, webview) {
   if (metaStyles.styleAppendCss) {
     cssAppendParts.push(metaStyles.styleAppendCss);
   }
+  cssAppendParts.push(buildInteractiveCss());
 
   let html = renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
@@ -159,7 +384,9 @@ function buildHtml(document, title, webview) {
       meta: metaResult.meta,
       config,
       cssOverride: cssOverride || undefined,
-      cssAppend: cssAppendParts.join("\n")
+      cssAppend: cssAppendParts.join("\n"),
+      script: buildWebviewScript(),
+      renderOptions: { editable: true }
     }
   );
 

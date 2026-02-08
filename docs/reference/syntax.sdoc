@@ -18,6 +18,8 @@
             - IDs may contain letters, digits, underscores, and hyphens (must start with a letter or underscore)
         }
 
+        In the VSCode interactive preview, scopes with children display a collapsible toggle triangle on hover. Clicking the triangle collapses or expands the scope's children. Collapse state persists across preview refreshes.
+
         # Headingless Scopes
         {
             A bare `{` block without a preceding heading creates a scope with no heading:

@@ -396,6 +396,44 @@
         }
     }
 
+    # Interactive Preview @interactive-preview
+    {
+        The VSCode extension provides an interactive preview with the following features. These are preview-only behaviours and do not affect the SDOC format or static HTML export.
+
+        # Collapsible Scopes @collapsible-scopes
+        {
+            Scope headings that have children display a toggle triangle, visible on hover. Clicking the triangle collapses the scope's children (hides the content below the heading). Clicking again expands them.
+
+            {[.]
+                - The triangle points right when collapsed, down when expanded
+                - Collapse state is preserved across preview refreshes using webview state
+                - Scopes are identified by their `@id` if present, otherwise by source line number
+                - Only scopes with children show the toggle
+            }
+        }
+
+        # Click-to-Navigate @click-to-navigate
+        {
+            Clicking any rendered element in the preview (heading, paragraph, code block, blockquote, list item, table, horizontal rule) navigates the editor cursor to the corresponding source line in the SDOC file.
+
+            {[.]
+                - Each rendered element carries a `data-line` attribute with its 1-indexed source line number
+                - Clicking inside an editable paragraph or on a collapse toggle does not trigger navigation
+            }
+        }
+
+        # Inline Text Editing @inline-editing
+        {
+            Paragraphs in the preview are directly editable. Clicking a paragraph gives it focus with a visible outline. Typing changes the text, and pressing Enter or clicking away writes the change back to the source file.
+
+            {[.]
+                - Only paragraph elements are editable (not headings, code blocks, etc.)
+                - Inline formatting (`*bold*`, `@ref`) in the original source is lost if the user edits text that contained it
+                - Escape also blurs the paragraph (discarding focus without triggering a save of the current edit state)
+            }
+        }
+    }
+
     # Parsing Rules @parsing-rules
     {
         Command tokens are recognised only at the start of a line (after optional indentation):

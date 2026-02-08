@@ -14,7 +14,7 @@
             - [x] v0.1 spec drafted (specification.sdoc)
             - [x] Abstract requirements defined (requirements.sdoc, R1-R10)
             - [x] Concrete requirements defined (requirements.sdoc, C1-C5)
-            - [x] Feature suggestions documented (suggestions.sdoc, S1-S9)
+            - [x] Feature suggestions documented (suggestions.sdoc, S2-S9)
             - [x] Project folder separated from user docs
         }
 
@@ -46,6 +46,10 @@
             - [x] Web viewer
             - [x] VSIX packaging for extension distribution
             - [x] Language registration (.sdoc file type recognition in VSCode)
+            - [x] Interactive preview: click-to-navigate (click element to jump to source line)
+            - [x] Interactive preview: collapsible scopes (toggle triangles on headings, persistent state)
+            - [x] Interactive preview: inline text editing (edit paragraphs directly in preview)
+            - [x] Parser line tracking (lineStart/lineEnd on all AST nodes)
         }
 
         # Repository
@@ -84,9 +88,9 @@
         {
             These are the suggestions most needed to make SDOC viable across all three use cases. See suggestions.sdoc for full details.
 
-            - [ ] Document metadata (@s2) — extend @meta with well-known keys (author, date, version, status, tags)
-            - [ ] Comments (@s3) — currently an open question in the spec
-            - [ ] Semantic scope types (@s4) — type annotations on scopes for AI agent consumption
+            - [ ] Document metadata (@s2) -- extend @meta with well-known keys (author, date, version, status, tags)
+            - [ ] Comments (@s3) -- currently an open question in the spec
+            - [ ] Semantic scope types (@s4) -- type annotations on scopes for AI agent consumption
         }
 
         # Export Pipeline

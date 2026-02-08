@@ -7,41 +7,6 @@
         When a suggestion is accepted and implemented, it should be moved into specification.sdoc and removed from this document.
     }
 
-    # S1: Tables @s1
-    {
-        Priority: High
-        Serves: @r6, @r7
-
-        The v0.1 spec has no table support. Tables are common in project documentation (comparison matrices, status tracking), software specs (requirement matrices), and formal documents (financial summaries, regulatory data).
-
-        Suggested approach: a table is a scoped structure, consistent with the SDOC philosophy.
-
-        ```
-        # Comparison @comparison
-        {[table]
-            {[header]
-                - Feature
-                - Status
-                - Notes
-            }
-            {[row]
-                - Authentication
-                - Complete
-                - Uses OAuth 2.0
-            }
-            {[row]
-                - Permissions
-                - In Progress
-                - Blocked by auth
-            }
-        }
-        ```
-
-        This follows the existing pattern of scope type markers like {[.]} and {[#]}. The header and row markers make the structure explicit and parseable. Each cell is a list item, so inline formatting works naturally.
-
-        Alternative: a lighter pipe syntax for simple tables, with the scoped syntax for complex ones. But this may conflict with @r1 (unambiguity) and @r8 (simplicity) simultaneously, so the scoped approach may be cleaner even if more verbose.
-    }
-
     # S2: Document Metadata Beyond Styling @s2
     {
         Priority: High

@@ -157,9 +157,7 @@
 
             # Extras
             {
-                Inline formatting: *emphasis*, **strong**, ~~strike~~, `code`.
-                External links: [SDOC](https://example.com), <https://example.com>, and <mailto:hello@example.com>.
-
+                Inline formatting: emphasis, strong, strike, code. External links: SDOC, https://example.com, and mailto:hello@example.com.
                 ---
 
                 > This is a quote block.

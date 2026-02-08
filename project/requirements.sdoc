@@ -138,5 +138,20 @@
 
             Whitespace and indentation have no structural meaning. They are cosmetic conventions to aid readability. The parser must never use indentation to determine scope depth or structure.
         }
+
+        # C6: Interactive Preview @c6
+        {
+            Supports: @r2, @r5
+
+            The VSCode preview must support interactive features that tighten the feedback loop between editing and viewing:
+
+            {[.]
+                - Collapsible scopes: scope headings with children display a toggle triangle (visible on hover) that collapses/expands the scope's children. Collapse state persists across preview refreshes.
+                - Click-to-navigate: clicking any rendered element in the preview jumps the editor cursor to the corresponding source line.
+                - Inline text editing: paragraph text is directly editable in the preview. Changes are written back to the source file.
+            }
+
+            These features are preview-only and do not affect the SDOC format or static HTML export.
+        }
     }
 }
