@@ -59,12 +59,11 @@
   </div>
 
   <script src="sdoc-web.js"></script>
-  <script src="sdoc-data.js"></script>
   <script>
-    const data = window.SDOC_DATA || {};
-    const docs = data.docs || [];
-    const cssMap = data.cssMap || {};
-    const rootDocId = data.rootDocId || (docs[0] && docs[0].id);
+    let docs = [];
+    let cssMap = {};
+    let rootDocId = null;
+    const contentCache = new Map();
 
     const app = document.getElementById("app");
     const treeRoot = document.getElementById("tree");
@@ -187,8 +186,21 @@
       return css.join("\n");
     }
 
-    function renderDoc(doc) {
-      const parsed = window.SDOC.parseSdoc(doc.content);
+    async function fetchContent(doc) {
+      if (contentCache.has(doc.id)) {
+        return contentCache.get(doc.id);
+      }
+      const resp = await fetch("/api/content?path=" + encodeURIComponent(doc.path));
+      if (!resp.ok) {
+        throw new Error("Failed to fetch " + doc.path + ": " + resp.status);
+      }
+      const content = await resp.text();
+      contentCache.set(doc.id, content);
+      return content;
+    }
+
+    function renderDocFromContent(doc, content) {
+      const parsed = window.SDOC.parseSdoc(content);
       const metaResult = window.SDOC.extractMeta(parsed.nodes);
       const cssOverride = resolveCss(doc, metaResult.meta);
       const cssAppend = resolveCssAppend(doc, metaResult.meta);
@@ -226,7 +238,14 @@
 
     function ensureShadowRoot(pane) {
       if (pane.shadowRoot) return pane.shadowRoot;
-      return pane.attachShadow({ mode: "open" });
+      const shadow = pane.attachShadow({ mode: "open" });
+      shadow.addEventListener("click", function(e) {
+        if (!e.target.classList.contains("sdoc-toggle")) return;
+        e.stopPropagation();
+        var scope = e.target.closest(".sdoc-scope");
+        if (scope) scope.classList.toggle("sdoc-collapsed");
+      });
+      return shadow;
     }
 
     function setEmptyState(emptyEl, isVisible) {
@@ -262,16 +281,16 @@
       return raw;
     }
 
-    function selectDocById(id) {
+    async function selectDocById(id) {
       const doc = findDocById(id);
       if (!doc) return false;
       selection.a = doc;
       selection.b = null;
-      updateLayout("single");
+      await updateLayout("single");
       return true;
     }
 
-    function updatePane(pane, emptyEl, doc) {
+    async function updatePane(pane, emptyEl, doc) {
       if (!doc) {
         if (pane.shadowRoot) {
           pane.shadowRoot.innerHTML = "";
@@ -284,7 +303,8 @@
       setEmptyState(emptyEl, false);
       let html = "";
       try {
-        html = renderDoc(doc);
+        const content = await fetchContent(doc);
+        html = renderDocFromContent(doc, content);
       } catch (err) {
         renderPaneError(pane, err && err.message ? err.message : err);
         return;
@@ -292,10 +312,19 @@
       const parts = parseDocHtml(html);
       const shadow = ensureShadowRoot(pane);
       const scopedCss = scopeCssForShadow(parts.css);
-      shadow.innerHTML = `<style>${scopedCss}</style>${parts.bodyHtml}`;
+      const collapseCss = `
+        .sdoc-heading:has(.sdoc-toggle) { position: relative; }
+        .sdoc-toggle { position: absolute; left: -1.4em; top: 0; bottom: 0; width: 1.2em; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+        .sdoc-toggle::before { content: ''; display: block; width: 0.45em; height: 0.45em; border-right: 2px solid var(--sdoc-muted, #94a3b8); border-bottom: 2px solid var(--sdoc-muted, #94a3b8); transition: transform 0.15s; transform: rotate(45deg); position: absolute; top: 0.18em; left: 50%; margin-left: -0.3em; }
+        .sdoc-scope:hover > .sdoc-heading > .sdoc-toggle { opacity: 1; }
+        .sdoc-scope.sdoc-collapsed > .sdoc-heading > .sdoc-toggle { opacity: 0.6; }
+        .sdoc-scope.sdoc-collapsed > .sdoc-heading > .sdoc-toggle::before { transform: rotate(-45deg); margin-left: -0.15em; }
+        .sdoc-scope.sdoc-collapsed > .sdoc-scope-children { display: none; }
+      `;
+      shadow.innerHTML = `<style>${scopedCss}\n${collapseCss}</style>${parts.bodyHtml}`;
     }
 
-    function updateLayout(layout) {
+    async function updateLayout(layout) {
       currentLayout = layout;
       panes.className = "";
       panes.classList.add(`layout-${layout}`);
@@ -308,7 +337,7 @@
       if (layout === "single") {
         selection.b = null;
       }
-      updateUI();
+      await updateUI();
     }
 
     function updateSelectionChips() {
@@ -330,21 +359,21 @@
       });
     }
 
-    function updateUI() {
+    async function updateUI() {
       updateSelectionChips();
       updateTreeHighlight();
       docTitle.textContent = selection.a ? selection.a.title : "Select a document";
 
-      updatePane(paneA, emptyA, selection.a);
+      await updatePane(paneA, emptyA, selection.a);
 
       if (currentLayout === "single") {
-        updatePane(paneB, emptyB, null);
+        await updatePane(paneB, emptyB, null);
       } else {
-        updatePane(paneB, emptyB, selection.b);
+        await updatePane(paneB, emptyB, selection.b);
       }
     }
 
-    function handleDocClick(doc, isShift) {
+    async function handleDocClick(doc, isShift) {
       if (isShift) {
         if (selection.b && selection.b.id === doc.id) {
           selection.b = null;
@@ -356,9 +385,9 @@
           selection.b = doc;
         }
         if (selection.b && currentLayout === "single") {
-          updateLayout(preferredSplit);
+          await updateLayout(preferredSplit);
         } else {
-          updateUI();
+          await updateUI();
         }
         return;
       }
@@ -366,9 +395,9 @@
       selection.a = doc;
       selection.b = null;
       if (currentLayout !== "single") {
-        updateLayout("single");
+        await updateLayout("single");
       } else {
-        updateUI();
+        await updateUI();
       }
     }
 
@@ -411,28 +440,42 @@
       filterTree(e.target.value);
     });
 
-    const tree = buildTree();
-    renderTree(tree, treeRoot);
-
-    window.addEventListener("hashchange", () => {
-      const hashId = docIdFromHash();
-      if (hashId) {
-        selectDocById(hashId);
+    async function init() {
+      const resp = await fetch("/api/manifest");
+      if (!resp.ok) {
+        document.getElementById("docTitle").textContent = "Failed to load manifest";
+        return;
       }
-    });
+      const data = await resp.json();
+      docs = data.docs || [];
+      cssMap = data.cssMap || {};
+      rootDocId = data.rootDocId || (docs[0] && docs[0].id);
 
-    const initialHashId = docIdFromHash();
-    if (!(initialHashId && selectDocById(initialHashId))) {
-      if (rootDocId) {
-        const rootDoc = findDocById(rootDocId);
-        if (rootDoc) {
-          selection.a = rootDoc;
+      const tree = buildTree();
+      renderTree(tree, treeRoot);
+
+      window.addEventListener("hashchange", async () => {
+        const hashId = docIdFromHash();
+        if (hashId) {
+          await selectDocById(hashId);
         }
-      } else if (docs.length) {
-        selection.a = docs[0];
+      });
+
+      const initialHashId = docIdFromHash();
+      if (!(initialHashId && await selectDocById(initialHashId))) {
+        if (rootDocId) {
+          const rootDoc = findDocById(rootDocId);
+          if (rootDoc) {
+            selection.a = rootDoc;
+          }
+        } else if (docs.length) {
+          selection.a = docs[0];
+        }
+        await updateLayout("single");
       }
-      updateLayout("single");
     }
+
+    init();
   </script>
 </body>
 </html>

@@ -29,7 +29,7 @@ docs/               User-facing documentation
 
 src/                Source code
   sdoc.js             Parser and HTML renderer (~1500 lines)
-  extension.js        VSCode extension (~900 lines)
+  extension.js        VSCode extension with live preview and document server
   site-template/      Shared viewer templates (index.html, viewer.css)
 
 test/               Test files
@@ -37,10 +37,10 @@ test/               Test files
   test-knr.js         K&R brace placement tests (node test/test-knr.js)
   test-inline-blocks.sdoc  Inline block parsing fixture
   test-edge-cases.sdoc     Edge case parsing fixture
-tools/              Build tools (static site generator)
-  build_site.py       CLI to build a self-contained static SDOC viewer site
+tools/              CLI tools
+  serve_docs.py       CLI to start a local SDOC document server
 dist/               Build output (gitignored)
-_sdoc_site/         Generated static site output (gitignored)
+_sdoc_site/         Legacy static site output (gitignored)
 
 
 BEFORE MAKING CHANGES
@@ -103,23 +103,18 @@ FILE CONVENTIONS
 - User docs go in docs/, spec and governance docs go in spec/
 
 
-STATIC SITE BUILDER
--------------------
+DOCUMENT SERVER
+---------------
 
-Two ways to build a self-contained static SDOC viewer site:
+Two ways to browse all .sdoc files with a local HTTP server:
 
-Python CLI (tools/build_site.py):
-  python tools/build_site.py                        # build current dir → _sdoc_site/
-  python tools/build_site.py docs/                  # build docs/ → docs/_sdoc_site/
-  python tools/build_site.py docs/ -o out/          # build docs/ → out/
+Python CLI (tools/serve_docs.py):
+  python tools/serve_docs.py                        # serve current dir on :4070
+  python tools/serve_docs.py docs/ -p 8080          # serve docs/ on :8080
 
 VSCode command:
-  "SDOC: Build Site" from the command palette builds all .sdoc files
-  in the workspace into _sdoc_site/ at the workspace root.
+  "SDOC: Browse Documents" from the command palette starts a local
+  server and opens the viewer in the browser.
 
-Both produce the same output:
-  _sdoc_site/
-    index.html      ← viewer shell
-    viewer.css      ← viewer styles
-    sdoc-web.js     ← parser/renderer for browser
-    sdoc-data.js    ← bundled document content + configs
+The server serves files directly from the source directory.
+Edits are reflected on browser refresh (no build step needed).

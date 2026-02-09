@@ -84,17 +84,17 @@ code --install-extension dist/sdoc-0.0.3.vsix
         See `examples/sdoc.config.json` for a sample config and `examples/sdoc.template.css` for the default theme.
     }
 
-    # Static Site Viewer
+    # Document Server
     {
-        Build a browsable HTML viewer for all `.sdoc` files in the project:
+        Browse all `.sdoc` files in the project with a local HTTP server:
 
         ```bash
-python3 tools/build_site.py                    # current dir -> _sdoc_site/
-python3 tools/build_site.py docs/ -o out/      # docs/ -> out/
+python3 tools/serve_docs.py                    # serve current dir on :4070
+python3 tools/serve_docs.py docs/ -p 8080      # serve docs/ on :8080
         ```
 
-        Or use the **SDOC: Build Site** command from the VSCode Command Palette. It prompts you to build from the entire workspace or choose a specific subfolder.
+        Or use the **SDOC: Browse Documents** command from the VSCode Command Palette. It prompts you to serve from the entire workspace or choose a specific subfolder.
 
-        Open `_sdoc_site/index.html` in a browser. The viewer has a sidebar with search, split-pane comparison, and renders all discovered `.sdoc` files.
+        The viewer opens in your browser with a sidebar, search, and split-pane comparison. Edits to `.sdoc` files are reflected on browser refresh.
     }
 }

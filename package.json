@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "Preview SDOC files.",
-  "version": "0.0.21",
+  "version": "0.0.23",
   "publisher": "local",
   "engines": {
     "vscode": "^1.80.0"
@@ -16,7 +16,7 @@
     "onCommand:sdoc.previewToSide",
     "onCommand:sdoc.exportHtml",
     "onCommand:sdoc.openInBrowser",
-    "onCommand:sdoc.buildSite"
+    "onCommand:sdoc.browseDocs"
   ],
   "scripts": {
     "package": "npx vsce package --out dist/ --allow-missing-repository"
@@ -62,8 +62,8 @@
         "icon": "$(link-external)"
       },
       {
-        "command": "sdoc.buildSite",
-        "title": "SDOC: Build Site"
+        "command": "sdoc.browseDocs",
+        "title": "SDOC: Browse Documents"
       }
     ],
     "menus": {

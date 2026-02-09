@@ -45,10 +45,10 @@
             - [x] Per-file meta scope overrides (@meta for style, header, footer)
             - [x] TextMate syntax highlighting grammar (syntaxes/sdoc.tmLanguage.json)
             - [x] Local and remote image rendering in webview preview
-            - [x] Static site builder: Python CLI (tools/build_site.py) with argparse
-            - [x] Static site builder: VSCode command (sdoc.buildSite) with folder picker
-            - [x] Web viewer with sidebar, search, split-pane comparison
-            - [x] Site template deduplication (src/site-template/ shared by both builders)
+            - [x] Document server: Python CLI (tools/serve_docs.py) with argparse
+            - [x] Document server: VSCode command (sdoc.browseDocs) with folder picker and status bar
+            - [x] Web viewer with sidebar, search, split-pane comparison, collapsible scopes
+            - [x] Site template deduplication (src/site-template/ shared by both servers)
             - [x] VSIX packaging for extension distribution
             - [x] Language registration (.sdoc file type recognition in VSCode)
             - [x] Interactive preview: click-to-navigate (click element to jump to source line)

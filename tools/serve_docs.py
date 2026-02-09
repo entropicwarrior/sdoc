@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import http.server
 import json
 import os
-import shutil
 import sys
+import webbrowser
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import parse_qs, urlparse
 
 
 CONFIG_FILENAME = "sdoc.config.json"
@@ -54,10 +56,6 @@ def rel_posix(path: Path, root: Path) -> Optional[str]:
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
-
-
-def write_text(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8")
 
 
 def is_heading_line(line: str) -> bool:
@@ -258,39 +256,29 @@ def choose_root_doc(docs: List[Dict]) -> Optional[str]:
 
 def build_css_map(paths: List[Path], root: Path) -> Dict[str, str]:
     css_map: Dict[str, str] = {}
-    for path in paths:
-        rel = rel_posix(path, root)
+    for p in paths:
+        rel = rel_posix(p, root)
         if not rel:
             continue
         if rel in css_map:
             continue
         try:
-            css_map[rel] = read_text(path)
+            css_map[rel] = read_text(p)
         except OSError:
             continue
     return css_map
 
 
-def build_site(source_dir: Path, output_dir: Path) -> None:
+def build_manifest(source_dir: Path) -> Dict:
     source_dir = source_dir.resolve()
-    output_dir = output_dir.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    sdoc_js_path = find_sdoc_js(source_dir)
-    sdoc_web_source = read_text(sdoc_js_path)
-    sdoc_web_source = sdoc_web_source.replace("module.exports = {", "window.SDOC = {")
-    write_text(output_dir / "sdoc-web.js", sdoc_web_source)
-
-    template_dir = find_site_template_dir(source_dir)
-
     docs = []
     css_paths: List[Path] = []
 
     for sdoc_path in collect_sdoc_files(source_dir):
         content = read_text(sdoc_path)
         title = extract_title(content)
-        rel_path = rel_posix(sdoc_path, source_dir)
-        if not rel_path:
+        rp = rel_posix(sdoc_path, source_dir)
+        if not rp:
             continue
 
         config = load_config_chain(sdoc_path, source_dir)
@@ -321,12 +309,12 @@ def build_site(source_dir: Path, output_dir: Path) -> None:
             if style_path.exists():
                 css_paths.append(style_path)
 
+        doc_dir = Path(rp).parent.as_posix()
         docs.append({
-            "id": rel_path,
-            "path": rel_path,
-            "dir": "" if Path(rel_path).parent.as_posix() == "." else str(Path(rel_path).parent.as_posix()),
+            "id": rp,
+            "path": rp,
+            "dir": "" if doc_dir == "." else doc_dir,
             "title": title,
-            "content": content,
             "config": {
                 "header": config.get("header", ""),
                 "footer": config.get("footer", ""),
@@ -336,29 +324,100 @@ def build_site(source_dir: Path, output_dir: Path) -> None:
         })
 
     css_map = build_css_map(css_paths, source_dir)
-
-    from datetime import datetime, timezone
-
     root_doc_id = choose_root_doc(docs)
 
-    data = {
-        "root": source_dir.name,
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+    return {
         "rootDocId": root_doc_id,
         "docs": docs,
         "cssMap": css_map
     }
 
-    write_text(output_dir / "sdoc-data.js", "window.SDOC_DATA = " + json.dumps(data, ensure_ascii=False) + ";")
-    shutil.copy2(template_dir / "viewer.css", output_dir / "viewer.css")
-    shutil.copy2(template_dir / "index.html", output_dir / "index.html")
 
-    print(f"Built {len(docs)} documents \u2192 {output_dir}")
+class SdocHandler(http.server.BaseHTTPRequestHandler):
+    source_dir: Path
+    template_dir: Path
+    sdoc_js_path: Path
+
+    def log_message(self, format, *args):
+        # Quieter logging: just method + path
+        sys.stderr.write(f"{args[0]}\n")
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        pathname = parsed.path
+
+        if pathname in ("/", "/index.html"):
+            self._serve_file(self.template_dir / "index.html", "text/html")
+        elif pathname == "/viewer.css":
+            self._serve_file(self.template_dir / "viewer.css", "text/css")
+        elif pathname == "/sdoc-web.js":
+            self._serve_sdoc_web_js()
+        elif pathname == "/api/manifest":
+            self._serve_manifest()
+        elif pathname == "/api/content":
+            qs = parse_qs(parsed.query)
+            rel_path = qs.get("path", [None])[0]
+            self._serve_content(rel_path)
+        else:
+            self.send_error(404, "Not found")
+
+    def _serve_file(self, file_path: Path, content_type: str):
+        try:
+            data = file_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.end_headers()
+            self.wfile.write(data)
+        except OSError:
+            self.send_error(500, "Internal server error")
+
+    def _serve_sdoc_web_js(self):
+        try:
+            source = read_text(self.sdoc_js_path)
+            source = source.replace("module.exports = {", "window.SDOC = {")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.end_headers()
+            self.wfile.write(source.encode("utf-8"))
+        except OSError:
+            self.send_error(500, "Could not read sdoc.js")
+
+    def _serve_manifest(self):
+        manifest = build_manifest(self.source_dir)
+        data = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_content(self, rel_path: Optional[str]):
+        if not rel_path:
+            self.send_error(400, "Missing path parameter")
+            return
+
+        # Path traversal protection
+        resolved = (self.source_dir / rel_path).resolve()
+        if not str(resolved).startswith(str(self.source_dir.resolve())):
+            self.send_error(403, "Forbidden")
+            return
+
+        if not str(resolved).endswith(".sdoc"):
+            self.send_error(403, "Forbidden")
+            return
+
+        try:
+            content = resolved.read_text(encoding="utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(content.encode("utf-8"))
+        except OSError:
+            self.send_error(404, "File not found")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Build a self-contained static SDOC viewer site."
+        description="Serve SDOC files with a local document viewer."
     )
     parser.add_argument(
         "source_dir",
@@ -367,9 +426,15 @@ def main():
         help="Directory containing .sdoc files (default: current directory)"
     )
     parser.add_argument(
-        "-o", "--output",
-        default=None,
-        help="Output directory (default: _sdoc_site/ inside source_dir)"
+        "-p", "--port",
+        type=int,
+        default=4070,
+        help="Port to serve on (default: 4070)"
+    )
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Don't open browser automatically"
     )
     args = parser.parse_args()
 
@@ -378,12 +443,33 @@ def main():
         print(f"Error: {source_dir} is not a directory", file=sys.stderr)
         sys.exit(1)
 
-    if args.output:
-        output_dir = Path(args.output).resolve()
-    else:
-        output_dir = source_dir / "_sdoc_site"
+    sdoc_js_path = find_sdoc_js(source_dir)
+    template_dir = find_site_template_dir(source_dir)
 
-    build_site(source_dir, output_dir)
+    # Check for .sdoc files
+    sdoc_files = collect_sdoc_files(source_dir)
+    if not sdoc_files:
+        print("No .sdoc files found.", file=sys.stderr)
+        sys.exit(1)
+
+    SdocHandler.source_dir = source_dir
+    SdocHandler.template_dir = template_dir
+    SdocHandler.sdoc_js_path = sdoc_js_path
+
+    server = http.server.HTTPServer(("", args.port), SdocHandler)
+    url = f"http://localhost:{args.port}"
+    print(f"Serving {len(sdoc_files)} documents from {source_dir}")
+    print(f"  {url}")
+    print("Press Ctrl+C to stop.")
+
+    if not args.no_open:
+        webbrowser.open(url)
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+        server.server_close()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 const fs = require("fs");
+const http = require("http");
 const os = require("os");
 const path = require("path");
+const url = require("url");
 const vscode = require("vscode");
 const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed } = require("./sdoc");
 
@@ -9,6 +11,9 @@ const CONFIG_FILENAME = "sdoc.config.json";
 
 const panels = new Map();
 let suppressNextUpdate = false;
+
+let activeServer = null;  // { server, port, rootDir }
+let statusBarItem = null;
 
 function activate(context) {
   const previewCommand = vscode.commands.registerCommand("sdoc.preview", () => {
@@ -45,11 +50,11 @@ function activate(context) {
     openInBrowser();
   });
 
-  const buildSiteCommand = vscode.commands.registerCommand("sdoc.buildSite", () => {
-    buildSiteAction();
+  const browseDocsCommand = vscode.commands.registerCommand("sdoc.browseDocs", () => {
+    browseDocsAction();
   });
 
-  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, buildSiteCommand);
+  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand);
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
@@ -97,6 +102,7 @@ function activate(context) {
 function deactivate() {
   panels.forEach((panel) => panel.dispose());
   panels.clear();
+  stopServer();
 }
 
 function showPreview(document, viewColumn) {
@@ -649,7 +655,7 @@ async function openInBrowser() {
   vscode.env.openExternal(vscode.Uri.file(tmpPath));
 }
 
-// --- Build Site ---
+// --- Document Server ---
 
 const SITE_EXCLUDE_DIRS = new Set([".git", "node_modules", ".vscode", "_sdoc_site", "web", "out", "__pycache__"]);
 
@@ -740,7 +746,21 @@ function chooseRootDoc(docs) {
   return pool[0].id;
 }
 
-async function buildSiteAction() {
+async function browseDocsAction() {
+  if (activeServer) {
+    const pick = await vscode.window.showQuickPick(
+      ["Open in Browser", "Stop Server"],
+      { placeHolder: `SDOC server running on port ${activeServer.port}` }
+    );
+    if (pick === "Open in Browser") {
+      vscode.env.openExternal(vscode.Uri.parse(`http://localhost:${activeServer.port}`));
+    } else if (pick === "Stop Server") {
+      stopServer();
+      vscode.window.showInformationMessage("SDOC: Document server stopped.");
+    }
+    return;
+  }
+
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders || !workspaceFolders.length) {
     vscode.window.showErrorMessage("SDOC: Open a workspace folder first.");
@@ -750,8 +770,8 @@ async function buildSiteAction() {
   const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
   const pick = await vscode.window.showQuickPick(
-    ["Entire Workspace", "Choose Folder…"],
-    { placeHolder: "Build site from which folder?" }
+    ["Entire Workspace", "Choose Folder\u2026"],
+    { placeHolder: "Serve documents from which folder?" }
   );
   if (!pick) {
     return;
@@ -774,33 +794,113 @@ async function buildSiteAction() {
     rootDir = chosen[0].fsPath;
   }
 
-  const outputDir = path.join(rootDir, "_sdoc_site");
-
   const sdocFiles = collectSdocFiles(rootDir);
   if (!sdocFiles.length) {
-    vscode.window.showWarningMessage("SDOC: No .sdoc files found in workspace.");
+    vscode.window.showWarningMessage("SDOC: No .sdoc files found.");
     return;
   }
 
+  startServer(rootDir);
+}
+
+function startServer(rootDir) {
+  const server = http.createServer((req, res) => {
+    handleRequest(req, res, rootDir);
+  });
+  tryListen(server, 4070, 0, rootDir);
+}
+
+function tryListen(server, basePort, attempt, rootDir) {
+  if (attempt >= 10) {
+    vscode.window.showErrorMessage("SDOC: Could not find an available port (tried 4070-4079).");
+    return;
+  }
+  const port = basePort + attempt;
+  server.once("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      tryListen(server, basePort, attempt + 1, rootDir);
+    } else {
+      vscode.window.showErrorMessage(`SDOC: Server error: ${err.message}`);
+    }
+  });
+  server.listen(port, () => {
+    activeServer = { server, port, rootDir };
+    updateStatusBar();
+    vscode.env.openExternal(vscode.Uri.parse(`http://localhost:${port}`));
+    vscode.window.showInformationMessage(`SDOC: Serving documents on port ${port}`);
+  });
+}
+
+function stopServer() {
+  if (activeServer) {
+    activeServer.server.close();
+    activeServer = null;
+  }
+  updateStatusBar();
+}
+
+function updateStatusBar() {
+  if (activeServer) {
+    if (!statusBarItem) {
+      statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+      statusBarItem.command = "sdoc.browseDocs";
+    }
+    statusBarItem.text = `$(globe) SDOC :${activeServer.port}`;
+    statusBarItem.tooltip = "SDOC Document Server - Click to manage";
+    statusBarItem.show();
+  } else {
+    if (statusBarItem) {
+      statusBarItem.hide();
+    }
+  }
+}
+
+function handleRequest(req, res, rootDir) {
+  const parsed = url.parse(req.url, true);
+  const pathname = parsed.pathname;
+
+  if (pathname === "/" || pathname === "/index.html") {
+    serveFile(res, path.join(__dirname, "site-template", "index.html"), "text/html");
+  } else if (pathname === "/viewer.css") {
+    serveFile(res, path.join(__dirname, "site-template", "viewer.css"), "text/css");
+  } else if (pathname === "/sdoc-web.js") {
+    serveSdocWebJs(res);
+  } else if (pathname === "/api/manifest") {
+    serveManifest(res, rootDir);
+  } else if (pathname === "/api/content") {
+    serveContent(res, rootDir, parsed.query.path);
+  } else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not found");
+  }
+}
+
+function serveFile(res, filePath, contentType) {
   try {
-    fs.mkdirSync(outputDir, { recursive: true });
-  } catch (err) {
-    vscode.window.showErrorMessage(`SDOC: Could not create output directory: ${err.message}`);
-    return;
+    const data = fs.readFileSync(filePath);
+    res.writeHead(200, { "Content-Type": contentType });
+    res.end(data);
+  } catch {
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Internal server error");
   }
+}
 
-  // Generate sdoc-web.js from bundled parser
+function serveSdocWebJs(res) {
   const sdocJsPath = path.join(__dirname, "sdoc.js");
-  let sdocWebSource;
   try {
-    sdocWebSource = fs.readFileSync(sdocJsPath, "utf8");
-  } catch (err) {
-    vscode.window.showErrorMessage(`SDOC: Could not read sdoc.js: ${err.message}`);
-    return;
+    let source = fs.readFileSync(sdocJsPath, "utf8");
+    source = source.replace("module.exports = {", "window.SDOC = {");
+    res.writeHead(200, { "Content-Type": "application/javascript" });
+    res.end(source);
+  } catch {
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Could not read sdoc.js");
   }
-  sdocWebSource = sdocWebSource.replace("module.exports = {", "window.SDOC = {");
-  fs.writeFileSync(path.join(outputDir, "sdoc-web.js"), sdocWebSource, "utf8");
+}
 
+function serveManifest(res, rootDir) {
+  const sdocFiles = collectSdocFiles(rootDir);
   const docs = [];
   const cssPaths = [];
 
@@ -813,7 +913,6 @@ async function buildSiteAction() {
     }
 
     const parsed = parseSdoc(content);
-    const metaResult = extractMeta(parsed.nodes);
     const title = extractTitleFromParsed(parsed.nodes);
     const relPath = siteRelPosix(sdocPath, rootDir);
     if (!relPath) {
@@ -841,6 +940,7 @@ async function buildSiteAction() {
       }
     }
 
+    const metaResult = extractMeta(parsed.nodes);
     if (metaResult.meta && metaResult.meta.stylePath) {
       const resolved = path.resolve(path.dirname(sdocPath), metaResult.meta.stylePath);
       if (fs.existsSync(resolved)) {
@@ -863,7 +963,6 @@ async function buildSiteAction() {
       path: relPath,
       dir: relDir === "." ? "" : relDir.split(path.sep).join("/"),
       title,
-      content,
       config: {
         header: config.header || "",
         footer: config.footer || "",
@@ -889,30 +988,46 @@ async function buildSiteAction() {
 
   const rootDocId = chooseRootDoc(docs);
 
-  const siteData = {
-    root: path.basename(rootDir),
-    generatedAt: new Date().toISOString(),
+  const manifest = {
     rootDocId,
     docs,
     cssMap
   };
 
-  fs.writeFileSync(
-    path.join(outputDir, "sdoc-data.js"),
-    "window.SDOC_DATA = " + JSON.stringify(siteData) + ";",
-    "utf8"
-  );
-  const templateDir = path.join(__dirname, "site-template");
-  fs.copyFileSync(path.join(templateDir, "viewer.css"), path.join(outputDir, "viewer.css"));
-  fs.copyFileSync(path.join(templateDir, "index.html"), path.join(outputDir, "index.html"));
+  const json = JSON.stringify(manifest);
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(json);
+}
 
-  const indexPath = path.join(outputDir, "index.html");
-  const choice = await vscode.window.showInformationMessage(
-    `SDOC: Built site with ${docs.length} documents in ${path.relative(workspaceRoot, outputDir) || "_sdoc_site"}/`,
-    "Open in Browser"
-  );
-  if (choice === "Open in Browser") {
-    vscode.env.openExternal(vscode.Uri.file(indexPath));
+function serveContent(res, rootDir, relPath) {
+  if (!relPath) {
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Missing path parameter");
+    return;
+  }
+
+  // Path traversal protection
+  const resolved = path.resolve(rootDir, relPath);
+  const normalizedRoot = path.resolve(rootDir);
+  if (!resolved.startsWith(normalizedRoot + path.sep) && resolved !== normalizedRoot) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    res.end("Forbidden");
+    return;
+  }
+
+  if (!resolved.endsWith(".sdoc")) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    res.end("Forbidden");
+    return;
+  }
+
+  try {
+    const content = fs.readFileSync(resolved, "utf8");
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end(content);
+  } catch {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("File not found");
   }
 }
 

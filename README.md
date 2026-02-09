@@ -8,12 +8,12 @@ npm run package
 code --install-extension dist/sdoc-*.vsix
 ```
 
-## Static Viewer
-Build a static HTML viewer (sidebar + split panes) for all `.sdoc` files:
+## Document Server
+Browse all `.sdoc` files with a local HTTP server (sidebar + split panes):
 ```
-python3 tools/build_site.py
+python3 tools/serve_docs.py
 ```
 
-This generates the viewer in `_sdoc_site/` — open `_sdoc_site/index.html` in a browser.
+Or use the **SDOC: Browse Documents** command from the VSCode Command Palette.
 
-Or use the **SDOC: Build Site** command from the VSCode Command Palette.
+The viewer opens in your browser. Edits to `.sdoc` files are reflected on refresh.
