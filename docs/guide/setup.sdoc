@@ -49,6 +49,18 @@ code --install-extension dist/sdoc-0.0.3.vsix
         }
     }
 
+    # Export and Print
+    {
+        Two commands are available from the Command Palette when a preview is active:
+
+        {[.]
+            - **SDOC: Export HTML** -- saves a standalone `.html` file with all styles embedded
+            - **SDOC: Open in Browser** -- opens the document in the system browser
+        }
+
+        Both outputs support collapsible scope toggles. For PDF export, use the browser's print function (Ctrl+P / Cmd+P).
+    }
+
     # Configuration
     {
         Place a `sdoc.config.json` in your project root to set defaults for all documents:
@@ -74,12 +86,15 @@ code --install-extension dist/sdoc-0.0.3.vsix
 
     # Static Site Viewer
     {
-        To build a browsable HTML viewer for all `.sdoc` files in the project:
+        Build a browsable HTML viewer for all `.sdoc` files in the project:
 
         ```bash
-python3 tools/build_site.py
+python3 tools/build_site.py                    # current dir -> _sdoc_site/
+python3 tools/build_site.py docs/ -o out/      # docs/ -> out/
         ```
 
-        Open `web/index.html` in a browser. The viewer has a sidebar, split-pane comparison, and renders all discovered `.sdoc` files.
+        Or use the **SDOC: Build Site** command from the VSCode Command Palette.
+
+        Open `_sdoc_site/index.html` in a browser. The viewer has a sidebar with search, split-pane comparison, and renders all discovered `.sdoc` files.
     }
 }

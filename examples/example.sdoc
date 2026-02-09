@@ -140,6 +140,24 @@
                 ![Distant galaxy](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/NGC_4414_%28NASA-med%29.jpg/600px-NGC_4414_%28NASA-med%29.jpg)
             }
 
+            # K&R Brace Style
+            {
+                Scopes can use K&R style with the opening brace on the heading line:
+
+                # Inline example {
+                    This scope uses K&R style.
+                }
+
+                # K&R with a list {[.]
+                    - First item
+                    - Second item
+                }
+
+                # K&R with an ID @knr-example {
+                    Heading IDs go before the brace.
+                }
+            }
+
             # Headingless Scopes
             {
                 A bare block (no heading) groups content with indentation:

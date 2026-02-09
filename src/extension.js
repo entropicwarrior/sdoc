@@ -45,7 +45,11 @@ function activate(context) {
     openInBrowser();
   });
 
-  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand);
+  const buildSiteCommand = vscode.commands.registerCommand("sdoc.buildSite", () => {
+    buildSiteAction();
+  });
+
+  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, buildSiteCommand);
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
@@ -643,6 +647,247 @@ async function openInBrowser() {
   fs.writeFileSync(tmpPath, html, "utf8");
 
   vscode.env.openExternal(vscode.Uri.file(tmpPath));
+}
+
+// --- Build Site ---
+
+const SITE_EXCLUDE_DIRS = new Set([".git", "node_modules", ".vscode", "_sdoc_site", "web", "out", "__pycache__"]);
+
+function collectSdocFiles(rootDir) {
+  const results = [];
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!SITE_EXCLUDE_DIRS.has(entry.name)) {
+          walk(path.join(dir, entry.name));
+        }
+      } else if (entry.isFile() && entry.name.endsWith(".sdoc")) {
+        results.push(path.join(dir, entry.name));
+      }
+    }
+  }
+  walk(rootDir);
+  return results.sort();
+}
+
+function loadConfigChain(filePath, rootDir) {
+  const startDir = path.dirname(filePath);
+  const chain = [];
+  let current = startDir;
+  while (current) {
+    const configPath = path.join(current, CONFIG_FILENAME);
+    if (fs.existsSync(configPath)) {
+      const parsed = readJson(configPath);
+      if (parsed) {
+        chain.push({ dir: current, config: parsed });
+      }
+    }
+    if (current === rootDir) {
+      break;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  const merged = { style: null, styleAppend: [], header: "", footer: "" };
+  for (const entry of chain.reverse()) {
+    mergeConfig(merged, entry.config, entry.dir);
+  }
+  return merged;
+}
+
+function siteRelPosix(absPath, rootDir) {
+  const rel = path.relative(rootDir, absPath);
+  if (rel.startsWith("..")) {
+    return null;
+  }
+  return rel.split(path.sep).join("/");
+}
+
+function extractTitleFromParsed(nodes) {
+  for (const node of nodes) {
+    if (node.type === "scope" && node.title) {
+      return node.title;
+    }
+  }
+  return "Untitled";
+}
+
+function chooseRootDoc(docs) {
+  if (!docs.length) {
+    return null;
+  }
+  const preferred = new Set(["index.sdoc", "readme.sdoc"]);
+  const candidates = docs.filter((d) => preferred.has(path.basename(d.path).toLowerCase()));
+  const pool = candidates.length ? candidates : docs;
+  pool.sort((a, b) => {
+    const partsA = a.path.split("/").length;
+    const partsB = b.path.split("/").length;
+    if (partsA !== partsB) {
+      return partsA - partsB;
+    }
+    return a.path.localeCompare(b.path);
+  });
+  return pool[0].id;
+}
+
+async function buildSiteAction() {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || !workspaceFolders.length) {
+    vscode.window.showErrorMessage("SDOC: Open a workspace folder first.");
+    return;
+  }
+
+  const rootDir = workspaceFolders[0].uri.fsPath;
+  const outputDir = path.join(rootDir, "_sdoc_site");
+
+  const sdocFiles = collectSdocFiles(rootDir);
+  if (!sdocFiles.length) {
+    vscode.window.showWarningMessage("SDOC: No .sdoc files found in workspace.");
+    return;
+  }
+
+  try {
+    fs.mkdirSync(outputDir, { recursive: true });
+  } catch (err) {
+    vscode.window.showErrorMessage(`SDOC: Could not create output directory: ${err.message}`);
+    return;
+  }
+
+  // Generate sdoc-web.js from bundled parser
+  const sdocJsPath = path.join(__dirname, "sdoc.js");
+  let sdocWebSource;
+  try {
+    sdocWebSource = fs.readFileSync(sdocJsPath, "utf8");
+  } catch (err) {
+    vscode.window.showErrorMessage(`SDOC: Could not read sdoc.js: ${err.message}`);
+    return;
+  }
+  sdocWebSource = sdocWebSource.replace("module.exports = {", "window.SDOC = {");
+  fs.writeFileSync(path.join(outputDir, "sdoc-web.js"), sdocWebSource, "utf8");
+
+  const docs = [];
+  const cssPaths = [];
+
+  for (const sdocPath of sdocFiles) {
+    let content;
+    try {
+      content = fs.readFileSync(sdocPath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const parsed = parseSdoc(content);
+    const metaResult = extractMeta(parsed.nodes);
+    const title = extractTitleFromParsed(parsed.nodes);
+    const relPath = siteRelPosix(sdocPath, rootDir);
+    if (!relPath) {
+      continue;
+    }
+
+    const config = loadConfigChain(sdocPath, rootDir);
+    let styleKey = null;
+    const styleAppendKeys = [];
+
+    if (config.style) {
+      if (fs.existsSync(config.style)) {
+        cssPaths.push(config.style);
+        styleKey = siteRelPosix(config.style, rootDir);
+      }
+    }
+
+    for (const item of config.styleAppend) {
+      if (fs.existsSync(item)) {
+        cssPaths.push(item);
+        const key = siteRelPosix(item, rootDir);
+        if (key) {
+          styleAppendKeys.push(key);
+        }
+      }
+    }
+
+    if (metaResult.meta && metaResult.meta.stylePath) {
+      const resolved = path.resolve(path.dirname(sdocPath), metaResult.meta.stylePath);
+      if (fs.existsSync(resolved)) {
+        cssPaths.push(resolved);
+      }
+    }
+    if (metaResult.meta && metaResult.meta.styleAppendPath) {
+      const parts = metaResult.meta.styleAppendPath.split(/\n+/).map(p => p.trim()).filter(Boolean);
+      for (const metaItem of parts) {
+        const resolved = path.resolve(path.dirname(sdocPath), metaItem);
+        if (fs.existsSync(resolved)) {
+          cssPaths.push(resolved);
+        }
+      }
+    }
+
+    const relDir = path.dirname(relPath);
+    docs.push({
+      id: relPath,
+      path: relPath,
+      dir: relDir === "." ? "" : relDir.split(path.sep).join("/"),
+      title,
+      content,
+      config: {
+        header: config.header || "",
+        footer: config.footer || "",
+        styleKey,
+        styleAppendKeys
+      }
+    });
+  }
+
+  // Build CSS map
+  const cssMap = {};
+  for (const cssPath of cssPaths) {
+    const key = siteRelPosix(cssPath, rootDir);
+    if (!key || cssMap[key]) {
+      continue;
+    }
+    try {
+      cssMap[key] = fs.readFileSync(cssPath, "utf8");
+    } catch {
+      // skip
+    }
+  }
+
+  const rootDocId = chooseRootDoc(docs);
+
+  const siteData = {
+    root: path.basename(rootDir),
+    generatedAt: new Date().toISOString(),
+    rootDocId,
+    docs,
+    cssMap
+  };
+
+  fs.writeFileSync(
+    path.join(outputDir, "sdoc-data.js"),
+    "window.SDOC_DATA = " + JSON.stringify(siteData) + ";",
+    "utf8"
+  );
+  const templateDir = path.join(__dirname, "site-template");
+  fs.copyFileSync(path.join(templateDir, "viewer.css"), path.join(outputDir, "viewer.css"));
+  fs.copyFileSync(path.join(templateDir, "index.html"), path.join(outputDir, "index.html"));
+
+  const indexPath = path.join(outputDir, "index.html");
+  const choice = await vscode.window.showInformationMessage(
+    `SDOC: Built site with ${docs.length} documents in _sdoc_site/`,
+    "Open in Browser"
+  );
+  if (choice === "Open in Browser") {
+    vscode.env.openExternal(vscode.Uri.file(indexPath));
+  }
 }
 
 module.exports = {

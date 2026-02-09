@@ -57,6 +57,32 @@ Short content can be written on one line:
 { 1.0 }
 ```
 
+### K&R Brace Style
+
+The opening brace (or list/table opener) can appear at the end of the heading line instead of on its own line:
+
+```
+# Title {
+    Content goes here.
+}
+
+# My List {[.]
+    - Item 1
+    - Item 2
+}
+
+# Data {[table]
+    Name | Age
+    Alice | 30
+}
+
+# Section @id {
+    IDs go before the brace.
+}
+```
+
+This also works on list item lines: `- Item {`. K&R and Allman styles can be mixed freely in the same document.
+
 ### Paragraphs
 
 Consecutive text lines form a paragraph. A blank line or a new scope ends the paragraph.
@@ -379,6 +405,41 @@ The authoritative SDOC specification follows below. Refer to this for edge cases
             ```
 
             `{` opens a scope block and `}` closes it. Indentation is cosmetic.
+
+            # K&R Style Brace Placement @knr-braces
+            {
+                The opening brace (or list/table opener) may appear at the end of a heading or list-item line instead of on its own line:
+
+                ```
+                # Title {
+                    ...
+                }
+
+                # My List {[.]
+                    - Item 1
+                    - Item 2
+                }
+
+                # Data {[table]
+                    Name | Age
+                    Alice | 30
+                }
+
+                # Title @id {
+                    ...
+                }
+                ```
+
+                {[.]
+                    - The opener must be the last token on the line (trailing whitespace is allowed)
+                    - Applies to `{`, `{[.]`, `{[#]`, and `{[table]`
+                    - Also works on list-item shorthand lines (e.g., `- Item {`)
+                    - Escaped braces (`\{`) are not treated as openers
+                    - The closing `}` must still appear on its own line
+                    - Inline blocks (`{ content }`) are not affected; a line ending with `}` is not treated as K&R
+                    - Headingless scopes (bare `{` on its own line) are not affected
+                }
+            }
 
             # Headingless Scopes @headingless-scopes
             {
@@ -774,9 +835,12 @@ The authoritative SDOC specification follows below. Refer to this for edge cases
         ```
         document      = scope ;
 
-        scope         = heading ws? block ;
+        scope         = heading ws? block
+                      | heading_with_opener block_body "}" ;
         heading       = "#" { "#" } ws title (ws id)? ;
+        heading_with_opener = "#" { "#" } ws title (ws id)? ws block_opener ;
         id            = "@" ident ;
+        block_opener  = "{" | "{[.]" | "{[#]" | "{[table]" ;
         block         = "{" ws? block_body "}" ;
 
         block_body    = { blank | paragraph | scope | headingless_scope
@@ -792,8 +856,10 @@ The authoritative SDOC specification follows below. Refer to this for edge cases
         list_body     = { blank | comma_sep | scope | list_item_shorthand } ;
         implicit_list = list_item_shorthand { list_item_shorthand } ;
         list_item_shorthand = bullet_item | numbered_item ;
-        bullet_item   = "-" ws title [ws? block]? ;
-        numbered_item = number ("." | ")") ws title [ws? block]? ;
+        bullet_item   = "-" ws title [ws? block]?
+                      | "-" ws title ws block_opener block_body "}" ;
+        numbered_item = number ("." | ")") ws title [ws? block]?
+                      | number ("." | ")") ws title ws block_opener block_body "}" ;
         number        = DIGIT { DIGIT } ;
 
         paragraph     = text_line { ws? text_line } ;

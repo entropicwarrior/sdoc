@@ -15,7 +15,8 @@
     "onCommand:sdoc.preview",
     "onCommand:sdoc.previewToSide",
     "onCommand:sdoc.exportHtml",
-    "onCommand:sdoc.openInBrowser"
+    "onCommand:sdoc.openInBrowser",
+    "onCommand:sdoc.buildSite"
   ],
   "scripts": {
     "package": "npx vsce package --out dist/ --allow-missing-repository"
@@ -59,6 +60,10 @@
         "command": "sdoc.openInBrowser",
         "title": "SDOC: Open in Browser",
         "icon": "$(link-external)"
+      },
+      {
+        "command": "sdoc.buildSite",
+        "title": "SDOC: Build Site"
       }
     ],
     "menus": {

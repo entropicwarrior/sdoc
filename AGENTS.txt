@@ -9,7 +9,7 @@ and a VSCode extension for live preview.
 PROJECT STRUCTURE
 -----------------
 
-project/            Project governance (not user-facing)
+spec/               Specification and governance (not user-facing)
   requirements.sdoc   Why SDOC exists, abstract requirements (R1-R10), concrete requirements (C1-C5)
   specification.sdoc  The formal v0.1 spec, written in SDOC format
   suggestions.sdoc    Proposed features (S1-S9) with priority and rationale
@@ -28,22 +28,28 @@ docs/               User-facing documentation
   index.sdoc          Docs landing page
 
 src/                Source code
-  sdoc.js             Parser and HTML renderer (~1200 lines)
-  extension.js        VSCode extension (~280 lines)
+  sdoc.js             Parser and HTML renderer (~1500 lines)
+  extension.js        VSCode extension (~900 lines)
+  site-template/      Shared viewer templates (index.html, viewer.css)
 
-test/               Test SDOC files for parser edge cases
+test/               Test files
+  test-all.js         Comprehensive test suite (node test/test-all.js)
+  test-knr.js         K&R brace placement tests (node test/test-knr.js)
+  test-inline-blocks.sdoc  Inline block parsing fixture
+  test-edge-cases.sdoc     Edge case parsing fixture
 tools/              Build tools (static site generator)
+  build_site.py       CLI to build a self-contained static SDOC viewer site
 dist/               Build output (gitignored)
-web/                Generated web viewer (gitignored)
+_sdoc_site/         Generated static site output (gitignored)
 
 
 BEFORE MAKING CHANGES
 ---------------------
 
-Read project/status.sdoc first. It has the current task list.
+Read spec/status.sdoc first. It has the current task list.
 
-If changing the parser or renderer, read project/specification.sdoc.
-If adding features, read project/requirements.sdoc and project/suggestions.sdoc.
+If changing the parser or renderer, read spec/specification.sdoc.
+If adding features, read spec/requirements.sdoc and spec/suggestions.sdoc.
 
 The requirements document defines stable goals (R1-R10) that all changes
 should be evaluated against. Don't break them.
@@ -69,7 +75,12 @@ Parser architecture:
 - parseSdoc() returns { nodes, errors }. Renderers consume nodes.
 
 Testing:
-- No test framework yet. This is a known gap.
+- No test framework. Tests are plain Node scripts with assert helpers.
+- Run all tests: node test/test-all.js && node test/test-knr.js
+- test-all.js: comprehensive suite (78 tests) covering all parser and renderer features
+- test-knr.js: focused K&R brace style tests (24 tests)
+- Tests exit non-zero on failure.
+- When changing the parser, run the tests and verify 0 failures before committing.
 
 Building the extension:
 - npm install (dev dependencies only, for vsce)
@@ -79,7 +90,7 @@ Building the extension:
 
 SDOC format:
 - The project docs themselves are written in SDOC
-- The spec is in project/specification.sdoc
+- The spec is in spec/specification.sdoc
 - examples/example.sdoc is a quick reference
 
 
@@ -87,6 +98,28 @@ FILE CONVENTIONS
 ----------------
 
 - .sdoc files: SDOC format documents
-- .gitignore covers: node_modules/, dist/, web/, .DS_Store
-- No build artifacts in the repo (dist/ and web/ are gitignored)
-- User docs go in docs/, project docs go in project/
+- .gitignore covers: node_modules/, dist/, _sdoc_site/, .DS_Store
+- No build artifacts in the repo (dist/, _sdoc_site/ are gitignored)
+- User docs go in docs/, spec and governance docs go in spec/
+
+
+STATIC SITE BUILDER
+-------------------
+
+Two ways to build a self-contained static SDOC viewer site:
+
+Python CLI (tools/build_site.py):
+  python tools/build_site.py                        # build current dir → _sdoc_site/
+  python tools/build_site.py docs/                  # build docs/ → docs/_sdoc_site/
+  python tools/build_site.py docs/ -o out/          # build docs/ → out/
+
+VSCode command:
+  "SDOC: Build Site" from the command palette builds all .sdoc files
+  in the workspace into _sdoc_site/ at the workspace root.
+
+Both produce the same output:
+  _sdoc_site/
+    index.html      ← viewer shell
+    viewer.css      ← viewer styles
+    sdoc-web.js     ← parser/renderer for browser
+    sdoc-data.js    ← bundled document content + configs

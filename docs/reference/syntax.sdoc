@@ -38,6 +38,38 @@
             Headingless scopes nest like normal scopes and are useful for grouping paragraphs or adding visual indentation without a title.
         }
 
+        # K&R Brace Style
+        {
+            The opening brace (or list/table opener) can appear at the end of a heading line:
+
+            ```
+# Title {
+    Content goes here.
+}
+
+# My List {[.]
+    - Item 1
+    - Item 2
+}
+
+# Data {[table]
+    Name | Age
+    Alice | 30
+}
+            ```
+
+            {[.]
+                - Works with `{`, `{[.]`, `{[#]`, and `{[table]`
+                - Also works on list item lines: `- Item {`
+                - The `@id` goes before the opener: `# Title @id {`
+                - Trailing whitespace after the opener is allowed
+                - The closing `}` must still appear on its own line
+                - Inline blocks (`{ content }`) are not affected
+            }
+
+            K&R and Allman styles can be mixed freely in the same document.
+        }
+
         # Inline Blocks
         {
             For simple content, a scope body can be written on one line:

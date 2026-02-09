@@ -33,6 +33,9 @@
             - [x] Horizontal rules
             - [x] Escaping
             - [x] Headingless scopes (bare { } blocks for grouping without a title)
+            - [x] K&R brace style (opening brace on same line as heading or list item)
+            - [x] Scope indentation (visual nesting via CSS padding)
+            - [x] Print support (@media print CSS overrides)
         }
 
         # Tooling
@@ -42,25 +45,29 @@
             - [x] Per-file meta scope overrides (@meta for style, header, footer)
             - [x] TextMate syntax highlighting grammar (syntaxes/sdoc.tmLanguage.json)
             - [x] Local and remote image rendering in webview preview
-            - [x] Static site builder (tools/build_site.py)
-            - [x] Web viewer
+            - [x] Static site builder: Python CLI (tools/build_site.py) with argparse
+            - [x] Static site builder: VSCode command (sdoc.buildSite)
+            - [x] Web viewer with sidebar, search, split-pane comparison
+            - [x] Site template deduplication (src/site-template/ shared by both builders)
             - [x] VSIX packaging for extension distribution
             - [x] Language registration (.sdoc file type recognition in VSCode)
             - [x] Interactive preview: click-to-navigate (click element to jump to source line)
             - [x] Interactive preview: collapsible scopes (toggle triangles on headings, persistent state)
             - [x] Interactive preview: inline text editing (edit paragraphs directly in preview)
             - [x] Parser line tracking (lineStart/lineEnd on all AST nodes)
+            - [x] Export HTML (sdoc.exportHtml) -- standalone HTML with collapsible toggles
+            - [x] Open in Browser (sdoc.openInBrowser) -- preview in system browser
         }
 
         # Repository
         {
-            - [x] .gitignore covers node_modules/, dist/, web/, .DS_Store
+            - [x] .gitignore covers node_modules/, dist/, _sdoc_site/, .DS_Store
             - [x] @vscode/vsce moved from dependencies to devDependencies
-            - [x] Project docs separated into project/ folder
+            - [x] Spec and governance docs in spec/ folder
             - [x] User docs in docs/ folder (guide, reference, tutorials)
             - [x] Build artifacts (VSIX) output to dist/
             - [x] Example files in examples/, test files in test/
-            - [x] Generated web/ directory gitignored
+            - [x] Generated _sdoc_site/ directory gitignored
         }
     }
 

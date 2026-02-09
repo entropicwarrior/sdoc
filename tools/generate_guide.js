@@ -3,7 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const SPEC_PATH = path.resolve(__dirname, "..", "project", "specification.sdoc");
+const SPEC_PATH = path.resolve(__dirname, "..", "spec", "specification.sdoc");
 const OUTPUT_PATH = path.resolve(__dirname, "..", "SDOC_GUIDE.md");
 
 const QUICK_REFERENCE = `# SDOC Guide
@@ -64,6 +64,32 @@ Short content can be written on one line:
 # Version
 { 1.0 }
 \`\`\`
+
+### K&R Brace Style
+
+The opening brace (or list/table opener) can appear at the end of the heading line instead of on its own line:
+
+\`\`\`
+# Title {
+    Content goes here.
+}
+
+# My List {[.]
+    - Item 1
+    - Item 2
+}
+
+# Data {[table]
+    Name | Age
+    Alice | 30
+}
+
+# Section @id {
+    IDs go before the brace.
+}
+\`\`\`
+
+This also works on list item lines: \`- Item {\`. K&R and Allman styles can be mixed freely in the same document.
 
 ### Paragraphs
 

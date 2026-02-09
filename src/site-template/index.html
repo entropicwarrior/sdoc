@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SDOC Viewer</title>
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <div id="app" class="sidebar-open">
+    <aside id="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">SDOC Viewer</div>
+        <button class="collapse-btn" id="collapseBtn">Hide</button>
+      </div>
+
+      <div class="controls">
+        <div class="control-section">
+          <div class="control-label">Layout</div>
+          <div class="segmented">
+            <button data-layout="single" class="active">Single</button>
+            <button data-layout="vertical">Split L/R</button>
+            <button data-layout="horizontal">Split T/B</button>
+          </div>
+        </div>
+
+        <div class="control-section">
+          <div class="control-label">Selection</div>
+          <div class="selection">
+            <div class="chip" id="chipA"><span class="chip-label">A</span><span class="chip-text"></span></div>
+            <div class="chip" id="chipB"><span class="chip-label">B</span><span class="chip-text"></span><button class="chip-clear" id="clearB">×</button></div>
+          </div>
+          <div class="hint">Click to open. Shift+Click to compare.</div>
+        </div>
+      </div>
+
+      <input id="search" placeholder="Filter files..." />
+      <nav id="tree"></nav>
+    </aside>
+
+    <section id="main">
+      <header class="main-topbar">
+        <button class="open-btn" id="openBtn">Menu</button>
+        <div class="doc-title" id="docTitle">Select a document</div>
+      </header>
+      <div id="panes" class="layout-single">
+        <div class="pane" data-pane="a">
+          <div class="pane-label">A</div>
+          <div class="pane-empty" data-empty="a">Select a document</div>
+          <div class="pane-content" data-pane-content="a"></div>
+        </div>
+        <div class="pane" data-pane="b">
+          <div class="pane-label">B</div>
+          <div class="pane-empty" data-empty="b">Shift+Click a document to compare</div>
+          <div class="pane-content" data-pane-content="b"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="sdoc-web.js"></script>
+  <script src="sdoc-data.js"></script>
+  <script>
+    const data = window.SDOC_DATA || {};
+    const docs = data.docs || [];
+    const cssMap = data.cssMap || {};
+    const rootDocId = data.rootDocId || (docs[0] && docs[0].id);
+
+    const app = document.getElementById("app");
+    const treeRoot = document.getElementById("tree");
+    const searchInput = document.getElementById("search");
+    const panes = document.getElementById("panes");
+    const buttons = document.querySelectorAll("button[data-layout]");
+    const chipA = document.getElementById("chipA");
+    const chipB = document.getElementById("chipB");
+    const chipAText = chipA.querySelector(".chip-text");
+    const chipBText = chipB.querySelector(".chip-text");
+    const clearB = document.getElementById("clearB");
+    const collapseBtn = document.getElementById("collapseBtn");
+    const openBtn = document.getElementById("openBtn");
+    const docTitle = document.getElementById("docTitle");
+    const paneA = document.querySelector('.pane[data-pane="a"] .pane-content');
+    const paneB = document.querySelector('.pane[data-pane="b"] .pane-content');
+    const emptyA = document.querySelector('[data-empty="a"]');
+    const emptyB = document.querySelector('[data-empty="b"]');
+
+    let selection = { a: null, b: null };
+    let currentLayout = "single";
+    let preferredSplit = "vertical";
+
+    function buildTree() {
+      const root = {};
+      docs.forEach((doc) => {
+        const parts = doc.path.split("/");
+        let node = root;
+        parts.forEach((part, idx) => {
+          node[part] = node[part] || {};
+          if (idx === parts.length - 1) {
+            node[part].__doc = doc;
+          }
+          node = node[part];
+        });
+      });
+      return root;
+    }
+
+    function createDocItem(doc) {
+      const item = document.createElement("div");
+      item.className = "tree-item";
+      item.textContent = doc.path.split("/").pop().replace(/\.sdoc$/, "");
+      item.title = doc.title;
+      item.dataset.docId = doc.id;
+      item.addEventListener("click", (event) => {
+        handleDocClick(doc, event.shiftKey);
+      });
+      return item;
+    }
+
+    function renderTree(node, container) {
+      Object.keys(node)
+        .filter((key) => key !== "__doc")
+        .sort()
+        .forEach((key) => {
+          const entry = node[key];
+          const doc = entry.__doc;
+          const childKeys = Object.keys(entry).filter((k) => k !== "__doc");
+
+          if (childKeys.length) {
+            const details = document.createElement("details");
+            details.className = "tree-folder";
+            details.open = true;
+            const summary = document.createElement("summary");
+            summary.textContent = key;
+            details.appendChild(summary);
+
+            const children = document.createElement("div");
+            children.className = "tree-children";
+            if (doc) {
+              children.appendChild(createDocItem(doc));
+            }
+            renderTree(entry, children);
+            details.appendChild(children);
+            container.appendChild(details);
+          } else if (doc) {
+            container.appendChild(createDocItem(doc));
+          }
+        });
+    }
+
+    function resolvePath(base, rel) {
+      if (!rel) return "";
+      if (rel.startsWith("/")) return rel.replace(/^\//, "");
+      const stack = base.split("/").filter((part) => part && part !== ".");
+      rel.split("/").forEach((part) => {
+        if (part === "." || part === "") return;
+        if (part === "..") stack.pop();
+        else stack.push(part);
+      });
+      return stack.join("/");
+    }
+
+    function resolveCss(doc, meta) {
+      if (meta && meta.stylePath) {
+        const key = resolvePath(doc.dir, meta.stylePath);
+        return cssMap[key] || "";
+      }
+      if (doc.config.styleKey) {
+        return cssMap[doc.config.styleKey] || "";
+      }
+      return "";
+    }
+
+    function resolveCssAppend(doc, meta) {
+      const css = [];
+      if (doc.config.styleAppendKeys) {
+        doc.config.styleAppendKeys.forEach((key) => {
+          if (cssMap[key]) css.push(cssMap[key]);
+        });
+      }
+      if (meta && meta.styleAppendPath) {
+        const parts = meta.styleAppendPath.split(/\n+/).map((p) => p.trim()).filter(Boolean);
+        parts.forEach((part) => {
+          const key = resolvePath(doc.dir, part);
+          if (cssMap[key]) css.push(cssMap[key]);
+        });
+      }
+      return css.join("\n");
+    }
+
+    function renderDoc(doc) {
+      const parsed = window.SDOC.parseSdoc(doc.content);
+      const metaResult = window.SDOC.extractMeta(parsed.nodes);
+      const cssOverride = resolveCss(doc, metaResult.meta);
+      const cssAppend = resolveCssAppend(doc, metaResult.meta);
+
+      return window.SDOC.renderHtmlDocumentFromParsed(
+        { nodes: metaResult.nodes, errors: parsed.errors },
+        doc.title,
+        {
+          meta: metaResult.meta,
+          config: {
+            header: doc.config.header || "",
+            footer: doc.config.footer || ""
+          },
+          cssOverride: cssOverride || undefined,
+          cssAppend: cssAppend || undefined
+        }
+      );
+    }
+
+    function parseDocHtml(html) {
+      const parsed = new DOMParser().parseFromString(html, "text/html");
+      const styleEl = parsed.querySelector("style");
+      const css = styleEl ? styleEl.textContent || "" : "";
+      const bodyHtml = parsed.body ? parsed.body.innerHTML : html;
+      return { css, bodyHtml };
+    }
+
+    function scopeCssForShadow(css) {
+      if (!css) return "";
+      let scoped = css.replace(/:root\b/g, ":host");
+      scoped = scoped.replace(/(^|[\s,{>])body(?![\w-])/g, "$1:host");
+      scoped += "\n:host { display: block; height: 100%; width: 100%; }\n";
+      return scoped;
+    }
+
+    function ensureShadowRoot(pane) {
+      if (pane.shadowRoot) return pane.shadowRoot;
+      return pane.attachShadow({ mode: "open" });
+    }
+
+    function setEmptyState(emptyEl, isVisible) {
+      emptyEl.classList.toggle("hidden", !isVisible);
+      emptyEl.hidden = !isVisible;
+    }
+
+    function renderPaneError(pane, message) {
+      const shadow = ensureShadowRoot(pane);
+      const safeMessage = String(message || "Unknown render error");
+      shadow.innerHTML = `
+        <style>
+          :host { display: block; height: 100%; width: 100%; background: #fff; color: #1f2937; font-family: "Source Sans 3", "Noto Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+          .sdoc-render-error { padding: 24px; }
+          .sdoc-render-error h2 { margin: 0 0 8px; font-size: 1.1rem; }
+          .sdoc-render-error pre { white-space: pre-wrap; background: #f5f6f8; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; }
+        </style>
+        <div class="sdoc-render-error">
+          <h2>Render error</h2>
+          <pre>${safeMessage}</pre>
+        </div>
+      `;
+    }
+
+    function findDocById(id) {
+      return docs.find((doc) => doc.id === id);
+    }
+
+    function docIdFromHash() {
+      const raw = decodeURIComponent(window.location.hash || "").replace(/^#/, "");
+      if (!raw) return null;
+      if (raw.startsWith("doc=")) return raw.slice(4);
+      return raw;
+    }
+
+    function selectDocById(id) {
+      const doc = findDocById(id);
+      if (!doc) return false;
+      selection.a = doc;
+      selection.b = null;
+      updateLayout("single");
+      return true;
+    }
+
+    function updatePane(pane, emptyEl, doc) {
+      if (!doc) {
+        if (pane.shadowRoot) {
+          pane.shadowRoot.innerHTML = "";
+        } else {
+          pane.textContent = "";
+        }
+        setEmptyState(emptyEl, true);
+        return;
+      }
+      setEmptyState(emptyEl, false);
+      let html = "";
+      try {
+        html = renderDoc(doc);
+      } catch (err) {
+        renderPaneError(pane, err && err.message ? err.message : err);
+        return;
+      }
+      const parts = parseDocHtml(html);
+      const shadow = ensureShadowRoot(pane);
+      const scopedCss = scopeCssForShadow(parts.css);
+      shadow.innerHTML = `<style>${scopedCss}</style>${parts.bodyHtml}`;
+    }
+
+    function updateLayout(layout) {
+      currentLayout = layout;
+      panes.className = "";
+      panes.classList.add(`layout-${layout}`);
+      buttons.forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.layout === layout);
+      });
+      if (layout !== "single") {
+        preferredSplit = layout;
+      }
+      if (layout === "single") {
+        selection.b = null;
+      }
+      updateUI();
+    }
+
+    function updateSelectionChips() {
+      chipAText.textContent = selection.a ? selection.a.title : "None selected";
+      chipBText.textContent = selection.b ? selection.b.title : "Compare (shift-click)";
+      const compareEnabled = currentLayout !== "single";
+      chipB.classList.toggle("is-disabled", !compareEnabled);
+      clearB.disabled = !selection.b || !compareEnabled;
+      clearB.classList.toggle("is-hidden", !selection.b || !compareEnabled);
+    }
+
+    function updateTreeHighlight() {
+      document.querySelectorAll(".tree-item").forEach((el) => {
+        const id = el.dataset.docId;
+        const isA = selection.a && id === selection.a.id;
+        const isB = selection.b && id === selection.b.id;
+        el.classList.toggle("active", isA);
+        el.classList.toggle("compare", isB);
+      });
+    }
+
+    function updateUI() {
+      updateSelectionChips();
+      updateTreeHighlight();
+      docTitle.textContent = selection.a ? selection.a.title : "Select a document";
+
+      updatePane(paneA, emptyA, selection.a);
+
+      if (currentLayout === "single") {
+        updatePane(paneB, emptyB, null);
+      } else {
+        updatePane(paneB, emptyB, selection.b);
+      }
+    }
+
+    function handleDocClick(doc, isShift) {
+      if (isShift) {
+        if (selection.b && selection.b.id === doc.id) {
+          selection.b = null;
+        } else if (selection.a && selection.a.id === doc.id) {
+          selection.b = doc;
+        } else if (!selection.a) {
+          selection.a = doc;
+        } else {
+          selection.b = doc;
+        }
+        if (selection.b && currentLayout === "single") {
+          updateLayout(preferredSplit);
+        } else {
+          updateUI();
+        }
+        return;
+      }
+
+      selection.a = doc;
+      selection.b = null;
+      if (currentLayout !== "single") {
+        updateLayout("single");
+      } else {
+        updateUI();
+      }
+    }
+
+    function filterTree(query) {
+      const q = query.toLowerCase();
+      document.querySelectorAll(".tree-item").forEach((el) => {
+        const doc = findDocById(el.dataset.docId);
+        const text = (el.textContent + " " + (doc ? doc.title : "")).toLowerCase();
+        const matches = !q || text.includes(q);
+        el.classList.toggle("hidden", !matches);
+      });
+
+      document.querySelectorAll(".tree-folder").forEach((folder) => {
+        const visible = folder.querySelector(".tree-item:not(.hidden)");
+        folder.classList.toggle("hidden", !visible && q);
+        if (q) {
+          folder.open = true;
+        }
+      });
+    }
+
+    collapseBtn.addEventListener("click", () => {
+      app.classList.add("sidebar-collapsed");
+    });
+
+    openBtn.addEventListener("click", () => {
+      app.classList.remove("sidebar-collapsed");
+    });
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => updateLayout(btn.dataset.layout));
+    });
+
+    clearB.addEventListener("click", () => {
+      selection.b = null;
+      updateLayout("single");
+    });
+
+    searchInput.addEventListener("input", (e) => {
+      filterTree(e.target.value);
+    });
+
+    const tree = buildTree();
+    renderTree(tree, treeRoot);
+
+    window.addEventListener("hashchange", () => {
+      const hashId = docIdFromHash();
+      if (hashId) {
+        selectDocById(hashId);
+      }
+    });
+
+    const initialHashId = docIdFromHash();
+    if (!(initialHashId && selectDocById(initialHashId))) {
+      if (rootDocId) {
+        const rootDoc = findDocById(rootDocId);
+        if (rootDoc) {
+          selection.a = rootDoc;
+        }
+      } else if (docs.length) {
+        selection.a = docs[0];
+      }
+      updateLayout("single");
+    }
+  </script>
+</body>
+</html>

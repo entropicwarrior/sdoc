@@ -150,10 +150,57 @@ function parseBlock(cursor, kind) {
   return nodes;
 }
 
+function extractTrailingOpener(text) {
+  const trimmed = text.trimEnd();
+  // Don't match if the line also ends with } (inline block like "{ content }")
+  if (trimmed.endsWith(COMMAND_SCOPE_CLOSE)) {
+    return null;
+  }
+  // Check longest openers first to avoid partial matches
+  const openers = [COMMAND_TABLE, COMMAND_LIST_NUMBER, COMMAND_LIST_BULLET, COMMAND_SCOPE_OPEN];
+  for (const opener of openers) {
+    if (trimmed.endsWith(opener)) {
+      const pos = trimmed.length - opener.length;
+      // Don't match escaped braces
+      if (pos > 0 && trimmed[pos - 1] === "\\") {
+        continue;
+      }
+      return { text: trimmed.slice(0, pos).trimEnd(), opener };
+    }
+  }
+  return null;
+}
+
 function parseScope(cursor) {
   const scopeStartLine = cursor.index + 1;
   const headingLine = cursor.current();
   cursor.next();
+
+  const trimmedLeft = headingLine.replace(/^\s+/, "");
+  const stripped = stripHeadingToken(trimmedLeft);
+  const trailing = extractTrailingOpener(stripped);
+
+  if (trailing) {
+    const parsedHeading = parseHeadingText(trailing.text);
+    let children;
+    if (trailing.opener === COMMAND_LIST_BULLET || trailing.opener === COMMAND_LIST_NUMBER) {
+      const listBody = parseListBody(cursor, trailing.opener === COMMAND_LIST_BULLET ? "bullet" : "number");
+      children = [listBody];
+    } else if (trailing.opener === COMMAND_TABLE) {
+      children = [parseTableBody(cursor, scopeStartLine)];
+    } else {
+      children = parseBlock(cursor, "normal");
+    }
+    return {
+      type: "scope",
+      title: parsedHeading.title,
+      id: parsedHeading.id,
+      children,
+      hasHeading: true,
+      lineStart: scopeStartLine,
+      lineEnd: cursor.index
+    };
+  }
 
   const parsedHeading = parseHeading(headingLine);
   const blockResult = parseScopeBlock(cursor);
@@ -343,6 +390,35 @@ function parseListItemLine(cursor, info) {
   const itemStartLine = cursor.index + 1;
   const raw = info.text;
   const task = parseTaskPrefix(raw);
+  const textForOpener = task ? task.text : raw;
+  const trailing = extractTrailingOpener(textForOpener);
+
+  if (trailing) {
+    const parsed = parseHeadingText(trailing.text);
+    cursor.next();
+
+    let children;
+    if (trailing.opener === COMMAND_LIST_BULLET || trailing.opener === COMMAND_LIST_NUMBER) {
+      const listBody = parseListBody(cursor, trailing.opener === COMMAND_LIST_BULLET ? "bullet" : "number");
+      children = [listBody];
+    } else if (trailing.opener === COMMAND_TABLE) {
+      children = [parseTableBody(cursor, itemStartLine)];
+    } else {
+      children = parseBlock(cursor, "normal");
+    }
+
+    return {
+      type: "scope",
+      title: parsed.title,
+      id: parsed.id,
+      children,
+      hasHeading: true,
+      task: task ? { checked: task.checked } : undefined,
+      lineStart: itemStartLine,
+      lineEnd: cursor.index
+    };
+  }
+
   const parsed = task ? parseHeadingText(task.text) : parseHeadingText(raw);
   cursor.next();
 
@@ -405,6 +481,10 @@ function parseImplicitListBlock(cursor, listType) {
 function parseTableBlock(cursor) {
   const tableStartLine = cursor.index + 1;
   cursor.next();
+  return parseTableBody(cursor, tableStartLine);
+}
+
+function parseTableBody(cursor, tableStartLine) {
   const rows = [];
 
   while (!cursor.eof()) {

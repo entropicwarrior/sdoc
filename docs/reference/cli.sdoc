@@ -2,14 +2,27 @@
 {
     # VSCode Extension Commands
     {
-        The SDOC extension registers two commands:
+        The SDOC extension registers five commands, available from the Command Palette:
 
         {[.]
             - **SDOC: Open Preview** (`sdoc.preview`) -- opens a rendered preview of the current `.sdoc` file
             - **SDOC: Open Preview to the Side** (`sdoc.previewToSide`) -- opens the preview in a side pane
+            - **SDOC: Export HTML** (`sdoc.exportHtml`) -- exports the active preview as a standalone HTML file
+            - **SDOC: Open in Browser** (`sdoc.openInBrowser`) -- opens the active preview in the system browser
+            - **SDOC: Build Site** (`sdoc.buildSite`) -- builds a static site from all `.sdoc` files in the workspace
         }
 
-        The preview updates automatically when the source file changes.
+        The preview updates automatically when the source file changes or when a `sdoc.config.json` or `.css` file is saved.
+
+        # Export HTML
+        {
+            Exports the currently previewed document as a self-contained `.html` file. The exported file includes all styles and supports collapsible scope toggles in the browser. Use the browser's print function (Ctrl+P / Cmd+P) for PDF export.
+        }
+
+        # Open in Browser
+        {
+            Opens the currently previewed document in the system's default browser. A temporary HTML file is created and opened. Like Export HTML, the output supports collapsible toggles and printing.
+        }
     }
 
     # Building the Extension
@@ -28,35 +41,57 @@ code --install-extension dist/sdoc-<version>.vsix
 
     # Static Site Builder
     {
-        `tools/build_site.py` generates a self-contained HTML viewer for all `.sdoc` files in the project.
+        Two ways to build a self-contained HTML viewer for all `.sdoc` files in a project:
 
-        ```bash
-python3 tools/build_site.py
-        ```
+        # Python CLI
+        {
+            `tools/build_site.py` generates the site from the command line:
+
+            ```bash
+python3 tools/build_site.py                          # current dir -> _sdoc_site/
+python3 tools/build_site.py docs/                    # docs/ -> docs/_sdoc_site/
+python3 tools/build_site.py docs/ -o out/            # docs/ -> out/
+            ```
+
+            {[.]
+                - `source_dir` (positional, default: `.`) -- directory containing `.sdoc` files
+                - `-o` / `--output` -- output directory (default: `_sdoc_site/` inside source_dir)
+            }
+        }
+
+        # VSCode Command
+        {
+            Run **SDOC: Build Site** from the Command Palette. It builds all `.sdoc` files in the workspace root and writes the output to `_sdoc_site/` in the workspace. After building, it offers to open the site in the browser.
+        }
 
         # Output
         {
-            Generated files are written to `web/`:
+            Both tools produce the same self-contained output in `_sdoc_site/`:
 
             {[.]
-                - `web/index.html` -- the viewer UI with sidebar navigation
-                - `web/sdoc-web.js` -- browser-side renderer (extracted from `src/sdoc.js`)
-                - `web/sdoc-data.js` -- embedded document content and stylesheets
-                - `web/viewer.css` -- viewer-specific styles
+                - `index.html` -- the viewer UI with sidebar navigation
+                - `sdoc-web.js` -- browser-side parser/renderer (from `src/sdoc.js`)
+                - `sdoc-data.js` -- embedded document content and stylesheets
+                - `viewer.css` -- viewer-specific styles
             }
+
+            The viewer shell and styles come from `src/site-template/`, which is the single source of truth for both tools.
         }
 
         # How It Works
         {
-            The script walks the project directory, finds all `.sdoc` files (excluding `.git`, `node_modules`, `.vscode`, `web`, `out`), and embeds their content into a JavaScript data file. The viewer renders documents client-side using the same parser as the VS Code extension.
+            The builder walks the source directory, finds all `.sdoc` files (excluding `.git`, `node_modules`, `.vscode`, `_sdoc_site`, `web`, `out`), and embeds their content into a JavaScript data file. The viewer renders documents client-side using the same parser as the VS Code extension.
         }
 
         # Viewer Features
         {
             {[.]
-                - Sidebar with file tree navigation
+                - Sidebar with file tree navigation and search filtering
                 - Split-pane comparison (Shift+Click a second document)
+                - Collapsible sidebar with layout controls (single, split L/R, split T/B)
                 - Client-side rendering with the same parser as the extension
+                - Shadow DOM isolation for each document pane
+                - URL hash navigation (`#doc=path/to/file.sdoc`)
             }
         }
     }
