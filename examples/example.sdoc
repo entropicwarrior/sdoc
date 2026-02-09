@@ -158,6 +158,25 @@
                 }
             }
 
+            # Braceless Scopes
+            {
+                Headings without braces create braceless scopes, terminated by the next heading:
+
+                # First Topic
+                This content belongs to First Topic.
+                It can have multiple paragraphs.
+
+                # Second Topic
+                This content belongs to Second Topic.
+
+                # Third Topic with Code
+                Here is some code:
+
+                ```js
+                console.log("braceless!");
+                ```
+            }
+
             # Headingless Scopes
             {
                 A bare block (no heading) groups content with indentation:

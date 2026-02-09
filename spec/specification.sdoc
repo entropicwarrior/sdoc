@@ -65,6 +65,27 @@
 
             `{` opens a scope block and `}` closes it. Indentation is cosmetic.
 
+            # Braceless Leaf Scopes @braceless-scopes
+            {
+                A heading not followed by `{` or a block opener creates a braceless scope. The scope's content runs until the next `#` heading at the same level, a closing `}`, or end of file:
+
+                ```
+# Section A
+This is content of Section A.
+It can span multiple lines.
+
+# Section B
+Content of Section B.
+                ```
+
+                {[.]
+                    - Braceless scopes can contain paragraphs, code blocks, blockquotes, implicit lists, horizontal rules, tables, and headingless scopes
+                    - Braceless scopes cannot contain child `#` headings; encountering one ends the scope (the heading becomes a sibling)
+                    - A closing `}` also terminates a braceless scope (used when braceless scopes appear inside an explicit parent)
+                    - Braceless and explicit scopes can be freely mixed in the same document
+                }
+            }
+
             # K&R Style Brace Placement @knr-braces
             {
                 The opening brace (or list/table opener) may appear at the end of a heading or list-item line instead of on its own line:
@@ -428,6 +449,34 @@
                 - Per-file meta settings override the merged `sdoc.config.json` values
                 - `@meta` is reserved and should not be used for normal references
             }
+
+            # Key:Value Meta Syntax @kv-meta
+            {
+                Inside a `@meta` scope, paragraph lines matching `Key: value` are parsed as metadata. This provides a lighter-weight alternative to sub-scopes for simple values:
+
+                ```
+                # Meta @meta
+                {
+                    style: styles/custom.css
+                    header: My Header
+                    footer: My Footer
+                    author: Jane Smith
+                    date: 2026-02-09
+                    version: 1.0
+                    status: Draft
+                }
+                ```
+
+                {[.]
+                    - Key matching is case-insensitive
+                    - The pattern requires at least one space after the colon (`key: value`, not `key:value`)
+                    - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`
+                    - All other keys are stored as custom properties (e.g., `author`, `date`, `version`, `status`, `tags`)
+                    - Sub-scope syntax takes precedence: if both `# Style { path }` and `style: path` exist, the sub-scope value wins
+                    - Key:value and sub-scope syntax can be mixed freely in the same meta scope
+                    - Each key:value pair must be on its own paragraph line (separated by blank lines from other pairs)
+                }
+            }
         }
     }
 
@@ -469,6 +518,31 @@
         }
     }
 
+    # Implicit Root Scope @implicit-root
+    {
+        If the first non-blank line of a document is a `#` heading and the next non-blank line after it is NOT `{`, an inline block, or a list/table opener, the document is in implicit root mode:
+
+        ```
+# My Document
+
+# Section A
+Content of Section A.
+
+# Section B
+{
+    Content of Section B.
+}
+        ```
+
+        {[.]
+            - The first heading becomes the root scope title
+            - Everything after it until EOF becomes the root scope's children
+            - Works with both braceless and explicit child scopes
+            - If the first heading IS followed by `{` or a block opener, the document uses explicit root mode (existing behavior)
+            - K&R brace style on the first heading also triggers explicit mode
+        }
+    }
+
     # Parsing Rules @parsing-rules
     {
         Command tokens are recognised only at the start of a line (after optional indentation):
@@ -492,15 +566,20 @@
         Informal EBNF grammar:
 
         ```
-        document      = scope ;
+        document      = implicit_root | block_body ;
+        implicit_root = heading block_body ;
 
         scope         = heading ws? block
+                      | heading ws? braceless_body
                       | heading_with_opener block_body "}" ;
         heading       = "#" { "#" } ws title (ws id)? ;
         heading_with_opener = "#" { "#" } ws title (ws id)? ws block_opener ;
         id            = "@" ident ;
         block_opener  = "{" | "{[.]" | "{[#]" | "{[table]" ;
         block         = "{" ws? block_body "}" ;
+        braceless_body = { paragraph | code_block | blockquote | implicit_list
+                         | horizontal_rule | headingless_scope | table_scope
+                         | blank } ;
 
         block_body    = { blank | paragraph | scope | headingless_scope
                         | list_scope | table_scope

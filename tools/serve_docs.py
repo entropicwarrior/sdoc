@@ -167,6 +167,7 @@ def extract_meta_style_paths(text: str) -> Tuple[Optional[str], List[str]]:
     style_path = None
     style_append_paths: List[str] = []
 
+    # First pass: sub-scope syntax (takes precedence)
     for child in meta_node.get("children", []):
         key = child.get("title", "").strip().lower()
         text_lines = [line for line in child.get("paragraphs", []) if line.strip()]
@@ -176,6 +177,20 @@ def extract_meta_style_paths(text: str) -> Tuple[Optional[str], List[str]]:
             style_path = text_lines[0].strip()
         elif key in ("styleappend", "style-append"):
             style_append_paths.extend([line.strip() for line in text_lines if line.strip()])
+
+    # Second pass: key:value syntax from paragraph lines (only if not already set)
+    import re
+    kv_pattern = re.compile(r"^([\w][\w-]*)\s*:\s+(.+)$")
+    for line in meta_node.get("paragraphs", []):
+        m = kv_pattern.match(line.strip())
+        if not m:
+            continue
+        key = m.group(1).lower()
+        value = m.group(2).strip()
+        if key == "style" and style_path is None:
+            style_path = value
+        elif key in ("styleappend", "style-append") and not style_append_paths:
+            style_append_paths.append(value)
 
     return style_path, style_append_paths
 

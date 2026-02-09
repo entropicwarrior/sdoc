@@ -9,32 +9,24 @@
 
     # S2: Document Metadata Beyond Styling @s2
     {
-        Priority: High
+        Priority: High (partially addressed)
         Serves: @r5, @r6, @r7
 
-        The @meta scope currently handles style, header, and footer. But documents need richer metadata: author, date, version, status, tags, document type. AI agents benefit enormously from being able to query document metadata without parsing the body.
-
-        Suggested approach: extend the @meta scope with additional well-known keys.
+        The @meta scope currently handles style, header, and footer. Richer metadata (author, date, version, status, tags) is now supported via key:value syntax inside the @meta scope. Both sub-scope and key:value styles work:
 
         ```
         # Meta @meta
         {
-            # Author
-            { Jane Smith }
-            # Date
-            { 2026-02-06 }
-            # Version
-            { 0.3 }
-            # Status
-            { Draft }
-            # Tags
-            { specification, api, v2 }
-            # Style
-            { styles/custom.css }
+            author: Jane Smith
+            date: 2026-02-06
+            version: 0.3
+            status: Draft
+            tags: specification, api, v2
+            style: styles/custom.css
         }
         ```
 
-        The meta scope already has the right pattern. This is about documenting which keys are well-known and ensuring tooling can extract them consistently.
+        Remaining work: defining a canonical set of well-known keys and ensuring tooling consistently exposes `meta.properties` to downstream consumers (renderers, AI agents, search indices).
     }
 
     # S3: Comments @s3

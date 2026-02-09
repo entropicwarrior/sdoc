@@ -35,8 +35,83 @@ class LineCursor {
 function parseSdoc(text) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const cursor = new LineCursor(normalized.split("\n"));
+
+  // Check for implicit root: first non-blank line is a heading, next non-blank is NOT a block opener
+  const implicitRoot = detectImplicitRoot(cursor);
+  if (implicitRoot) {
+    const scopeStartLine = cursor.index + 1;
+    const parsedHeading = parseHeading(cursor.current());
+    cursor.next();
+    const children = parseBlock(cursor, "normal");
+    const rootNode = {
+      type: "scope",
+      title: parsedHeading.title,
+      id: parsedHeading.id,
+      children,
+      hasHeading: true,
+      lineStart: scopeStartLine,
+      lineEnd: cursor.index
+    };
+    return { nodes: [rootNode], errors: cursor.errors };
+  }
+
   const nodes = parseBlock(cursor, "normal");
   return { nodes, errors: cursor.errors };
+}
+
+function detectImplicitRoot(cursor) {
+  const saved = cursor.index;
+  // Find first non-blank line
+  while (!cursor.eof()) {
+    const trimmed = cursor.current().trim();
+    if (trimmed !== "") break;
+    cursor.next();
+  }
+  if (cursor.eof()) { cursor.index = saved; return false; }
+
+  const firstLine = cursor.current();
+  const trimmedLeft = firstLine.replace(/^\s+/, "");
+  if (!isHeadingLine(trimmedLeft)) { cursor.index = saved; return false; }
+
+  // Check if heading has trailing opener (K&R style) — if so, it's explicit
+  const stripped = stripHeadingToken(trimmedLeft);
+  const trailing = extractTrailingOpener(stripped);
+  if (trailing) { cursor.index = saved; return false; }
+
+  // Peek at the next non-blank line after the heading
+  const headingIndex = cursor.index;
+  cursor.index = headingIndex + 1;
+  while (!cursor.eof()) {
+    const trimmed = cursor.current().trim();
+    if (trimmed !== "") break;
+    cursor.next();
+  }
+
+  let isImplicit = false;
+  if (cursor.eof()) {
+    // Heading followed by nothing — implicit root with no content
+    isImplicit = true;
+  } else {
+    const nextTrimmed = cursor.current().replace(/^\s+/, "").trim();
+    // If next non-blank is a block opener, it's explicit
+    if (nextTrimmed === COMMAND_SCOPE_OPEN ||
+        nextTrimmed === COMMAND_LIST_BULLET ||
+        nextTrimmed === COMMAND_LIST_NUMBER ||
+        nextTrimmed === COMMAND_TABLE) {
+      isImplicit = false;
+    } else if (tryParseInlineBlock(nextTrimmed) !== null) {
+      isImplicit = false;
+    } else {
+      isImplicit = true;
+    }
+  }
+
+  // Restore cursor to first non-blank (the heading line)
+  cursor.index = headingIndex;
+  if (!isImplicit) {
+    cursor.index = saved;
+  }
+  return isImplicit;
 }
 
 function parseBlock(cursor, kind) {
@@ -205,6 +280,19 @@ function parseScope(cursor) {
   const parsedHeading = parseHeading(headingLine);
   const blockResult = parseScopeBlock(cursor);
 
+  if (blockResult.blockType === "braceless") {
+    const children = parseBracelessBlock(cursor);
+    return {
+      type: "scope",
+      title: parsedHeading.title,
+      id: parsedHeading.id,
+      children,
+      hasHeading: true,
+      lineStart: scopeStartLine,
+      lineEnd: cursor.index
+    };
+  }
+
   if (blockResult.blockType === "list") {
     return {
       type: "scope",
@@ -260,6 +348,109 @@ function tryParseInlineBlock(trimmed) {
   return content;
 }
 
+function parseBracelessBlock(cursor) {
+  const nodes = [];
+  let paragraphLines = [];
+  let paragraphStartLine = 0;
+
+  const flushParagraph = () => {
+    if (!paragraphLines.length) return;
+    const text = paragraphLines.join(" ").trim();
+    if (text) {
+      nodes.push({ type: "paragraph", text, lineStart: paragraphStartLine, lineEnd: cursor.index });
+    }
+    paragraphLines = [];
+  };
+
+  while (!cursor.eof()) {
+    const line = cursor.current();
+    const trimmedLeft = line.replace(/^\s+/, "");
+    const trimmed = trimmedLeft.trim();
+
+    if (trimmed === "") {
+      flushParagraph();
+      cursor.next();
+      continue;
+    }
+
+    // Stop on } — parent owns it, don't advance
+    if (trimmed === COMMAND_SCOPE_CLOSE) {
+      flushParagraph();
+      break;
+    }
+
+    // Stop on # heading — becomes sibling, don't advance
+    if (isHeadingLine(trimmedLeft)) {
+      flushParagraph();
+      break;
+    }
+
+    if (trimmed === ",") {
+      flushParagraph();
+      cursor.next();
+      continue;
+    }
+
+    if (isHorizontalRule(trimmed)) {
+      flushParagraph();
+      const hrLine = cursor.index + 1;
+      nodes.push({ type: "hr", lineStart: hrLine, lineEnd: hrLine });
+      cursor.next();
+      continue;
+    }
+
+    if (isBlockquoteLine(trimmedLeft)) {
+      flushParagraph();
+      nodes.push(parseBlockquote(cursor));
+      continue;
+    }
+
+    if (isFenceStart(trimmedLeft)) {
+      flushParagraph();
+      nodes.push(parseCodeBlock(cursor));
+      continue;
+    }
+
+    const implicitListInfo = getListItemInfo(trimmedLeft);
+    if (implicitListInfo) {
+      flushParagraph();
+      nodes.push(parseImplicitListBlock(cursor, implicitListInfo.type));
+      continue;
+    }
+
+    // Headingless scopes { ... }
+    if (trimmed === COMMAND_SCOPE_OPEN) {
+      flushParagraph();
+      const scopeStartLine = cursor.index + 1;
+      cursor.next();
+      const children = parseBlock(cursor, "normal");
+      nodes.push({ type: "scope", title: "", id: undefined, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index });
+      continue;
+    }
+
+    if (trimmed === COMMAND_LIST_BULLET || trimmed === COMMAND_LIST_NUMBER) {
+      flushParagraph();
+      nodes.push(parseListBlock(cursor, trimmed === COMMAND_LIST_BULLET ? "bullet" : "number"));
+      continue;
+    }
+
+    if (trimmed === COMMAND_TABLE) {
+      flushParagraph();
+      nodes.push(parseTableBlock(cursor));
+      continue;
+    }
+
+    if (!paragraphLines.length) {
+      paragraphStartLine = cursor.index + 1;
+    }
+    paragraphLines.push(trimmedLeft.trim());
+    cursor.next();
+  }
+
+  flushParagraph();
+  return nodes;
+}
+
 function parseScopeBlock(cursor) {
   while (!cursor.eof()) {
     const line = cursor.current();
@@ -298,13 +489,12 @@ function parseScopeBlock(cursor) {
       return { blockType: "normal", children: [parseTableBlock(cursor)] };
     }
 
-    cursor.error("Expected '{' or list opener after heading.");
-    cursor.next();
-    return { blockType: "normal", children: [] };
+    // No block opener found — braceless scope
+    return { blockType: "braceless" };
   }
 
-  cursor.error("Unexpected end of file after heading.");
-  return { blockType: "normal", children: [] };
+  // EOF after heading — braceless scope with no content
+  return { blockType: "braceless" };
 }
 
 function parseListBlock(cursor, listType) {
@@ -1092,9 +1282,13 @@ function extractMeta(nodes) {
     stylePath: null,
     styleAppendPath: null,
     headerNodes: null,
-    footerNodes: null
+    footerNodes: null,
+    headerText: null,
+    footerText: null,
+    properties: {}
   };
 
+  // First pass: sub-scope syntax (takes precedence)
   for (const child of metaNode.children) {
     if (child.type !== "scope") {
       continue;
@@ -1108,6 +1302,27 @@ function extractMeta(nodes) {
       meta.headerNodes = child.children;
     } else if (key === "footer") {
       meta.footerNodes = child.children;
+    }
+  }
+
+  // Second pass: key:value syntax from paragraph nodes (only if not already set by sub-scope)
+  const kvPattern = /^([\w][\w-]*)\s*:\s+(.+)$/;
+  for (const child of metaNode.children) {
+    if (child.type !== "paragraph") continue;
+    const match = child.text.match(kvPattern);
+    if (!match) continue;
+    const key = match[1].toLowerCase();
+    const value = match[2].trim();
+    if (key === "style") {
+      if (!meta.stylePath) meta.stylePath = value;
+    } else if (key === "styleappend" || key === "style-append") {
+      if (!meta.styleAppendPath) meta.styleAppendPath = value;
+    } else if (key === "header") {
+      if (!meta.headerNodes && !meta.headerText) meta.headerText = value;
+    } else if (key === "footer") {
+      if (!meta.footerNodes && !meta.footerText) meta.footerText = value;
+    } else {
+      if (!(key in meta.properties)) meta.properties[key] = value;
     }
   }
 
@@ -1427,8 +1642,12 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
 
   const meta = options.meta ?? {};
   const config = options.config ?? {};
-  const headerHtml = meta.headerNodes ? renderFragment(meta.headerNodes, 2) : renderTextParagraphs(config.header);
-  const footerHtml = meta.footerNodes ? renderFragment(meta.footerNodes, 2) : renderTextParagraphs(config.footer);
+  const headerHtml = meta.headerNodes ? renderFragment(meta.headerNodes, 2)
+    : meta.headerText ? renderTextParagraphs(meta.headerText)
+    : renderTextParagraphs(config.header);
+  const footerHtml = meta.footerNodes ? renderFragment(meta.footerNodes, 2)
+    : meta.footerText ? renderTextParagraphs(meta.footerText)
+    : renderTextParagraphs(config.footer);
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";

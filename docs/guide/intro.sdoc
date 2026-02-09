@@ -2,9 +2,17 @@
 {
     # What is SDOC?
     {
-        SDOC is a plain text format for writing structured documentation. It uses explicit brace scoping instead of relying on whitespace or indentation to define document structure.
+        SDOC is a plain text format for writing structured documentation. It uses explicit scoping to define document structure, with optional braces for unambiguous nesting.
 
-        Every SDOC document is a tree of scopes. A scope has a heading and a body enclosed in braces:
+        The simplest SDOC document is just a heading followed by content:
+
+        ```
+# My Document
+
+This is a paragraph.
+        ```
+
+        For richer structure, use braces to scope content explicitly:
 
         ```
 # My Section
@@ -22,6 +30,19 @@
     {
         Nested content.
     }
+}
+        ```
+
+        Or use braceless scopes for simpler documents:
+
+        ```
+# Outer
+{
+    # Section A
+    Content for section A.
+
+    # Section B
+    Content for section B.
 }
         ```
 

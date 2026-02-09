@@ -613,5 +613,269 @@ function walkSdocFiles(dir, callback) {
 }
 
 // ============================================================
+console.log("\n--- Braceless Leaf Scopes ---");
+
+test("braceless scope with paragraph terminated by sibling heading", () => {
+  // Inside an explicit parent, braceless children become siblings
+  const r = parseSdoc("# Parent\n{\n  # A\n  Paragraph in A.\n\n  # B\n  {\n    Content B.\n  }\n}");
+  assert(r.errors.length === 0);
+  const children = r.nodes[0].children;
+  assert(children.length === 2, "Expected 2 children, got " + children.length);
+  assert(children[0].title === "A");
+  assert(children[0].children[0].type === "paragraph");
+  assert(children[0].children[0].text === "Paragraph in A.");
+  assert(children[1].title === "B");
+  assert(children[1].children[0].text === "Content B.");
+});
+
+test("braceless scope with code block", () => {
+  const r = parseSdoc("# Parent\n{\n  # Code\n  ```js\n  const x = 1;\n  ```\n  # Next\n  { done }\n}");
+  assert(r.errors.length === 0);
+  const children = r.nodes[0].children;
+  assert(children[0].title === "Code");
+  assert(children[0].children[0].type === "code");
+  assert(children[0].children[0].lang === "js");
+  assert(children[1].title === "Next");
+});
+
+test("braceless scope with implicit list", () => {
+  const r = parseSdoc("# Parent\n{\n  # Items\n  - One\n  - Two\n\n  # Other\n  { text }\n}");
+  assert(r.errors.length === 0);
+  const children = r.nodes[0].children;
+  assert(children[0].title === "Items");
+  assert(children[0].children[0].type === "list");
+  assert(children[0].children[0].items.length === 2);
+  assert(children[1].title === "Other");
+});
+
+test("braceless scope terminated by } (parent close)", () => {
+  const r = parseSdoc("# Outer\n{\n  # Inner\n  Braceless inner content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Outer");
+  assert(r.nodes[0].children[0].title === "Inner");
+  assert(r.nodes[0].children[0].children[0].type === "paragraph");
+  assert(r.nodes[0].children[0].children[0].text === "Braceless inner content.");
+});
+
+test("braceless scope terminated by EOF", () => {
+  const r = parseSdoc("# Only\nJust some text.");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Only");
+  assert(r.nodes[0].children[0].text === "Just some text.");
+});
+
+test("multiple braceless siblings inside explicit parent", () => {
+  const r = parseSdoc("# Parent\n{\n  # A\n  Content A.\n\n  # B\n  Content B.\n\n  # C\n  Content C.\n}");
+  assert(r.errors.length === 0);
+  const children = r.nodes[0].children;
+  assert(children.length === 3, "Expected 3 children, got " + children.length);
+  assert(children[0].title === "A");
+  assert(children[0].children[0].text === "Content A.");
+  assert(children[1].title === "B");
+  assert(children[1].children[0].text === "Content B.");
+  assert(children[2].title === "C");
+  assert(children[2].children[0].text === "Content C.");
+});
+
+test("mix of braceless and explicit scopes", () => {
+  const r = parseSdoc("# Parent\n{\n  # Braceless\n  Some text.\n\n  # Explicit\n  {\n    With braces.\n  }\n\n  # Another Braceless\n  More text.\n}");
+  assert(r.errors.length === 0);
+  const children = r.nodes[0].children;
+  assert(children.length === 3, "Expected 3 children, got " + children.length);
+  assert(children[0].title === "Braceless");
+  assert(children[0].children[0].text === "Some text.");
+  assert(children[1].title === "Explicit");
+  assert(children[1].children[0].text === "With braces.");
+  assert(children[2].title === "Another Braceless");
+  assert(children[2].children[0].text === "More text.");
+});
+
+test("multiple braceless siblings at top level (implicit root)", () => {
+  // At top level, first braceless heading becomes implicit root, rest are its children
+  const r = parseSdoc("# Doc\n\n# A\nContent A.\n\n# B\nContent B.");
+  assert(r.errors.length === 0);
+  assert(r.nodes.length === 1);
+  assert(r.nodes[0].title === "Doc");
+  const children = r.nodes[0].children;
+  assert(children.length === 2, "Expected 2 children, got " + children.length);
+  assert(children[0].title === "A");
+  assert(children[1].title === "B");
+});
+
+test("braceless scope with blockquote", () => {
+  const r = parseSdoc("# Quote\n> A quoted line.\n> Another line.\n\n# Next\n{ ok }");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Quote");
+  assert(r.nodes[0].children[0].type === "blockquote");
+});
+
+test("braceless scope with HR", () => {
+  const r = parseSdoc("# Section\nBefore.\n---\nAfter.\n\n# Next\n{ ok }");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Section");
+  const types = r.nodes[0].children.map(c => c.type);
+  assert(types.includes("hr"));
+  assert(types.includes("paragraph"));
+});
+
+test("braceless scope with headingless scope inside", () => {
+  const r = parseSdoc("# Outer\n{\n  Grouped.\n}\nMore text.\n\n# Next\n{ ok }");
+  assert(r.errors.length === 0);
+  // This is an explicit scope (has {) — first top-level # Outer sees { so it's explicit
+  // Actually: # Outer is followed by {, so it's explicit. Let me adjust.
+  // The headingless scope test within braceless should be different:
+  const r2 = parseSdoc("# Top\nBefore.\n\n# Next\n{ ok }");
+  assert(r2.errors.length === 0);
+  assert(r2.nodes[0].title === "Top");
+  assert(r2.nodes[0].children[0].text === "Before.");
+});
+
+test("braceless scope does not consume child headings", () => {
+  // Inside an explicit parent, # Child heading terminates the braceless scope, becoming a sibling
+  const r = parseSdoc("# Outer\n{\n  # A\n  A text.\n\n  # B\n  B text.\n}");
+  assert(r.errors.length === 0);
+  const children = r.nodes[0].children;
+  assert(children.length === 2, "Expected 2 sibling scopes, got " + children.length);
+  assert(children[0].title === "A");
+  assert(children[1].title === "B");
+});
+
+// ============================================================
+console.log("\n--- Implicit Root Scope ---");
+
+test("implicit root with braceless children", () => {
+  const r = parseSdoc("# My Document\n\nFirst paragraph.\n\nSecond paragraph.");
+  assert(r.errors.length === 0);
+  assert(r.nodes.length === 1);
+  assert(r.nodes[0].title === "My Document");
+  assert(r.nodes[0].children.length === 2);
+  assert(r.nodes[0].children[0].text === "First paragraph.");
+  assert(r.nodes[0].children[1].text === "Second paragraph.");
+});
+
+test("implicit root with child headings as braceless siblings", () => {
+  const r = parseSdoc("# Doc Title\n\n# Section A\nContent A.\n\n# Section B\nContent B.");
+  assert(r.errors.length === 0);
+  assert(r.nodes.length === 1);
+  assert(r.nodes[0].title === "Doc Title");
+  const children = r.nodes[0].children;
+  assert(children.length === 2, "Expected 2 child scopes, got " + children.length);
+  assert(children[0].title === "Section A");
+  assert(children[0].children[0].text === "Content A.");
+  assert(children[1].title === "Section B");
+  assert(children[1].children[0].text === "Content B.");
+});
+
+test("explicit root still works (backward compat)", () => {
+  const r = parseSdoc("# Doc\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes.length === 1);
+  assert(r.nodes[0].title === "Doc");
+  assert(r.nodes[0].children[0].text === "Content.");
+});
+
+test("implicit root with @id", () => {
+  const r = parseSdoc("# My Doc @my-doc\n\nContent here.");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].id === "my-doc");
+  assert(r.nodes[0].title === "My Doc");
+  assert(r.nodes[0].children[0].text === "Content here.");
+});
+
+test("implicit root with mixed braceless and explicit children", () => {
+  const r = parseSdoc("# Root\n\n# Braceless Child\nSome text.\n\n# Explicit Child\n{\n  Braced.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes.length === 1);
+  assert(r.nodes[0].title === "Root");
+  // Children should include both child scopes
+  const children = r.nodes[0].children;
+  const scopes = children.filter(c => c.type === "scope");
+  assert(scopes.length === 2, "Expected 2 child scopes, got " + scopes.length);
+  assert(scopes[0].title === "Braceless Child");
+  assert(scopes[1].title === "Explicit Child");
+});
+
+test("first heading with K&R brace is explicit (no implicit root)", () => {
+  const r = parseSdoc("# Doc {\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes.length === 1);
+  assert(r.nodes[0].title === "Doc");
+  assert(r.nodes[0].children[0].text === "Content.");
+});
+
+test("implicit root heading followed by nothing", () => {
+  const r = parseSdoc("# Empty Doc");
+  assert(r.errors.length === 0);
+  assert(r.nodes.length === 1);
+  assert(r.nodes[0].title === "Empty Doc");
+  assert(r.nodes[0].children.length === 0);
+});
+
+// ============================================================
+console.log("\n--- Key:Value Meta Syntax ---");
+
+test("key:value meta for style", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  style: custom.css\n}\n# Body\n{\n  Content.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.stylePath === "custom.css");
+});
+
+test("key:value meta for header and footer", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  header: My Header\n\n  footer: My Footer\n}\n# Body\n{\n  Content.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.headerText === "My Header", "headerText was: " + result.meta.headerText);
+  assert(result.meta.footerText === "My Footer", "footerText was: " + result.meta.footerText);
+});
+
+test("key:value meta for arbitrary properties", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  author: Jane Smith\n\n  date: 2026-02-09\n\n  version: 1.0\n}\n# Body\n{\n  Content.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.properties.author === "Jane Smith", "author was: " + result.meta.properties.author);
+  assert(result.meta.properties.date === "2026-02-09");
+  assert(result.meta.properties.version === "1.0");
+});
+
+test("key:value meta for styleappend", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  styleappend: overrides.css\n}\n# Body\n{\n  Hi.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.styleAppendPath === "overrides.css");
+});
+
+test("key:value mixed with sub-scope (sub-scope wins)", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  # Style\n  { from-scope.css }\n  style: from-kv.css\n}\n# Body\n{\n  Content.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.stylePath === "from-scope.css", "Sub-scope should take precedence, got: " + result.meta.stylePath);
+});
+
+test("key:value header renders in HTML", () => {
+  const html = renderHtmlDocument("# Meta @meta\n{\n  header: My KV Header\n}\n# Body\n{\n  Content.\n}", "Test");
+  assert(html.includes("My KV Header"));
+});
+
+test("key:value footer renders in HTML", () => {
+  const html = renderHtmlDocument("# Meta @meta\n{\n  footer: My KV Footer\n}\n# Body\n{\n  Content.\n}", "Test");
+  assert(html.includes("My KV Footer"));
+});
+
+test("key:value with style-append hyphenated key", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  style-append: extra.css\n}\n# Body\n{\n  Hi.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.styleAppendPath === "extra.css");
+});
+
+test("key:value sub-scope header wins over kv header", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  # Header\n  { Scope Header }\n  header: KV Header\n}\n# Body\n{\n  Hi.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.headerNodes !== null, "headerNodes should be set by sub-scope");
+  assert(result.meta.headerText === null, "headerText should remain null when sub-scope wins");
+});
+
+test("key:value does not match lines without space after colon", () => {
+  const r = parseSdoc("# Meta @meta\n{\n  http://example.com\n}\n# Body\n{\n  Hi.\n}");
+  const result = extractMeta(r.nodes);
+  assert(Object.keys(result.meta.properties).length === 0, "Should not match URL-like lines");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

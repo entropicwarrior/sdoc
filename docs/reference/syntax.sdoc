@@ -20,6 +20,26 @@
 
         In the VSCode interactive preview, scopes with children display a collapsible toggle triangle on hover. Clicking the triangle collapses or expands the scope's children. Collapse state persists across preview refreshes.
 
+        # Braceless Scopes
+        {
+            A heading not followed by `{` or a block opener creates a braceless scope. Content runs until the next `#` heading, a closing `}`, or end of file:
+
+            ```
+# Section A
+Content of Section A.
+
+# Section B
+Content of Section B.
+            ```
+
+            {[.]
+                - Braceless scopes support paragraphs, code blocks, blockquotes, implicit lists, HRs, and tables
+                - Encountering another `#` heading ends the braceless scope (the heading becomes a sibling)
+                - A closing `}` also terminates a braceless scope
+                - Braceless and explicit scopes can be mixed freely
+            }
+        }
+
         # Headingless Scopes
         {
             A bare `{` block without a preceding heading creates a scope with no heading:
@@ -299,6 +319,25 @@
         }
     }
 
+    # Implicit Root
+    {
+        If the first heading in a document is not followed by `{` or a block opener, the entire document is wrapped in an implicit root scope:
+
+        ```
+# My Document
+
+# Section A
+Content of section A.
+
+# Section B
+{
+    Content of section B.
+}
+        ```
+
+        This is equivalent to wrapping everything after the first heading in `{ ... }`. If the first heading IS followed by `{`, the document uses explicit root mode (existing behavior).
+    }
+
     # Meta Scope
     {
         A reserved `@meta` scope at the top level overrides rendering options per file:
@@ -322,6 +361,31 @@
             - `Style` and `StyleAppend` are file paths relative to the SDOC file
             - `Header` and `Footer` support inline formatting
             - Per-file meta overrides `sdoc.config.json` values
+        }
+
+        # Key:Value Meta Syntax
+        {
+            For simpler metadata, use key:value pairs instead of sub-scopes:
+
+            ```
+# Meta @meta
+{
+    style: path/to/custom.css
+    header: My Header
+    footer: My Footer
+    author: Jane Smith
+    date: 2026-02-09
+    version: 1.0
+}
+            ```
+
+            {[.]
+                - Key matching is case-insensitive
+                - Requires at least one space after the colon
+                - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`
+                - Other keys (e.g., `author`, `date`, `version`) are stored as custom properties
+                - Sub-scope syntax takes precedence over key:value when both exist
+            }
         }
     }
 }
