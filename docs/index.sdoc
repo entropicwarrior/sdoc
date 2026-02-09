@@ -2,7 +2,7 @@
 {
     # Overview
     {
-        SDOC ("Simple/Smart Documentation") is a plain text documentation format with explicit scoping. Documents are trees of nested scopes delimited by braces, with familiar inline formatting borrowed from Markdown.
+        SDOC ("Simple/Smart Documentation") is a plain text documentation format with explicit scoping. Documents are trees of nested scopes, optionally delimited by braces, with familiar inline formatting borrowed from Markdown.
 
         Use the sidebar to navigate. Shift+Click two docs to compare them side by side.
     }

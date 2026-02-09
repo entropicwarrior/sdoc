@@ -29,7 +29,9 @@ const { nodes, meta } = extractMeta(parsed.nodes);
 
         {[.]
             - `nodes` -- the AST node array from `parseSdoc`
-            - Returns `{ nodes, meta }` where `meta` contains `stylePath`, `styleAppendPath`, `headerNodes`, and `footerNodes`
+            - Returns `{ nodes, meta }` where `meta` contains `stylePath`, `styleAppendPath`, `headerNodes`, `footerNodes`, `headerText`, `footerText`, and `properties`
+            - `headerText` and `footerText` are set by key:value meta syntax (e.g., `header: My Header`)
+            - `properties` is an object of arbitrary key:value pairs from the meta scope (e.g., `author`, `date`, `version`)
         }
     }
 

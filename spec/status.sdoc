@@ -34,6 +34,9 @@
             - [x] Escaping
             - [x] Headingless scopes (bare { } blocks for grouping without a title)
             - [x] K&R brace style (opening brace on same line as heading or list item)
+            - [x] Braceless leaf scopes (heading without braces, terminated by next heading or EOF)
+            - [x] Implicit root scope (first braceless heading wraps entire document)
+            - [x] Key:value meta syntax (lightweight alternative to sub-scopes in @meta)
             - [x] Scope indentation (visual nesting via CSS padding)
             - [x] Print support (@media print CSS overrides)
         }
@@ -95,7 +98,7 @@
         {
             These are the suggestions most needed to make SDOC viable across all three use cases. See suggestions.sdoc for full details.
 
-            - [ ] Document metadata (@s2) -- extend @meta with well-known keys (author, date, version, status, tags)
+            - [ ] Document metadata (@s2) -- key:value meta is implemented; remaining work is defining canonical well-known keys and exposing `meta.properties` to downstream consumers
             - [ ] Comments (@s3) -- currently an open question in the spec
             - [ ] Semantic scope types (@s4) -- type annotations on scopes for AI agent consumption
         }

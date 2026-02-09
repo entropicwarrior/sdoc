@@ -27,7 +27,7 @@
         {
             {[.]
                 - A document is a tree of scopes
-                - A scope has a heading line and a block (`{ ... }`)
+                - A scope has a heading line and either a brace-delimited block (`{ ... }`) or braceless content terminated by the next heading, `}`, or EOF
                 - Headings are explicit and always start with `#`
                 - A scope may have an optional human ID (e.g., `@overview`)
                 - References use `@id` in text

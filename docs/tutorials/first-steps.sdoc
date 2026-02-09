@@ -6,12 +6,18 @@
 
         ```
 # My Notes
+
+Hello, this is my first SDOC document.
+        ```
+
+        The simplest SDOC file is just a heading followed by content. The heading becomes the document title and everything after it is the body (this is called an implicit root scope). You can also use explicit braces for more control:
+
+        ```
+# My Notes
 {
     Hello, this is my first SDOC document.
 }
         ```
-
-        Every SDOC file starts with a top-level scope: a heading followed by a brace block.
     }
 
     # Step 2: Add Nested Sections

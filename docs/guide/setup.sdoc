@@ -20,7 +20,7 @@ npm run package
         This produces a `.vsix` file in the `dist/` folder. Install it:
 
         ```bash
-code --install-extension dist/sdoc-0.0.3.vsix
+code --install-extension dist/sdoc-*.vsix
         ```
 
         Or install from within VS Code: open the Command Palette, run "Extensions: Install from VSIX...", and select the `.vsix` file.

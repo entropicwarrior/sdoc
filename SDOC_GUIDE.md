@@ -10,11 +10,11 @@ This guide teaches you everything you need to write SDOC files. Part 1 is a quic
 
 ### Core Principle
 
-All structure comes from `{ }` braces. Whitespace and indentation are cosmetic — use them freely for readability but they never affect meaning.
+Structure comes from explicit scoping. Braces (`{ }`) provide unambiguous scope boundaries, while braceless scopes offer a lighter syntax for simple documents. Whitespace and indentation are cosmetic — use them freely for readability but they never affect meaning.
 
 ### Scopes
 
-A scope is a heading followed by a brace-delimited block. Nesting depth determines heading style.
+A scope is a heading followed by content. Use braces for explicit scoping, or omit them for braceless leaf scopes:
 
 ```
 # Document Title
@@ -31,9 +31,21 @@ A scope is a heading followed by a brace-delimited block. Nesting depth determin
 }
 ```
 
+Or with braceless scopes (content runs until the next heading or EOF):
+
+```
+# Document Title
+
+# Section A
+Content of section A.
+
+# Section B
+Content of section B.
+```
+
 - `#` starts a heading (multiple `#` characters are allowed but don't affect depth — only nesting does)
 - `@id` at the end of a heading line assigns a referenceable ID
-- `{ }` delimits the scope's content
+- `{ }` delimits the scope's content (optional for leaf scopes)
 
 ### Headingless Scopes
 
@@ -82,6 +94,39 @@ The opening brace (or list/table opener) can appear at the end of the heading li
 ```
 
 This also works on list item lines: `- Item {`. K&R and Allman styles can be mixed freely in the same document.
+
+### Braceless Scopes
+
+A heading not followed by `{` creates a braceless scope. Content runs until the next `#` heading, a closing `}`, or end of file:
+
+```
+# Section A
+Content of Section A.
+It can span multiple lines.
+
+# Section B
+Content of Section B.
+```
+
+- Braceless scopes support paragraphs, code blocks, blockquotes, implicit lists, HRs, and tables
+- Encountering another `#` heading ends the braceless scope (the heading becomes a sibling)
+- Braceless and explicit scopes can be mixed freely
+
+### Implicit Root
+
+If the first heading in a document is not followed by `{`, the entire document is wrapped in an implicit root scope:
+
+```
+# My Document
+
+# Section A
+Content of section A.
+
+# Section B
+Content of section B.
+```
+
+This is equivalent to wrapping everything after the first heading in `{ ... }`. If the first heading IS followed by `{`, the document uses explicit mode.
 
 ### Paragraphs
 
@@ -255,21 +300,37 @@ A line starting with `\#` renders as a literal `#` (not a heading). A line start
 
 ### Meta Scope
 
-The reserved `@meta` scope configures per-file settings and is not rendered in the document body:
+The reserved `@meta` scope configures per-file settings and is not rendered in the document body. Use sub-scopes for rich content, or key:value syntax for simple values:
 
 ```
 # Meta @meta
 {
     # Style
     { styles/custom.css }
-    # StyleAppend
-    { styles/overrides.css }
     # Header
     { My *custom* header }
     # Footer
     { Footer text here }
 }
 ```
+
+Key:value syntax (lighter weight):
+
+```
+# Meta @meta
+{
+    style: styles/custom.css
+    header: My Header
+    footer: My Footer
+    author: Jane Smith
+    version: 1.0
+}
+```
+
+- Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`
+- Other keys (e.g., `author`, `date`, `version`) are stored as custom properties
+- Sub-scope syntax takes precedence over key:value when both exist
+- Each key:value pair should be on its own paragraph line
 
 Hierarchical configuration is also available via `sdoc.config.json` files in any folder.
 
@@ -336,7 +397,9 @@ Hierarchical configuration is also available via `sdoc.config.json` files in any
 
 ## Full Specification
 
-The authoritative SDOC specification follows below. Refer to this for edge cases, formal grammar, and detailed parsing rules.
+The authoritative SDOC specification is in `spec/specification.sdoc`. Refer to it for edge cases, formal grammar, and detailed parsing rules.
+
+The embedded copy below may be out of date. When in doubt, the `.sdoc` file is the source of truth.
 
 ```
 # SDOC Specification v0.1 @sdoc-spec
