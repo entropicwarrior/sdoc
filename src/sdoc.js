@@ -1126,12 +1126,8 @@ const DEFAULT_STYLE = `
     line-height: 1.6;
   }
 
-  .sdoc-scope > .sdoc-scope {
-    margin-left: 1.4rem;
-  }
-
-  .sdoc-root > .sdoc-scope {
-    margin-left: 0;
+  .sdoc-scope-children > .sdoc-scope {
+    padding-left: 1.5rem;
   }
 
   .sdoc-list-item-body > .sdoc-paragraph:first-child {
@@ -1320,6 +1316,19 @@ const DEFAULT_STYLE = `
   .sdoc-errors ul {
     margin: 0.6rem 0 0;
     padding-left: 1.2rem;
+  }
+
+  @media print {
+    body {
+      height: auto;
+      overflow: visible;
+    }
+    .sdoc-shell {
+      height: auto;
+    }
+    .sdoc-main {
+      overflow: visible;
+    }
   }
 `;
 

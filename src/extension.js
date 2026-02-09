@@ -292,29 +292,8 @@ function buildWebviewScript() {
 `;
 }
 
-function buildInteractiveCss() {
+function buildCollapseCss() {
   return `
-  /* Interactive preview styles */
-  [data-line] {
-    cursor: pointer;
-  }
-
-  [data-line]:hover {
-    outline: 1px dashed var(--sdoc-border);
-    outline-offset: 2px;
-  }
-
-  p.sdoc-paragraph[contenteditable]:hover {
-    outline: 1px solid var(--sdoc-border);
-    outline-offset: 2px;
-  }
-
-  p.sdoc-paragraph[contenteditable]:focus {
-    outline: 2px solid var(--sdoc-accent);
-    outline-offset: 2px;
-    cursor: text;
-  }
-
   /* Collapsible scope toggles */
   .sdoc-heading:has(.sdoc-toggle) {
     position: relative;
@@ -362,6 +341,32 @@ function buildInteractiveCss() {
   .sdoc-scope.sdoc-collapsed > .sdoc-scope-children {
     display: none;
   }
+`;
+}
+
+function buildInteractiveCss() {
+  return `
+  /* Interactive preview styles */
+  [data-line] {
+    cursor: pointer;
+  }
+
+  [data-line]:hover {
+    outline: 1px dashed var(--sdoc-border);
+    outline-offset: 2px;
+  }
+
+  p.sdoc-paragraph[contenteditable]:hover {
+    outline: 1px solid var(--sdoc-border);
+    outline-offset: 2px;
+  }
+
+  p.sdoc-paragraph[contenteditable]:focus {
+    outline: 2px solid var(--sdoc-accent);
+    outline-offset: 2px;
+    cursor: text;
+  }
+${buildCollapseCss()}
 `;
 }
 
@@ -547,6 +552,19 @@ function getActivePreviewDocument() {
   return null;
 }
 
+function buildCollapseScript() {
+  return `
+(function() {
+  document.addEventListener('click', function(e) {
+    if (!e.target.classList.contains('sdoc-toggle')) return;
+    e.stopPropagation();
+    var scope = e.target.closest('.sdoc-scope');
+    if (scope) scope.classList.toggle('sdoc-collapsed');
+  });
+})();
+`;
+}
+
 function buildCleanHtml(document) {
   const parsed = parseSdoc(document.getText());
   const metaResult = extractMeta(parsed.nodes);
@@ -569,6 +587,8 @@ function buildCleanHtml(document) {
 
   const title = path.basename(document.uri.fsPath, ".sdoc");
 
+  cssAppendParts.push(buildCollapseCss());
+
   return renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
     title,
@@ -576,7 +596,8 @@ function buildCleanHtml(document) {
       meta: metaResult.meta,
       config,
       cssOverride: cssOverride || undefined,
-      cssAppend: cssAppendParts.length ? cssAppendParts.join("\n") : undefined
+      cssAppend: cssAppendParts.join("\n"),
+      script: buildCollapseScript()
     }
   );
 }
