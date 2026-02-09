@@ -747,7 +747,33 @@ async function buildSiteAction() {
     return;
   }
 
-  const rootDir = workspaceFolders[0].uri.fsPath;
+  const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+  const pick = await vscode.window.showQuickPick(
+    ["Entire Workspace", "Choose Folder…"],
+    { placeHolder: "Build site from which folder?" }
+  );
+  if (!pick) {
+    return;
+  }
+
+  let rootDir;
+  if (pick === "Entire Workspace") {
+    rootDir = workspaceRoot;
+  } else {
+    const chosen = await vscode.window.showOpenDialog({
+      canSelectFolders: true,
+      canSelectFiles: false,
+      canSelectMany: false,
+      defaultUri: vscode.Uri.file(workspaceRoot),
+      openLabel: "Select Source Folder"
+    });
+    if (!chosen || !chosen.length) {
+      return;
+    }
+    rootDir = chosen[0].fsPath;
+  }
+
   const outputDir = path.join(rootDir, "_sdoc_site");
 
   const sdocFiles = collectSdocFiles(rootDir);
@@ -882,7 +908,7 @@ async function buildSiteAction() {
 
   const indexPath = path.join(outputDir, "index.html");
   const choice = await vscode.window.showInformationMessage(
-    `SDOC: Built site with ${docs.length} documents in _sdoc_site/`,
+    `SDOC: Built site with ${docs.length} documents in ${path.relative(workspaceRoot, outputDir) || "_sdoc_site"}/`,
     "Open in Browser"
   );
   if (choice === "Open in Browser") {

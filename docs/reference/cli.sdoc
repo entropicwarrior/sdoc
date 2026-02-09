@@ -9,7 +9,7 @@
             - **SDOC: Open Preview to the Side** (`sdoc.previewToSide`) -- opens the preview in a side pane
             - **SDOC: Export HTML** (`sdoc.exportHtml`) -- exports the active preview as a standalone HTML file
             - **SDOC: Open in Browser** (`sdoc.openInBrowser`) -- opens the active preview in the system browser
-            - **SDOC: Build Site** (`sdoc.buildSite`) -- builds a static site from all `.sdoc` files in the workspace
+            - **SDOC: Build Site** (`sdoc.buildSite`) -- builds a static site from `.sdoc` files in the workspace or a chosen subfolder
         }
 
         The preview updates automatically when the source file changes or when a `sdoc.config.json` or `.css` file is saved.
@@ -61,7 +61,7 @@ python3 tools/build_site.py docs/ -o out/            # docs/ -> out/
 
         # VSCode Command
         {
-            Run **SDOC: Build Site** from the Command Palette. It builds all `.sdoc` files in the workspace root and writes the output to `_sdoc_site/` in the workspace. After building, it offers to open the site in the browser.
+            Run **SDOC: Build Site** from the Command Palette. A prompt asks whether to build from the entire workspace or a specific folder. When "Choose Folder…" is selected, a folder picker opens (defaulting to the workspace root). The output is written to `_sdoc_site/` inside the selected folder. After building, it offers to open the site in the browser.
         }
 
         # Output

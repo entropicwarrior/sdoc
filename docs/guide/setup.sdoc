@@ -93,7 +93,7 @@ python3 tools/build_site.py                    # current dir -> _sdoc_site/
 python3 tools/build_site.py docs/ -o out/      # docs/ -> out/
         ```
 
-        Or use the **SDOC: Build Site** command from the VSCode Command Palette.
+        Or use the **SDOC: Build Site** command from the VSCode Command Palette. It prompts you to build from the entire workspace or choose a specific subfolder.
 
         Open `_sdoc_site/index.html` in a browser. The viewer has a sidebar with search, split-pane comparison, and renders all discovered `.sdoc` files.
     }
