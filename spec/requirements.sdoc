@@ -151,7 +151,7 @@
                 - Inline text editing: paragraph text is directly editable in the preview. Changes are written back to the source file.
             }
 
-            These features are preview-only and do not affect the SDOC format or static HTML export.
+            Click-to-navigate and inline editing are preview-only. Collapsible scopes are available in all rendered outputs: VSCode preview, exported HTML, browser preview, and the document server viewer.
         }
     }
 }

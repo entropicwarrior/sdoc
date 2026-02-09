@@ -98,7 +98,7 @@
     {
         {[.]
             - Read the [Syntax Reference](#docs/reference/syntax.sdoc) for all available features
-            - Try the [Static Site Viewer](#docs/reference/cli.sdoc) to build a browsable HTML viewer
+            - Try the [Document Server](#docs/reference/cli.sdoc) to browse all your documents in a browser
             - Look at `examples/example.sdoc` for a quick-reference document
         }
     }
