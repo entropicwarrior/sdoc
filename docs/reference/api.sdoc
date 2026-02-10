@@ -95,6 +95,25 @@ const html = renderFragment(nodes, 2);
         Renders a plain text string as HTML paragraphs with inline formatting. Used internally for header/footer rendering from config values.
     }
 
+    # formatSdoc(text, indentStr)
+    {
+        Reformats an SDOC string by adjusting indentation based on brace depth. Structure is not changed -- only whitespace is modified.
+
+        ```javascript
+const { formatSdoc } = require("./src/sdoc");
+const formatted = formatSdoc(sdocText, "    ");
+        ```
+
+        {[.]
+            - `text` -- the SDOC source string
+            - `indentStr` -- the string to use for each indentation level (default: four spaces)
+            - Returns the reformatted string
+            - Code block content is passed through raw
+            - Inline blocks (`{ content }`) are kept on one line
+            - K&R style lines (heading ending with opener) are handled correctly
+        }
+    }
+
     # AST Node Types
     {
         The parser produces these node types:

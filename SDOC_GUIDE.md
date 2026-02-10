@@ -348,6 +348,18 @@ Key:value syntax (lighter weight):
 
 Hierarchical configuration is also available via `sdoc.config.json` files in any folder.
 
+### Document Formatting
+
+The VSCode extension provides a built-in formatter. Use **Format Document** (Shift+Option+F on macOS, Shift+Alt+F on Windows/Linux) to auto-indent based on brace depth.
+
+- Respects your VS Code tab size and spaces/tabs preference
+- Code blocks are left untouched
+- Inline blocks (`{ content }`) stay on one line
+- K&R style lines are handled correctly
+- Formatting is idempotent and never changes document structure
+
+You can also use `formatSdoc(text, indentStr)` from the JavaScript API.
+
 ### Conventions
 
 - **Indentation:** Use any whitespace you like — it's cosmetic. Most authors use 4 spaces.
@@ -884,6 +896,22 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
                 - Inline formatting (`*bold*`, `@ref`) in the original source is lost if the user edits text that contained it
                 - Escape also blurs the paragraph (discarding focus without triggering a save of the current edit state)
             }
+        }
+    }
+
+    # Document Formatting @document-formatting
+    {
+        The VSCode extension provides a built-in document formatter accessible via Format Document (Shift+Option+F). The formatter reindents the document based on brace depth.
+
+        {[.]
+            - Blank lines are preserved as empty lines with no indentation
+            - Code block content (between ``` fences) is passed through raw with no reindentation
+            - Closing braces `}` decrement depth before indenting
+            - Standalone openers (`{`, `{[.]`, `{[#]`, `{[table]`) indent at current depth, then increment
+            - Inline blocks (`{ content }`) indent at current depth with no depth change
+            - K&R lines (heading or list item ending with an opener) indent at current depth, then increment
+            - The formatter respects the user's tab size and spaces/tabs preference
+            - Formatting is idempotent
         }
     }
 

@@ -1718,11 +1718,84 @@ function renderHtmlDocument(text, title, options = {}) {
   });
 }
 
+function formatSdoc(text, indentStr = "    ") {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.split("\n");
+  const result = [];
+  let depth = 0;
+  let inCodeBlock = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Blank lines — emit empty, no depth change
+    if (trimmed === "") {
+      result.push("");
+      continue;
+    }
+
+    // Inside code block — pass through raw
+    if (inCodeBlock) {
+      if (isFenceStart(trimmed)) {
+        inCodeBlock = false;
+        result.push(indentStr.repeat(depth) + trimmed);
+      } else {
+        result.push(line);
+      }
+      continue;
+    }
+
+    // Code fence opening
+    if (isFenceStart(trimmed)) {
+      result.push(indentStr.repeat(depth) + trimmed);
+      inCodeBlock = true;
+      continue;
+    }
+
+    // Closing brace — decrement first, then indent
+    if (trimmed === COMMAND_SCOPE_CLOSE) {
+      depth = Math.max(0, depth - 1);
+      result.push(indentStr.repeat(depth) + trimmed);
+      continue;
+    }
+
+    // Inline block { content }
+    if (tryParseInlineBlock(trimmed) !== null) {
+      result.push(indentStr.repeat(depth) + trimmed);
+      continue;
+    }
+
+    // Standalone opener: {, {[.], {[#], {[table]
+    if (trimmed === COMMAND_SCOPE_OPEN ||
+        trimmed === COMMAND_LIST_BULLET ||
+        trimmed === COMMAND_LIST_NUMBER ||
+        trimmed === COMMAND_TABLE) {
+      result.push(indentStr.repeat(depth) + trimmed);
+      depth++;
+      continue;
+    }
+
+    // K&R line — heading or list item ending with opener
+    const trailing = extractTrailingOpener(trimmed);
+    if (trailing) {
+      result.push(indentStr.repeat(depth) + trimmed);
+      depth++;
+      continue;
+    }
+
+    // Everything else — indent at current depth
+    result.push(indentStr.repeat(depth) + trimmed);
+  }
+
+  return result.join("\n");
+}
+
 module.exports = {
   parseSdoc,
   extractMeta,
   renderFragment,
   renderTextParagraphs,
   renderHtmlDocumentFromParsed,
-  renderHtmlDocument
+  renderHtmlDocument,
+  formatSdoc
 };

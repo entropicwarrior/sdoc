@@ -14,6 +14,11 @@
 
         The preview updates automatically when the source file changes or when a `sdoc.config.json` or `.css` file is saved.
 
+        # Format Document
+        {
+            Use **Format Document** (Shift+Option+F on macOS, Shift+Alt+F on Windows/Linux) to auto-indent the current `.sdoc` file based on brace depth. The formatter respects VS Code's tab size and spaces/tabs preference. Code blocks are left untouched.
+        }
+
         # Export HTML
         {
             Exports the currently previewed document as a self-contained `.html` file. The exported file includes all styles and supports collapsible scope toggles in the browser. Use the browser's print function (Ctrl+P / Cmd+P) for PDF export.

@@ -539,6 +539,37 @@ Content of Section B.
         }
     }
 
+    # Document Formatting @document-formatting
+    {
+        The VSCode extension provides a built-in document formatter accessible via Format Document (Shift+Option+F). The formatter reindents the document based on brace depth.
+
+        # Formatting Rules @formatting-rules
+        {
+            The formatter operates line-by-line, tracking brace depth to compute indentation:
+
+            {[.]
+                - Blank lines are preserved as empty lines with no indentation
+                - Code block content (between ``` fences) is passed through raw with no reindentation
+                - Code fence lines are indented at the current depth
+                - Closing braces `}` decrement depth before indenting
+                - Standalone openers (`{`, `{[.]`, `{[#]`, `{[table]`) indent at current depth, then increment
+                - Inline blocks (`{ content }`) indent at current depth with no depth change
+                - K&R lines (heading or list item ending with an opener) indent at current depth, then increment
+                - All other lines (headings, paragraphs, list items, blockquotes, HRs) indent at current depth
+            }
+        }
+
+        # Behaviour @formatting-behaviour
+        {
+            {[.]
+                - The formatter respects the user's VS Code tab size and spaces/tabs preference
+                - Formatting is idempotent: formatting an already-formatted document produces identical output
+                - Structure is never changed; only indentation is adjusted
+                - The formatter does not reflow paragraph text or reorder content
+            }
+        }
+    }
+
     # Implicit Root Scope @implicit-root
     {
         If the first non-blank line of a document is a `#` heading and the next non-blank line after it is NOT `{`, an inline block, or a list/table opener, the document is in implicit root mode:

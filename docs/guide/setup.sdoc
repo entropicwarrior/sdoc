@@ -49,6 +49,13 @@ code --install-extension dist/sdoc-*.vsix
         }
     }
 
+    # Formatting Documents
+    {
+        Use **Format Document** (Shift+Option+F on macOS, Shift+Alt+F on Windows/Linux) to auto-indent the current `.sdoc` file based on brace depth. The formatter respects your VS Code tab size and spaces/tabs preference.
+
+        Formatting is purely cosmetic -- it adjusts indentation without changing document structure. Code blocks are left untouched.
+    }
+
     # Export and Print
     {
         Two commands are available from the Command Palette when a preview is active:

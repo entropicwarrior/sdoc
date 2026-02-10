@@ -4,7 +4,8 @@ const {
   renderFragment,
   renderTextParagraphs,
   renderHtmlDocumentFromParsed,
-  renderHtmlDocument
+  renderHtmlDocument,
+  formatSdoc
 } = require("../src/sdoc.js");
 const fs = require("fs");
 const path = require("path");
@@ -969,6 +970,170 @@ test("multi-line list item with task checkbox", () => {
 test("multi-line list item renders correctly in HTML", () => {
   const html = renderHtmlDocument("# Doc\n{\n  {[.]\n    - This is a long item\n      that wraps to the next line\n  }\n}", "Test");
   assert(html.includes("This is a long item that wraps to the next line"));
+});
+
+// ============================================================
+console.log("\n--- Document Formatter ---");
+
+test("basic indentation with scope", () => {
+  const input = "# Title\n{\nBody text.\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Title");
+  assert(lines[1] === "{");
+  assert(lines[2] === "    Body text.");
+  assert(lines[3] === "}");
+});
+
+test("nested scopes indentation", () => {
+  const input = "# Outer\n{\n# Inner\n{\nDeep.\n}\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Outer");
+  assert(lines[1] === "{");
+  assert(lines[2] === "    # Inner");
+  assert(lines[3] === "    {");
+  assert(lines[4] === "        Deep.");
+  assert(lines[5] === "    }");
+  assert(lines[6] === "}");
+});
+
+test("K&R style indentation", () => {
+  const input = "# Title {\nContent.\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Title {");
+  assert(lines[1] === "    Content.");
+  assert(lines[2] === "}");
+});
+
+test("inline blocks stay on one line", () => {
+  const input = "# Name\n{ John Doe }";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Name");
+  assert(lines[1] === "{ John Doe }");
+});
+
+test("code blocks preserved raw", () => {
+  const input = "# Doc\n{\n```js\n  const x = 1;\n    nested();\n```\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Doc");
+  assert(lines[1] === "{");
+  assert(lines[2] === "    ```js");
+  assert(lines[3] === "  const x = 1;", "code content should be raw, got: " + lines[3]);
+  assert(lines[4] === "    nested();", "code content should be raw, got: " + lines[4]);
+  assert(lines[5] === "    ```");
+  assert(lines[6] === "}");
+});
+
+test("lists indented correctly", () => {
+  const input = "# Doc\n{\n{[.]\n- Apple\n- Banana\n}\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[2] === "    {[.]");
+  assert(lines[3] === "        - Apple");
+  assert(lines[4] === "        - Banana");
+  assert(lines[5] === "    }");
+});
+
+test("tables indented correctly", () => {
+  const input = "# Doc\n{\n{[table]\nName | Age\nAlice | 30\n}\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[2] === "    {[table]");
+  assert(lines[3] === "        Name | Age");
+  assert(lines[4] === "        Alice | 30");
+  assert(lines[5] === "    }");
+});
+
+test("blank lines preserved", () => {
+  const input = "# Doc\n{\nFirst.\n\nSecond.\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[2] === "    First.");
+  assert(lines[3] === "");
+  assert(lines[4] === "    Second.");
+});
+
+test("closing braces at correct depth", () => {
+  const input = "# A\n{\n# B\n{\nText.\n}\n}";
+  const out = formatSdoc(input, "  ");
+  const lines = out.split("\n");
+  assert(lines[4] === "    Text.");
+  assert(lines[5] === "  }");
+  assert(lines[6] === "}");
+});
+
+test("mixed K&R and Allman", () => {
+  const input = "# A {\nContent A.\n}\n# B\n{\nContent B.\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# A {");
+  assert(lines[1] === "    Content A.");
+  assert(lines[2] === "}");
+  assert(lines[3] === "# B");
+  assert(lines[4] === "{");
+  assert(lines[5] === "    Content B.");
+  assert(lines[6] === "}");
+});
+
+test("K&R list opener", () => {
+  const input = "# Items {[.]\n- One\n- Two\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Items {[.]");
+  assert(lines[1] === "    - One");
+  assert(lines[2] === "    - Two");
+  assert(lines[3] === "}");
+});
+
+test("K&R table opener", () => {
+  const input = "# Data {[table]\nName | Age\nAlice | 30\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Data {[table]");
+  assert(lines[1] === "    Name | Age");
+  assert(lines[2] === "    Alice | 30");
+  assert(lines[3] === "}");
+});
+
+test("tab indentation", () => {
+  const input = "# Doc\n{\nBody.\n}";
+  const out = formatSdoc(input, "\t");
+  const lines = out.split("\n");
+  assert(lines[2] === "\tBody.");
+});
+
+test("already formatted document unchanged", () => {
+  const input = "# Title\n{\n    Body text.\n\n    More text.\n}";
+  const out = formatSdoc(input, "    ");
+  assert(out === input);
+});
+
+test("blockquote indented at depth", () => {
+  const input = "# Doc\n{\n> A quote.\n> Another line.\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[2] === "    > A quote.");
+  assert(lines[3] === "    > Another line.");
+});
+
+test("HR indented at depth", () => {
+  const input = "# Doc\n{\nBefore.\n---\nAfter.\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[3] === "    ---");
+});
+
+test("list item with K&R opener", () => {
+  const input = "# Doc\n{\n{[.]\n- Item {\nBody.\n}\n}\n}";
+  const out = formatSdoc(input, "    ");
+  const lines = out.split("\n");
+  assert(lines[3] === "        - Item {");
+  assert(lines[4] === "            Body.");
+  assert(lines[5] === "        }");
 });
 
 // ============================================================

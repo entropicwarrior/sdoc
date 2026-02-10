@@ -61,6 +61,7 @@
             - [x] Parser line tracking (lineStart/lineEnd on all AST nodes)
             - [x] Export HTML (sdoc.exportHtml) -- standalone HTML with collapsible toggles
             - [x] Open in Browser (sdoc.openInBrowser) -- preview in system browser
+            - [x] Document formatter (Format Document / Shift+Option+F) -- auto-indent based on brace depth
         }
 
         # Repository

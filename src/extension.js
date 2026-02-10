@@ -57,6 +57,21 @@ function activate(context) {
   context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand);
 
   context.subscriptions.push(
+    vscode.languages.registerDocumentFormattingEditProvider("sdoc", {
+      provideDocumentFormattingEdits(document, options) {
+        const { formatSdoc } = require("./sdoc");
+        const indentStr = options.insertSpaces ? " ".repeat(options.tabSize) : "\t";
+        const formatted = formatSdoc(document.getText(), indentStr);
+        const fullRange = new vscode.Range(
+          document.positionAt(0),
+          document.positionAt(document.getText().length)
+        );
+        return [vscode.TextEdit.replace(fullRange, formatted)];
+      }
+    })
+  );
+
+  context.subscriptions.push(
     vscode.lm.registerTool('sdoc_reference', {
       async invoke(options, token) {
         const guidePath = path.join(context.extensionPath, 'SDOC_GUIDE.md');
