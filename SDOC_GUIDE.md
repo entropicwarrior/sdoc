@@ -178,6 +178,24 @@ Items can have their own content block:
 }
 ```
 
+Rich content like code blocks, extra paragraphs, or nested lists inside a list item **must** be wrapped in a `{ }` body block:
+
+```
+{[#]
+    1. First step
+    {
+        Here is some detail:
+
+        ```python
+        print("hello")
+        ```
+    }
+    2. Second step
+}
+```
+
+**Important:** Bare code fences or paragraphs between list items (outside a body block) will cause parser errors.
+
 #### Multi-line List Items
 
 Inside an explicit list block (`{[.]}` or `{[#]}`), a list item's title can span multiple lines. Lines after the marker that aren't a command token are joined to the title with a space:
@@ -610,6 +628,7 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
                 {[.]
                     - A shorthand item may optionally be followed by a block (`{ ... }` or list opener)
                     - If no block follows, the item has no body
+                    - Rich content after a list item (code blocks, extra paragraphs, nested lists) **must** be wrapped in a `{ }` body block — bare content between list items is a parser error
                     - Outside list blocks, leading list-item lines form implicit lists (see @implicit-lists)
                 }
 
