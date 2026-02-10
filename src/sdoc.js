@@ -533,7 +533,7 @@ function parseListBody(cursor, listType) {
 
     const itemInfo = getListItemInfo(trimmedLeft);
     if (itemInfo) {
-      items.push(parseListItemLine(cursor, itemInfo));
+      items.push(parseListItemLine(cursor, itemInfo, true));
       continue;
     }
 
@@ -542,7 +542,7 @@ function parseListBody(cursor, listType) {
       continue;
     }
 
-    cursor.error("List items must be scoped headings or shorthand items.");
+    cursor.error("Orphaned text in list block (no preceding list item).");
     cursor.next();
   }
 
@@ -576,7 +576,25 @@ function getListItemInfo(line) {
   return null;
 }
 
-function parseListItemLine(cursor, info) {
+function isListContinuationLine(trimmedLeft) {
+  const trimmed = trimmedLeft.trim();
+  if (trimmed === "") return false;
+  if (trimmed === COMMAND_SCOPE_CLOSE) return false;
+  if (trimmed === COMMAND_SCOPE_OPEN) return false;
+  if (trimmed === COMMAND_LIST_BULLET) return false;
+  if (trimmed === COMMAND_LIST_NUMBER) return false;
+  if (trimmed === COMMAND_TABLE) return false;
+  if (trimmed === ",") return false;
+  if (isHeadingLine(trimmedLeft)) return false;
+  if (isBlockquoteLine(trimmedLeft)) return false;
+  if (isFenceStart(trimmedLeft)) return false;
+  if (isHorizontalRule(trimmed)) return false;
+  if (getListItemInfo(trimmedLeft)) return false;
+  if (tryParseInlineBlock(trimmed) !== null) return false;
+  return true;
+}
+
+function parseListItemLine(cursor, info, allowContinuation = false) {
   const itemStartLine = cursor.index + 1;
   const raw = info.text;
   const task = parseTaskPrefix(raw);
@@ -609,8 +627,21 @@ function parseListItemLine(cursor, info) {
     };
   }
 
-  const parsed = task ? parseHeadingText(task.text) : parseHeadingText(raw);
   cursor.next();
+
+  // Collect continuation lines in explicit list blocks
+  let fullText = task ? task.text : raw;
+  if (allowContinuation) {
+    while (!cursor.eof()) {
+      const nextLine = cursor.current();
+      const nextTrimmedLeft = nextLine.replace(/^\s+/, "");
+      if (!isListContinuationLine(nextTrimmedLeft)) break;
+      fullText += " " + nextTrimmedLeft.trim();
+      cursor.next();
+    }
+  }
+
+  const parsed = parseHeadingText(fullText);
 
   const block = parseOptionalBlock(cursor);
   if (!block) {

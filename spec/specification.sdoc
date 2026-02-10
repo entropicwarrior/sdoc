@@ -212,6 +212,27 @@ Content of Section B.
                     2. Item 2
                 }
                 ```
+
+                # Multi-line List Item Shorthand @multi-line-list-items
+                {
+                    Inside an explicit list block (`{[.]` or `{[#]`), a shorthand item's title may span multiple lines. Lines that follow the item marker and are not themselves a command token (heading, list marker, brace, fence, blockquote, horizontal rule, or blank line) are treated as continuation lines and joined to the item title with a single space:
+
+                    ```
+                    {[.]
+                        - This is a long list item
+                          that continues on the next line
+                        - Short item
+                    }
+                    ```
+
+                    {[.]
+                        - Continuation lines are joined with a single space
+                        - Continuation stops at: blank lines, list markers (`- `, `1. `), headings (`#`), block openers (`{`, `{[.]`, `{[#]`, `{[table]`), block closers (`}`), code fences, blockquotes, and horizontal rules
+                        - A block (`{ ... }` or list/table opener) may still follow the completed multi-line title
+                        - Multi-line continuation is only supported in explicit list blocks, not in implicit lists
+                        - Indentation of continuation lines is cosmetic
+                    }
+                }
             }
 
             # Implicit Lists @implicit-lists
@@ -591,13 +612,16 @@ Content of Section A.
         table_scope   = "{[table]" ws? table_body "}" ;
         table_body    = table_row { table_row } ;
         table_row     = cell { "|" cell } ;
-        list_body     = { blank | comma_sep | scope | list_item_shorthand } ;
+        list_body     = { blank | comma_sep | scope | list_item_shorthand
+                        | anonymous_item } ;
         implicit_list = list_item_shorthand { list_item_shorthand } ;
         list_item_shorthand = bullet_item | numbered_item ;
-        bullet_item   = "-" ws title [ws? block]?
+        bullet_item   = "-" ws title { continuation_line } [ws? block]?
                       | "-" ws title ws block_opener block_body "}" ;
-        numbered_item = number ("." | ")") ws title [ws? block]?
+        numbered_item = number ("." | ")") ws title { continuation_line } [ws? block]?
                       | number ("." | ")") ws title ws block_opener block_body "}" ;
+        continuation_line = text_line ;   (* only in explicit list blocks *)
+        anonymous_item = "{" ws? block_body "}" ;
         number        = DIGIT { DIGIT } ;
 
         paragraph     = text_line { ws? text_line } ;

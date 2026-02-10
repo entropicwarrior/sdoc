@@ -877,5 +877,100 @@ test("key:value does not match lines without space after colon", () => {
 });
 
 // ============================================================
+console.log("\n--- Multi-line List Item Shorthand ---");
+
+test("multi-line list item joins continuation lines", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - This is a long item\n      that continues on the next line\n    - Short item\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.type === "list");
+  assert(list.items[0].title === "This is a long item that continues on the next line");
+  assert(list.items[1].title === "Short item");
+});
+
+test("multi-line list item with three continuation lines", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - Line one\n      line two\n      line three\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].title === "Line one line two line three");
+});
+
+test("multi-line list item followed by block", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - Long item\n      continued\n    {\n      Body text.\n    }\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].title === "Long item continued");
+  assert(list.items[0].children.length === 1);
+  assert(list.items[0].children[0].text === "Body text.");
+});
+
+test("multi-line numbered list item", () => {
+  const r = parseSdoc("# Doc\n{\n  {[#]\n    1. First item spans\n       multiple lines\n    2. Second item\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].title === "First item spans multiple lines");
+  assert(list.items[1].title === "Second item");
+});
+
+test("continuation stops at next list item marker", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - Item A\n      continued\n    - Item B\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].title === "Item A continued");
+  assert(list.items[1].title === "Item B");
+});
+
+test("continuation stops at heading", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - Item A\n      continued\n    # Nested Scope\n    { Content. }\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].title === "Item A continued");
+  assert(list.items[1].title === "Nested Scope");
+});
+
+test("continuation stops at closing brace", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - Item A\n      continued\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].title === "Item A continued");
+});
+
+test("continuation stops at blank line", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - Item A\n      continued\n\n    - Item B\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].title === "Item A continued");
+  assert(list.items[1].title === "Item B");
+});
+
+test("implicit list does NOT join continuation lines", () => {
+  const r = parseSdoc("# Doc\n{\n  - Item A\n  some other text\n}");
+  assert(r.errors.length === 0);
+  // Implicit list should NOT treat "some other text" as continuation
+  const children = r.nodes[0].children;
+  // The implicit list has only Item A, then "some other text" is a separate paragraph
+  const list = children[0];
+  assert(list.type === "list");
+  assert(list.items.length === 1);
+  assert(list.items[0].title === "Item A");
+  assert(children[1].type === "paragraph");
+  assert(children[1].text === "some other text");
+});
+
+test("multi-line list item with task checkbox", () => {
+  const r = parseSdoc("# Doc\n{\n  {[.]\n    - [ ] This task spans\n          multiple lines\n    - [x] Done task\n  }\n}");
+  assert(r.errors.length === 0);
+  const list = r.nodes[0].children[0];
+  assert(list.items[0].task.checked === false);
+  assert(list.items[0].title === "This task spans multiple lines");
+  assert(list.items[1].task.checked === true);
+});
+
+test("multi-line list item renders correctly in HTML", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  {[.]\n    - This is a long item\n      that wraps to the next line\n  }\n}", "Test");
+  assert(html.includes("This is a long item that wraps to the next line"));
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

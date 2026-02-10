@@ -94,6 +94,18 @@
                 }
             }
 
+            # Multi-line List Items
+            {[.]
+                - This is a long list item that
+                  continues on the next line
+                - A short item
+                - Another long item spanning
+                  multiple lines of text
+                {
+                    This body belongs to the multi-line item above.
+                }
+            }
+
             # Task list
             {[.]
                 - [ ] Write the parser

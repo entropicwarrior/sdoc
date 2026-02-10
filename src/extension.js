@@ -57,6 +57,18 @@ function activate(context) {
   context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand);
 
   context.subscriptions.push(
+    vscode.lm.registerTool('sdoc_reference', {
+      async invoke(options, token) {
+        const guidePath = path.join(context.extensionPath, 'SDOC_GUIDE.md');
+        const content = fs.readFileSync(guidePath, 'utf8');
+        return new vscode.LanguageModelToolResult([
+          new vscode.LanguageModelTextPart(content)
+        ]);
+      }
+    })
+  );
+
+  context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.languageId !== "sdoc") {
         return;

@@ -37,6 +37,7 @@
             - [x] Braceless leaf scopes (heading without braces, terminated by next heading or EOF)
             - [x] Implicit root scope (first braceless heading wraps entire document)
             - [x] Key:value meta syntax (lightweight alternative to sub-scopes in @meta)
+            - [x] Multi-line list item shorthand (continuation lines in explicit list blocks)
             - [x] Scope indentation (visual nesting via CSS padding)
             - [x] Print support (@media print CSS overrides)
         }

@@ -178,6 +178,20 @@ Items can have their own content block:
 }
 ```
 
+#### Multi-line List Items
+
+Inside an explicit list block (`{[.]}` or `{[#]}`), a list item's title can span multiple lines. Lines after the marker that aren't a command token are joined to the title with a space:
+
+```
+{[.]
+    - This is a long list item
+      that continues on the next line
+    - Short item
+}
+```
+
+Continuation stops at blank lines, list markers, headings, braces, code fences, blockquotes, and horizontal rules. A body block can still follow the completed multi-line title. This feature only applies to explicit list blocks, not implicit lists.
+
 #### Implicit Lists
 
 Inside a normal scope, a run of `-` or `1.` lines automatically becomes a list:

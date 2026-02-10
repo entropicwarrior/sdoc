@@ -2,10 +2,10 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "Preview SDOC files.",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "publisher": "local",
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.95.0"
   },
   "categories": [
     "Other"
@@ -72,6 +72,22 @@
         "editor.wordWrap": "on"
       }
     },
+    "languageModelTools": [
+      {
+        "name": "sdoc_reference",
+        "tags": ["sdoc", "documentation"],
+        "toolReferenceName": "sdoc",
+        "displayName": "SDOC Reference",
+        "modelDescription": "Returns the SDOC format reference guide. Use this tool when you need to create, edit, or understand .sdoc files. SDOC is a plain text documentation format with explicit brace scoping, headings with #, inline formatting like Markdown, and features like braceless scopes, implicit root, lists, tables, code blocks, and meta scopes.",
+        "userDescription": "Get the SDOC format reference guide for creating and editing .sdoc files.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(book)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
     "menus": {
       "editor/title": [
         {

@@ -77,7 +77,7 @@ Parser architecture:
 Testing:
 - No test framework. Tests are plain Node scripts with assert helpers.
 - Run all tests: node test/test-all.js && node test/test-knr.js
-- test-all.js: comprehensive suite (107 tests) covering all parser and renderer features
+- test-all.js: comprehensive suite (118 tests) covering all parser and renderer features
 - test-knr.js: focused K&R brace style tests (24 tests)
 - Tests exit non-zero on failure.
 - When changing the parser, run the tests and verify 0 failures before committing.
