@@ -196,6 +196,21 @@ Rich content like code blocks, extra paragraphs, or nested lists inside a list i
 
 **Important:** Bare code fences or paragraphs between list items (outside a body block) will cause parser errors.
 
+Shorthand items (`- Item` or `1. Item`) always render in normal body font, even with a body block. To render a list item as a heading (larger, bolder), use `#` syntax instead:
+
+```
+{[.]
+    # Heading-style item
+    {
+        This item's title renders as a heading.
+    }
+    - Normal item
+    {
+        This item's title stays in normal body font.
+    }
+}
+```
+
 #### Multi-line List Items
 
 Inside an explicit list block (`{[.]}` or `{[#]}`), a list item's title can span multiple lines. Lines after the marker that aren't a command token are joined to the title with a space:
@@ -629,6 +644,7 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
                     - A shorthand item may optionally be followed by a block (`{ ... }` or list opener)
                     - If no block follows, the item has no body
                     - Rich content after a list item (code blocks, extra paragraphs, nested lists) **must** be wrapped in a `{ }` body block — bare content between list items is a parser error
+                    - Shorthand items always render in normal body font, even with a body block. Use `#` headed scopes for heading-style list items
                     - Outside list blocks, leading list-item lines form implicit lists (see @implicit-lists)
                 }
 

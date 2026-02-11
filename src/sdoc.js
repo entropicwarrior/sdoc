@@ -621,6 +621,7 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
       id: parsed.id,
       children,
       hasHeading: true,
+      shorthand: true,
       task: task ? { checked: task.checked } : undefined,
       lineStart: itemStartLine,
       lineEnd: cursor.index
@@ -651,6 +652,7 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
       id: parsed.id,
       children: [],
       hasHeading: true,
+      shorthand: true,
       task: task ? { checked: task.checked } : undefined,
       lineStart: itemStartLine,
       lineEnd: cursor.index
@@ -664,6 +666,7 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
       id: parsed.id,
       children: [block.children],
       hasHeading: true,
+      shorthand: true,
       task: task ? { checked: task.checked } : undefined,
       lineStart: itemStartLine,
       lineEnd: cursor.index
@@ -676,6 +679,7 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
     id: parsed.id,
     children: block.children,
     hasHeading: true,
+    shorthand: true,
     task: task ? { checked: task.checked } : undefined,
     lineStart: itemStartLine,
     lineEnd: cursor.index
@@ -1195,11 +1199,12 @@ function renderListItem(scope, listType, depth) {
     const checked = task.checked ? " checked" : "";
     headingInner = `<span class="sdoc-task"><input class="sdoc-task-box" type="checkbox"${checked} disabled /><span class="sdoc-task-label">${headingInner}</span></span>`;
   }
-  const isSimple = hasHeading && scope.children.length === 0;
+  const isShorthand = scope.shorthand === true;
+  const hasChildren = scope.children.length > 0;
   let heading;
   if (!hasHeading) {
     heading = "";
-  } else if (isSimple) {
+  } else if (isShorthand || !hasChildren) {
     heading = `<span${idAttr} class="sdoc-list-item-text"${dl}>${headingInner}</span>`;
   } else {
     const toggle = `<span class="sdoc-toggle"></span>`;
