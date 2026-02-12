@@ -452,6 +452,88 @@ You can also use `formatSdoc(text, indentStr)` from the JavaScript API.
 }
 ```
 
+### Common Mistakes
+
+These are easy errors to make — especially for AI agents generating SDOC. Avoid them.
+
+#### Bare content inside list blocks
+
+Inside a list block (`{[.]}` or `{[#]}`), the **only** valid children are list items (`-`, `1.`, `#` headings, or anonymous `{ }` blocks). Bare paragraphs, code fences, or other content floating between items is a **parser error**.
+
+**Wrong — bare paragraphs inside a list block:**
+
+```
+{[.]
+    - First item title
+
+      This paragraph is NOT inside a body block.
+      It will cause a parser error.
+
+    - Second item
+}
+```
+
+**Right — wrap rich content in a `{ }` body block:**
+
+```
+{[.]
+    - First item title
+    {
+        This paragraph belongs to the item above.
+
+        So does this one, and any code blocks, nested lists, etc.
+    }
+    - Second item
+}
+```
+
+This is the single most common SDOC mistake. If a list item needs **anything** beyond its title line (extra paragraphs, code blocks, nested lists, blockquotes), that content **must** go in a `{ }` body block immediately after the item.
+
+#### Unescaped `<` and `>` in text
+
+Angle brackets in regular text (outside of inline code backticks) can be misinterpreted as autolinks. Escape them with `\<` and `\>`:
+
+**Wrong:**
+
+```
+- **observer<T>** — a pointer type
+```
+
+**Right:**
+
+```
+- **observer\<T\>** — a pointer type
+```
+
+Inside backtick code spans (`` `observer<T>` ``), angle brackets are fine — code spans are raw.
+
+#### Forgetting that blank lines stop multi-line list item titles
+
+A list item title can span multiple continuation lines, but a blank line terminates the title. Content after the blank line is bare content in the list block (a parser error) unless wrapped in a body block:
+
+**Wrong:**
+
+```
+{[.]
+    - This is a long item title
+      that continues here
+
+      But this is NOT a continuation — it's a bare paragraph (error).
+}
+```
+
+**Right:**
+
+```
+{[.]
+    - This is a long item title
+      that continues here
+    {
+        This extra content is properly in a body block.
+    }
+}
+```
+
 ---
 
 ## Full Specification
