@@ -792,7 +792,9 @@ function parseCodeBlock(cursor) {
   const codeStartLine = cursor.index + 1;
   const line = cursor.current();
   const trimmedLeft = line.replace(/^\s+/, "");
-  const lang = trimmedLeft.slice(COMMAND_CODE_FENCE.length).trim() || undefined;
+  const fenceMatch = trimmedLeft.match(/^(`{3,})/);
+  const fenceLen = fenceMatch ? fenceMatch[1].length : 3;
+  const lang = trimmedLeft.slice(fenceLen).trim() || undefined;
   cursor.next();
 
   const contentLines = [];
@@ -800,7 +802,8 @@ function parseCodeBlock(cursor) {
   while (!cursor.eof()) {
     const nextLine = cursor.current();
     const nextTrimmed = nextLine.replace(/^\s+/, "");
-    if (nextTrimmed.startsWith(COMMAND_CODE_FENCE)) {
+    const closeMatch = nextTrimmed.match(/^(`{3,})\s*$/);
+    if (closeMatch && closeMatch[1].length >= fenceLen) {
       cursor.next();
       return { type: "code", lang, text: contentLines.join("\n"), lineStart: codeStartLine, lineEnd: cursor.index };
     }
@@ -1300,9 +1303,12 @@ function renderErrors(errors) {
 }
 
 function extractMeta(nodes) {
+  const doc = getDocumentScope(nodes);
+  const searchNodes = doc ? doc.children : nodes;
+
   let metaIndex = -1;
-  for (let i = 0; i < nodes.length; i += 1) {
-    const node = nodes[i];
+  for (let i = 0; i < searchNodes.length; i += 1) {
+    const node = searchNodes[i];
     if (node.type === "scope" && node.id && node.id.toLowerCase() === "meta") {
       metaIndex = i;
       break;
@@ -1313,7 +1319,7 @@ function extractMeta(nodes) {
     return { nodes, meta: {} };
   }
 
-  const metaNode = nodes[metaIndex];
+  const metaNode = searchNodes[metaIndex];
   const meta = {
     stylePath: null,
     styleAppendPath: null,
@@ -1369,6 +1375,12 @@ function extractMeta(nodes) {
     ? meta.properties.tags.split(",").map((t) => t.trim()).filter(Boolean)
     : [];
 
+  if (doc) {
+    // @meta was inside the document scope — strip it from children
+    const filteredChildren = doc.children.filter((_, index) => index !== metaIndex);
+    const stripped = { ...doc, children: filteredChildren };
+    return { nodes: [stripped], meta };
+  }
   const bodyNodes = nodes.filter((_, index) => index !== metaIndex);
   return { nodes: bodyNodes, meta };
 }
@@ -1736,6 +1748,7 @@ function formatSdoc(text, indentStr = "    ") {
   const result = [];
   let depth = 0;
   let inCodeBlock = false;
+  let codeFenceLen = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -1748,8 +1761,10 @@ function formatSdoc(text, indentStr = "    ") {
 
     // Inside code block — pass through raw
     if (inCodeBlock) {
-      if (isFenceStart(trimmed)) {
+      const closeMatch = trimmed.match(/^(`{3,})\s*$/);
+      if (closeMatch && closeMatch[1].length >= codeFenceLen) {
         inCodeBlock = false;
+        codeFenceLen = 0;
         result.push(indentStr.repeat(depth) + trimmed);
       } else {
         result.push(line);
@@ -1759,6 +1774,8 @@ function formatSdoc(text, indentStr = "    ") {
 
     // Code fence opening
     if (isFenceStart(trimmed)) {
+      const openMatch = trimmed.match(/^(`{3,})/);
+      codeFenceLen = openMatch ? openMatch[1].length : 3;
       result.push(indentStr.repeat(depth) + trimmed);
       inCodeBlock = true;
       continue;

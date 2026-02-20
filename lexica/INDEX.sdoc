@@ -1,0 +1,13 @@
+# Knowledge Index @index
+{
+    # Meta @meta
+    {
+        generated: 2026-02-20
+    }
+
+    - **sdoc-authoring.sdoc** (skill) — How to write correct SDOC files. Covers
+      document structure, inline formatting, block types (lists, tables,
+      code, blockquotes), and common mistakes. Read the Quick Reference for
+      everyday authoring. Read Common Mistakes before generating SDOC for
+      the first time.
+}

@@ -1,5 +1,10 @@
 # SDOC Authoring Guide @sdoc-authoring
 {
+    # Meta @meta
+    {
+        type: skill
+    }
+
     # About @about
     {
         How to write correct SDOC files. Covers document structure, inline

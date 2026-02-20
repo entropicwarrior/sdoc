@@ -1324,5 +1324,42 @@ test("no meta scope has empty meta object", () => {
 });
 
 // ============================================================
+console.log("\n--- nested code fences ---");
+
+test("4-backtick fence contains 3-backtick content", () => {
+  const r = parseSdoc("# Doc\n{\n````\n```js\nlet x = 1;\n```\n````\n}");
+  assert(r.nodes.length === 1);
+  const code = r.nodes[0].children.find((n) => n.type === "code");
+  assert(code);
+  assert(code.text.includes("```js"));
+  assert(code.text.includes("let x = 1;"));
+});
+
+test("4-backtick fence not closed by 3 backticks", () => {
+  const r = parseSdoc("# Doc\n{\n````\n```\nstill code\n```\n````\n}");
+  const code = r.nodes[0].children.find((n) => n.type === "code");
+  assert(code);
+  assert(code.text.includes("still code"));
+  assert(code.text.includes("```"));
+});
+
+test("braces inside nested code fence do not affect scope", () => {
+  const r = parseSdoc("# Doc\n{\n````\n```\nfunction() {\n}\n```\n````\n    Paragraph after.\n}");
+  assert(r.nodes.length === 1);
+  const para = r.nodes[0].children.find((n) => n.type === "paragraph" && n.text.includes("Paragraph"));
+  assert(para, "paragraph after nested fence should be inside the document scope");
+});
+
+test("extractMeta finds @meta inside document scope", () => {
+  const r = parseSdoc("# Doc\n{\n    # Meta @meta\n    {\n        type: skill\n    }\n    # Content\n    {\n        text\n    }\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.type === "skill", "should find type inside document scope");
+  // @meta should be stripped from output nodes
+  const docChildren = result.nodes[0].children;
+  const hasMeta = docChildren.some((n) => n.id === "meta");
+  assert(!hasMeta, "@meta should be stripped from children");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);
