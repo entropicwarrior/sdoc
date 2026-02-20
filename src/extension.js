@@ -320,7 +320,7 @@ function activate(context) {
           '- The **Quick Reference** section is sufficient for writing correct SDOC.',
           '- **Common Mistakes** is essential reading for any agent generating SDOC.',
           '- Only read the **Full Specification** for edge cases or parser behaviour questions.',
-          '- If this project uses Lexica, check `skills/` and `docs/` directories for project-specific knowledge.',
+          '- If this project uses Lexica, check `lexica/` directories for project-specific knowledge.',
           '',
           '---',
           '',

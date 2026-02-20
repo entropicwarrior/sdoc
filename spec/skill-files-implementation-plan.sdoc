@@ -29,25 +29,24 @@
               \`extractMeta\`, \`renderFragment\`, \`renderTextParagraphs\`,
               \`renderHtmlDocumentFromParsed\`, \`renderHtmlDocument\`, \`formatSdoc\`.
             - **VS Code extension** (\`src/extension.js\`) — preview, export, browser
-              view, document server, formatting. Commands registered at lines 18-57,
-              pushed to subscriptions at line 57.
+              view, document server, formatting, knowledge file authoring commands.
             - **AI skill reference** — \`sdoc_reference\` language model tool registered
-              at \`src/extension.js\` lines 74-84. Reads \`SDOC_GUIDE.md\` from extension
-              path and returns the full content (~1100 lines) as a
-              LanguageModelTextPart.
-            - **Tests** — custom test runner in \`test/test-all.js\` (~300+ tests).
+              in \`src/extension.js\`. Reads \`SDOC_GUIDE.md\` from extension path and
+              returns the full content with a reading guidance preamble.
+            - **Tests** — custom test runner in \`test/test-all.js\` (162 tests).
               Pattern: \`test(name, fn)\` with simple \`assert(cond, msg)\`. Run with
               \`node test/test-all.js\`. Also \`test/test-knr.js\` for K&R style tests.
-            - **Package commands** declared in \`package.json\` lines 45-68: preview,
-              previewToSide, exportHtml, openInBrowser, browseDocs.
+            - **Package commands** declared in \`package.json\`: preview,
+              previewToSide, exportHtml, openInBrowser, browseDocs,
+              newKnowledgeFile, generateAbout.
         }
     }
 
     # Phase 1: Directory Convention and Agent Instructions @phase-1
     {
         Establish the convention, write agent instructions, and seed initial
-        knowledge files. No code changes required — agents browse \`skills/\` and
-        \`docs/\` directories directly.
+        knowledge files. No code changes required — agents browse \`lexica/\`
+        directories directly.
 
         # 1a. Create AGENTS.md @step-1a
         {
@@ -65,16 +64,14 @@
 
             This project uses the Lexica convention for organising knowledge:
 
-            - \`skills/\` directories contain **how-to knowledge**: patterns,
-              conventions, techniques, runbooks.
-            - \`docs/\` directories contain **reference knowledge**: specs,
-              architecture, design decisions, plans, project status.
+            - \`lexica/\` directories contain project knowledge: skills (how-to),
+              docs (reference), plans, and specs.
 
             These directories appear at the repo root and at module levels. When
             starting a task:
 
-            1. List the \`skills/\` and \`docs/\` directories at your working directory
-               and at the repo root.
+            1. List the \`lexica/\` directory at your working directory and at the
+               repo root.
             2. Read filenames to identify relevant knowledge.
             3. Open relevant files and read the About section near the top to confirm
                relevance.
@@ -89,17 +86,16 @@
             ```
 
             **Verify:** The file exists at repo root. An agent starting a new session
-            in this repo would see the instructions and know to check \`skills/\` and
-            \`docs/\`.
+            in this repo would see the instructions and know to check \`lexica/\`.
         }
 
-        # 1b. Create skills/ directory with sdoc-authoring.sdoc @step-1b
+        # 1b. Create lexica/ directory with sdoc-authoring.sdoc @step-1b
         {
             status: done
 
-            **Create directory:** \`skills/\` at the repo root.
+            **Create directory:** \`lexica/\` at the repo root.
 
-            **Create file:** \`skills/sdoc-authoring.sdoc\`
+            **Create file:** \`lexica/sdoc-authoring.sdoc\`
 
             **Content:** Derive from the Quick Reference section of \`SDOC_GUIDE.md\`
             (lines ~15-200). This is a prescriptive skill file — "how to write SDOC".
@@ -134,33 +130,21 @@
             "Common Mistakes". Do not copy the Full Specification — that stays in
             SDOC_GUIDE.md for edge cases.
 
-            **Verify:** \`skills/sdoc-authoring.sdoc\` parses without errors
-            (\`node -e "const {parseSdoc} = require('./src/sdoc'); const r = parseSdoc(require('fs').readFileSync('skills/sdoc-authoring.sdoc','utf8')); console.log(r.errors.length + ' errors')"\`).
+            **Verify:** \`lexica/sdoc-authoring.sdoc\` parses without errors
+            (\`node -e "const {parseSdoc} = require('./src/sdoc'); const r = parseSdoc(require('fs').readFileSync('lexica/sdoc-authoring.sdoc','utf8')); console.log(r.errors.length + ' errors')"\`).
         }
 
         # 1c. Ensure knowledge files are discoverable @step-1c
         {
             status: done
 
-            **Note:** This repo already uses \`docs/\` for user-facing documentation
-            served by the SDOC document browser. Lexica knowledge files cannot go
-            there — they would appear in the browser mixed with user docs.
+            Knowledge files live in \`lexica/\` at the repo root. For this repo,
+            the authoring skill is at \`lexica/sdoc-authoring.sdoc\`. Design and
+            specification documents stay in \`spec/\` (governance, not knowledge).
 
-            For this repo, Lexica reference documents stay in \`spec/\`:
+            The \`AGENTS.md\` file points agents to both \`lexica/\` and \`spec/\`.
 
-            {[.]
-                - \`spec/lexica.sdoc\` — what Lexica is and how it works
-                - \`spec/skill-files-implementation-plan.sdoc\` — this plan
-                - \`spec/skill-files-design.sdoc\` — the full design document
-            }
-
-            The \`AGENTS.md\` file points agents to both \`skills/\` and \`spec/\` for
-            this repo. Other repos adopting Lexica would use \`docs/\` as designed.
-
-            This is a known collision — see \@plan-questions for the open question
-            about \`docs/\` naming.
-
-            **Verify:** \`ls skills/\` shows sdoc-authoring.sdoc. \`ls spec/\` shows
+            **Verify:** \`ls lexica/\` shows sdoc-authoring.sdoc. \`ls spec/\` shows
             the Lexica documents. The document browser is unaffected.
         }
 
@@ -168,7 +152,7 @@
         {
             status: done
 
-            **File:** \`src/extension.js\`, lines 74-84.
+            **File:** \`src/extension.js\` (the \`sdoc_reference\` tool registration).
 
             **Change:** Modify the \`sdoc_reference\` tool's \`invoke\` method to prepend
             a reading guidance preamble before the SDOC_GUIDE.md content:
@@ -183,7 +167,7 @@
                 '- The **Quick Reference** section is sufficient for writing correct SDOC.',
                 '- **Common Mistakes** is essential reading for any agent generating SDOC.',
                 '- Only read the **Full Specification** for edge cases or parser behaviour questions.',
-                '- If this project uses Lexica, check `skills/` and `docs/` directories for project-specific knowledge.',
+                '- If this project uses Lexica, check `lexica/` directories for project-specific knowledge.',
                 '',
                 '---',
                 '',
@@ -203,8 +187,8 @@
         {
             {[.]
                 - \`AGENTS.md\` exists at repo root (step 1a)
-                - \`skills/sdoc-authoring.sdoc\` exists and parses cleanly (step 1b)
-                - \`docs/lexica.sdoc\` and \`docs/implementation-plan.sdoc\` exist (step 1c)
+                - \`lexica/sdoc-authoring.sdoc\` exists and parses cleanly (step 1b)
+                - Knowledge files in \`lexica/\` are discoverable (step 1c)
                 - \`sdoc_reference\` tool prepends reading guidance (step 1d)
                 - No new dependencies added
             }
@@ -444,10 +428,10 @@
 
             **Files to modify:**
             {[.]
-                - \`src/extension.js\` — register the command (follow pattern at lines
-                  18-57: create with \`vscode.commands.registerCommand\`, add to
-                  \`context.subscriptions.push\` call at line 57)
-                - \`package.json\` — add to \`contributes.commands\` array (lines 45-68),
+                - \`src/extension.js\` — register the command with
+                  \`vscode.commands.registerCommand\`, add to
+                  \`context.subscriptions.push\` call
+                - \`package.json\` — add to \`contributes.commands\` array
                   with \`"command": "sdoc.newKnowledgeFile"\` and
                   \`"title": "SDOC: New Knowledge File"\`
             }
@@ -456,9 +440,8 @@
             {[#]
                 1. Show a quick pick: "Skill" or "Doc"
                 2. Show an input box: "Knowledge file title" (e.g., "Error Handling")
-                3. Determine target directory: find the nearest \`skills/\` or \`docs/\`
-                   directory by walking up from the active file's directory. If none
-                   exists, create one at the workspace root.
+                3. Determine target directory: use the explorer context menu URI,
+                   the active editor's directory, or the workspace root.
                 4. Generate a filename: slugify the title + \`.sdoc\`
                    (e.g., \`error-handling.sdoc\`)
                 5. Generate a UUID (use \`crypto.randomUUID()\`)
@@ -565,7 +548,7 @@
             **Build when:** needed by MCP server or other tooling.
 
             \`discoverKnowledge(workingDir)\` — walk up from working directory,
-            collect all files in \`skills/\` and \`docs/\`, return with scope and
+            collect all files in \`lexica/\` directories, return with scope and
             proximity metadata.
         }
 
@@ -633,15 +616,8 @@
             - Should we also create \`CLAUDE.md\` as a symlink to \`AGENTS.md\`? Claude
               Code reads CLAUDE.md automatically. Other tools may need their own
               files (\`.cursorrules\`, etc.).
-            - **\`docs/\` collision confirmed.** This repo already uses \`docs/\` for
-              user-facing documentation served by the document browser. Lexica
-              reference knowledge lives in \`spec/\` instead, and AGENTS.md directs
-              agents there. Other repos adopting Lexica may hit the same issue if
-              they use \`docs/\` for GitHub Pages or similar. Need a convention for
-              the fallback — candidates: \`knowledge/\`, \`context/\`, or just
-              documenting "use whatever directory and point AGENTS.md at it".
-            - For step 1b, how much of SDOC_GUIDE.md to extract into the authoring
-              skill? The full Quick Reference is ~200 lines. Should it be condensed?
+            - ~~**\`docs/\` collision** — resolved by switching to \`lexica/\` as the
+              single directory name. No collision with existing \`docs/\` conventions.~~
             - For step 3b, which VS Code LM API provider to target? The API supports
               multiple providers but the UX and availability differs.
         }

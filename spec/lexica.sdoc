@@ -11,9 +11,9 @@
     {
         Lexica is a system for organising project knowledge so that AI agents and
         developers can find what they need, when they need it, without drowning in
-        irrelevant context. It uses two plain directories — \`skills/\` and \`docs/\` —
-        placed at any level of a project tree, with tooling that lets agents navigate
-        knowledge progressively rather than loading everything at once.
+        irrelevant context. It uses a single \`lexica/\` directory placed at any
+        level of a project tree, with tooling that lets agents navigate knowledge
+        progressively rather than loading everything at once.
     }
 
     # The Problem @problem
@@ -42,67 +42,57 @@
 
     # How It Works @how-it-works
     {
-        # Two Directories @two-directories
+        # The lexica/ Directory @lexica-directory
         {
-            Lexica uses two directory names:
-
-            {[.]
-                - **\`skills/\`** — how to do things. Patterns, techniques, conventions,
-                  recipes, runbooks. Prescriptive.
-                - **\`docs/\`** — what things are. Specs, architecture, design decisions,
-                  plans, status, schemas. Descriptive.
-            }
-
-            These directories can appear at any level of the project tree:
+            All project knowledge lives in directories named \`lexica/\`. Each file
+            is a knowledge document — a skill (how to do something) or a reference
+            doc (what something is). The \`type\` field in \@meta distinguishes them;
+            the directory is the same either way.
 
             ```
             repo/
-                skills/                     # Repo-wide skills
-                    coding-conventions.sdoc
-                    error-handling.sdoc
-                docs/                       # Repo-wide docs
-                    architecture.sdoc
-                    api-contract.sdoc
-                    roadmap.sdoc
+                lexica/                         # Repo-wide knowledge
+                    coding-conventions.sdoc        type: skill
+                    error-handling.sdoc            type: skill
+                    deployment-runbook.sdoc        type: skill
+                    architecture.sdoc              type: doc
+                    api-contract.sdoc              type: doc
+                    roadmap.sdoc                   type: doc
                 src/
                     auth/
-                        skills/             # Auth module skills
-                            oauth-guide.sdoc
-                        docs/               # Auth module docs
-                            auth-api-spec.sdoc
-                            session-lifecycle.sdoc
+                        lexica/                 # Auth module knowledge
+                            oauth-guide.sdoc      type: skill
+                            auth-api-spec.sdoc    type: doc
+                            session-lifecycle.sdoc type: doc
                         login.cpp
                         session.cpp
             ```
 
-            The directories are plain and visible — no dot-prefix, no hidden folders.
-            Developers browsing the tree see them immediately. The names describe
-            content, not audience — both humans and agents use them.
-
-            If a project already uses \`docs/\` for another purpose (e.g., GitHub
-            Pages, a documentation site), use \`AGENTS.md\` to direct agents to
-            wherever reference knowledge actually lives (e.g., \`spec/\`,
-            \`knowledge/\`).
+            One directory, descriptive filenames. The name \`lexica/\` is
+            collision-proof — no project uses it for anything else. It is plain
+            and visible — no dot-prefix, no hidden folders. Both humans and agents
+            browse it directly.
         }
 
         # Scoped Discovery @scoped-discovery
         {
-            An agent's visible knowledge is determined by where it is working. Tooling
-            walks upward from the working directory, collecting \`skills/\` and \`docs/\`
+            An agent's visible knowledge is determined by where it is working.
+            Tooling walks upward from the working directory, collecting \`lexica/\`
             at each level:
 
             ```
             Working in repo/src/auth/:
 
-            1. repo/src/auth/skills/  +  repo/src/auth/docs/    (closest)
-            2. repo/src/skills/       +  repo/src/docs/
-            3. repo/skills/           +  repo/docs/             (repo-wide)
-            4. ~/skills/                                        (global)
+            1. repo/src/auth/lexica/            (closest — module-specific)
+            2. repo/src/lexica/                 (if it exists)
+            3. repo/lexica/                     (repo-wide)
+            4. ~/lexica/                        (global)
             ```
 
-            Closer knowledge ranks higher. An agent in the auth module sees auth-specific
-            skills first, then project-wide conventions, then global language patterns.
-            Everything is visible, but the most relevant knowledge surfaces first.
+            Closer knowledge ranks higher. An agent in the auth module sees
+            auth-specific knowledge first, then project-wide conventions, then
+            global language patterns. Everything is visible, but the most relevant
+            knowledge surfaces first.
         }
 
         # Progressive Disclosure @progressive-disclosure
@@ -151,18 +141,22 @@
             }
             ```
 
-            Put it in \`skills/\` or \`docs/\`, and it is immediately discoverable.
+            Put it in a \`lexica/\` directory and it is immediately discoverable.
             No metadata required.
         }
 
         # Adding Metadata @adding-metadata
         {
-            For richer discovery, add an \@about section — a 2-5 line paragraph that
-            helps agents decide whether this file is relevant to their current task:
+            For richer discovery, add an \@about section and \@meta with a type:
 
             ```sdoc
             # Error Handling Conventions @error-handling
             {
+                # Meta @meta
+                {
+                    type: skill
+                }
+
                 # About @about
                 {
                     Error handling patterns for this project. Covers Result types,
@@ -177,45 +171,24 @@
             }
             ```
 
-            The \@about section can be written by hand or generated by AI tooling.
-            If you do not write one, tooling will generate it for you.
-        }
+            The \@about section can be written by hand or generated by AI tooling
+            (see the "SDOC: Generate About" VS Code command).
 
-        # Skills vs Docs @skills-vs-docs
-        {
-            The rule is simple:
-
-            {[.]
-                - **"How do I do this?"** → put it in \`skills/\`
-                - **"What is this?"** → put it in \`docs/\`
-            }
-
-            Examples:
-
-            {[table]
-                File | Directory | Why
-                coding-conventions.sdoc | skills/ | Tells you how to write code here
-                deployment-runbook.sdoc | skills/ | Tells you how to deploy
-                api-contract.sdoc | docs/ | Describes what the API is
-                database-schema.sdoc | docs/ | Describes what the data model is
-                project-roadmap.sdoc | docs/ | Describes what's planned
-                architecture.sdoc | docs/ | Describes how the system is structured
-            }
-
-            If something does not fit neatly, put it in \`docs/\` — descriptive is the
-            broader category.
+            The \`type\` field is either \`skill\` (how to do something — prescriptive)
+            or \`doc\` (what something is — descriptive). This helps tooling filter
+            and rank results but does not affect where the file lives.
         }
 
         # Where to Put Files @where-to-put
         {
             {[.]
-                - **Global knowledge** (\`~/skills/\`) — things that apply to any project
+                - **Global knowledge** (\`~/lexica/\`) — things that apply to any project
                   using this language or tool. C++ idioms, Python async patterns, git
                   workflows.
-                - **Repo-wide knowledge** (\`repo/skills/\`, \`repo/docs/\`) — project
-                  architecture, coding conventions, API contracts, project plans.
-                - **Module-specific knowledge** (\`src/auth/skills/\`, \`src/auth/docs/\`) —
-                  patterns and specs that only matter when working in this module.
+                - **Repo-wide knowledge** (\`repo/lexica/\`) — project architecture,
+                  coding conventions, API contracts, project plans.
+                - **Module-specific knowledge** (\`src/auth/lexica/\`) — patterns and
+                  specs that only matter when working in this module.
             }
 
             When in doubt, go one level broader. It is easier to find knowledge that
@@ -225,8 +198,8 @@
 
     # Format @format
     {
-        Lexica is format-agnostic. Any file in a \`skills/\` or \`docs/\` directory is
-        knowledge — \`.sdoc\`, \`.md\`, or plain text.
+        Lexica is format-agnostic. Any file in a \`lexica/\` directory is knowledge
+        — \`.sdoc\`, \`.md\`, or plain text.
 
         SDOC provides the richest experience: unambiguous section extraction (braces
         make boundaries explicit), built-in \@meta and \@about support, \@id
@@ -246,7 +219,7 @@
         conventions) lives in a shared repository, mounted as a git submodule:
 
         ```
-        repo/skills/shared/     ← git submodule pointing to shared skills repo
+        repo/lexica/shared/     ← git submodule pointing to shared knowledge repo
         ```
 
         The workflow:
@@ -262,18 +235,18 @@
         location), and updates are deliberate.
 
         For personal or machine-wide knowledge that does not need to be repo-pinned,
-        use the global directory: \`~/skills/\`.
+        use the global directory: \`~/lexica/\`.
     }
 
     # How Agents Use It Today @how-agents-use-it
     {
-        Agents browse \`skills/\` and \`docs/\` directories directly using their built-in
-        file tools (list files, read files). An \`AGENTS.md\` file at the repo root
+        Agents browse \`lexica/\` directories directly using their built-in file
+        tools (list files, read files). An \`AGENTS.md\` file at the repo root
         teaches agents the convention:
 
         {[#]
-            1. List the \`skills/\` and \`docs/\` directories at the working directory and
-               at the repo root.
+            1. List the \`lexica/\` directory at the working directory and at the
+               repo root.
             2. Read filenames to identify relevant knowledge.
             3. Open relevant files and read the \@about section to confirm relevance.
             4. Scan headings and read only the sections needed for the current task.
@@ -314,9 +287,9 @@
         {[.]
             - **Author content, generate everything else.** Write knowledge with clear
               headings. Tooling can handle UUIDs, summaries, and metadata as it matures.
-            - **Knowledge lives in named directories.** \`skills/\` and \`docs/\`. No hidden
-              folders, no metadata declarations, no configuration. Put a file in the
-              directory, it is knowledge.
+            - **One directory: \`lexica/\`.** No hidden folders, no metadata declarations,
+              no configuration. Put a file in the directory, it is knowledge. The
+              \`type\` field in \@meta distinguishes skills from docs.
             - **Closer knowledge ranks higher.** An agent sees the most relevant knowledge
               first — local to its working directory, then project-wide, then global.
             - **Agents navigate, not search.** Progressive disclosure gives agents agency
@@ -324,8 +297,8 @@
               what they need.
             - **Format-agnostic discovery, SDOC for precision.** Any format is discovered.
               SDOC provides the best tooling for section extraction and metadata.
-            - **Strict directory convention.** Knowledge files go in \`skills/\` or \`docs/\`.
-              Not alongside code, not in hidden directories. Predictable structure means
+            - **Strict directory convention.** Knowledge files go in \`lexica/\`. Not
+              alongside code, not in hidden directories. Predictable structure means
               trivial discovery.
         }
     }

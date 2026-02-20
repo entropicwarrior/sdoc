@@ -8,27 +8,27 @@ JavaScript parser/renderer, and a VS Code extension for live preview.
 
 ## Project Knowledge
 
-This project uses the Lexica convention for organising knowledge:
+This project uses the Lexica convention for organising knowledge. All
+knowledge files live in `lexica/` directories:
 
-- `skills/` directories contain **how-to knowledge**: patterns, conventions,
-  techniques, runbooks.
-- `spec/` contains **reference knowledge**: specs, architecture, design
-  decisions, plans, project status.
-
-**Note:** `docs/` is used for user-facing documentation served by the SDOC
-document browser — not for agent knowledge.
+- Look in `lexica/` at the repo root for project-wide knowledge
+- Look in `spec/` for the SDOC specification and Lexica design documents
 
 When starting a task:
 
-1. List the `skills/` and `spec/` directories at the repo root.
+1. List the `lexica/` directory at the repo root.
 2. Read filenames to identify relevant knowledge.
 3. Open relevant files and read the About section near the top to confirm
    relevance.
 4. Read only the sections you need — scan headings first.
+5. Check parent directories for broader project-wide knowledge.
 
 ## Project Structure
 
 ```
+lexica/             Project knowledge (skills and reference docs)
+  sdoc-authoring.sdoc  How to write correct SDOC files
+
 spec/               Specification and governance
   requirements.sdoc   Why SDOC exists, abstract requirements (R1-R10)
   specification.sdoc  The formal v0.1 spec, written in SDOC format
@@ -38,12 +38,11 @@ spec/               Specification and governance
   skill-files-design.sdoc         Lexica design document
   skill-files-implementation-plan.sdoc  Lexica implementation plan
 
-skills/             How-to knowledge for agents
-  sdoc-authoring.sdoc  How to write correct SDOC files
-
 examples/           Example and reference files
   example.sdoc        Quick reference showing all SDOC features
   sdoc.config.json    Sample config (style, header, footer)
+  sdoc.template.css   Sample custom stylesheet
+  example-overrides.css  Style override example
 
 docs/               User-facing documentation (served by document browser)
   guide/              Getting started, setup
@@ -52,16 +51,18 @@ docs/               User-facing documentation (served by document browser)
   index.sdoc          Docs landing page
 
 src/                Source code
-  sdoc.js             Parser and HTML renderer (~1800 lines)
+  sdoc.js             Parser and HTML renderer (~1900 lines)
   extension.js        VS Code extension with preview and document server
   site-template/      Shared viewer templates (index.html, viewer.css)
 
 test/               Test files
   test-all.js         Comprehensive test suite (node test/test-all.js)
   test-knr.js         K&R brace placement tests (node test/test-knr.js)
+  *.sdoc              Test fixture files
 
 tools/              CLI tools
   serve_docs.py       CLI to start a local SDOC document server
+  generate_guide.js   Generates SDOC_GUIDE.md from parser source
 ```
 
 ## Before Making Changes
