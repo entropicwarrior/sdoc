@@ -47,7 +47,7 @@ examples/           Example and reference files
   example-overrides.css  Style override example
 
 src/                Source code
-  sdoc.js             Parser and HTML renderer (~1900 lines)
+  sdoc.js             Parser and HTML renderer (~2000 lines)
   extension.js        VS Code extension with preview and document server
   site-template/      Shared viewer templates (index.html, viewer.css)
 
