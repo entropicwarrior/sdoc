@@ -2,10 +2,20 @@
 {
     # Meta @meta
     {
+        type: doc
+
         author: Michael + Claude
         date: 2026-02-19
         status: Draft — for review
-        depends-on: skill-files-design.sdoc
+        depends-on: lexica-design.sdoc
+
+    }
+
+    # About @about
+    {
+        Step-by-step implementation plan for Lexica. Tracks phase status
+        (convention, parser extensions, VS Code integration) and deferred
+        work. Read to understand what has been built and what remains.
     }
 
     # Overview @overview
@@ -138,14 +148,14 @@
         {
             status: done
 
-            Knowledge files live in \`lexica/\` at the repo root. For this repo,
-            the authoring skill is at \`lexica/sdoc-authoring.sdoc\`. Design and
-            specification documents stay in \`spec/\` (governance, not knowledge).
+            All knowledge files live in \`lexica/\` at the repo root, including
+            the authoring skill, specification, requirements, design documents,
+            and this plan.
 
-            The \`AGENTS.md\` file points agents to both \`lexica/\` and \`spec/\`.
+            The \`AGENTS.md\` file points agents to \`lexica/\`.
 
-            **Verify:** \`ls lexica/\` shows sdoc-authoring.sdoc. \`ls spec/\` shows
-            the Lexica documents. The document browser is unaffected.
+            **Verify:** \`ls lexica/\` shows all knowledge files. The document
+            browser is unaffected.
         }
 
         # 1d. Update sdoc_reference tool with reading guidance @step-1d

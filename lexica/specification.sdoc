@@ -2,10 +2,20 @@
 {
     # Meta @meta
     {
+        type: doc
+
         # Version
         { 0.1 }
         # Status
         { Draft }
+    }
+
+    # About @about
+    {
+        The formal SDOC v0.1 specification. Defines syntax for scopes,
+        lists, tables, code blocks, inline formatting, references, and
+        the meta scope. Includes the formal EBNF grammar. Read for
+        edge cases and parser behaviour questions.
     }
 
     # Overview @overview

@@ -1,5 +1,17 @@
 # SDOC Project Status @sdoc-status
 {
+    # Meta @meta
+    {
+        type: doc
+    }
+
+    # About @about
+    {
+        Current state of the SDOC project. Tracks what is completed, what
+        is in progress, and what is next. Read this first when starting a
+        new task.
+    }
+
     # Current State @current-state
     {
         SDOC is in early active development. The v0.1 spec is drafted, a working parser and HTML renderer exist, and a VSCode extension provides live preview. The format is being used internally for project documentation (including this file).
@@ -16,7 +28,7 @@
             - [x] Concrete requirements defined (requirements.sdoc, C1-C5)
             - [x] Feature suggestions documented (suggestions.sdoc, S2-S9)
             - [x] Project folder separated from user docs
-            - [x] Lexica knowledge system designed (spec/lexica.sdoc, spec/skill-files-design.sdoc)
+            - [x] Lexica knowledge system designed (lexica/lexica.sdoc, lexica/lexica-design.sdoc)
             - [x] AGENTS.md with project structure and Lexica conventions
         }
 
@@ -75,7 +87,7 @@
         {
             - [x] .gitignore covers node_modules/, dist/, _sdoc_site/, .DS_Store
             - [x] @vscode/vsce moved from dependencies to devDependencies
-            - [x] Spec and governance docs in spec/ folder
+            - [x] All knowledge files in lexica/ folder
             - [x] User docs in docs/ folder (guide, reference, tutorials)
             - [x] Project knowledge in lexica/ folder (Lexica convention)
             - [x] Build artifacts (VSIX) output to dist/
@@ -87,7 +99,7 @@
     # In Progress @in-progress
     {
         Nothing currently in active development. Lexica Phases 1-3 are complete
-        (see spec/skill-files-implementation-plan.sdoc). Deferred items (MCP
+        (see lexica/lexica-plan.sdoc). Deferred items (MCP
         server, discovery walker, etc.) will be built when real usage demands them.
     }
 

@@ -1,5 +1,17 @@
 # SDOC Requirements @sdoc-requirements
 {
+    # Meta @meta
+    {
+        type: doc
+    }
+
+    # About @about
+    {
+        Why SDOC exists and what it must achieve. Defines ten abstract
+        requirements (R1-R10) and concrete implementation constraints
+        (C1-C6). Read before proposing spec changes or new features.
+    }
+
     # Why SDOC Exists @why
     {
         Existing lightweight markup formats (Markdown, AsciiDoc, reStructuredText) infer structure from indentation, heading levels, or whitespace. This makes them ambiguous: the same input can reasonably be parsed into different trees. For simple documents this is fine, but it breaks down for deeply nested structures, formal documents, and AI agent consumption.

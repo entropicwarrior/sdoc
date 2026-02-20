@@ -588,7 +588,7 @@ test("deeply nested scopes", () => {
 
 test("all project docs parse cleanly", () => {
   const docsDir = path.join(__dirname, "..", "docs");
-  const projectDir = path.join(__dirname, "..", "spec");
+  const projectDir = path.join(__dirname, "..", "lexica");
   const examplesDir = path.join(__dirname, "..", "examples");
   const dirs = [docsDir, projectDir, examplesDir];
   let fileCount = 0;

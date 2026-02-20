@@ -5,9 +5,38 @@
         generated: 2026-02-20
     }
 
+    - **lexica-design.sdoc** (doc) — Design document for Lexica, the knowledge
+      organisation system for AI agents. Covers the problem statement, file
+      structure, directory convention, progressive disclosure model, MCP
+      server interface, and design decisions. Read before making changes to
+      the Lexica system.
+    - **lexica-plan.sdoc** (doc) — Step-by-step implementation plan for Lexica.
+      Tracks phase status (convention, parser extensions, VS Code
+      integration) and deferred work. Read to understand what has been built
+      and what remains.
+    - **lexica.sdoc** (doc) — Lexica is a system for organising project
+      knowledge so that AI agents and developers can find what they need,
+      when they need it, without drowning in irrelevant context. It uses a
+      single \`lexica/\` directory placed at any level of a project tree,
+      with tooling that lets agents navigate knowledge progressively rather
+      than loading everything at once.
+    - **requirements.sdoc** (doc) — Why SDOC exists and what it must achieve.
+      Defines ten abstract requirements (R1-R10) and concrete implementation
+      constraints (C1-C6). Read before proposing spec changes or new
+      features.
     - **sdoc-authoring.sdoc** (skill) — How to write correct SDOC files. Covers
       document structure, inline formatting, block types (lists, tables,
       code, blockquotes), and common mistakes. Read the Quick Reference for
       everyday authoring. Read Common Mistakes before generating SDOC for
       the first time.
+    - **specification.sdoc** (doc) — The formal SDOC v0.1 specification. Defines
+      syntax for scopes, lists, tables, code blocks, inline formatting,
+      references, and the meta scope. Includes the formal EBNF grammar. Read
+      for edge cases and parser behaviour questions.
+    - **status.sdoc** (doc) — Current state of the SDOC project. Tracks what is
+      completed, what is in progress, and what is next. Read this first when
+      starting a new task.
+    - **suggestions.sdoc** (doc) — Proposed additions to the SDOC spec. Each
+      suggestion references requirements it serves, includes priority, and
+      explains rationale. Check here before designing new features.
 }

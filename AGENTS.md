@@ -9,10 +9,7 @@ JavaScript parser/renderer, and a VS Code extension for live preview.
 ## Project Knowledge
 
 This project uses the Lexica convention for organising knowledge. All
-knowledge files live in `lexica/` directories:
-
-- Look in `lexica/` at the repo root for project-wide knowledge
-- Look in `spec/` for the SDOC specification and Lexica design documents
+knowledge files live in `lexica/` at the repo root.
 
 When starting a task:
 
@@ -26,29 +23,28 @@ When starting a task:
 ## Project Structure
 
 ```
-lexica/             Project knowledge (skills and reference docs)
-  sdoc-authoring.sdoc  How to write correct SDOC files
-
-spec/               Specification and governance
-  requirements.sdoc   Why SDOC exists, abstract requirements (R1-R10)
-  specification.sdoc  The formal v0.1 spec, written in SDOC format
-  suggestions.sdoc    Proposed features (S1-S9) with priority and rationale
-  status.sdoc         What's done, what's in progress, what's next
-  lexica.sdoc         Lexica knowledge system description
-  skill-files-design.sdoc         Lexica design document
-  skill-files-implementation-plan.sdoc  Lexica implementation plan
-
-examples/           Example and reference files
-  example.sdoc        Quick reference showing all SDOC features
-  sdoc.config.json    Sample config (style, header, footer)
-  sdoc.template.css   Sample custom stylesheet
-  example-overrides.css  Style override example
+lexica/             Project knowledge (all skills and reference docs)
+  INDEX.sdoc          Auto-generated knowledge index
+  sdoc-authoring.sdoc How to write correct SDOC files (skill)
+  specification.sdoc  The formal v0.1 spec (doc)
+  requirements.sdoc   Why SDOC exists, requirements R1-R10 (doc)
+  suggestions.sdoc    Proposed features S1-S9 (doc)
+  status.sdoc         What's done, what's in progress, what's next (doc)
+  lexica.sdoc         Lexica knowledge system description (doc)
+  lexica-design.sdoc  Lexica design document (doc)
+  lexica-plan.sdoc    Lexica implementation plan (doc)
 
 docs/               User-facing documentation (served by document browser)
   guide/              Getting started, setup
   reference/          API and CLI reference
   tutorials/          Step-by-step tutorials
   index.sdoc          Docs landing page
+
+examples/           Example and reference files
+  example.sdoc        Quick reference showing all SDOC features
+  sdoc.config.json    Sample config (style, header, footer)
+  sdoc.template.css   Sample custom stylesheet
+  example-overrides.css  Style override example
 
 src/                Source code
   sdoc.js             Parser and HTML renderer (~1900 lines)
@@ -63,14 +59,15 @@ test/               Test files
 tools/              CLI tools
   serve_docs.py       CLI to start a local SDOC document server
   generate_guide.js   Generates SDOC_GUIDE.md from parser source
+  generate_index.js   Generates INDEX.sdoc for a lexica/ directory
 ```
 
 ## Before Making Changes
 
-Read `spec/status.sdoc` first — it has the current task list.
+Read `lexica/status.sdoc` first — it has the current task list.
 
-If changing the parser or renderer, read `spec/specification.sdoc`.
-If adding features, read `spec/requirements.sdoc` and `spec/suggestions.sdoc`.
+If changing the parser or renderer, read `lexica/specification.sdoc`.
+If adding features, read `lexica/requirements.sdoc` and `lexica/suggestions.sdoc`.
 
 The requirements document defines stable goals (R1-R10) that all changes
 should be evaluated against.

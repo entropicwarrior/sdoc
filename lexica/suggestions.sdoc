@@ -1,5 +1,17 @@
 # SDOC Feature Suggestions @sdoc-suggestions
 {
+    # Meta @meta
+    {
+        type: doc
+    }
+
+    # About @about
+    {
+        Proposed additions to the SDOC spec. Each suggestion references
+        requirements it serves, includes priority, and explains rationale.
+        Check here before designing new features.
+    }
+
     # Context @context
     {
         This document suggests additions to the SDOC spec based on gaps identified in v0.1. Each suggestion references the requirements it serves (see requirements.sdoc). Suggestions are ordered by priority.

@@ -3,7 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const SPEC_PATH = path.resolve(__dirname, "..", "spec", "specification.sdoc");
+const SPEC_PATH = path.resolve(__dirname, "..", "lexica", "specification.sdoc");
 const OUTPUT_PATH = path.resolve(__dirname, "..", "SDOC_GUIDE.md");
 
 const QUICK_REFERENCE = `# SDOC Guide

@@ -2,6 +2,8 @@
 {
     # Meta @meta
     {
+        type: doc
+
         author: Michael + Claude
         date: 2026-02-19
         status: Draft

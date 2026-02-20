@@ -10,11 +10,11 @@ This guide teaches you everything you need to write SDOC files. Part 1 is a quic
 
 ### Core Principle
 
-Structure comes from explicit scoping. Braces (`{ }`) provide unambiguous scope boundaries, while braceless scopes offer a lighter syntax for simple documents. Whitespace and indentation are cosmetic — use them freely for readability but they never affect meaning.
+All structure comes from `{ }` braces. Whitespace and indentation are cosmetic — use them freely for readability but they never affect meaning.
 
 ### Scopes
 
-A scope is a heading followed by content. Use braces for explicit scoping, or omit them for braceless leaf scopes:
+A scope is a heading followed by a brace-delimited block. Nesting depth determines heading style.
 
 ```
 # Document Title
@@ -31,21 +31,9 @@ A scope is a heading followed by content. Use braces for explicit scoping, or om
 }
 ```
 
-Or with braceless scopes (content runs until the next heading or EOF):
-
-```
-# Document Title
-
-# Section A
-Content of section A.
-
-# Section B
-Content of section B.
-```
-
 - `#` starts a heading (multiple `#` characters are allowed but don't affect depth — only nesting does)
 - `@id` at the end of a heading line assigns a referenceable ID
-- `{ }` delimits the scope's content (optional for leaf scopes)
+- `{ }` delimits the scope's content
 
 ### Headingless Scopes
 
@@ -94,39 +82,6 @@ The opening brace (or list/table opener) can appear at the end of the heading li
 ```
 
 This also works on list item lines: `- Item {`. K&R and Allman styles can be mixed freely in the same document.
-
-### Braceless Scopes
-
-A heading not followed by `{` creates a braceless scope. Content runs until the next `#` heading, a closing `}`, or end of file:
-
-```
-# Section A
-Content of Section A.
-It can span multiple lines.
-
-# Section B
-Content of Section B.
-```
-
-- Braceless scopes support paragraphs, code blocks, blockquotes, implicit lists, HRs, and tables
-- Encountering another `#` heading ends the braceless scope (the heading becomes a sibling)
-- Braceless and explicit scopes can be mixed freely
-
-### Implicit Root
-
-If the first heading in a document is not followed by `{`, the entire document is wrapped in an implicit root scope:
-
-```
-# My Document
-
-# Section A
-Content of section A.
-
-# Section B
-Content of section B.
-```
-
-This is equivalent to wrapping everything after the first heading in `{ ... }`. If the first heading IS followed by `{`, the document uses explicit mode.
 
 ### Paragraphs
 
@@ -177,53 +132,6 @@ Items can have their own content block:
     - Simple item
 }
 ```
-
-Rich content like code blocks, extra paragraphs, or nested lists inside a list item **must** be wrapped in a `{ }` body block:
-
-```
-{[#]
-    1. First step
-    {
-        Here is some detail:
-
-        ```python
-        print("hello")
-        ```
-    }
-    2. Second step
-}
-```
-
-**Important:** Bare code fences or paragraphs between list items (outside a body block) will cause parser errors.
-
-Shorthand items (`- Item` or `1. Item`) always render in normal body font, even with a body block. To render a list item as a heading (larger, bolder), use `#` syntax instead:
-
-```
-{[.]
-    # Heading-style item
-    {
-        This item's title renders as a heading.
-    }
-    - Normal item
-    {
-        This item's title stays in normal body font.
-    }
-}
-```
-
-#### Multi-line List Items
-
-Inside an explicit list block (`{[.]}` or `{[#]}`), a list item's title can span multiple lines. Lines after the marker that aren't a command token are joined to the title with a space:
-
-```
-{[.]
-    - This is a long list item
-      that continues on the next line
-    - Short item
-}
-```
-
-Continuation stops at blank lines, list markers, headings, braces, code fences, blockquotes, and horizontal rules. A body block can still follow the completed multi-line title. This feature only applies to explicit list blocks, not implicit lists.
 
 #### Implicit Lists
 
@@ -347,13 +255,15 @@ A line starting with `\#` renders as a literal `#` (not a heading). A line start
 
 ### Meta Scope
 
-The reserved `@meta` scope configures per-file settings and is not rendered in the document body. Use sub-scopes for rich content, or key:value syntax for simple values:
+The reserved `@meta` scope configures per-file settings and is not rendered in the document body:
 
 ```
 # Meta @meta
 {
     # Style
     { styles/custom.css }
+    # StyleAppend
+    { styles/overrides.css }
     # Header
     { My *custom* header }
     # Footer
@@ -361,37 +271,7 @@ The reserved `@meta` scope configures per-file settings and is not rendered in t
 }
 ```
 
-Key:value syntax (lighter weight):
-
-```
-# Meta @meta
-{
-    style: styles/custom.css
-    header: My Header
-    footer: My Footer
-    author: Jane Smith
-    version: 1.0
-}
-```
-
-- Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`
-- Other keys (e.g., `author`, `date`, `version`) are stored as custom properties
-- Sub-scope syntax takes precedence over key:value when both exist
-- Each key:value pair should be on its own paragraph line
-
 Hierarchical configuration is also available via `sdoc.config.json` files in any folder.
-
-### Document Formatting
-
-The VSCode extension provides a built-in formatter. Use **Format Document** (Shift+Option+F on macOS, Shift+Alt+F on Windows/Linux) to auto-indent based on brace depth.
-
-- Respects your VS Code tab size and spaces/tabs preference
-- Code blocks are left untouched
-- Inline blocks (`{ content }`) stay on one line
-- K&R style lines are handled correctly
-- Formatting is idempotent and never changes document structure
-
-You can also use `formatSdoc(text, indentStr)` from the JavaScript API.
 
 ### Conventions
 
@@ -452,105 +332,31 @@ You can also use `formatSdoc(text, indentStr)` from the JavaScript API.
 }
 ```
 
-### Common Mistakes
-
-These are easy errors to make — especially for AI agents generating SDOC. Avoid them.
-
-#### Bare content inside list blocks
-
-Inside a list block (`{[.]}` or `{[#]}`), the **only** valid children are list items (`-`, `1.`, `#` headings, or anonymous `{ }` blocks). Bare paragraphs, code fences, or other content floating between items is a **parser error**.
-
-**Wrong — bare paragraphs inside a list block:**
-
-```
-{[.]
-    - First item title
-
-      This paragraph is NOT inside a body block.
-      It will cause a parser error.
-
-    - Second item
-}
-```
-
-**Right — wrap rich content in a `{ }` body block:**
-
-```
-{[.]
-    - First item title
-    {
-        This paragraph belongs to the item above.
-
-        So does this one, and any code blocks, nested lists, etc.
-    }
-    - Second item
-}
-```
-
-This is the single most common SDOC mistake. If a list item needs **anything** beyond its title line (extra paragraphs, code blocks, nested lists, blockquotes), that content **must** go in a `{ }` body block immediately after the item.
-
-#### Unescaped `<` and `>` in text
-
-Angle brackets in regular text (outside of inline code backticks) can be misinterpreted as autolinks. Escape them with `\<` and `\>`:
-
-**Wrong:**
-
-```
-- **observer<T>** — a pointer type
-```
-
-**Right:**
-
-```
-- **observer\<T\>** — a pointer type
-```
-
-Inside backtick code spans (`` `observer<T>` ``), angle brackets are fine — code spans are raw.
-
-#### Forgetting that blank lines stop multi-line list item titles
-
-A list item title can span multiple continuation lines, but a blank line terminates the title. Content after the blank line is bare content in the list block (a parser error) unless wrapped in a body block:
-
-**Wrong:**
-
-```
-{[.]
-    - This is a long item title
-      that continues here
-
-      But this is NOT a continuation — it's a bare paragraph (error).
-}
-```
-
-**Right:**
-
-```
-{[.]
-    - This is a long item title
-      that continues here
-    {
-        This extra content is properly in a body block.
-    }
-}
-```
-
 ---
 
 ## Full Specification
 
-The authoritative SDOC specification is in `spec/specification.sdoc`. Refer to it for edge cases, formal grammar, and detailed parsing rules.
-
-The embedded copy below may be out of date. When in doubt, the `.sdoc` file is the source of truth.
+The authoritative SDOC specification follows below. Refer to this for edge cases, formal grammar, and detailed parsing rules.
 
 ```
 # SDOC Specification v0.1 @sdoc-spec
 {
     # Meta @meta
     {
+        type: doc
+
         # Version
         { 0.1 }
         # Status
         { Draft }
+    }
+
+    # About @about
+    {
+        The formal SDOC v0.1 specification. Defines syntax for scopes,
+        lists, tables, code blocks, inline formatting, references, and
+        the meta scope. Includes the formal EBNF grammar. Read for
+        edge cases and parser behaviour questions.
     }
 
     # Overview @overview
@@ -572,7 +378,7 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
         {
             {[.]
                 - A document is a tree of scopes
-                - A scope has a heading line and a block (`{ ... }`)
+                - A scope has a heading line and either a brace-delimited block (`{ ... }`) or braceless content terminated by the next heading, `}`, or EOF
                 - Headings are explicit and always start with `#`
                 - A scope may have an optional human ID (e.g., `@overview`)
                 - References use `@id` in text
@@ -609,6 +415,27 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
             ```
 
             `{` opens a scope block and `}` closes it. Indentation is cosmetic.
+
+            # Braceless Leaf Scopes @braceless-scopes
+            {
+                A heading not followed by `{` or a block opener creates a braceless scope. The scope's content runs until the next `#` heading at the same level, a closing `}`, or end of file:
+
+                ```
+# Section A
+This is content of Section A.
+It can span multiple lines.
+
+# Section B
+Content of Section B.
+                ```
+
+                {[.]
+                    - Braceless scopes can contain paragraphs, code blocks, blockquotes, implicit lists, horizontal rules, tables, and headingless scopes
+                    - Braceless scopes cannot contain child `#` headings; encountering one ends the scope (the heading becomes a sibling)
+                    - A closing `}` also terminates a braceless scope (used when braceless scopes appear inside an explicit parent)
+                    - Braceless and explicit scopes can be freely mixed in the same document
+                }
+            }
 
             # K&R Style Brace Placement @knr-braces
             {
@@ -725,8 +552,6 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
                 {[.]
                     - A shorthand item may optionally be followed by a block (`{ ... }` or list opener)
                     - If no block follows, the item has no body
-                    - Rich content after a list item (code blocks, extra paragraphs, nested lists) **must** be wrapped in a `{ }` body block — bare content between list items is a parser error
-                    - Shorthand items always render in normal body font, even with a body block. Use `#` headed scopes for heading-style list items
                     - Outside list blocks, leading list-item lines form implicit lists (see @implicit-lists)
                 }
 
@@ -738,6 +563,27 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
                     2. Item 2
                 }
                 ```
+
+                # Multi-line List Item Shorthand @multi-line-list-items
+                {
+                    Inside an explicit list block (`{[.]` or `{[#]`), a shorthand item's title may span multiple lines. Lines that follow the item marker and are not themselves a command token (heading, list marker, brace, fence, blockquote, horizontal rule, or blank line) are treated as continuation lines and joined to the item title with a single space:
+
+                    ```
+                    {[.]
+                        - This is a long list item
+                          that continues on the next line
+                        - Short item
+                    }
+                    ```
+
+                    {[.]
+                        - Continuation lines are joined with a single space
+                        - Continuation stops at: blank lines, list markers (`- `, `1. `), headings (`#`), block openers (`{`, `{[.]`, `{[#]`, `{[table]`), block closers (`}`), code fences, blockquotes, and horizontal rules
+                        - A block (`{ ... }` or list/table opener) may still follow the completed multi-line title
+                        - Multi-line continuation is only supported in explicit list blocks, not in implicit lists
+                        - Indentation of continuation lines is cosmetic
+                    }
+                }
             }
 
             # Implicit Lists @implicit-lists
@@ -975,6 +821,34 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
                 - Per-file meta settings override the merged `sdoc.config.json` values
                 - `@meta` is reserved and should not be used for normal references
             }
+
+            # Key:Value Meta Syntax @kv-meta
+            {
+                Inside a `@meta` scope, paragraph lines matching `Key: value` are parsed as metadata. This provides a lighter-weight alternative to sub-scopes for simple values:
+
+                ```
+                # Meta @meta
+                {
+                    style: styles/custom.css
+                    header: My Header
+                    footer: My Footer
+                    author: Jane Smith
+                    date: 2026-02-09
+                    version: 1.0
+                    status: Draft
+                }
+                ```
+
+                {[.]
+                    - Key matching is case-insensitive
+                    - The pattern requires at least one space after the colon (`key: value`, not `key:value`)
+                    - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`
+                    - All other keys are stored as custom properties (e.g., `author`, `date`, `version`, `status`, `tags`)
+                    - Sub-scope syntax takes precedence: if both `# Style { path }` and `style: path` exist, the sub-scope value wins
+                    - Key:value and sub-scope syntax can be mixed freely in the same meta scope
+                    - Each key:value pair must be on its own paragraph line (separated by blank lines from other pairs)
+                }
+            }
         }
     }
 
@@ -1020,15 +894,55 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
     {
         The VSCode extension provides a built-in document formatter accessible via Format Document (Shift+Option+F). The formatter reindents the document based on brace depth.
 
+        # Formatting Rules @formatting-rules
+        {
+            The formatter operates line-by-line, tracking brace depth to compute indentation:
+
+            {[.]
+                - Blank lines are preserved as empty lines with no indentation
+                - Code block content (between ``` fences) is passed through raw with no reindentation
+                - Code fence lines are indented at the current depth
+                - Closing braces `}` decrement depth before indenting
+                - Standalone openers (`{`, `{[.]`, `{[#]`, `{[table]`) indent at current depth, then increment
+                - Inline blocks (`{ content }`) indent at current depth with no depth change
+                - K&R lines (heading or list item ending with an opener) indent at current depth, then increment
+                - All other lines (headings, paragraphs, list items, blockquotes, HRs) indent at current depth
+            }
+        }
+
+        # Behaviour @formatting-behaviour
+        {
+            {[.]
+                - The formatter respects the user's VS Code tab size and spaces/tabs preference
+                - Formatting is idempotent: formatting an already-formatted document produces identical output
+                - Structure is never changed; only indentation is adjusted
+                - The formatter does not reflow paragraph text or reorder content
+            }
+        }
+    }
+
+    # Implicit Root Scope @implicit-root
+    {
+        If the first non-blank line of a document is a `#` heading and the next non-blank line after it is NOT `{`, an inline block, or a list/table opener, the document is in implicit root mode:
+
+        ```
+# My Document
+
+# Section A
+Content of Section A.
+
+# Section B
+{
+    Content of Section B.
+}
+        ```
+
         {[.]
-            - Blank lines are preserved as empty lines with no indentation
-            - Code block content (between ``` fences) is passed through raw with no reindentation
-            - Closing braces `}` decrement depth before indenting
-            - Standalone openers (`{`, `{[.]`, `{[#]`, `{[table]`) indent at current depth, then increment
-            - Inline blocks (`{ content }`) indent at current depth with no depth change
-            - K&R lines (heading or list item ending with an opener) indent at current depth, then increment
-            - The formatter respects the user's tab size and spaces/tabs preference
-            - Formatting is idempotent
+            - The first heading becomes the root scope title
+            - Everything after it until EOF becomes the root scope's children
+            - Works with both braceless and explicit child scopes
+            - If the first heading IS followed by `{` or a block opener, the document uses explicit root mode (existing behavior)
+            - K&R brace style on the first heading also triggers explicit mode
         }
     }
 
@@ -1055,15 +969,20 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
         Informal EBNF grammar:
 
         ```
-        document      = scope ;
+        document      = implicit_root | block_body ;
+        implicit_root = heading block_body ;
 
         scope         = heading ws? block
+                      | heading ws? braceless_body
                       | heading_with_opener block_body "}" ;
         heading       = "#" { "#" } ws title (ws id)? ;
         heading_with_opener = "#" { "#" } ws title (ws id)? ws block_opener ;
         id            = "@" ident ;
         block_opener  = "{" | "{[.]" | "{[#]" | "{[table]" ;
         block         = "{" ws? block_body "}" ;
+        braceless_body = { paragraph | code_block | blockquote | implicit_list
+                         | horizontal_rule | headingless_scope | table_scope
+                         | blank } ;
 
         block_body    = { blank | paragraph | scope | headingless_scope
                         | list_scope | table_scope
@@ -1075,13 +994,16 @@ The embedded copy below may be out of date. When in doubt, the `.sdoc` file is t
         table_scope   = "{[table]" ws? table_body "}" ;
         table_body    = table_row { table_row } ;
         table_row     = cell { "|" cell } ;
-        list_body     = { blank | comma_sep | scope | list_item_shorthand } ;
+        list_body     = { blank | comma_sep | scope | list_item_shorthand
+                        | anonymous_item } ;
         implicit_list = list_item_shorthand { list_item_shorthand } ;
         list_item_shorthand = bullet_item | numbered_item ;
-        bullet_item   = "-" ws title [ws? block]?
+        bullet_item   = "-" ws title { continuation_line } [ws? block]?
                       | "-" ws title ws block_opener block_body "}" ;
-        numbered_item = number ("." | ")") ws title [ws? block]?
+        numbered_item = number ("." | ")") ws title { continuation_line } [ws? block]?
                       | number ("." | ")") ws title ws block_opener block_body "}" ;
+        continuation_line = text_line ;   (* only in explicit list blocks *)
+        anonymous_item = "{" ws? block_body "}" ;
         number        = DIGIT { DIGIT } ;
 
         paragraph     = text_line { ws? text_line } ;

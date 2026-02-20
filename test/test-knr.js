@@ -118,7 +118,7 @@ test('Headingless scope', () => {
 });
 
 test('Existing spec file parses cleanly', () => {
-  const text = fs.readFileSync(path.join(__dirname, '..', 'spec', 'specification.sdoc'), 'utf-8');
+  const text = fs.readFileSync(path.join(__dirname, '..', 'lexica', 'specification.sdoc'), 'utf-8');
   const r = parseSdoc(text);
   assert(r.errors.length === 0, 'spec errors: ' + JSON.stringify(r.errors));
 });

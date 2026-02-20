@@ -2,9 +2,22 @@
 {
     # Meta @meta
     {
+        type: doc
+
         author: Michael + Claude
         date: 2026-02-19
-        status: Draft — Refined after red team, scoping, automation, discovery model, and single-directory convention
+
+        status: Draft — Refined after red team, scoping, automation,
+        discovery model, and single-directory convention
+    }
+
+    # About @about
+    {
+        Design document for Lexica, the knowledge organisation system for
+        AI agents. Covers the problem statement, file structure, directory
+        convention, progressive disclosure model, MCP server interface,
+        and design decisions. Read before making changes to the Lexica
+        system.
     }
 
     # Problem Statement @problem
