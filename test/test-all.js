@@ -5,7 +5,11 @@ const {
   renderTextParagraphs,
   renderHtmlDocumentFromParsed,
   renderHtmlDocument,
-  formatSdoc
+  formatSdoc,
+  slugify,
+  listSections,
+  extractSection,
+  extractAbout
 } = require("../src/sdoc.js");
 const fs = require("fs");
 const path = require("path");
@@ -1134,6 +1138,189 @@ test("list item with K&R opener", () => {
   assert(lines[3] === "        - Item {");
   assert(lines[4] === "            Body.");
   assert(lines[5] === "        }");
+});
+
+// ============================================================
+console.log("\n--- slugify ---");
+
+test("basic slugify", () => {
+  assert(slugify("Smart Pointers") === "smart-pointers");
+});
+
+test("uppercase to lowercase", () => {
+  assert(slugify("RAII Pattern") === "raii-pattern");
+});
+
+test("non-alpha chars to hyphens", () => {
+  assert(slugify("C++ Memory Mgmt") === "c-memory-mgmt");
+});
+
+test("strips formatting markers", () => {
+  assert(slugify("**Bold Title**") === "bold-title");
+});
+
+test("strips backticks", () => {
+  assert(slugify("`code` stuff") === "code-stuff");
+});
+
+test("trims leading/trailing hyphens", () => {
+  assert(slugify("  Spaces  ") === "spaces");
+});
+
+test("empty string", () => {
+  assert(slugify("") === "");
+});
+
+// ============================================================
+console.log("\n--- listSections ---");
+
+test("lists content scopes, excludes meta and about", () => {
+  const r = parseSdoc("# Doc\n{\n# Meta @meta\n{\nauthor: Bob\n}\n# About @about\n{\nDesc.\n}\n# First @first\n{\nPara one.\n}\n# Second\n{\nPara two.\n}\n}");
+  const sections = listSections(r.nodes);
+  assert(sections.length === 2, "expected 2 sections, got " + sections.length);
+  assert(sections[0].id === "first");
+  assert(sections[0].title === "First");
+  assert(sections[0].derivedId === "first");
+  assert(sections[1].id === null);
+  assert(sections[1].title === "Second");
+  assert(sections[1].derivedId === "second");
+});
+
+test("preview from first paragraph", () => {
+  const r = parseSdoc("# Doc\n{\n# Section\n{\nHello world this is content.\n}\n}");
+  const sections = listSections(r.nodes);
+  assert(sections[0].preview === "Hello world this is content.");
+});
+
+test("preview truncates long paragraphs", () => {
+  const longText = "A".repeat(50) + " " + "B".repeat(50) + " " + "C".repeat(50);
+  const r = parseSdoc("# Doc\n{\n# Section\n{\n" + longText + "\n}\n}");
+  const sections = listSections(r.nodes);
+  assert(sections[0].preview.length < longText.length, "preview should be truncated");
+  assert(sections[0].preview.endsWith("..."), "preview should end with ...");
+});
+
+test("empty scope has empty preview", () => {
+  const r = parseSdoc("# Doc\n{\n# Empty\n{\n}\n}");
+  const sections = listSections(r.nodes);
+  assert(sections[0].preview === "");
+});
+
+// ============================================================
+console.log("\n--- extractSection ---");
+
+test("match by explicit @id", () => {
+  const r = parseSdoc("# Doc\n{\n# Section One @sec1\n{\nContent one.\n}\n# Section Two @sec2\n{\nContent two.\n}\n}");
+  const result = extractSection(r.nodes, "sec2");
+  assert(result !== null);
+  assert(result.title === "Section Two");
+  assert(result.content.includes("Content two"));
+});
+
+test("match by derived slug", () => {
+  const r = parseSdoc("# Doc\n{\n# Smart Pointers\n{\nModern C++ provides.\n}\n}");
+  const result = extractSection(r.nodes, "smart-pointers");
+  assert(result !== null);
+  assert(result.title === "Smart Pointers");
+  assert(result.content.includes("Modern C++"));
+});
+
+test("derived slug match is case-insensitive", () => {
+  const r = parseSdoc("# Doc\n{\n# Smart Pointers\n{\nContent.\n}\n}");
+  const result = extractSection(r.nodes, "Smart-Pointers");
+  assert(result !== null);
+});
+
+test("explicit @id takes priority over derived slug", () => {
+  const r = parseSdoc("# Doc\n{\n# Alpha @beta\n{\nFirst.\n}\n# Beta\n{\nSecond.\n}\n}");
+  const result = extractSection(r.nodes, "beta");
+  assert(result !== null);
+  assert(result.title === "Alpha", "should match explicit @id first, got: " + result.title);
+});
+
+test("no match returns null", () => {
+  const r = parseSdoc("# Doc\n{\n# Section\n{\nContent.\n}\n}");
+  const result = extractSection(r.nodes, "nonexistent");
+  assert(result === null);
+});
+
+test("excludes meta and about from matching", () => {
+  const r = parseSdoc("# Doc\n{\n# About @about\n{\nDesc.\n}\n# Content\n{\nReal.\n}\n}");
+  const result = extractSection(r.nodes, "about");
+  assert(result === null, "should not match @about scope");
+});
+
+// ============================================================
+console.log("\n--- extractAbout ---");
+
+test("extracts about text", () => {
+  const r = parseSdoc("# Doc\n{\n# About @about\n{\nThis is the about section.\n}\n# Content\n{\nStuff.\n}\n}");
+  const about = extractAbout(r.nodes);
+  assert(about === "This is the about section.");
+});
+
+test("joins multiple paragraphs", () => {
+  const r = parseSdoc("# Doc\n{\n# About @about\n{\nFirst para.\n\nSecond para.\n}\n}");
+  const about = extractAbout(r.nodes);
+  assert(about === "First para. Second para.");
+});
+
+test("returns null when no about", () => {
+  const r = parseSdoc("# Doc\n{\n# Content\n{\nStuff.\n}\n}");
+  const about = extractAbout(r.nodes);
+  assert(about === null);
+});
+
+test("case-insensitive @about matching", () => {
+  const r = parseSdoc("# Doc\n{\n# ABOUT @About\n{\nText.\n}\n}");
+  const about = extractAbout(r.nodes);
+  assert(about === "Text.");
+});
+
+// ============================================================
+console.log("\n--- extractMeta enhanced ---");
+
+test("extracts uuid from meta", () => {
+  const r = parseSdoc("# Meta @meta\n{\nuuid: 550e8400-e29b\n}\n# Body\n{\nContent.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.uuid === "550e8400-e29b");
+});
+
+test("extracts type from meta", () => {
+  const r = parseSdoc("# Meta @meta\n{\ntype: skill\n}\n# Body\n{\nContent.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.type === "skill");
+});
+
+test("extracts tags as array", () => {
+  const r = parseSdoc("# Meta @meta\n{\ntags: cpp, memory, raii\n}\n# Body\n{\nContent.\n}");
+  const result = extractMeta(r.nodes);
+  assert(Array.isArray(result.meta.tags));
+  assert(result.meta.tags.length === 3);
+  assert(result.meta.tags[0] === "cpp");
+  assert(result.meta.tags[1] === "memory");
+  assert(result.meta.tags[2] === "raii");
+});
+
+test("single tag", () => {
+  const r = parseSdoc("# Meta @meta\n{\ntags: solo\n}\n# Body\n{\nContent.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.tags.length === 1);
+  assert(result.meta.tags[0] === "solo");
+});
+
+test("missing uuid/type/tags default to null/null/[]", () => {
+  const r = parseSdoc("# Meta @meta\n{\nauthor: Bob\n}\n# Body\n{\nContent.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.uuid === null);
+  assert(result.meta.type === null);
+  assert(result.meta.tags.length === 0);
+});
+
+test("no meta scope has empty meta object", () => {
+  const r = parseSdoc("# Doc\n{\nContent.\n}");
+  const result = extractMeta(r.nodes);
+  assert(Object.keys(result.meta).length === 0);
 });
 
 // ============================================================

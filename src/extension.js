@@ -76,8 +76,19 @@ function activate(context) {
       async invoke(options, token) {
         const guidePath = path.join(context.extensionPath, 'SDOC_GUIDE.md');
         const content = fs.readFileSync(guidePath, 'utf8');
+        const preamble = [
+          '## Reading Guidance',
+          '',
+          '- The **Quick Reference** section is sufficient for writing correct SDOC.',
+          '- **Common Mistakes** is essential reading for any agent generating SDOC.',
+          '- Only read the **Full Specification** for edge cases or parser behaviour questions.',
+          '- If this project uses Lexica, check `skills/` and `docs/` directories for project-specific knowledge.',
+          '',
+          '---',
+          '',
+        ].join('\n');
         return new vscode.LanguageModelToolResult([
-          new vscode.LanguageModelTextPart(content)
+          new vscode.LanguageModelTextPart(preamble + content)
         ]);
       }
     })

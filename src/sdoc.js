@@ -1362,6 +1362,13 @@ function extractMeta(nodes) {
     }
   }
 
+  // Promote well-known Lexica properties
+  meta.uuid = meta.properties.uuid || null;
+  meta.type = meta.properties.type || null;
+  meta.tags = meta.properties.tags
+    ? meta.properties.tags.split(",").map((t) => t.trim()).filter(Boolean)
+    : [];
+
   const bodyNodes = nodes.filter((_, index) => index !== metaIndex);
   return { nodes: bodyNodes, meta };
 }
@@ -1795,6 +1802,115 @@ function formatSdoc(text, indentStr = "    ") {
   return result.join("\n");
 }
 
+// --- Lexica utility functions ---
+
+function slugify(text) {
+  return text
+    .replace(/[*~`_]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getDocumentScope(nodes) {
+  if (nodes.length === 1 && nodes[0].type === "scope" && nodes[0].children) {
+    return nodes[0];
+  }
+  return null;
+}
+
+function getContentScopes(nodes) {
+  const doc = getDocumentScope(nodes);
+  const children = doc ? doc.children : nodes;
+  return children.filter(
+    (n) => n.type === "scope" && (!n.id || (n.id.toLowerCase() !== "meta" && n.id.toLowerCase() !== "about"))
+  );
+}
+
+function collectPlainText(nodes) {
+  const parts = [];
+  for (const node of nodes) {
+    if (node.type === "paragraph") {
+      parts.push(node.text);
+    } else if (node.type === "list") {
+      for (const item of node.items || []) {
+        if (item.title) parts.push(item.title);
+        if (item.children) parts.push(collectPlainText(item.children));
+      }
+    } else if (node.type === "scope" && node.children) {
+      parts.push(collectPlainText(node.children));
+    } else if (node.type === "code" && node.content) {
+      parts.push(node.content);
+    } else if (node.type === "blockquote" && node.text) {
+      parts.push(node.text);
+    } else if (node.type === "table") {
+      if (node.headers) parts.push(node.headers.join(" | "));
+      if (node.rows) {
+        for (const row of node.rows) parts.push(row.join(" | "));
+      }
+    }
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
+function firstParagraphPreview(nodes, maxLen) {
+  for (const node of nodes) {
+    if (node.type === "paragraph" && node.text) {
+      const text = node.text.trim();
+      if (text.length <= maxLen) return text;
+      const truncated = text.substring(0, maxLen);
+      const lastSpace = truncated.lastIndexOf(" ");
+      return (lastSpace > maxLen * 0.5 ? truncated.substring(0, lastSpace) : truncated) + "...";
+    }
+  }
+  return "";
+}
+
+function listSections(nodes) {
+  return getContentScopes(nodes).map((node) => ({
+    id: node.id || null,
+    derivedId: slugify(node.title),
+    title: node.title,
+    preview: firstParagraphPreview(node.children || [], 100)
+  }));
+}
+
+function extractSection(nodes, sectionId) {
+  const scopes = getContentScopes(nodes);
+
+  // First pass: match explicit @id (case-sensitive)
+  for (const node of scopes) {
+    if (node.id && node.id === sectionId) {
+      return { title: node.title, content: collectPlainText(node.children || []) };
+    }
+  }
+
+  // Second pass: match derived slug (case-insensitive)
+  const lowerTarget = sectionId.toLowerCase();
+  for (const node of scopes) {
+    if (slugify(node.title).toLowerCase() === lowerTarget) {
+      return { title: node.title, content: collectPlainText(node.children || []) };
+    }
+  }
+
+  return null;
+}
+
+function extractAbout(nodes) {
+  const doc = getDocumentScope(nodes);
+  const children = doc ? doc.children : nodes;
+
+  for (const node of children) {
+    if (node.type === "scope" && node.id && node.id.toLowerCase() === "about") {
+      const texts = (node.children || [])
+        .filter((c) => c.type === "paragraph")
+        .map((c) => c.text.trim());
+      return texts.length ? texts.join(" ") : null;
+    }
+  }
+  return null;
+}
+
 module.exports = {
   parseSdoc,
   extractMeta,
@@ -1802,5 +1918,9 @@ module.exports = {
   renderTextParagraphs,
   renderHtmlDocumentFromParsed,
   renderHtmlDocument,
-  formatSdoc
+  formatSdoc,
+  slugify,
+  listSections,
+  extractSection,
+  extractAbout
 };

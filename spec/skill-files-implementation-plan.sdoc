@@ -51,7 +51,7 @@
 
         # 1a. Create AGENTS.md @step-1a
         {
-            status: pending
+            status: done
 
             **Create:** \`AGENTS.md\` at the repo root.
 
@@ -95,7 +95,7 @@
 
         # 1b. Create skills/ directory with sdoc-authoring.sdoc @step-1b
         {
-            status: pending
+            status: done
 
             **Create directory:** \`skills/\` at the repo root.
 
@@ -138,28 +138,35 @@
             (\`node -e "const {parseSdoc} = require('./src/sdoc'); const r = parseSdoc(require('fs').readFileSync('skills/sdoc-authoring.sdoc','utf8')); console.log(r.errors.length + ' errors')"\`).
         }
 
-        # 1c. Create docs/ directory with initial files @step-1c
+        # 1c. Ensure knowledge files are discoverable @step-1c
         {
-            status: pending
+            status: done
 
-            **Create directory:** \`docs/\` at the repo root.
+            **Note:** This repo already uses \`docs/\` for user-facing documentation
+            served by the SDOC document browser. Lexica knowledge files cannot go
+            there — they would appear in the browser mixed with user docs.
 
-            **Create file 1:** \`docs/lexica.sdoc\`
-            Copy \`spec/lexica.sdoc\` to \`docs/lexica.sdoc\`. The spec/ copy stays as
-            the working draft; the docs/ copy is the agent-facing version. If the
-            content diverges later, docs/ is the canonical agent-facing one.
+            For this repo, Lexica reference documents stay in \`spec/\`:
 
-            **Create file 2:** \`docs/implementation-plan.sdoc\`
-            Copy \`spec/skill-files-implementation-plan.sdoc\` to
-            \`docs/implementation-plan.sdoc\`. This lets agents working on this repo
-            see the plan and know what has been done and what remains.
+            {[.]
+                - \`spec/lexica.sdoc\` — what Lexica is and how it works
+                - \`spec/skill-files-implementation-plan.sdoc\` — this plan
+                - \`spec/skill-files-design.sdoc\` — the full design document
+            }
 
-            **Verify:** \`ls docs/\` shows both files. Both parse without errors.
+            The \`AGENTS.md\` file points agents to both \`skills/\` and \`spec/\` for
+            this repo. Other repos adopting Lexica would use \`docs/\` as designed.
+
+            This is a known collision — see \@plan-questions for the open question
+            about \`docs/\` naming.
+
+            **Verify:** \`ls skills/\` shows sdoc-authoring.sdoc. \`ls spec/\` shows
+            the Lexica documents. The document browser is unaffected.
         }
 
         # 1d. Update sdoc_reference tool with reading guidance @step-1d
         {
-            status: pending
+            status: done
 
             **File:** \`src/extension.js\`, lines 74-84.
 
@@ -217,7 +224,7 @@
 
         # 2a. slugify() @step-2a
         {
-            status: pending
+            status: done
 
             **File:** \`src/sdoc.js\` (add before \`module.exports\` at line ~1798)
 
@@ -265,7 +272,7 @@
 
         # 2b. listSections() @step-2b
         {
-            status: pending
+            status: done
 
             **File:** \`src/sdoc.js\` (add before \`module.exports\`)
 
@@ -315,7 +322,7 @@
 
         # 2c. extractSection() @step-2c
         {
-            status: pending
+            status: done
 
             **File:** \`src/sdoc.js\` (add before \`module.exports\`)
 
@@ -350,7 +357,7 @@
 
         # 2d. extractAbout() @step-2d
         {
-            status: pending
+            status: done
 
             **File:** \`src/sdoc.js\` (add before \`module.exports\`)
 
@@ -380,7 +387,7 @@
 
         # 2e. Enhanced extractMeta() @step-2e
         {
-            status: pending
+            status: done
 
             **File:** \`src/sdoc.js\` — modify the existing \`extractMeta\` function.
 
@@ -626,8 +633,13 @@
             - Should we also create \`CLAUDE.md\` as a symlink to \`AGENTS.md\`? Claude
               Code reads CLAUDE.md automatically. Other tools may need their own
               files (\`.cursorrules\`, etc.).
-            - Does \`docs/\` at the repo root collide with projects using \`docs/\` for
-              GitHub Pages? If so, what is the fallback name?
+            - **\`docs/\` collision confirmed.** This repo already uses \`docs/\` for
+              user-facing documentation served by the document browser. Lexica
+              reference knowledge lives in \`spec/\` instead, and AGENTS.md directs
+              agents there. Other repos adopting Lexica may hit the same issue if
+              they use \`docs/\` for GitHub Pages or similar. Need a convention for
+              the fallback — candidates: \`knowledge/\`, \`context/\`, or just
+              documenting "use whatever directory and point AGENTS.md at it".
             - For step 1b, how much of SDOC_GUIDE.md to extract into the authoring
               skill? The full Quick Reference is ~200 lines. Should it be condensed?
             - For step 3b, which VS Code LM API provider to target? The API supports

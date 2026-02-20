@@ -78,6 +78,11 @@
             The directories are plain and visible — no dot-prefix, no hidden folders.
             Developers browsing the tree see them immediately. The names describe
             content, not audience — both humans and agents use them.
+
+            If a project already uses \`docs/\` for another purpose (e.g., GitHub
+            Pages, a documentation site), use \`AGENTS.md\` to direct agents to
+            wherever reference knowledge actually lives (e.g., \`spec/\`,
+            \`knowledge/\`).
         }
 
         # Scoped Discovery @scoped-discovery
