@@ -440,7 +440,7 @@
 
         # 3a. "SDOC: New Knowledge File" command @step-3a
         {
-            status: pending
+            status: done
 
             **Files to modify:**
             {[.]
@@ -496,7 +496,7 @@
 
         # 3b. "SDOC: Generate About" command @step-3b
         {
-            status: pending
+            status: done
 
             **Files to modify:**
             {[.]

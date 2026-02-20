@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const url = require("url");
 const vscode = require("vscode");
-const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed } = require("./sdoc");
+const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed, slugify, listSections } = require("./sdoc");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -54,7 +54,245 @@ function activate(context) {
     browseDocsAction();
   });
 
-  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand);
+  const newKnowledgeFileCommand = vscode.commands.registerCommand("sdoc.newKnowledgeFile", async (uri) => {
+    const kind = await vscode.window.showQuickPick(["Skill", "Doc"], {
+      placeHolder: "What kind of knowledge file?"
+    });
+    if (!kind) return;
+
+    const title = await vscode.window.showInputBox({
+      prompt: "Knowledge file title",
+      placeHolder: "e.g. Error Handling Conventions"
+    });
+    if (!title) return;
+
+    const slug = slugify(title);
+    const fileName = slug + ".sdoc";
+
+    // Determine target directory:
+    // 1. Explorer context menu passes a URI
+    // 2. Active editor's directory
+    // 3. Workspace root
+    let targetDir;
+    if (uri) {
+      const stat = fs.statSync(uri.fsPath);
+      targetDir = stat.isDirectory() ? uri.fsPath : path.dirname(uri.fsPath);
+    } else if (vscode.window.activeTextEditor) {
+      targetDir = path.dirname(vscode.window.activeTextEditor.document.uri.fsPath);
+    } else {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (!workspaceFolders || !workspaceFolders.length) {
+        vscode.window.showErrorMessage("SDOC: Open a workspace folder first.");
+        return;
+      }
+      targetDir = workspaceFolders[0].uri.fsPath;
+    }
+
+    const filePath = path.join(targetDir, fileName);
+    if (fs.existsSync(filePath)) {
+      vscode.window.showWarningMessage("SDOC: File already exists: " + fileName);
+      return;
+    }
+
+    const uuid = require("crypto").randomUUID();
+    const date = new Date().toISOString().split("T")[0];
+    const typeName = kind.toLowerCase();
+
+    const skeleton = [
+      `# ${title} @${slug}`,
+      "{",
+      "    # Meta @meta",
+      "    {",
+      `        uuid: ${uuid}`,
+      `        type: ${typeName}`,
+      `        date: ${date}`,
+      "    }",
+      "",
+      "    # About @about",
+      "    {",
+      "        (Write a 2-5 line summary of this file's content.)",
+      "    }",
+      "",
+      `    # ${title}`,
+      "    {",
+      "        (Content goes here.)",
+      "    }",
+      "}",
+      ""
+    ].join("\n");
+
+    fs.writeFileSync(filePath, skeleton, "utf8");
+    const doc = await vscode.workspace.openTextDocument(filePath);
+    await vscode.window.showTextDocument(doc);
+  });
+
+  const generateAboutCommand = vscode.commands.registerCommand("sdoc.generateAbout", async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showInformationMessage("Open an SDOC file first.");
+      return;
+    }
+    if (editor.document.languageId !== "sdoc") {
+      vscode.window.showInformationMessage("SDOC: Generate About works with .sdoc files.");
+      return;
+    }
+
+    const text = editor.document.getText();
+    const parsed = parseSdoc(text);
+    const docTitle = parsed.nodes.length > 0 && parsed.nodes[0].title ? parsed.nodes[0].title : "Untitled";
+    const sections = listSections(parsed.nodes);
+
+    if (sections.length === 0) {
+      vscode.window.showInformationMessage("SDOC: No content sections found to summarise.");
+      return;
+    }
+
+    const sectionSummary = sections.map((s) => `- ${s.title}: ${s.preview || "(empty)"}`).join("\n");
+    const prompt = `Given these sections of a knowledge file titled "${docTitle}", write a 2-5 line About paragraph summarising what this file covers and when someone should read it. Return ONLY the paragraph text, no markup, no heading.\n\nSections:\n${sectionSummary}`;
+
+    let models;
+    try {
+      models = await vscode.lm.selectChatModels();
+    } catch {
+      vscode.window.showErrorMessage("SDOC: No language model available.");
+      return;
+    }
+    if (!models || models.length === 0) {
+      vscode.window.showErrorMessage("SDOC: No language model available.");
+      return;
+    }
+
+    const model = models[0];
+    let aboutText = "";
+    try {
+      const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+      const response = await model.sendRequest(messages);
+      for await (const chunk of response.text) {
+        aboutText += chunk;
+      }
+    } catch (err) {
+      vscode.window.showErrorMessage("SDOC: Language model error: " + err.message);
+      return;
+    }
+
+    aboutText = aboutText.trim();
+    if (!aboutText) {
+      vscode.window.showInformationMessage("SDOC: Language model returned empty response.");
+      return;
+    }
+
+    // Find existing @about scope to replace, or insert after @meta
+    const lines = text.split("\n");
+    let aboutStart = -1;
+    let aboutEnd = -1;
+    let metaEnd = -1;
+    let braceDepth = 0;
+    let inAbout = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+
+      if (inAbout) {
+        if (trimmed === "{") {
+          braceDepth++;
+        } else if (trimmed === "}") {
+          braceDepth--;
+          if (braceDepth === 0) {
+            aboutEnd = i;
+            inAbout = false;
+          }
+        }
+        continue;
+      }
+
+      if (/^#\s+.*@about\b/.test(trimmed) || /^#\s+About\s+@about/.test(trimmed)) {
+        aboutStart = i;
+        // Look for the opening brace
+        for (let j = i; j < Math.min(i + 3, lines.length); j++) {
+          if (lines[j].trim() === "{" || lines[j].trim().endsWith("{")) {
+            braceDepth = 1;
+            inAbout = true;
+            break;
+          }
+        }
+      }
+
+      if (/^#\s+.*@meta\b/.test(trimmed)) {
+        // Track end of meta scope
+        let mDepth = 0;
+        for (let j = i; j < lines.length; j++) {
+          const mt = lines[j].trim();
+          if (mt === "{" || mt.endsWith("{")) mDepth++;
+          if (mt === "}") {
+            mDepth--;
+            if (mDepth === 0) {
+              metaEnd = j;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Determine indentation from context
+    let indent = "    ";
+    if (aboutStart >= 0) {
+      const match = lines[aboutStart].match(/^(\s*)/);
+      if (match) indent = match[1];
+    } else if (metaEnd >= 0) {
+      const match = lines[metaEnd].match(/^(\s*)/);
+      if (match) indent = match[1];
+    }
+
+    // Wrap about text at ~72 chars within the indent
+    const maxLineLen = 72;
+    const innerIndent = indent + "    ";
+    const words = aboutText.split(/\s+/);
+    const wrappedLines = [];
+    let currentLine = "";
+    for (const word of words) {
+      if (currentLine && (innerIndent + currentLine + " " + word).length > maxLineLen) {
+        wrappedLines.push(innerIndent + currentLine);
+        currentLine = word;
+      } else {
+        currentLine = currentLine ? currentLine + " " + word : word;
+      }
+    }
+    if (currentLine) wrappedLines.push(innerIndent + currentLine);
+
+    const aboutBlock = [
+      indent + "# About @about",
+      indent + "{",
+      ...wrappedLines,
+      indent + "}"
+    ].join("\n");
+
+    const editBuilder = new vscode.WorkspaceEdit();
+    const docUri = editor.document.uri;
+
+    if (aboutStart >= 0 && aboutEnd >= 0) {
+      // Replace existing @about
+      const range = new vscode.Range(aboutStart, 0, aboutEnd, lines[aboutEnd].length);
+      editBuilder.replace(docUri, range, aboutBlock);
+    } else if (metaEnd >= 0) {
+      // Insert after @meta closing brace
+      const pos = new vscode.Position(metaEnd + 1, 0);
+      editBuilder.insert(docUri, pos, "\n" + aboutBlock + "\n");
+    } else {
+      // Insert at beginning of document scope (after first {)
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "{") {
+          const pos = new vscode.Position(i + 1, 0);
+          editBuilder.insert(docUri, pos, "\n" + aboutBlock + "\n");
+          break;
+        }
+      }
+    }
+
+    await vscode.workspace.applyEdit(editBuilder);
+  });
+
+  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand, newKnowledgeFileCommand, generateAboutCommand);
 
   context.subscriptions.push(
     vscode.languages.registerDocumentFormattingEditProvider("sdoc", {

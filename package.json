@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "Preview SDOC files.",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "publisher": "local",
   "engines": {
     "vscode": "^1.95.0"
@@ -16,7 +16,9 @@
     "onCommand:sdoc.previewToSide",
     "onCommand:sdoc.exportHtml",
     "onCommand:sdoc.openInBrowser",
-    "onCommand:sdoc.browseDocs"
+    "onCommand:sdoc.browseDocs",
+    "onCommand:sdoc.newKnowledgeFile",
+    "onCommand:sdoc.generateAbout"
   ],
   "scripts": {
     "package": "npx vsce package --out dist/ --allow-missing-repository"
@@ -65,6 +67,14 @@
       {
         "command": "sdoc.browseDocs",
         "title": "SDOC: Browse Documents"
+      },
+      {
+        "command": "sdoc.newKnowledgeFile",
+        "title": "SDOC: New Knowledge File"
+      },
+      {
+        "command": "sdoc.generateAbout",
+        "title": "SDOC: Generate About"
       }
     ],
     "configurationDefaults": {
@@ -103,6 +113,12 @@
         {
           "command": "sdoc.openInBrowser",
           "when": "activeWebviewPanelId == 'sdoc.preview'",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "sdoc.newKnowledgeFile",
           "group": "navigation"
         }
       ]
