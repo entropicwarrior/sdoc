@@ -3,11 +3,6 @@
     # Meta @meta
     {
         type: doc
-
-        # Version
-        { 0.1 }
-        # Status
-        { Draft }
     }
 
     # About @about

@@ -3,10 +3,6 @@
     # Meta @meta
     {
         type: doc
-
-        author: Michael + Claude
-        date: 2026-02-19
-        status: Draft
     }
 
     # About @about
@@ -179,6 +175,12 @@
             The \`type\` field is either \`skill\` (how to do something — prescriptive)
             or \`doc\` (what something is — descriptive). This helps tooling filter
             and rank results but does not affect where the file lives.
+
+            Alternatively, the type can be encoded in the filename as a prefix:
+            \`skill-error-handling.sdoc\`, \`doc-architecture.sdoc\`. Tooling infers
+            the type from the prefix when \@meta has no \`type\` field. Both
+            approaches work; use whichever fits your workflow. If both are
+            present, \@meta takes precedence.
         }
 
         # Where to Put Files @where-to-put

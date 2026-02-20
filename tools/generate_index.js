@@ -11,7 +11,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { parseSdoc, extractMeta, extractAbout } = require("../src/sdoc");
+const { parseSdoc, extractMeta, extractAbout, inferType } = require("../src/sdoc");
 
 const lexicaDir = process.argv[2] || path.join(process.cwd(), "lexica");
 
@@ -44,7 +44,7 @@ for (const file of files) {
   }
 
   const meta = extractMeta(parsed.nodes);
-  const type = meta.meta.type || "unknown";
+  const type = inferType(file, meta.meta) || "unknown";
   const about = extractAbout(parsed.nodes);
 
   entries.push({ file, title, type, about });

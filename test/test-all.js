@@ -7,6 +7,7 @@ const {
   renderHtmlDocument,
   formatSdoc,
   slugify,
+  inferType,
   listSections,
   extractSection,
   extractAbout
@@ -1324,6 +1325,26 @@ test("no meta scope has empty meta object", () => {
 });
 
 // ============================================================
+console.log("\n--- inferType ---");
+
+test("meta type takes precedence", () => {
+  assert(inferType("skill-foo.sdoc", { type: "doc" }) === "doc");
+});
+
+test("infers skill from filename prefix", () => {
+  assert(inferType("skill-error-handling.sdoc", {}) === "skill");
+  assert(inferType("skill-error-handling.sdoc", null) === "skill");
+});
+
+test("infers doc from filename prefix", () => {
+  assert(inferType("doc-architecture.sdoc", {}) === "doc");
+});
+
+test("returns null for unknown prefix", () => {
+  assert(inferType("error-handling.sdoc", {}) === null);
+  assert(inferType("readme.sdoc", {}) === null);
+});
+
 console.log("\n--- nested code fences ---");
 
 test("4-backtick fence contains 3-backtick content", () => {

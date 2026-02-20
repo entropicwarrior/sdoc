@@ -1821,6 +1821,16 @@ function formatSdoc(text, indentStr = "    ") {
 
 // --- Lexica utility functions ---
 
+const KNOWN_TYPES = ["skill", "doc"];
+
+function inferType(filename, meta) {
+  if (meta && meta.type) return meta.type;
+  const base = filename.replace(/\.sdoc$/i, "");
+  const prefix = base.split("-")[0].toLowerCase();
+  if (KNOWN_TYPES.includes(prefix)) return prefix;
+  return null;
+}
+
 function slugify(text) {
   return text
     .replace(/[*~`_]/g, "")
@@ -1937,6 +1947,7 @@ module.exports = {
   renderHtmlDocument,
   formatSdoc,
   slugify,
+  inferType,
   listSections,
   extractSection,
   extractAbout
