@@ -260,10 +260,32 @@
         use the global directory: \`~/skills/\`.
     }
 
-    # Tooling @tooling
+    # How Agents Use It Today @how-agents-use-it
     {
-        Lexica provides an MCP server that agents connect to. The server exposes
-        four tools:
+        Agents browse \`skills/\` and \`docs/\` directories directly using their built-in
+        file tools (list files, read files). An \`AGENTS.md\` file at the repo root
+        teaches agents the convention:
+
+        {[#]
+            1. List the \`skills/\` and \`docs/\` directories at the working directory and
+               at the repo root.
+            2. Read filenames to identify relevant knowledge.
+            3. Open relevant files and read the \@about section to confirm relevance.
+            4. Scan headings and read only the sections needed for the current task.
+            5. Check parent directories for broader project-wide knowledge.
+        }
+
+        This works well for projects with a manageable number of knowledge files.
+        No special tooling is required — any agent that can list directories and read
+        files can use Lexica immediately. The \`AGENTS.md\` convention is supported by
+        Claude Code, Cursor, Windsurf, and most other agent environments.
+    }
+
+    # Future Tooling @future-tooling
+    {
+        When the number of knowledge files grows large enough that manual browsing
+        becomes inefficient (roughly 20+ files across multiple directory levels), an
+        MCP server can provide programmatic progressive disclosure:
 
         {[table]
             Tool | What it does
@@ -273,19 +295,20 @@
             get_section | Load the full content of one section
         }
 
-        Agents use these tools to navigate the knowledge tree step by step — discovery,
-        orientation, detail — loading only what they need. There is no "load the whole
-        file" tool. The protocol enforces progressive disclosure by design.
+        The MCP server would be a thin wrapper around the SDOC parser's section
+        extraction capabilities and a directory walker. It enforces progressive
+        disclosure by design — there is no "load the whole file" tool.
 
-        The MCP server is a standalone process (not tied to VS Code) and works with
-        any agent environment that supports MCP: Claude Code, Cursor, or custom agents.
+        This is deliberately deferred. The directory convention delivers value
+        immediately with zero dependencies. Tooling gets built when real usage
+        demands it.
     }
 
     # Principles @principles
     {
         {[.]
             - **Author content, generate everything else.** Write knowledge with clear
-              headings. Tooling handles UUIDs, summaries, section indices, and manifests.
+              headings. Tooling can handle UUIDs, summaries, and metadata as it matures.
             - **Knowledge lives in named directories.** \`skills/\` and \`docs/\`. No hidden
               folders, no metadata declarations, no configuration. Put a file in the
               directory, it is knowledge.

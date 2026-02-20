@@ -10,516 +10,628 @@
 
     # Overview @overview
     {
-        This document plans the concrete changes needed in the sdoc repo to implement
-        Lexica as described in @lexica-design. The goal is to go from what exists today
-        (a parser, a VS Code extension, and a design doc) to a working system where
-        agents can discover, navigate, and load knowledge files progressively.
+        This document plans the concrete changes needed to make Lexica real. Each
+        step is self-contained — an agent or developer can pick up any step cold,
+        complete it, commit, and the next session picks up where it left off.
 
-        The plan is ordered in phases. Each phase delivers usable value and can be
-        shipped independently. Later phases build on earlier ones but are not blocked
-        by being designed up front — we expect the design to evolve as we learn from
-        real usage.
+        Each step has a **status** field: pending, in-progress, or done. Update the
+        status in this file as work is completed. This document is the single source
+        of truth for what has been done and what remains.
     }
 
     # What Exists Today @current-state
     {
         {[.]
-            - **Parser** (\`src/sdoc.js\`) — complete, robust, ~1800 lines. Parses all
-              SDOC syntax into a clean AST with node types: scope, paragraph, list,
-              table, code, blockquote, hr. Every node tracks lineStart/lineEnd.
-            - **Meta extraction** — \`extractMeta(nodes)\` finds the \@meta scope and
-              pulls out style, header, footer, and key:value pairs.
-            - **Formatter** — \`formatSdoc(text, indentStr)\` reindents based on brace
-              depth.
-            - **HTML renderer** — full document and fragment rendering with CSS,
-              collapsible scopes, click-to-navigate, inline editing.
-            - **VS Code extension** — preview, export, browser view, document server,
-              formatting, config cascading (\`sdoc.config.json\`).
-            - **Document server** — HTTP server that collects all \`.sdoc\` files in a
-              tree, serves a manifest and individual document content.
-            - **AI skill reference** — registers an \`sdoc_reference\` language model
-              tool that serves the full SDOC_GUIDE.md to agents. This is the only
-              agent-facing capability today.
-            - **Tests** — custom test runner, ~300+ tests covering parser functionality.
-        }
-
-        What does NOT exist:
-
-        {[.]
-            - No slug generation from heading text
-            - No section listing (get all headings with IDs from a document)
-            - No section extraction by ID (get one section's content)
-            - No \@about extraction or generation
-            - No knowledge file discovery (walking \`skills/\` and \`docs/\` directories)
-            - No scope-aware resolution (proximity ranking)
-            - No MCP server
-            - No manifest generation
-            - No cross-file reference resolution
+            - **Parser** (\`src/sdoc.js\`, ~1800 lines) — parses all SDOC syntax into
+              a clean AST. Node types: scope, paragraph, list, table, code,
+              blockquote, hr. Every node tracks lineStart/lineEnd.
+            - **Exports** from \`src/sdoc.js\` (line ~1798): \`parseSdoc\`,
+              \`extractMeta\`, \`renderFragment\`, \`renderTextParagraphs\`,
+              \`renderHtmlDocumentFromParsed\`, \`renderHtmlDocument\`, \`formatSdoc\`.
+            - **VS Code extension** (\`src/extension.js\`) — preview, export, browser
+              view, document server, formatting. Commands registered at lines 18-57,
+              pushed to subscriptions at line 57.
+            - **AI skill reference** — \`sdoc_reference\` language model tool registered
+              at \`src/extension.js\` lines 74-84. Reads \`SDOC_GUIDE.md\` from extension
+              path and returns the full content (~1100 lines) as a
+              LanguageModelTextPart.
+            - **Tests** — custom test runner in \`test/test-all.js\` (~300+ tests).
+              Pattern: \`test(name, fn)\` with simple \`assert(cond, msg)\`. Run with
+              \`node test/test-all.js\`. Also \`test/test-knr.js\` for K&R style tests.
+            - **Package commands** declared in \`package.json\` lines 45-68: preview,
+              previewToSide, exportHtml, openInBrowser, browseDocs.
         }
     }
 
-    # Phase 1: Parser Extensions @phase-1
+    # Phase 1: Directory Convention and Agent Instructions @phase-1
     {
-        Add utility functions to \`src/sdoc.js\` that the MCP server and tooling will
-        need. These are pure functions operating on the existing AST — no new
-        dependencies, no VS Code coupling.
+        Establish the convention, write agent instructions, and seed initial
+        knowledge files. No code changes required — agents browse \`skills/\` and
+        \`docs/\` directories directly.
 
-        # 1a. Slug Generation @slugify
+        # 1a. Create AGENTS.md @step-1a
         {
-            A function that converts heading text to a derived section ID.
+            status: pending
 
-            ```javascript
-            slugify("Smart Pointers")    // => "smart-pointers"
-            slugify("RAII Pattern")      // => "raii-pattern"
-            slugify("C++ Memory Mgmt")   // => "c-memory-mgmt"
+            **Create:** \`AGENTS.md\` at the repo root.
+
+            **Content:** Write the following (adapt as needed, but keep the core
+            instructions):
+
+            ```markdown
+            # Agent Instructions
+
+            ## Project Knowledge
+
+            This project uses the Lexica convention for organising knowledge:
+
+            - \`skills/\` directories contain **how-to knowledge**: patterns,
+              conventions, techniques, runbooks.
+            - \`docs/\` directories contain **reference knowledge**: specs,
+              architecture, design decisions, plans, project status.
+
+            These directories appear at the repo root and at module levels. When
+            starting a task:
+
+            1. List the \`skills/\` and \`docs/\` directories at your working directory
+               and at the repo root.
+            2. Read filenames to identify relevant knowledge.
+            3. Open relevant files and read the About section near the top to confirm
+               relevance.
+            4. Read only the sections you need — scan headings first.
+            5. Check parent directories for broader project-wide knowledge.
+
+            ## SDOC Format
+
+            Knowledge files use the SDOC format (\`.sdoc\`). If you need to write or
+            edit SDOC, use the \`sdoc_reference\` tool for the format guide. Start with
+            the Quick Reference and Common Mistakes sections.
             ```
 
-            Rules: lowercase, replace non-alphanumeric runs with a single hyphen, trim
-            leading/trailing hyphens. Strip inline formatting markers (\`*\`, \`~\`, etc.)
-            before slugifying.
+            **Verify:** The file exists at repo root. An agent starting a new session
+            in this repo would see the instructions and know to check \`skills/\` and
+            \`docs/\`.
         }
 
-        # 1b. Section Listing @list-sections
+        # 1b. Create skills/ directory with sdoc-authoring.sdoc @step-1b
         {
-            Given a parsed AST, return an array of section descriptors — one per
-            top-level content scope (excluding \@meta and \@about).
+            status: pending
+
+            **Create directory:** \`skills/\` at the repo root.
+
+            **Create file:** \`skills/sdoc-authoring.sdoc\`
+
+            **Content:** Derive from the Quick Reference section of \`SDOC_GUIDE.md\`
+            (lines ~15-200). This is a prescriptive skill file — "how to write SDOC".
+            Structure it as:
+
+            ```sdoc
+            # SDOC Authoring Guide @sdoc-authoring
+            {
+                # About @about
+                {
+                    How to write correct SDOC files. Covers document structure, inline
+                    formatting, block types (lists, tables, code, blockquotes), and
+                    common mistakes. Read the Quick Reference for everyday authoring.
+                    Read Common Mistakes before generating SDOC for the first time.
+                }
+
+                # Quick Reference @quick-reference
+                {
+                    (Extract from SDOC_GUIDE.md Quick Reference section. Include
+                    document structure, inline formatting, scope syntax, list syntax,
+                    table syntax, code blocks, blockquotes, horizontal rules.)
+                }
+
+                # Common Mistakes @common-mistakes
+                {
+                    (Extract from SDOC_GUIDE.md Common Mistakes section.)
+                }
+            }
+            ```
+
+            **Source material:** \`SDOC_GUIDE.md\` sections "Quick Reference" and
+            "Common Mistakes". Do not copy the Full Specification — that stays in
+            SDOC_GUIDE.md for edge cases.
+
+            **Verify:** \`skills/sdoc-authoring.sdoc\` parses without errors
+            (\`node -e "const {parseSdoc} = require('./src/sdoc'); const r = parseSdoc(require('fs').readFileSync('skills/sdoc-authoring.sdoc','utf8')); console.log(r.errors.length + ' errors')"\`).
+        }
+
+        # 1c. Create docs/ directory with initial files @step-1c
+        {
+            status: pending
+
+            **Create directory:** \`docs/\` at the repo root.
+
+            **Create file 1:** \`docs/lexica.sdoc\`
+            Copy \`spec/lexica.sdoc\` to \`docs/lexica.sdoc\`. The spec/ copy stays as
+            the working draft; the docs/ copy is the agent-facing version. If the
+            content diverges later, docs/ is the canonical agent-facing one.
+
+            **Create file 2:** \`docs/implementation-plan.sdoc\`
+            Copy \`spec/skill-files-implementation-plan.sdoc\` to
+            \`docs/implementation-plan.sdoc\`. This lets agents working on this repo
+            see the plan and know what has been done and what remains.
+
+            **Verify:** \`ls docs/\` shows both files. Both parse without errors.
+        }
+
+        # 1d. Update sdoc_reference tool with reading guidance @step-1d
+        {
+            status: pending
+
+            **File:** \`src/extension.js\`, lines 74-84.
+
+            **Change:** Modify the \`sdoc_reference\` tool's \`invoke\` method to prepend
+            a reading guidance preamble before the SDOC_GUIDE.md content:
 
             ```javascript
-            listSections(nodes)
+            async invoke(options, token) {
+              const guidePath = path.join(context.extensionPath, 'SDOC_GUIDE.md');
+              const content = fs.readFileSync(guidePath, 'utf8');
+              const preamble = [
+                '## Reading Guidance',
+                '',
+                '- The **Quick Reference** section is sufficient for writing correct SDOC.',
+                '- **Common Mistakes** is essential reading for any agent generating SDOC.',
+                '- Only read the **Full Specification** for edge cases or parser behaviour questions.',
+                '- If this project uses Lexica, check `skills/` and `docs/` directories for project-specific knowledge.',
+                '',
+                '---',
+                '',
+              ].join('\\n');
+              return new vscode.LanguageModelToolResult([
+                new vscode.LanguageModelTextPart(preamble + content)
+              ]);
+            }
+            ```
+
+            **Verify:** Rebuild the extension (\`npm run package\`), install it
+            (\`code --install-extension dist/*.vsix\`), and confirm the sdoc_reference
+            tool output starts with "## Reading Guidance".
+        }
+
+        # Phase 1 Checklist @phase-1-checklist
+        {
+            {[.]
+                - \`AGENTS.md\` exists at repo root (step 1a)
+                - \`skills/sdoc-authoring.sdoc\` exists and parses cleanly (step 1b)
+                - \`docs/lexica.sdoc\` and \`docs/implementation-plan.sdoc\` exist (step 1c)
+                - \`sdoc_reference\` tool prepends reading guidance (step 1d)
+                - No new dependencies added
+            }
+        }
+    }
+
+    # Phase 2: Parser Extensions @phase-2
+    {
+        Add utility functions to \`src/sdoc.js\` that future tooling (MCP server,
+        VS Code commands) will need. Pure functions on the existing AST — no new
+        dependencies, no VS Code coupling.
+
+        All new functions go in \`src/sdoc.js\` before the \`module.exports\` block
+        (currently at line ~1798). All new functions are added to \`module.exports\`.
+        All tests go in \`test/test-all.js\`, added at the end before the summary
+        output.
+
+        # 2a. slugify() @step-2a
+        {
+            status: pending
+
+            **File:** \`src/sdoc.js\` (add before \`module.exports\` at line ~1798)
+
+            **Function signature:** \`function slugify(text)\`
+
+            **Behaviour:**
+            {[#]
+                1. Strip inline formatting markers: \`*\`, \`~\`, \`\\\`\`, \`_\`
+                2. Lowercase the result
+                3. Replace runs of non-alphanumeric characters with a single \`-\`
+                4. Trim leading and trailing \`-\`
+                5. Return the slug string
+            }
+
+            **Examples:**
+            ```javascript
+            slugify("Smart Pointers")     // => "smart-pointers"
+            slugify("RAII Pattern")       // => "raii-pattern"
+            slugify("C++ Memory Mgmt")   // => "c-memory-mgmt"
+            slugify("**Bold Title**")    // => "bold-title"
+            slugify("  Spaces  ")        // => "spaces"
+            ```
+
+            **Export:** Add \`slugify\` to \`module.exports\`.
+
+            **Tests:** Add to \`test/test-all.js\`:
+            ```javascript
+            console.log("--- slugify ---");
+            test("basic slugify", () => {
+              assert(slugify("Smart Pointers") === "smart-pointers");
+            });
+            test("strips formatting markers", () => {
+              assert(slugify("**Bold Title**") === "bold-title");
+            });
+            test("non-alpha to hyphens", () => {
+              assert(slugify("C++ Memory Mgmt") === "c-memory-mgmt");
+            });
+            test("trims hyphens", () => {
+              assert(slugify("  Spaces  ") === "spaces");
+            });
+            ```
+
+            **Verify:** \`node test/test-all.js\` — all tests pass.
+        }
+
+        # 2b. listSections() @step-2b
+        {
+            status: pending
+
+            **File:** \`src/sdoc.js\` (add before \`module.exports\`)
+
+            **Function signature:** \`function listSections(nodes)\`
+
+            **Input:** The \`nodes\` array from \`parseSdoc(text).nodes\`. This is the
+            top-level document scope's children (or the root nodes if no document
+            scope). Each scope node has: \`type: "scope"\`, \`heading\` (string),
+            \`id\` (string or null), \`children\` (array of child nodes).
+
+            **Behaviour:** Walk the top-level scope's children. For each child scope
+            that is NOT \@meta and NOT \@about, emit a descriptor:
+
+            ```javascript
+            {
+              id: node.id,          // explicit @id or null
+              derivedId: slugify(node.heading),
+              title: node.heading,  // raw heading text
+              preview: firstParagraphText(node, 100)  // first ~100 chars
+            }
+            ```
+
+            The \`firstParagraphText\` helper finds the first paragraph child of the
+            scope and returns its text, truncated to ~100 characters (break at word
+            boundary, append "..." if truncated).
+
+            **Example:**
+            ```javascript
+            const r = parseSdoc(\`# Doc { # About @about { desc } # RAII @raii { Resource Acq... } # Smart Pointers { Modern C++... } }\`);
+            listSections(r.nodes)
             // => [
-            //   { id: "raii", title: "RAII Pattern", derivedId: "raii-pattern",
-            //     preview: "Resource Acquisition Is Initialization..." },
-            //   { id: null, title: "Smart Pointers", derivedId: "smart-pointers",
-            //     preview: "Modern C++ provides three smart pointer..." },
+            //   { id: "raii", derivedId: "raii", title: "RAII",
+            //     preview: "Resource Acq..." },
+            //   { id: null, derivedId: "smart-pointers", title: "Smart Pointers",
+            //     preview: "Modern C++..." },
             // ]
             ```
 
-            Each entry includes:
-            {[.]
-                - \`id\` — explicit \@id if present, null otherwise
-                - \`derivedId\` — slugified heading text (always present)
-                - \`title\` — raw heading text
-                - \`preview\` — first ~100 chars of the section's first paragraph
+            **Export:** Add \`listSections\` to \`module.exports\`.
+
+            **Tests:** Cover: document with @meta and @about (both excluded), scopes
+            with and without explicit @ids, preview truncation, empty scope (preview
+            is empty string).
+
+            **Verify:** \`node test/test-all.js\` — all tests pass.
+        }
+
+        # 2c. extractSection() @step-2c
+        {
+            status: pending
+
+            **File:** \`src/sdoc.js\` (add before \`module.exports\`)
+
+            **Function signature:** \`function extractSection(nodes, sectionId)\`
+
+            **Input:** \`nodes\` from \`parseSdoc().nodes\`, and a string \`sectionId\`.
+
+            **Behaviour:**
+            {[#]
+                1. Walk the top-level scope's children (scope nodes only).
+                2. First pass: look for a scope with an explicit \`id\` matching
+                   \`sectionId\` (case-sensitive).
+                3. Second pass (if no match): look for a scope whose
+                   \`slugify(heading)\` matches \`sectionId\` (case-insensitive).
+                4. If found, return \`{ title: node.heading, content: renderToText(node) }\`.
+                5. If not found, return \`null\`.
             }
 
-            The effective ID for extraction is \`id ?? derivedId\`.
+            The \`renderToText(node)\` helper renders the scope's children to plain
+            text. Use the existing \`renderTextParagraphs\` function where possible,
+            or walk the AST and concatenate paragraph text, list items, code block
+            content, etc.
+
+            **Export:** Add \`extractSection\` to \`module.exports\`.
+
+            **Tests:** Cover: match by explicit @id, match by derived slug,
+            case-insensitive derived match, no match returns null, first match wins
+            when multiple scopes have same derived slug.
+
+            **Verify:** \`node test/test-all.js\` — all tests pass.
         }
 
-        # 1c. Section Extraction @extract-section
+        # 2d. extractAbout() @step-2d
         {
-            Given a parsed AST and a section ID (explicit or derived), return that
-            section's AST subtree rendered to plain text or HTML.
+            status: pending
 
+            **File:** \`src/sdoc.js\` (add before \`module.exports\`)
+
+            **Function signature:** \`function extractAbout(nodes)\`
+
+            **Input:** \`nodes\` from \`parseSdoc().nodes\`.
+
+            **Behaviour:** Find the scope with \`id === "about"\` among the top-level
+            scope's children. If found, collect all paragraph text from its children
+            and return as a single string (paragraphs joined with spaces). If not
+            found, return \`null\`.
+
+            **Example:**
             ```javascript
-            extractSection(nodes, "smart-pointers")
-            // => { title: "Smart Pointers", content: "Modern C++ provides..." }
+            const r = parseSdoc(\`# Doc { # About @about { First para. Second para. } # Content { ... } }\`);
+            extractAbout(r.nodes)  // => "First para. Second para."
             ```
 
-            Matching: first check explicit \@ids, then check derived IDs. Case-insensitive
-            matching on derived IDs.
+            **Export:** Add \`extractAbout\` to \`module.exports\`.
+
+            **Tests:** Cover: file with @about (returns text), file without @about
+            (returns null), @about with multiple paragraphs (joined), @about with
+            non-paragraph children (lists, etc. — decide whether to include or skip).
+
+            **Verify:** \`node test/test-all.js\` — all tests pass.
         }
 
-        # 1d. About Extraction @extract-about
+        # 2e. Enhanced extractMeta() @step-2e
         {
-            Extract the \@about section's text content from a parsed AST. Returns null
-            if no \@about section exists.
+            status: pending
 
+            **File:** \`src/sdoc.js\` — modify the existing \`extractMeta\` function.
+
+            **Current behaviour:** Finds \@meta scope, extracts \`style\`, \`header\`,
+            \`footer\`, and generic key:value pairs.
+
+            **Change:** Also extract these keys from the key:value pairs:
+            {[.]
+                - \`uuid\` — string or null
+                - \`type\` — string or null (e.g., "skill", "doc")
+                - \`tags\` — array of strings, parsed from comma-separated value
+                  (e.g., \`tags: cpp, memory, raii\` → \`["cpp", "memory", "raii"]\`)
+            }
+
+            Add these to the returned object alongside the existing fields.
+
+            **Example:**
             ```javascript
-            extractAbout(nodes)
-            // => "Memory management patterns in modern C++. Covers RAII..."
-            ```
-
-            This is similar to \`extractMeta\` but for the \@about scope specifically.
-        }
-
-        # 1e. Enhanced Meta Extraction @enhanced-meta
-        {
-            Extend the existing \`extractMeta\` to also pull \`uuid\`, \`type\`, and \`tags\`
-            from key:value pairs in \@meta.
-
-            ```javascript
-            extractMeta(nodes)
+            const r = parseSdoc(\`# Doc { # Meta @meta { uuid: 550e8400-... \\n type: skill \\n tags: cpp, memory } }\`);
+            extractMeta(r.nodes)
             // => { uuid: "550e8400-...", type: "skill", tags: ["cpp", "memory"],
             //      style: null, header: null, footer: null, ... }
             ```
+
+            **Tests:** Cover: meta with uuid/type/tags, meta without them (null/[]),
+            tags with spaces around commas, single tag, empty tags value.
+
+            **Verify:** \`node test/test-all.js\` — all existing extractMeta tests
+            still pass, plus new tests pass.
         }
 
-        # Phase 1 Deliverables @phase-1-deliverables
+        # Phase 2 Checklist @phase-2-checklist
         {
             {[.]
-                - 5 new exported functions from \`src/sdoc.js\`
-                - Tests for each function
-                - No changes to the VS Code extension
+                - \`slugify\` exported and tested (step 2a)
+                - \`listSections\` exported and tested (step 2b)
+                - \`extractSection\` exported and tested (step 2c)
+                - \`extractAbout\` exported and tested (step 2d)
+                - \`extractMeta\` enhanced and tested (step 2e)
+                - All existing tests still pass
                 - No new files or dependencies
             }
         }
     }
 
-    # Phase 2: Knowledge Discovery @phase-2
+    # Phase 3: VS Code Integration @phase-3
     {
-        Build the filesystem walking logic that finds knowledge files. This is a
-        standalone module — used by the MCP server, the document server, and
-        potentially CLI tooling.
+        Extend the VS Code extension with knowledge file authoring commands.
+        Depends on Phase 2 (uses parser extension functions).
 
-        # 2a. Directory Walker @directory-walker
+        # 3a. "SDOC: New Knowledge File" command @step-3a
         {
-            Given a working directory, walk upward collecting all files in \`skills/\`
-            and \`docs/\` directories at each level up to the repo root, plus
-            \`~/skills/\` for global skills.
+            status: pending
 
-            Returns an array of knowledge descriptors, ordered by proximity (closest
-            first):
-
-            ```javascript
-            discoverKnowledge("/repo/src/auth/")
-            // => [
-            //   { path: "/repo/src/auth/skills/oauth.sdoc", scope: "src/auth",
-            //     dirType: "skills", ... },
-            //   { path: "/repo/src/auth/docs/auth-api.sdoc", scope: "src/auth",
-            //     dirType: "docs", ... },
-            //   { path: "/repo/skills/conventions.sdoc", scope: "repo",
-            //     dirType: "skills", ... },
-            //   { path: "/repo/docs/architecture.sdoc", scope: "repo",
-            //     dirType: "docs", ... },
-            //   { path: "~/skills/cpp-memory.sdoc", scope: "global",
-            //     dirType: "skills", ... },
-            // ]
-            ```
-
-            Each descriptor includes:
+            **Files to modify:**
             {[.]
-                - \`path\` — absolute path to the file
-                - \`scope\` — "global", "repo", or relative directory path
-                - \`dirType\` — "skills" or "docs"
-                - \`uuid\` — from \@meta (if present, SDOC files only)
-                - \`about\` — from \@about section (if present, SDOC files only)
-                - \`title\` — root heading text (or filename for non-SDOC files)
-            }
-        }
-
-        # 2b. Repo Root Detection @repo-root
-        {
-            Walk upward from working directory looking for \`.git/\`. This determines
-            where the upward walk stops (before jumping to global).
-
-            This is straightforward — just check for \`.git\` directory at each level.
-        }
-
-        # 2c. Global Skills Directory @global-skills
-        {
-            Check \`~/skills/\` for global skill files. These are appended to the
-            discovery results with \`scope: "global"\`.
-
-            Open question: should the global directory location be configurable via an
-            environment variable (\`LEXICA_SKILLS_HOME\`) or a config file? For now,
-            hardcode \`~/skills/\` and revisit if needed.
-        }
-
-        # Phase 2 Deliverables @phase-2-deliverables
-        {
-            {[.]
-                - New module: \`src/discovery.js\` (or added to \`sdoc.js\`)
-                - \`discoverKnowledge(workingDir)\` function
-                - Tests with fixture directories
-                - No VS Code dependency — pure Node.js
-            }
-        }
-    }
-
-    # Phase 3: MCP Server @phase-3
-    {
-        A standalone MCP server that wraps the parser extensions and discovery logic
-        as tools. This is the primary interface for AI agents.
-
-        # Server Setup @mcp-server-setup
-        {
-            The MCP server runs as a separate process, not inside the VS Code extension.
-            This means agents that are not using VS Code (CLI agents, CI pipelines, etc.)
-            can still use it.
-
-            Implementation options:
-            {[.]
-                - **Standalone Node.js process** — started via \`npx sdoc-mcp\` or similar.
-                  Communicates via stdio (standard MCP transport).
-                - **Integrated into the document server** — extend the existing HTTP server
-                  with MCP endpoints. Reuses the server infrastructure but couples to VS Code.
+                - \`src/extension.js\` — register the command (follow pattern at lines
+                  18-57: create with \`vscode.commands.registerCommand\`, add to
+                  \`context.subscriptions.push\` call at line 57)
+                - \`package.json\` — add to \`contributes.commands\` array (lines 45-68),
+                  with \`"command": "sdoc.newKnowledgeFile"\` and
+                  \`"title": "SDOC: New Knowledge File"\`
             }
 
-            Recommendation: standalone process. Keep the MCP server independent of the
-            VS Code extension so it works in any agent environment.
-        }
-
-        # MCP Tools @mcp-tools
-        {
-            Four tools as described in the design doc:
-
-            # list_knowledge @tool-list
-            {
-                Input: working directory (optional, defaults to repo root)
-                Returns: array of { uuid, path, scope, dirType, title, about } for all
-                visible knowledge
-
-                Implementation: call \`discoverKnowledge()\`, parse each SDOC file, extract
-                meta and about. Return filename and first lines for non-SDOC files. Cache
-                parsed results.
-            }
-
-            # search @tool-search
-            {
-                Input: query string + working directory (optional)
-                Returns: ranked subset of visible knowledge matching the query
-
-                Ranking: combine text similarity (query vs title + about) with proximity
-                (closer knowledge ranks higher). For v1, a simple keyword match on title
-                and about text is sufficient — no need for embeddings.
-            }
-
-            # get_sections @tool-get-sections
-            {
-                Input: file path (or uuid)
-                Returns: array of { id, derivedId, title, preview } for all content sections
-
-                Implementation: parse the file, call \`listSections()\`. For Markdown files,
-                use heading-based best-effort parsing.
-            }
-
-            # get_section @tool-get-section
-            {
-                Input: file path (or uuid) + section ID
-                Returns: full text content of that section
-
-                Implementation: parse the file, call \`extractSection()\`.
-            }
-        }
-
-        # Caching @mcp-caching
-        {
-            The MCP server should cache parsed ASTs and discovery results. Knowledge files
-            change infrequently — reparsing on every tool call is wasteful.
-
-            Simple approach: cache keyed by file path + mtime. Invalidate when the file's
-            modification time changes. No file watchers needed for v1 — just check mtime
-            on each access.
-        }
-
-        # Phase 3 Deliverables @phase-3-deliverables
-        {
-            {[.]
-                - New file: \`src/mcp-server.js\` (or \`src/mcp/\` directory)
-                - MCP server exposing 4 tools via stdio transport
-                - Runnable via \`node src/mcp-server.js\` or a bin entry in package.json
-                - Tests for each tool
-                - Documentation for configuring the MCP server in Claude Code, Cursor, etc.
-            }
-        }
-    }
-
-    # Phase 4: VS Code Integration @phase-4
-    {
-        Extend the VS Code extension to support knowledge file authoring workflows.
-
-        # 4a. New Knowledge File Command @new-file-command
-        {
-            A command ("SDOC: New Knowledge File") that:
-
+            **Behaviour:**
             {[#]
-                1. Prompts for a title and whether this is a skill or doc
-                2. Creates the file in the nearest \`skills/\` or \`docs/\` directory
-                   (creating it if needed)
-                3. Generates a UUID
-                4. Writes a skeleton with \@meta (uuid), empty \@about, and one empty
-                   content section
-            }
-        }
-
-        # 4b. Generate About Command @generate-about-command
-        {
-            A command ("SDOC: Generate About") that reads the current file's content
-            sections and generates an \@about paragraph using the VS Code language model
-            API (same API used by the existing \`sdoc_reference\` tool).
-
-            Inserts or replaces the \@about section in the file. The author reviews
-            the result.
-        }
-
-        # 4c. Update the AI Skill Reference @update-skill-reference
-        {
-            The existing \`sdoc_reference\` language model tool dumps the entire
-            SDOC_GUIDE.md (~1100 lines) into agent context. This needs to be smarter.
-
-            Options:
-            {[.]
-                - **Add reading guidance preamble** — a short paragraph at the top of the
-                  guide that tells agents: "The Quick Reference section is sufficient for
-                  writing SDOC. Only read the Full Specification for edge cases. Common
-                  Mistakes is essential reading for any agent generating SDOC."
-                - **Split into progressive sections** — serve the quick reference by default,
-                  offer the full spec as a follow-up tool call.
-                - **Convert to an SDOC skill file** — make SDOC_GUIDE.md itself an SDOC
-                  knowledge file with \@about, and serve it through the MCP server's
-                  progressive disclosure tools.
+                1. Show a quick pick: "Skill" or "Doc"
+                2. Show an input box: "Knowledge file title" (e.g., "Error Handling")
+                3. Determine target directory: find the nearest \`skills/\` or \`docs/\`
+                   directory by walking up from the active file's directory. If none
+                   exists, create one at the workspace root.
+                4. Generate a filename: slugify the title + \`.sdoc\`
+                   (e.g., \`error-handling.sdoc\`)
+                5. Generate a UUID (use \`crypto.randomUUID()\`)
+                6. Write the skeleton file (see template below)
+                7. Open the new file in the editor
             }
 
-            The first option (reading guidance preamble) is the quick win. The third
-            option (eat our own dogfood) is the right long-term answer.
-        }
+            Skeleton template for step 6:
 
-        # Phase 4 Deliverables @phase-4-deliverables
-        {
-            {[.]
-                - Two new VS Code commands
-                - Updated \`sdoc_reference\` tool with reading guidance (at minimum)
-                - Bump extension version
-            }
-        }
-    }
-
-    # Phase 5: Automation @phase-5
-    {
-        Build the tooling that generates metadata automatically, so authors never
-        have to think about it.
-
-        # 5a. Pre-Commit Hook @pre-commit-hook
-        {
-            A script (invokable via husky, lefthook, or standalone) that runs on
-            staged \`.sdoc\` files in \`skills/\` and \`docs/\` directories:
-
-            {[#]
-                1. If no UUID in \@meta, generate one and inject it
-                2. If no \@about section, generate one from content (requires an AI call
-                   — either local model or API)
-                3. Stage the modified file
-            }
-
-            The UUID generation is deterministic and free. The \@about generation
-            requires an AI model — this is the main design question. Options:
-
-            {[.]
-                - **API call** (Anthropic, OpenAI) — reliable but requires credentials
-                  in the dev environment and costs money per commit
-                - **Local model** — free and private but requires setup and may produce
-                  lower-quality summaries
-                - **Defer to CI** — skip \@about in the hook, let CI handle it at merge
-                  time. Simpler hook but the PR diff does not show the \@about until CI
-                  runs.
-            }
-
-            Recommendation: generate UUID in the hook (free, instant). Defer \@about
-            to a VS Code command or CI. The hook should be lightweight and not require
-            network access.
-        }
-
-        # 5b. Manifest Generator @manifest-generator
-        {
-            A script that walks the tree, collects all knowledge files from \`skills/\`
-            and \`docs/\` directories, and emits a JSON manifest.
-
-            ```bash
-            node tools/generate-manifest.js --root /path/to/repo
-            ```
-
-            Output:
-            ```json
+            ```sdoc
+            # {Title} @{slug}
             {
-                "generated": "2026-02-19T...",
-                "knowledge": [
-                    {
-                        "uuid": "550e8400-...",
-                        "path": "skills/conventions.sdoc",
-                        "scope": "repo",
-                        "dirType": "skills",
-                        "title": "Coding Conventions",
-                        "about": "Project coding conventions covering...",
-                        "sections": ["naming", "error-handling", "testing"]
-                    },
-                    {
-                        "uuid": "7a3b1c00-...",
-                        "path": "docs/architecture.sdoc",
-                        "scope": "repo",
-                        "dirType": "docs",
-                        "title": "Project Architecture",
-                        "about": "System architecture overview...",
-                        "sections": ["overview", "components", "data-flow"]
-                    }
-                ]
+                # Meta @meta
+                {
+                    uuid: {generated-uuid}
+                    type: {skill|doc}
+                    date: {YYYY-MM-DD}
+                }
+
+                # About @about
+                {
+                    (Write a 2-5 line summary of this file's content.)
+                }
+
+                # {Title}
+                {
+                    (Content goes here.)
+                }
             }
             ```
 
-            The MCP server can use this manifest for fast startup instead of
-            parsing every file on launch. But the manifest is optional — the
-            server should work without it by doing live discovery.
+            **Verify:** Run the command from the VS Code command palette. Confirm the
+            file is created in the right directory with correct skeleton content.
         }
 
-        # Phase 5 Deliverables @phase-5-deliverables
+        # 3b. "SDOC: Generate About" command @step-3b
+        {
+            status: pending
+
+            **Files to modify:**
+            {[.]
+                - \`src/extension.js\` — register the command (same pattern as 3a)
+                - \`package.json\` — add \`"command": "sdoc.generateAbout"\`,
+                  \`"title": "SDOC: Generate About"\` to contributes.commands
+            }
+
+            **Behaviour:**
+            {[#]
+                1. Get the active editor's document. Guard: must be an .sdoc file.
+                2. Parse the document with \`parseSdoc()\`.
+                3. Use \`listSections()\` to get section titles and previews.
+                4. Build a prompt: "Given these sections of a knowledge file titled
+                   '{title}', write a 2-5 line About paragraph summarising what this
+                   file covers and when an agent should read it."
+                5. Call the VS Code language model API
+                   (\`vscode.lm.selectChatModels()\`, then
+                   \`model.sendRequest(messages)\`) to generate the about text.
+                6. Find the \@about scope in the document. If it exists, replace its
+                   content. If not, insert a new \@about scope after \@meta (or at the
+                   top if no \@meta).
+                7. Apply the edit to the document. The author reviews the result.
+            }
+
+            **VS Code LM API pattern:** The extension already uses
+            \`vscode.lm.registerTool\` (line 75). For generation, use
+            \`vscode.lm.selectChatModels()\` to get an available model, then
+            \`model.sendRequest([vscode.LanguageModelChatMessage.User(prompt)])\`.
+            Stream the response and collect the text.
+
+            **Verify:** Open an .sdoc file with content sections but no \@about. Run
+            the command. Confirm an \@about section appears with a reasonable summary.
+        }
+
+        # Phase 3 Checklist @phase-3-checklist
         {
             {[.]
-                - Pre-commit hook script (UUID generation only for v1)
-                - Manifest generator script
-                - Documentation for setting up hooks
+                - \`sdoc.newKnowledgeFile\` command works from palette (step 3a)
+                - \`sdoc.generateAbout\` command works from palette (step 3b)
+                - Both commands declared in package.json
+                - Extension version bumped in package.json
+                - Extension builds cleanly (\`npm run package\`)
             }
         }
     }
 
-    # What We Are NOT Building Yet @not-building
+    # Deferred: Build When Needed @deferred
     {
-        These are in the design doc but deferred until we have real usage to guide
-        the design:
+        Designed but deferred until real usage demands them. Each item has a
+        trigger condition. These are not tracked with status fields — they will
+        get their own planning when the time comes.
 
-        {[.]
-            - **Generative merge gate** — CI pipeline that generates \@about and tags
-              at merge time. Needs a CI environment and API credentials. Build when
-              a team actually wants it.
-            - **Cross-file reference resolution** — syntax and tooling for referencing
-              sections across knowledge files. The \@id system works within a file;
-              cross-file needs more design. Build when someone has enough files to need it.
-            - **Tag taxonomy** — canonical tag vocabulary and AI-constrained tag generation.
-              Build when there are enough knowledge files to need categorisation.
-            - **Shared knowledge submodule template** — a starter shared repo that
-              teams can fork. Build when we have enough example files to populate it.
-            - **Markdown section parser** — best-effort heading-based section extraction
-              for Markdown files in \`skills/\` and \`docs/\`. Discovery works immediately
-              (any file is found); progressive disclosure for Markdown is a later
-              enhancement.
+        # MCP Server @deferred-mcp
+        {
+            **Build when:** 20+ knowledge files across multiple directory levels, or
+            agents need search beyond filenames and \@about sections.
+
+            A standalone MCP server wrapping \`listSections()\`,
+            \`extractSection()\`, \`extractAbout()\`, and a directory walker. Thin
+            wrapper — Phase 2 provides the foundation.
+        }
+
+        # Knowledge Discovery Walker @deferred-discovery
+        {
+            **Build when:** needed by MCP server or other tooling.
+
+            \`discoverKnowledge(workingDir)\` — walk up from working directory,
+            collect all files in \`skills/\` and \`docs/\`, return with scope and
+            proximity metadata.
+        }
+
+        # Pre-Commit Hook @deferred-hook
+        {
+            **Build when:** manual UUID management is a burden (~10+ files).
+
+            Script that auto-generates UUIDs for knowledge files missing them.
+        }
+
+        # Manifest Generator @deferred-manifest
+        {
+            **Build when:** needed by MCP server for fast startup or CI for
+            validation.
+
+            Walk the tree, emit JSON manifest of all knowledge files with metadata.
+        }
+
+        # Generative Merge Gate @deferred-merge-gate
+        {
+            **Build when:** a team wants automated metadata quality assurance.
+
+            CI pipeline that generates \@about and tags at merge time.
+        }
+
+        # Cross-File References @deferred-cross-refs
+        {
+            **Build when:** enough files to form a knowledge graph worth navigating.
+
+            Syntax and tooling for referencing sections across files.
+        }
+
+        # Markdown Section Parser @deferred-markdown
+        {
+            **Build when:** teams use Markdown knowledge files and want section-level
+            progressive disclosure.
+
+            Best-effort heading-based section extraction for .md files.
         }
     }
 
-    # Sequencing and Dependencies @sequencing
+    # Sequencing @sequencing
     {
         {[table]
-            Phase | Depends on | Estimated scope | Ships value
-            1. Parser extensions | Nothing | ~200 lines + tests | Foundation only
-            2. Knowledge discovery | Phase 1 (meta extraction) | ~150 lines + tests | Foundation only
-            3. MCP server | Phases 1 + 2 | ~300 lines + tests | Agents can navigate knowledge
-            4. VS Code integration | Phase 1 (for about generation) | ~200 lines | Authors can create knowledge files
-            5. Automation | Phases 1 + 2 | ~100 lines + scripts | Zero-friction authoring
+            Phase | Depends on | Scope | Ships value
+            1. Convention + instructions | Nothing | AGENTS.md + 3 files + small extension edit | Agents discover and use knowledge immediately
+            2. Parser extensions | Nothing | ~200 lines in sdoc.js + tests | Foundation for all future tooling
+            3. VS Code integration | Phase 2 | ~200 lines in extension.js + package.json | Authors create knowledge files easily
         }
 
-        Phases 1 and 2 are foundational but not user-visible. Phase 3 is where agents
-        start getting value. Phase 4 is where authors start getting value. Phase 5 is
-        polish.
+        Phase 1 is the priority. It requires almost no code and delivers immediate
+        value — agents start finding project knowledge as soon as AGENTS.md and the
+        initial files are in place.
 
-        A pragmatic order: 1 → 2 → 3 → 4 → 5, with the caveat that the quick win
-        from @update-skill-reference (adding reading guidance to the existing skill
-        reference) can happen immediately, before any of this, and should.
+        Phase 2 can happen in parallel. It builds foundation for later tooling but
+        is not urgent.
+
+        Phase 3 waits for Phase 2. It adds authoring convenience and can wait until
+        knowledge files are being created regularly.
     }
 
-    # Open Questions for This Plan @plan-questions
+    # Open Questions @plan-questions
     {
         {[.]
-            - Should the MCP server be a separate npm package or part of this repo?
-              If separate, it can be installed independently of the VS Code extension.
-              If bundled, it ships with the extension but requires VS Code to be present.
-            - Where does the MCP server live in the file structure? \`src/mcp-server.js\`
-              as a single file, or \`src/mcp/\` as a directory with tool handlers split out?
-            - Should \`discoverKnowledge()\` go into \`src/sdoc.js\` (keeping the monolith) or
-              a new \`src/discovery.js\` (starting to modularise)? The parser is already
-              ~1800 lines.
-            - For the \`search\` MCP tool, is keyword matching on title + about sufficient
-              for v1, or do we need something smarter from the start?
-            - How do we test the MCP server? Mock filesystem? Real fixture directories?
-              Integration tests with an actual MCP client?
-            - Does \`docs/\` at the repo root need a convention to avoid collision with
-              projects that use \`docs/\` for GitHub Pages or user-facing documentation?
+            - Should we also create \`CLAUDE.md\` as a symlink to \`AGENTS.md\`? Claude
+              Code reads CLAUDE.md automatically. Other tools may need their own
+              files (\`.cursorrules\`, etc.).
+            - Does \`docs/\` at the repo root collide with projects using \`docs/\` for
+              GitHub Pages? If so, what is the fallback name?
+            - For step 1b, how much of SDOC_GUIDE.md to extract into the authoring
+              skill? The full Quick Reference is ~200 lines. Should it be condensed?
+            - For step 3b, which VS Code LM API provider to target? The API supports
+              multiple providers but the UX and availability differs.
         }
     }
 }
