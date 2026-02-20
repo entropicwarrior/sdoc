@@ -176,40 +176,91 @@
         # Unambiguous Section Extraction @why-braces
         {
             In Markdown, "extract the Smart Pointers section" requires guessing where the
-            section ends — at the next heading of equal depth? Lesser depth? What if heading
-            levels are inconsistent? The answer depends on conventions that vary between
-            authors and documents.
+            section ends. Consider this Markdown:
 
-            In SDOC, section boundaries are explicit: everything between \`{\` and the
-            matching \`}\`. The parser produces an unambiguous AST. A tool that needs to
-            return exactly one section on demand gets it right every time, with no
-            heuristics.
+            ```
+            ## Smart Pointers
+            Modern C++ uses unique_ptr and shared_ptr...
+            ### unique_ptr
+            Exclusive ownership...
+            ## RAII
+            Resource Acquisition Is Initialization...
+            ```
 
-            This is the foundation of the \`get_section\` tool — and it only works reliably
-            with explicit scoping.
+            Where does the "Smart Pointers" section end? A tool that splits at equal-depth
+            headings says it ends at \`## RAII\` (and includes \`### unique_ptr\` as a child).
+            A tool that splits at lesser-or-equal depth says the same. But what if the author
+            wrote \`# RAII\` instead of \`## RAII\`? Now the section boundary changes silently.
+            What if there is no next heading at all? The section runs to EOF. Different tools
+            make different choices, and the author has no way to state their intent explicitly.
+
+            In SDOC, the same document is unambiguous:
+
+            ```sdoc
+            # Smart Pointers {
+                Modern C++ uses unique_ptr and shared_ptr...
+                # unique_ptr { Exclusive ownership... }
+            }
+            # RAII { Resource Acquisition Is Initialization... }
+            ```
+
+            The braces make boundaries explicit. A tool that needs to return exactly the
+            Smart Pointers section gets it right every time — with its children, without
+            RAII, no heuristics. This is the foundation of the \`get_section\` tool, and it
+            only works reliably with explicit scoping.
+        }
+
+        # Token-Efficient Agent Navigation @why-token-efficiency
+        {
+            AI agents pay per token. Loading an entire file to find one relevant section
+            wastes context window on irrelevant material. SDOC's explicit structure enables
+            *progressive disclosure* — agents navigate to exactly what they need:
+
+            {[table]
+                Step | What the agent sees | Token cost
+                Discovery | File list with \@about summaries (50 files) | \~200 tokens
+                Orientation | Section headings of one file | \~50-100 tokens
+                Detail | Full content of one section | \~200-1000 tokens
+            }
+
+            **Total for a targeted lookup: \~750 tokens.**
+
+            The alternative — loading a 200-line Markdown file to find the one paragraph
+            that answers the question — costs 5,000+ tokens and pollutes the context window.
+            At scale (a knowledge base with 50+ files), this is the difference between an
+            agent that stays focused and one that runs out of context after reading three
+            files.
+
+            This only works because SDOC section boundaries are explicit. If a tool cannot
+            reliably extract one section, it must fall back to loading the whole file, and
+            progressive disclosure breaks down.
         }
 
         # Built-In Metadata Support @why-meta
         {
             The \@meta scope already exists in SDOC for per-file configuration (style,
-            header, footer) with key:value syntax. Extending it for UUID and tags is
-            natural — no new syntax needed. The parser already extracts \@meta and
-            separates it from rendered content.
+            header, footer) with key:value syntax. Extending it for type, tags, and custom
+            properties is natural — no new syntax needed. The parser already extracts \@meta
+            and separates it from rendered content.
 
             In Markdown, metadata requires frontmatter YAML — a different syntax embedded
             in the document, parsed by different tools, with different escaping rules. In
-            SDOC, metadata is just another scope in the same format.
+            SDOC, metadata is just another scope in the same format. One parser, one syntax,
+            one set of escaping rules.
         }
 
         # The \@id System @why-ids
         {
             SDOC headings support \@id natively: \`# Smart Pointers \@smart-ptrs\`. These
-            IDs are part of the parsed AST and are used for cross-referencing. The skill
+            IDs are part of the parsed AST and are used for cross-referencing. The knowledge
             file design uses the same mechanism for section extraction — no new concept
             for authors to learn.
 
-            IDs are stable even when heading text changes ("Smart Pointers" could be
-            renamed to "Pointer Types" without breaking \@smart-ptrs references).
+            IDs are stable even when heading text changes. "Smart Pointers" could be renamed
+            to "Pointer Types" without breaking any \@smart-ptrs reference. In Markdown,
+            auto-generated anchors like \`#smart-pointers\` break the moment you rename the
+            heading. This matters for long-lived knowledge bases where sections evolve but
+            references must survive.
         }
 
         # Hierarchical Config Pattern Already Proven @why-config-chain
@@ -226,9 +277,19 @@
         # AI Agents Can Author SDOC @why-ai-authoring
         {
             The format is simple enough that AI agents can write correct knowledge files.
-            The brace structure is unambiguous to produce (unlike Markdown where heading
-            levels must be tracked carefully). A template plus "fill in the content
-            sections" is a straightforward prompt.
+            Consider the difference:
+
+            In Markdown, an agent creating a document must track heading levels carefully.
+            A section that should be a child of another needs \`###\` not \`##\`, and getting
+            this wrong silently restructures the document. There is no syntax error — just
+            a wrong tree. If the agent later inserts a section between two others, it must
+            re-examine every heading level in the range to ensure the hierarchy is still
+            correct.
+
+            In SDOC, the equivalent operation is: write content between \`{\` and \`}\`.
+            Nesting is explicit. A template like "fill in the content sections" is a
+            straightforward prompt. The braces enforce correctness — a mismatched brace is
+            a parse error, caught immediately, not a silent structural defect.
 
             This matters because in the Lexica model, AI agents are not just consumers
             of knowledge files — they are also producers. An agent can create a new file,

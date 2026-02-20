@@ -344,11 +344,6 @@ The authoritative SDOC specification follows below. Refer to this for edge cases
     # Meta @meta
     {
         type: doc
-
-        # Version
-        { 0.1 }
-        # Status
-        { Draft }
     }
 
     # About @about
@@ -356,7 +351,8 @@ The authoritative SDOC specification follows below. Refer to this for edge cases
         The formal SDOC v0.1 specification. Defines syntax for scopes,
         lists, tables, code blocks, inline formatting, references, and
         the meta scope. Includes the formal EBNF grammar. Read for
-        edge cases and parser behaviour questions.
+        edge cases and parser behaviour questions. For a friendlier
+        user-facing reference, see \`docs/reference/syntax.sdoc\`.
     }
 
     # Overview @overview

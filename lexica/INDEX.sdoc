@@ -32,7 +32,8 @@
     - **specification.sdoc** (doc) — The formal SDOC v0.1 specification. Defines
       syntax for scopes, lists, tables, code blocks, inline formatting,
       references, and the meta scope. Includes the formal EBNF grammar. Read
-      for edge cases and parser behaviour questions.
+      for edge cases and parser behaviour questions. For a friendlier
+      user-facing reference, see \`docs/reference/syntax.sdoc\`.
     - **status.sdoc** (doc) — Current state of the SDOC project. Tracks what is
       completed, what is in progress, and what is next. Read this first when
       starting a new task.

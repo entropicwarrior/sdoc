@@ -1,5 +1,7 @@
 # Syntax Reference
 {
+    This is a practical reference for writing SDOC files. For the formal specification (edge cases, grammar, parsing rules), see \`lexica/specification.sdoc\`.
+
     # Scopes
     {
         A scope is a heading line followed by a brace-delimited block:

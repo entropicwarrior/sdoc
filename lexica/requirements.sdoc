@@ -33,6 +33,10 @@
                 Lives alongside code in git repositories. Requirements, specifications, validation plans, testing, project context, and AI agent instructions. Must be programmatically parseable.
             }
         }
+
+        The third use case is increasingly the most important. AI agents are becoming primary consumers of project documentation, and the cost model is fundamentally different from human reading. An agent pays per token. Loading an entire Markdown file to find one section wastes thousands of tokens on irrelevant context. SDOC's explicit scoping makes surgical extraction possible: an agent can discover what sections exist (\~50 tokens), pick the one it needs, and load just that section (\~200-1000 tokens). This is not an optimisation — it is the difference between agents that stay focused and agents that drown in context.
+
+        Unambiguous structure is what makes this work. If section boundaries are heuristic (as in Markdown), extraction tools must guess and sometimes get it wrong. If boundaries are explicit (as in SDOC), extraction is deterministic. Two parsers, same input, same tree. Always.
     }
 
     # Abstract Requirements @abstract-requirements
@@ -71,7 +75,18 @@
         {
             AI tools must be able to parse an SDOC file and navigate its scope tree programmatically. An agent should be able to answer questions like "what are the children of scope X", "find all scopes tagged as requirements", and "extract the content of section Y and its descendants".
 
-            Implication: the parsed AST must be a clean, well-defined tree. Scope IDs and any semantic annotations must be machine-readable. The parser should produce structured data, not just HTML.
+            This goes beyond "can be parsed." The format must support *progressive disclosure* — an agent should be able to:
+            {[#]
+                - Discover what files exist and what they cover without reading their content (\~200 tokens for 50 files via \@about summaries)
+                - See the section headings of one file without loading the content (\~50-100 tokens)
+                - Load exactly one section on demand (\~200-1000 tokens)
+            }
+
+            The alternative — loading an entire file — costs 5,000+ tokens and fills the context window with material irrelevant to the current task. At scale, this is the difference between an agent that can navigate a 50-file knowledge base efficiently and one that runs out of context after reading three files.
+
+            In Markdown, "extract the children of scope X" requires heuristics because section boundaries are inferred from heading levels. If a file uses `##` inconsistently, the extraction breaks silently. In SDOC, scopes are delimited by braces. Extraction is exact, every time.
+
+            Implication: the parsed AST must be a clean, well-defined tree. Scope IDs and any semantic annotations must be machine-readable. The parser should produce structured data, not just HTML. Section extraction must be deterministic with no heuristics.
         }
 
         # R6: Format Interoperability @r6
