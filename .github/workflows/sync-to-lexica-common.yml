@@ -1,0 +1,89 @@
+name: Sync SDOC files to lexica-common
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/sdoc.js'
+      - 'lexica/sdoc-authoring.sdoc'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sdoc repo
+        uses: actions/checkout@v4
+        with:
+          path: sdoc
+
+      - name: Checkout lexica-common repo
+        uses: actions/checkout@v4
+        with:
+          repository: irreversible-tech/lexica-common
+          token: ${{ secrets.LEXICA_COMMON_PAT }}
+          path: lexica-common
+
+      - name: Check for changes
+        id: check
+        run: |
+          PARSER_CHANGED=false
+          SKILL_CHANGED=false
+
+          if ! diff -q sdoc/src/sdoc.js lexica-common/server/vendor/sdoc-parser.cjs > /dev/null 2>&1; then
+            PARSER_CHANGED=true
+          fi
+
+          if ! diff -q sdoc/lexica/sdoc-authoring.sdoc lexica-common/skills/skill-sdoc.sdoc > /dev/null 2>&1; then
+            SKILL_CHANGED=true
+          fi
+
+          echo "parser_changed=$PARSER_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "skill_changed=$SKILL_CHANGED" >> "$GITHUB_OUTPUT"
+
+          if [ "$PARSER_CHANGED" = true ] || [ "$SKILL_CHANGED" = true ]; then
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Copy, commit, and open PR
+        if: steps.check.outputs.any_changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.LEXICA_COMMON_PAT }}
+        run: |
+          cd lexica-common
+
+          # Copy changed files
+          FILES_SUMMARY=""
+          if [ "${{ steps.check.outputs.parser_changed }}" = "true" ]; then
+            cp ../sdoc/src/sdoc.js server/vendor/sdoc-parser.cjs
+            FILES_SUMMARY="$FILES_SUMMARY\n- \`server/vendor/sdoc-parser.cjs\` — vendored SDOC parser"
+          fi
+          if [ "${{ steps.check.outputs.skill_changed }}" = "true" ]; then
+            cp ../sdoc/lexica/sdoc-authoring.sdoc skills/skill-sdoc.sdoc
+            FILES_SUMMARY="$FILES_SUMMARY\n- \`skills/skill-sdoc.sdoc\` — SDOC authoring guide"
+          fi
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create branch, commit, force-push (reuse branch for consecutive syncs)
+          BRANCH="auto/sync-sdoc"
+          git checkout -B "$BRANCH"
+          git add -A
+          git commit -m "Update SDOC files from sdoc repo"
+          git push --force origin "$BRANCH"
+
+          # Close any existing PR on this branch, then open a fresh one
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ]; then
+            gh pr close "$EXISTING_PR" --delete-branch=false
+          fi
+
+          gh pr create \
+            --title "Update SDOC files from sdoc repo" \
+            --body "$(printf "Automated sync from [entropicwarrior/sdoc](https://github.com/entropicwarrior/sdoc).\n\n**Files updated:**\n$FILES_SUMMARY\n\nTriggered by commit ${{ github.sha }}.")"

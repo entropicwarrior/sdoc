@@ -30,9 +30,7 @@ lexica/             Project knowledge (all skills and reference docs)
   requirements.sdoc   Why SDOC exists, requirements R1-R10 (doc)
   suggestions.sdoc    Proposed features S1-S9 (doc)
   status.sdoc         What's done, what's in progress, what's next (doc)
-  lexica.sdoc         Lexica knowledge system description (doc)
-  lexica-design.sdoc  Lexica design document (doc)
-  lexica-plan.sdoc    Lexica implementation plan (doc)
+  sdoc-plan.sdoc      Roadmap: parser, spec additions, export pipeline (doc)
 
 docs/               User-facing documentation (served by document browser)
   guide/              Getting started, setup
