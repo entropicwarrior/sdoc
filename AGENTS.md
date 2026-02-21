@@ -46,15 +46,21 @@ examples/           Example and reference files
 
 src/                Source code
   sdoc.js             Parser and HTML renderer (~2000 lines)
+  slide-renderer.js   SDOC-to-HTML slide deck renderer
   extension.js        VS Code extension with preview and document server
   site-template/      Shared viewer templates (index.html, viewer.css)
+
+themes/             Slide themes
+  default/            Built-in default theme (CSS + navigation JS)
 
 test/               Test files
   test-all.js         Comprehensive test suite (node test/test-all.js)
   test-knr.js         K&R brace placement tests (node test/test-knr.js)
+  test-slides.js      Slide renderer tests (node test/test-slides.js)
   *.sdoc              Test fixture files
 
 tools/              CLI tools
+  build-slides.js     Build HTML slides from SDOC (node tools/build-slides.js)
   serve_docs.py       CLI to start a local SDOC document server
   generate_guide.js   Generates SDOC_GUIDE.md from parser source
   generate_index.js   Generates INDEX.sdoc for a lexica/ directory
@@ -89,7 +95,7 @@ should be evaluated against.
 
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
-- Run all tests: `node test/test-all.js && node test/test-knr.js`
+- Run all tests: `node test/test-all.js && node test/test-knr.js && node test/test-slides.js`
 - Tests exit non-zero on failure
 - Run tests and verify 0 failures before committing parser changes
 

@@ -1,0 +1,54 @@
+# Branch Protection Setup @branch-protection-setup
+{
+    # Meta @meta
+    {
+        type: doc
+    }
+
+    # About @about
+    {
+        Status document for setting up branch protection on the sdoc and
+        lexica-common repos. Written because the Bash tool was broken in
+        the Claude Code session and we need to pick this up fresh.
+    }
+
+    # What We Want @goal
+    {
+        Both repos should have branch protection on \`main\`:
+
+        {[.]
+            - No direct pushes to \`main\`
+            - All changes via pull request
+            - 1 approval required before merging
+            - Stale approvals dismissed when new commits are pushed
+        }
+
+        Anyone with write access can approve PRs. No CODEOWNERS for now.
+    }
+
+    # Repos @repos
+    {
+        {[table]
+            Repo | Owner | Plan
+            \`entropicwarrior/sdoc\` | Personal (entropicwarrior) | GitHub Pro
+            \`irreversible-tech/lexica-common\` | Org (irreversible-tech) | Unknown — check
+        }
+    }
+
+    # Resolution @resolution
+    {
+        Completed 2026-02-21. Both repos now have branch rulesets on
+        \`main\` configured via the GitHub UI (Settings > Rules > Rulesets):
+
+        {[.]
+            - \`entropicwarrior/sdoc\` — ruleset "Protect main" active
+            - \`irreversible-tech/lexica-common\` — ruleset "Protect main" active
+            - Both require 1 PR approval, dismiss stale reviews on push
+        }
+
+        The \`gh\` CLI approach failed (fine-grained PAT lacked
+        administration permission on the repos, and the rulesets API
+        requires Team/Enterprise plan via API). Used the GitHub UI
+        instead.
+    }
+}
