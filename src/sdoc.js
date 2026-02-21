@@ -1950,5 +1950,9 @@ module.exports = {
   inferType,
   listSections,
   extractSection,
-  extractAbout
+  extractAbout,
+  // Low-level helpers for custom renderers (e.g. slide-renderer)
+  parseInline,
+  escapeHtml,
+  escapeAttr
 };
