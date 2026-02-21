@@ -28,6 +28,30 @@ python3 tools/serve_docs.py docs/
 
 Or use the **SDOC: Browse Documents** command from the VS Code Command Palette. The viewer opens in your browser with a sidebar, search, and split-pane comparison. Edits are reflected on refresh.
 
+## Building Slides
+
+Generate an HTML slide deck from an SDOC file:
+
+```
+node tools/build-slides.js deck.sdoc [-o output.html] [--theme path/to/theme]
+```
+
+Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `lexica-common/skills/skill-slides.sdoc` for the full authoring guide.
+
+## Contributing
+
+**Branch strategy:** trunk-based development with branch protection on `main`.
+
+1. Create a short-lived branch off `main` (`fix/parser-bug`, `feat/list-items`, etc.)
+2. Make your changes, commit, push
+3. Open a PR to `main`
+4. Get one approval from another contributor
+5. Merge (squash or regular — your call)
+
+No direct pushes to `main`. Keep branches short — merge often rather than accumulating large changes.
+
+**Auto-sync:** changes to `src/sdoc.js` and `lexica/sdoc-authoring.sdoc` automatically open a PR in the `lexica-common` repo via GitHub Actions. You don't need to do anything — just be aware that parser and skill file changes propagate.
+
 ## Learning the Format
 
 - `docs/guide/intro.sdoc` — what SDOC is and why
