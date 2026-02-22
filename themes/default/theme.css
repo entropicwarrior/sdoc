@@ -172,6 +172,11 @@ img {
 /* --- Print / PDF export --- */
 
 @media print {
+  @page {
+    size: 13.333in 7.5in;
+    margin: 0;
+  }
+
   body {
     overflow: visible;
     height: auto;
@@ -181,7 +186,9 @@ img {
     display: flex !important;
     page-break-after: always;
     break-after: page;
+    width: 100vw;
     height: 100vh;
+    max-width: none;
     page-break-inside: avoid;
     break-inside: avoid;
   }

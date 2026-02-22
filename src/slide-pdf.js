@@ -64,11 +64,14 @@ function exportPdf(htmlPath, pdfPath) {
     const fileUrl = "file://" + path.resolve(htmlPath);
     const resolvedPdf = path.resolve(pdfPath);
 
+    // 13.333 x 7.5 inches = 16:9 landscape (standard presentation aspect ratio)
     const args = [
       "--headless",
       "--disable-gpu",
       "--no-pdf-header-footer",
       "--print-to-pdf=" + resolvedPdf,
+      "--print-to-pdf-paper-width=13.333",
+      "--print-to-pdf-paper-height=7.5",
       fileUrl,
     ];
 
