@@ -57,6 +57,9 @@ function renderNode(node) {
     case "table":
       return renderTable(node);
     case "code": {
+      if (node.lang === "mermaid") {
+        return `<pre class="mermaid">${escapeHtml(node.text)}</pre>`;
+      }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
       return `<pre><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
     }
@@ -287,6 +290,10 @@ function renderSlides(nodes, options = {}) {
 
   const cssTag = `<style>\n${themeCss}\n${structuralCss}\n</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
+  const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+  const mermaidTag = slidesHtml.includes('class="mermaid"')
+    ? `\n<script src="${mermaidCdn}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -303,7 +310,7 @@ ${slidesHtml}
   <span id="counter"></span>
 </div>
 
-${jsTag}
+${jsTag}${mermaidTag}
 </body>
 </html>`;
 }

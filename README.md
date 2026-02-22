@@ -36,7 +36,7 @@ Generate an HTML slide deck from an SDOC file:
 node tools/build-slides.js deck.sdoc [-o output.html] [--theme path/to/theme]
 ```
 
-Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `lexica-common/skills/skill-slides.sdoc` for the full authoring guide.
+Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `lexica/slide-authoring.sdoc` for the full authoring guide.
 
 ## Contributing
 

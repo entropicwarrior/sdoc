@@ -5,28 +5,12 @@
         generated: 2026-02-21
     }
 
-    - **requirements.sdoc** (doc) — Why SDOC exists and what it must achieve.
-      Defines ten abstract requirements (R1-R10) and concrete implementation
-      constraints (C1-C6). Read before proposing spec changes or new
-      features.
-    - **sdoc-authoring.sdoc** (skill) — How to write correct SDOC files. Covers
-      document structure, inline formatting, block types (lists, tables,
-      code, blockquotes), and common mistakes. Read the Quick Reference for
-      everyday authoring. Read Common Mistakes before generating SDOC for
-      the first time.
-    - **sdoc-plan.sdoc** (doc) — Roadmap for the SDOC format and tooling. Covers
-      parser improvements, spec additions, export pipeline, and extension
-      enhancements. Read before proposing new features or picking up work.
-      See status.sdoc for what is already completed.
-    - **specification.sdoc** (doc) — The formal SDOC v0.1 specification. Defines
-      syntax for scopes, lists, tables, code blocks, inline formatting,
-      references, and the meta scope. Includes the formal EBNF grammar. Read
-      for edge cases and parser behaviour questions. For a friendlier
-      user-facing reference, see \`docs/reference/syntax.sdoc\`.
-    - **status.sdoc** (doc) — Current state of the SDOC project. Tracks what is
-      completed, what is in progress, and what is next. Read this first when
-      starting a new task.
-    - **suggestions.sdoc** (doc) — Proposed additions to the SDOC spec. Each
-      suggestion references requirements it serves, includes priority, and
-      explains rationale. Check here before designing new features.
+    - **branch-protection-setup.sdoc** (doc) — Instructions for setting up branch protection rules on the sdoc and lexica-common GitHub repositories.
+    - **requirements.sdoc** (doc) — Why SDOC exists and what it must achieve. Defines ten abstract requirements (R1-R10) and concrete implementation constraints (C1-C6). Read before proposing spec changes or new features.
+    - **sdoc-authoring.sdoc** (skill) — How to write correct SDOC files. Covers document structure, inline formatting, block types (lists, tables, code, blockquotes), mermaid diagrams, and common mistakes. Read the Quick Reference for everyday authoring. Read Common Mistakes before generating SDOC for the first time.
+    - **sdoc-plan.sdoc** (doc) — Roadmap for the SDOC format and tooling. Covers parser improvements, spec additions, export pipeline, and extension enhancements. Read before proposing new features or picking up work. See status.sdoc for what is already completed.
+    - **slide-authoring.sdoc** (skill) — How to author SDOC slide decks. Covers deck structure, layouts (default, center, two-column), speaker notes, mermaid diagrams, theme system, and building/exporting slides.
+    - **specification.sdoc** (doc) — The formal SDOC v0.1 specification. Defines syntax for scopes, lists, tables, code blocks, inline formatting, references, and the meta scope. Includes the formal EBNF grammar. Read for edge cases and parser behaviour questions.
+    - **status.sdoc** (doc) — Current state of the SDOC project. Tracks what is completed, what is in progress, and what is next. Read this first when starting a new task.
+    - **suggestions.sdoc** (doc) — Proposed additions to the SDOC spec. Each suggestion references requirements it serves, includes priority, and explains rationale. Check here before designing new features.
 }

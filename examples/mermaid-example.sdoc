@@ -1,0 +1,103 @@
+# Mermaid Diagram Examples
+
+@meta {
+    type: doc
+}
+
+@about {
+    Demonstrates mermaid diagram support in SDOC. Each section shows a different diagram type rendered inline using the Mermaid JS library.
+}
+
+# Flowchart @flowchart {
+    A basic flowchart showing a decision process:
+
+    ```mermaid
+    graph TD
+      Start([Start]) --> Check{Is it working?}
+      Check -->|Yes| Done([Ship it])
+      Check -->|No| Fix[Fix the bug]
+      Fix --> Check
+    ```
+}
+
+# Sequence Diagram @sequence {
+    A client-server interaction:
+
+    ```mermaid
+    sequenceDiagram
+      participant Client
+      participant API
+      participant DB
+
+      Client->>API: POST /login
+      API->>DB: Query user
+      DB-->>API: User record
+      API-->>Client: JWT token
+      Client->>API: GET /data (with token)
+      API-->>Client: Protected data
+    ```
+}
+
+# Architecture Diagram @architecture {
+    A three-tier system topology:
+
+    ```mermaid
+    graph LR
+      PC[Developer PC] -->|USB / WiFi| RPi5[Raspberry Pi 5]
+      RPi5 -->|SPI| Target[Target Board]
+      RPi5 -->|I2C| PMIC[Power Monitor]
+      RPi5 -->|GPIO| Relay[Power Relay]
+    ```
+}
+
+# State Diagram @state {
+    Document lifecycle:
+
+    ```mermaid
+    stateDiagram-v2
+      [*] --> Draft
+      Draft --> Review: Submit
+      Review --> Approved: Accept
+      Review --> Draft: Request changes
+      Approved --> Published: Publish
+      Published --> [*]
+    ```
+}
+
+# Class Diagram @class {
+    Parser structure:
+
+    ```mermaid
+    classDiagram
+      class LineCursor {
+        +String[] lines
+        +int index
+        +Error[] errors
+        +eof() bool
+        +current() String
+        +next()
+      }
+      class Node {
+        +String type
+        +String title
+        +String id
+        +Node[] children
+      }
+      LineCursor --> Node : produces
+    ```
+}
+
+# Mixed Content @mixed {
+    Mermaid diagrams work alongside regular SDOC content. Here is a paragraph followed by a diagram followed by more text.
+
+    ```mermaid
+    graph LR
+      A[Input] --> B[Process] --> C[Output]
+    ```
+
+    The diagram above shows the simplest possible data pipeline. Below is a regular code block for comparison:
+
+    ```javascript
+    const pipeline = input => process(input);
+    ```
+}

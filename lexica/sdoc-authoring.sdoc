@@ -17,9 +17,9 @@
     {
         # Core Principle @core-principle
         {
-            Structure comes from explicit brace scoping. \`{ }\` provides
-            unambiguous scope boundaries. Whitespace and indentation are cosmetic
-            — use them freely for readability but they never affect meaning.
+            Structure comes from explicit brace scoping. \`{ }\` provides unambiguous scope boundaries. Whitespace and indentation are cosmetic — use them freely for readability but they never affect meaning.
+
+            Write each paragraph as a single long line. Do not hard-wrap body text at 72 or 80 characters. The renderer handles line wrapping based on the viewer's window width. A blank line separates paragraphs.
         }
 
         # Scopes @scopes
@@ -42,22 +42,24 @@
             ```
 
             {[.]
-                - \`#\` starts a heading (multiple \`#\` characters are allowed but
-                  don't affect depth — only nesting does)
-                - \`@id\` at the end of a heading line assigns a referenceable ID
+                - \`#\` starts a heading (multiple \`#\` characters are allowed but don't affect depth — only nesting does)
+                - \`@slug\` at the end of a heading line assigns a referenceable ID — the \`@\` character followed directly by the slug. There is no \`@id\` keyword.
                 - \`{ }\` delimits the scope's content
             }
 
-            The opening brace can appear at the end of the heading line (K&R
-            style):
+            The opening brace can appear at the end of the heading line (K&R style):
 
             ```
             # Title {
                 Content goes here.
             }
 
-            # Section @id {
-                IDs go before the brace.
+            # Smart Pointers @smart-ptrs {
+                The @slug goes before the brace.
+            }
+
+            # Error Handling @error-handling {
+                Another example with a slug.
             }
             ```
         }
@@ -98,25 +100,17 @@
 
         # Lists @lists
         {
-            Use \`{[.]}\` for bulleted or \`{[#]}\` for numbered lists:
+            **Simple bullet lists** — inside a normal scope, a run of \`-\` lines automatically becomes an implicit list. This is the easiest form for simple single-line items:
 
             ```
-            # Features
-            {[.]
+            # Features {
                 - Fast parsing
                 - Explicit structure
                 - Easy references
             }
-
-            # Steps
-            {[#]
-                1. Install the extension
-                2. Create a .sdoc file
-                3. Open the preview
-            }
             ```
 
-            Items can have a body block for rich content:
+            **Explicit list blocks** — use \`{[.]\` (note: no closing \`}\` on this line) for bullet lists or \`{[#]\` for numbered lists. The block is closed by a separate \`}\` after the items. Use explicit blocks when items need body content or for numbered lists:
 
             ```
             {[.]
@@ -127,16 +121,22 @@
                 }
                 - Simple item
             }
+
+            {[#]
+                1. Install the extension
+                2. Create a .sdoc file
+                3. Open the preview
+            }
             ```
 
-            Inside a normal scope, a run of \`-\` or \`1.\` lines automatically
-            becomes an implicit list.
+            **Important:** \`{[.]}\` with the closing brace on the same line creates an empty list — the brace closes the block immediately. Always put the closing \`}\` on a separate line after the items.
+
+            Implicit lists only work for bullet lists (\`-\`) where every item is a single line. For numbered lists, always use the explicit \`{[#]\` block form.
         }
 
         # Tables @tables
         {
-            Declared with \`{[table]}\`. First row is the header, columns
-            separated by \`|\`:
+            Opened with \`{[table]\` (no closing brace on this line). First row is the header, columns separated by \`|\`. Closed by a separate \`}\`:
 
             ```
             {[table]
@@ -166,17 +166,14 @@
 
         # References @references
         {
-            Assign an ID with \`@id\` on a heading, then reference it anywhere
-            with \`@id\`:
+            Assign a slug with \`@slug\` on a heading, then reference it anywhere with \`@slug\`:
 
             ```
-            # Setup @setup
-            {
+            # Setup @setup {
                 Follow these instructions.
             }
 
-            # Usage
-            {
+            # Usage {
                 Make sure you complete @setup first.
             }
             ```
@@ -195,6 +192,21 @@
             ````
         }
 
+        # Mermaid Diagrams @mermaid
+        {
+            Code blocks with the \`mermaid\` language tag are rendered as SVG diagrams using the Mermaid JS library. No special syntax is needed — use a standard code fence:
+
+            ````
+            ```mermaid
+            graph LR
+              A[Client] --> B[Server]
+              B --> C[Database]
+            ```
+            ````
+
+            Mermaid supports flowcharts (\`graph\`), sequence diagrams (\`sequenceDiagram\`), class diagrams (\`classDiagram\`), state diagrams (\`stateDiagram-v2\`), and more. The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
+        }
+
         # Blockquotes @blockquotes
         {
             ```
@@ -205,12 +217,10 @@
 
         # Meta Scope @meta-scope
         {
-            The reserved \`@meta\` scope configures per-file settings and is not
-            rendered in the document body:
+            The reserved \`@meta\` scope configures per-file settings and is not rendered in the document body. Use the bare \`@meta\` form (preferred) or the heading form:
 
             ```
-            # Meta @meta
-            {
+            @meta {
                 type: doc
 
                 company: Irreversible Inc.
@@ -224,6 +234,8 @@
                 footer: My Footer
             }
             ```
+
+            The heading form \`# Meta @meta { }\` also works but the bare form is preferred because \`@meta\` is structural, not content.
 
             Supported properties (separate each with a blank line):
 
@@ -250,6 +262,19 @@
             \`tags: tag1, tag2\` — comma-separated tags.
         }
 
+        # About Scope @about-scope
+        {
+            The reserved \`@about\` scope provides a discovery summary for the document. It is used by \`list_knowledge\` to describe the file but is not rendered in the document body. Use the bare \`@about\` form (preferred) or the heading form:
+
+            ```
+            @about {
+                How to write correct SDOC files. Covers document structure, inline formatting, block types, and common mistakes.
+            }
+            ```
+
+            The heading form \`# About @about { }\` also works but the bare form is preferred.
+        }
+
         # Escaping @escaping
         {
             Backslash escapes special characters: \`\\\\\` \`\\{\` \`\\}\` \`\\@\`
@@ -263,6 +288,30 @@
     # Common Mistakes @common-mistakes
     {
         These are easy errors to make — especially for AI agents generating SDOC.
+
+        # Self-Closing Block Syntax @self-closing-blocks
+        {
+            Writing \`{[.]}\` or \`{[table]}\` with the closing brace on the same line creates an empty block — the \`}\` closes it immediately. Items that follow are bare content outside the block and will not render correctly.
+
+            **Wrong** — the \`}\` closes the block on the same line:
+
+            ```
+            {[.]}
+            - Item one
+            - Item two
+            ```
+
+            **Right** — the opening \`{[.]\` has no closing brace; items go inside; a separate \`}\` closes:
+
+            ```
+            {[.]
+                - Item one
+                - Item two
+            }
+            ```
+
+            Same applies to \`{[#]}\` and \`{[table]}\`.
+        }
 
         # Bare Content Inside List Blocks @bare-content-in-lists
         {

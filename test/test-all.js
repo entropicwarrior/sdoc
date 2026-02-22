@@ -1416,5 +1416,94 @@ test("no company or confidential produces no notice or company footer", () => {
 });
 
 // ============================================================
+console.log("\n--- Bare @meta and @about ---");
+
+test("bare @meta { } is parsed as a scope with id 'meta'", () => {
+  const r = parseSdoc("# Doc {\n    @meta {\n        type: doc\n    }\n    # Body {\n        Content.\n    }\n}");
+  assert(r.errors.length === 0, "no parse errors: " + r.errors.map(e => e.message).join(", "));
+  const doc = r.nodes[0];
+  const metaNode = doc.children.find(n => n.type === "scope" && n.id === "meta");
+  assert(metaNode, "should find scope with id 'meta'");
+});
+
+test("bare @about { } is parsed as a scope with id 'about'", () => {
+  const r = parseSdoc("# Doc {\n    @about {\n        Summary of this document.\n    }\n    # Body {\n        Content.\n    }\n}");
+  assert(r.errors.length === 0, "no parse errors");
+  const doc = r.nodes[0];
+  const aboutNode = doc.children.find(n => n.type === "scope" && n.id === "about");
+  assert(aboutNode, "should find scope with id 'about'");
+});
+
+test("extractMeta works with bare @meta", () => {
+  const r = parseSdoc("# Doc {\n    @meta {\n        type: doc\n\n        company: Acme Corp\n    }\n    # Body {\n        Content.\n    }\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.type === "doc", "should extract type");
+  assert(result.meta.company === "Acme Corp", "should extract company");
+});
+
+test("extractAbout works with bare @about", () => {
+  const r = parseSdoc("# Doc {\n    @about {\n        This is the summary.\n    }\n    # Body {\n        Content.\n    }\n}");
+  const result = extractMeta(r.nodes);
+  const about = extractAbout(r.nodes);
+  assert(about === "This is the summary.", "should extract about text, got: " + about);
+});
+
+test("bare @meta on separate line from brace", () => {
+  const r = parseSdoc("# Doc {\n    @meta\n    {\n        type: skill\n    }\n    # Body {\n        Content.\n    }\n}");
+  assert(r.errors.length === 0, "no parse errors");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.type === "skill", "should extract type from bare @meta with brace on next line");
+});
+
+test("bare @meta at top level (outside document scope)", () => {
+  const r = parseSdoc("@meta {\n    type: doc\n}\n\n# Body {\n    Content.\n}");
+  assert(r.errors.length === 0, "no parse errors: " + r.errors.map(e => e.message).join(", "));
+  const result = extractMeta(r.nodes);
+  assert(result.meta.type === "doc", "should extract type from top-level bare @meta");
+});
+
+test("bare @about at top level (outside document scope)", () => {
+  const r = parseSdoc("@about {\n    Summary text here.\n}\n\n# Body {\n    Content.\n}");
+  assert(r.errors.length === 0, "no parse errors");
+  const about = extractAbout(r.nodes);
+  assert(about === "Summary text here.", "should extract about text from top level");
+});
+
+test("bare directives do not match non-meta/about", () => {
+  const r = parseSdoc("# Doc {\n    @random {\n        stuff\n    }\n}");
+  // @random is NOT a bare directive — it should be treated as paragraph text
+  const doc = r.nodes[0];
+  const randomScope = doc.children.find(n => n.type === "scope" && n.id === "random");
+  assert(!randomScope, "@random should not create a scope");
+});
+
+// ============================================================
+console.log("\n--- Mermaid diagrams ---");
+
+test("mermaid code block renders as pre.mermaid", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}", "Test");
+  assert(html.includes('class="mermaid"'), "should have pre.mermaid");
+  assert(html.includes("graph LR"), "should have diagram content");
+  assert(!html.includes('language-mermaid'), "should not have language-mermaid code block");
+});
+
+test("mermaid blocks trigger CDN script injection", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}", "Test");
+  assert(html.includes("mermaid"), "should have mermaid script");
+  assert(html.includes("cdn.jsdelivr.net"), "should include CDN URL");
+});
+
+test("no mermaid blocks means no mermaid script", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}", "Test");
+  assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+});
+
+test("regular code blocks still render normally", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}", "Test");
+  assert(html.includes('class="language-javascript"'), "should have language class");
+  assert(html.includes("<code"), "should have code element");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

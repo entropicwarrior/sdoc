@@ -114,6 +114,52 @@ function detectImplicitRoot(cursor) {
   return isImplicit;
 }
 
+const BARE_DIRECTIVES = new Set(["meta", "about"]);
+
+function parseBareDirective(trimmed) {
+  // Match @meta, @about, @meta {, @about {
+  if (!trimmed.startsWith("@")) return null;
+  const withoutAt = trimmed.slice(1);
+  // Check for "@directive {" (K&R style)
+  const spaceIdx = withoutAt.indexOf(" ");
+  if (spaceIdx === -1) {
+    // Bare "@directive" with no trailing brace — only valid if next line is "{"
+    return BARE_DIRECTIVES.has(withoutAt) ? { id: withoutAt, hasOpenBrace: false } : null;
+  }
+  const name = withoutAt.slice(0, spaceIdx);
+  const rest = withoutAt.slice(spaceIdx).trim();
+  if (!BARE_DIRECTIVES.has(name)) return null;
+  if (rest === COMMAND_SCOPE_OPEN) return { id: name, hasOpenBrace: true };
+  return null;
+}
+
+function parseBareScope(cursor, directive) {
+  const scopeStartLine = cursor.index + 1;
+  cursor.next();
+
+  if (directive.hasOpenBrace) {
+    // Brace was on the same line — parse contents until closing }
+    const children = parseBlock(cursor, "normal");
+    return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
+  }
+
+  // Brace should be on the next non-blank line
+  const saved = cursor.index;
+  while (!cursor.eof() && cursor.current().trim() === "") {
+    cursor.next();
+  }
+  if (!cursor.eof() && cursor.current().trim() === COMMAND_SCOPE_OPEN) {
+    cursor.next();
+    const children = parseBlock(cursor, "normal");
+    return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
+  }
+
+  // No opening brace found — treat as braceless scope (content until next heading, }, or EOF)
+  cursor.index = saved;
+  const children = parseBracelessBlock(cursor);
+  return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
+}
+
 function parseBlock(cursor, kind) {
   const nodes = [];
   let paragraphLines = [];
@@ -177,6 +223,13 @@ function parseBlock(cursor, kind) {
     if (implicitListInfo && kind === "normal") {
       flushParagraph();
       nodes.push(parseImplicitListBlock(cursor, implicitListInfo.type));
+      continue;
+    }
+
+    const bareDirective = parseBareDirective(trimmed);
+    if (bareDirective) {
+      flushParagraph();
+      nodes.push(parseBareScope(cursor, bareDirective));
       continue;
     }
 
@@ -381,6 +434,12 @@ function parseBracelessBlock(cursor) {
 
     // Stop on # heading — becomes sibling, don't advance
     if (isHeadingLine(trimmedLeft)) {
+      flushParagraph();
+      break;
+    }
+
+    // Stop on bare @meta / @about — becomes sibling, don't advance
+    if (parseBareDirective(trimmed)) {
       flushParagraph();
       break;
     }
@@ -1284,6 +1343,9 @@ function renderNode(node, depth) {
       return `<p class="sdoc-paragraph"${dl}${editable}>${renderInline(node.text)}</p>`;
     }
     case "code": {
+      if (node.lang === "mermaid") {
+        return `<pre class="mermaid"${dl}>${escapeHtml(node.text)}</pre>`;
+      }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
       return `<pre class="sdoc-code"${dl}><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
     }
@@ -1707,6 +1769,21 @@ const DEFAULT_STYLE = `
   }
 `;
 
+const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+
+function hasMermaidBlocks(nodes) {
+  for (const node of nodes) {
+    if (node.type === "code" && node.lang === "mermaid") return true;
+    if (node.children && hasMermaidBlocks(node.children)) return true;
+    if (node.items) {
+      for (const item of node.items) {
+        if (item.children && hasMermaidBlocks(item.children)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   _renderOptions = options.renderOptions ?? {};
   const body = parsed.nodes
@@ -1737,6 +1814,9 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
   const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
+  const mermaidScript = hasMermaidBlocks(parsed.nodes)
+    ? `\n<script src="${MERMAID_CDN}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1759,7 +1839,7 @@ ${cssBase}${cssAppend}
       </main>
     </div>
     ${footerContent ? `<footer class="sdoc-page-footer">${footerContent}</footer>` : ""}
-  </div>${scriptTag}
+  </div>${scriptTag}${mermaidScript}
 </body>
 </html>`;
 }
