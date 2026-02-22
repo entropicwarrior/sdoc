@@ -550,6 +550,26 @@ function buildWebviewScript() {
   }
 
   restoreCollapseState();
+  restoreScrollPosition();
+
+  // Preserve scroll position across re-renders
+  var scrollContainer = document.querySelector('.sdoc-main') || document.documentElement;
+  var scrollTimer = null;
+  scrollContainer.addEventListener('scroll', function() {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function() {
+      var state = vscodeApi.getState() || {};
+      state.scrollTop = scrollContainer.scrollTop;
+      vscodeApi.setState(state);
+    }, 100);
+  });
+
+  function restoreScrollPosition() {
+    var state = vscodeApi.getState();
+    if (!state || state.scrollTop == null) return;
+    var container = document.querySelector('.sdoc-main') || document.documentElement;
+    container.scrollTop = state.scrollTop;
+  }
 
   // Inline editing
   document.addEventListener('focusout', function(e) {
