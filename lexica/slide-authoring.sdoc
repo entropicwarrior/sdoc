@@ -135,6 +135,14 @@
 
             \`title: Presentation Title\` — sets the HTML page title.
 
+            \`company: Name\` — company name, shown in the bottom-left of
+            every slide.
+
+            \`confidential: true\` — adds a confidentiality notice across
+            the bottom of every slide. Uses the \`company\` name if set.
+            Use \`confidential: Custom Entity\` to override with a specific
+            entity name.
+
             \`theme: company\` — names the intended theme (informational;
             the actual theme is selected via the \`--theme\` CLI flag).
 

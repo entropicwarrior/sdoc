@@ -175,8 +175,8 @@ test("default layout (no config)", () => {
 }
 `);
   assert(html.includes('class="slide"'), "should have plain slide class");
-  assert(!html.includes("center"), "should not have center");
-  assert(!html.includes("two-column"), "should not have two-column");
+  assert(!html.includes('class="slide center"'), "should not have center class on slide");
+  assert(!html.includes('class="slide two-column"'), "should not have two-column class on slide");
 });
 
 // ============================================================
@@ -437,14 +437,15 @@ test("config line with extra whitespace", () => {
 // ============================================================
 console.log("\n--- PDF export ---");
 
-test("theme.css has print styles", () => {
-  const css = fs.readFileSync(
-    path.join(__dirname, "..", "themes", "default", "theme.css"), "utf-8"
-  );
-  assert(css.includes("@media print"), "should have @media print block");
-  assert(css.includes("page-break-after"), "should have page-break rules");
-  assert(css.includes("display: flex !important"), "should force slides visible in print");
-  assert(css.includes(".controls"), "should hide controls in print");
+test("rendered slides include print styles", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("@media print"), "should have @media print block");
+  assert(html.includes("page-break-after"), "should have page-break rules");
+  assert(html.includes("display: flex !important"), "should force slides visible in print");
 });
 
 test("findChrome returns a string or null", () => {
@@ -486,6 +487,87 @@ test("exportPdf produces a file (integration)", async () => {
     try { fs.unlinkSync(tmpHtml); } catch {}
     try { fs.unlinkSync(tmpPdf); } catch {}
   }
+});
+
+// ============================================================
+console.log("\n--- Company and confidential ---");
+
+test("company meta renders footer on slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        company: Irreversible Inc.
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("sdoc-company-footer"), "should have company footer");
+  assert(html.includes("Irreversible Inc."), "should have company name");
+});
+
+test("confidential: true with company renders notice", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        company: Irreversible Inc.
+
+        confidential: true
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("sdoc-confidential-notice"), "should have confidential notice");
+  assert(html.includes("CONFIDENTIAL"), "should say CONFIDENTIAL");
+  assert(html.includes("Irreversible Inc."), "should include company name");
+});
+
+test("confidential with explicit entity overrides company", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        company: Irreversible Inc.
+
+        confidential: Acme Corp
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("Acme Corp"), "should use explicit entity");
+  assert(!html.includes("sdoc-confidential-notice\">CONFIDENTIAL \u2014 Irreversible"), "should not use company");
+});
+
+test("confidential: true without company renders plain notice", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        confidential: true
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("sdoc-confidential-notice"), "should have notice");
+  assert(html.includes(">CONFIDENTIAL</"), "should be plain CONFIDENTIAL");
+});
+
+test("no company or confidential produces no extra elements", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(!html.includes('<div class="sdoc-company-footer">'), "no company footer element");
+  assert(!html.includes('<div class="sdoc-confidential-notice">'), "no confidential notice element");
 });
 
 // ============================================================

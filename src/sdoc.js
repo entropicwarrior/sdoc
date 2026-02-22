@@ -1374,6 +1374,8 @@ function extractMeta(nodes) {
   meta.tags = meta.properties.tags
     ? meta.properties.tags.split(",").map((t) => t.trim()).filter(Boolean)
     : [];
+  meta.company = meta.properties.company || null;
+  meta.confidential = meta.properties.confidential || null;
 
   if (doc) {
     // @meta was inside the document scope — strip it from children
@@ -1406,6 +1408,17 @@ function renderTextParagraphs(text) {
 
 function renderFragment(nodes, depth = 2) {
   return nodes.map((node) => renderNode(node, depth)).join("\n");
+}
+
+function buildConfidentialHtml(meta) {
+  if (!meta || !meta.confidential) return "";
+  const val = meta.confidential.trim();
+  if (!val) return "";
+  const entity = val.toLowerCase() === "true" ? meta.company : val;
+  const text = entity
+    ? `CONFIDENTIAL \u2014 ${escapeHtml(entity)}`
+    : "CONFIDENTIAL";
+  return `<div class="sdoc-confidential-notice">${text}</div>`;
 }
 
 const DEFAULT_STYLE = `
@@ -1444,6 +1457,18 @@ const DEFAULT_STYLE = `
     border-top: 1px solid var(--sdoc-border);
     border-bottom: none;
     color: var(--sdoc-muted);
+  }
+
+  .sdoc-confidential-notice {
+    background: rgba(187, 68, 68, 0.08);
+    border-bottom: 1px solid rgba(187, 68, 68, 0.2);
+    color: rgba(160, 40, 40, 0.85);
+    text-align: center;
+    padding: 5px 24px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
   }
 
   .sdoc-main {
@@ -1697,12 +1722,17 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
 
   const meta = options.meta ?? {};
   const config = options.config ?? {};
+  const confidentialHtml = buildConfidentialHtml(meta);
   const headerHtml = meta.headerNodes ? renderFragment(meta.headerNodes, 2)
     : meta.headerText ? renderTextParagraphs(meta.headerText)
     : renderTextParagraphs(config.header);
+  const companyHtml = meta.company
+    ? `<span class="sdoc-company-footer">${escapeHtml(meta.company)}</span>`
+    : "";
   const footerHtml = meta.footerNodes ? renderFragment(meta.footerNodes, 2)
     : meta.footerText ? renderTextParagraphs(meta.footerText)
     : renderTextParagraphs(config.footer);
+  const footerContent = [footerHtml, companyHtml].filter(Boolean).join("\n");
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
@@ -1720,6 +1750,7 @@ ${cssBase}${cssAppend}
 </head>
 <body>
   <div class="sdoc-shell">
+    ${confidentialHtml}
     ${headerHtml ? `<header class="sdoc-page-header">${headerHtml}</header>` : ""}
     <div class="sdoc-main">
       <main>
@@ -1727,7 +1758,7 @@ ${cssBase}${cssAppend}
         ${body}
       </main>
     </div>
-    ${footerHtml ? `<footer class="sdoc-page-footer">${footerHtml}</footer>` : ""}
+    ${footerContent ? `<footer class="sdoc-page-footer">${footerContent}</footer>` : ""}
   </div>${scriptTag}
 </body>
 </html>`;

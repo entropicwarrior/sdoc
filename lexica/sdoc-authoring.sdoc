@@ -211,12 +211,43 @@
             ```
             # Meta @meta
             {
+                type: doc
+
+                company: Irreversible Inc.
+
+                confidential: true
+
                 style: styles/custom.css
+
                 header: My Header
+
                 footer: My Footer
-                author: Jane Smith
             }
             ```
+
+            Supported properties (separate each with a blank line):
+
+            \`type: doc\` or \`type: skill\` or \`type: slides\` — document type.
+
+            \`company: Name\` — company name, shown in the document footer.
+
+            \`confidential: true\` — adds a confidentiality notice banner.
+            Uses the \`company\` name if set. Use \`confidential: Custom Entity\`
+            to override with a specific entity name.
+
+            \`style: path/to/file.css\` — custom stylesheet (replaces default).
+
+            \`style-append: path/to/file.css\` — additional stylesheet (appended).
+
+            \`header: text\` — page header text (or use a \`# Header\` sub-scope
+            for rich content).
+
+            \`footer: text\` — page footer text (or use a \`# Footer\` sub-scope
+            for rich content).
+
+            \`uuid: ...\` — unique identifier.
+
+            \`tags: tag1, tag2\` — comma-separated tags.
         }
 
         # Escaping @escaping
