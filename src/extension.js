@@ -393,7 +393,8 @@ function showPreview(document, viewColumn) {
 
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
   const docDir = vscode.Uri.file(path.dirname(document.uri.fsPath));
-  const localRoots = [docDir];
+  const vendorDir = vscode.Uri.file(path.join(__dirname, "..", "vendor"));
+  const localRoots = [docDir, vendorDir];
   if (workspaceFolder) {
     localRoots.push(workspaceFolder.uri);
   }
@@ -693,6 +694,7 @@ function buildHtml(document, title, webview) {
   if (webview) {
     const docDir = path.dirname(document.uri.fsPath);
     html = rewriteLocalImages(html, docDir, webview);
+    html = rewriteMermaidScript(html, webview);
   }
 
   return html;
@@ -708,6 +710,16 @@ function rewriteLocalImages(html, docDir, webview) {
     const webviewUri = webview.asWebviewUri(fileUri);
     return before + webviewUri.toString() + after;
   });
+}
+
+function rewriteMermaidScript(html, webview) {
+  const mermaidPath = path.join(__dirname, "..", "vendor", "mermaid.min.js");
+  if (!fs.existsSync(mermaidPath)) return html;
+  const mermaidUri = webview.asWebviewUri(vscode.Uri.file(mermaidPath));
+  return html.replace(
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/mermaid@11\/dist\/mermaid\.min\.js/g,
+    mermaidUri.toString()
+  );
 }
 
 function updateAllPreviews() {

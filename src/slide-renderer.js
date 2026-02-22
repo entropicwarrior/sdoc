@@ -292,7 +292,7 @@ function renderSlides(nodes, options = {}) {
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
   const mermaidTag = slidesHtml.includes('class="mermaid"')
-    ? `\n<script type="module">import mermaid from "${mermaidCdn}";mermaid.initialize({startOnLoad:true});</script>`
+    ? `\n<script src="${mermaidCdn}"></script>\n<script>mermaid.initialize({startOnLoad:true});</script>`
     : "";
 
   return `<!DOCTYPE html>

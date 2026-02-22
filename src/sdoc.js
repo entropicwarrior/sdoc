@@ -1815,7 +1815,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
   const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
   const mermaidScript = hasMermaidBlocks(parsed.nodes)
-    ? `\n<script type="module">import mermaid from "${MERMAID_CDN}";mermaid.initialize({startOnLoad:true});</script>`
+    ? `\n<script src="${MERMAID_CDN}"></script>\n<script>mermaid.initialize({startOnLoad:true});</script>`
     : "";
 
   return `<!DOCTYPE html>
