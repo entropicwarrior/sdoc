@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/sdoc.js'
       - 'lexica/sdoc-authoring.sdoc'
+      - 'lexica/slide-authoring.sdoc'
 
   # Allow manual trigger
   workflow_dispatch:
@@ -31,6 +32,7 @@ jobs:
         run: |
           PARSER_CHANGED=false
           SKILL_CHANGED=false
+          SLIDES_CHANGED=false
 
           if ! diff -q sdoc/src/sdoc.js lexica-common/server/vendor/sdoc-parser.cjs > /dev/null 2>&1; then
             PARSER_CHANGED=true
@@ -40,10 +42,15 @@ jobs:
             SKILL_CHANGED=true
           fi
 
+          if ! diff -q sdoc/lexica/slide-authoring.sdoc lexica-common/skills/skill-slides.sdoc > /dev/null 2>&1; then
+            SLIDES_CHANGED=true
+          fi
+
           echo "parser_changed=$PARSER_CHANGED" >> "$GITHUB_OUTPUT"
           echo "skill_changed=$SKILL_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "slides_changed=$SLIDES_CHANGED" >> "$GITHUB_OUTPUT"
 
-          if [ "$PARSER_CHANGED" = true ] || [ "$SKILL_CHANGED" = true ]; then
+          if [ "$PARSER_CHANGED" = true ] || [ "$SKILL_CHANGED" = true ] || [ "$SLIDES_CHANGED" = true ]; then
             echo "any_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "any_changed=false" >> "$GITHUB_OUTPUT"
@@ -65,6 +72,10 @@ jobs:
           if [ "${{ steps.check.outputs.skill_changed }}" = "true" ]; then
             cp ../sdoc/lexica/sdoc-authoring.sdoc skills/skill-sdoc.sdoc
             FILES_SUMMARY="$FILES_SUMMARY\n- \`skills/skill-sdoc.sdoc\` — SDOC authoring guide"
+          fi
+          if [ "${{ steps.check.outputs.slides_changed }}" = "true" ]; then
+            cp ../sdoc/lexica/slide-authoring.sdoc skills/skill-slides.sdoc
+            FILES_SUMMARY="$FILES_SUMMARY\n- \`skills/skill-slides.sdoc\` — Slide authoring guide"
           fi
 
           # Configure git

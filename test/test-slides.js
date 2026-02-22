@@ -1,10 +1,25 @@
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
 const { renderSlides, renderSlide, renderNode, renderInline } = require("../src/slide-renderer.js");
 
 let pass = 0, fail = 0;
+const asyncTests = [];
 function test(name, fn) {
-  try { fn(); pass++; console.log("  PASS: " + name); }
-  catch (e) { fail++; console.log("  FAIL: " + name + " — " + e.message); }
+  try {
+    const result = fn();
+    if (result && typeof result.then === "function") {
+      asyncTests.push(result.then(
+        () => { pass++; console.log("  PASS: " + name); },
+        (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
+      ));
+    } else {
+      pass++; console.log("  PASS: " + name);
+    }
+  } catch (e) {
+    fail++; console.log("  FAIL: " + name + " — " + e.message);
+  }
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
@@ -420,7 +435,63 @@ test("config line with extra whitespace", () => {
 });
 
 // ============================================================
-// Summary
-console.log("\n" + "=".repeat(40));
-console.log(`Results: ${pass} passed, ${fail} failed`);
-process.exit(fail > 0 ? 1 : 0);
+console.log("\n--- PDF export ---");
+
+test("theme.css has print styles", () => {
+  const css = fs.readFileSync(
+    path.join(__dirname, "..", "themes", "default", "theme.css"), "utf-8"
+  );
+  assert(css.includes("@media print"), "should have @media print block");
+  assert(css.includes("page-break-after"), "should have page-break rules");
+  assert(css.includes("display: flex !important"), "should force slides visible in print");
+  assert(css.includes(".controls"), "should hide controls in print");
+});
+
+test("findChrome returns a string or null", () => {
+  const { findChrome } = require("../src/slide-pdf");
+  const result = findChrome();
+  assert(result === null || typeof result === "string", "should return string or null");
+  if (result) {
+    assert(fs.existsSync(result), "returned path should exist: " + result);
+  }
+});
+
+test("exportPdf produces a file (integration)", async () => {
+  const { exportPdf, findChrome } = require("../src/slide-pdf");
+  if (!findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+
+  const themeCss = fs.readFileSync(
+    path.join(__dirname, "..", "themes", "default", "theme.css"), "utf-8"
+  );
+  const html = parseAndRender(`
+# Deck {
+    # Slide 1 { Hello. }
+    # Slide 2 { World. }
+}
+`, { themeCss });
+
+  const tmpHtml = path.join(os.tmpdir(), "test-slides-" + Date.now() + ".html");
+  const tmpPdf = tmpHtml.replace(".html", ".pdf");
+
+  fs.writeFileSync(tmpHtml, html, "utf-8");
+  try {
+    await exportPdf(tmpHtml, tmpPdf);
+    assert(fs.existsSync(tmpPdf), "PDF file should exist");
+    const stat = fs.statSync(tmpPdf);
+    assert(stat.size > 0, "PDF should not be empty");
+  } finally {
+    try { fs.unlinkSync(tmpHtml); } catch {}
+    try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+});
+
+// ============================================================
+// Summary — wait for async tests before reporting
+Promise.all(asyncTests).then(() => {
+  console.log("\n" + "=".repeat(40));
+  console.log(`Results: ${pass} passed, ${fail} failed`);
+  process.exit(fail > 0 ? 1 : 0);
+});
