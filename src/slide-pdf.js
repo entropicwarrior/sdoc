@@ -64,10 +64,18 @@ function exportPdf(htmlPath, pdfPath) {
     const fileUrl = "file://" + path.resolve(htmlPath);
     const resolvedPdf = path.resolve(pdfPath);
 
+    // Use a temporary user-data-dir so headless Chrome doesn't conflict
+    // with any running browser session (Chrome 112+ new headless shares
+    // the browser process by default, which corrupts PDF output).
+    const tmpProfile = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-chrome-"));
+
     // 13.333 x 7.5 inches = 16:9 landscape (standard presentation aspect ratio)
     const args = [
-      "--headless",
+      "--headless=new",
       "--disable-gpu",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--user-data-dir=" + tmpProfile,
       "--no-pdf-header-footer",
       "--print-to-pdf=" + resolvedPdf,
       "--print-to-pdf-paper-width=13.333",
@@ -76,6 +84,9 @@ function exportPdf(htmlPath, pdfPath) {
     ];
 
     execFile(chrome, args, { timeout: 30000 }, (err, _stdout, stderr) => {
+      // Clean up temp profile
+      fs.rm(tmpProfile, { recursive: true, force: true }, () => {});
+
       if (err) {
         reject(new Error(`Chrome PDF export failed: ${err.message}\n${stderr}`));
       } else {

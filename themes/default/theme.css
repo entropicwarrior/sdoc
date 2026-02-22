@@ -169,40 +169,5 @@ img {
   user-select: none;
 }
 
-/* --- Print / PDF export --- */
-
-@media print {
-  @page {
-    size: 13.333in 7.5in;
-    margin: 0;
-  }
-
-  body {
-    overflow: visible;
-    height: auto;
-  }
-
-  .slide {
-    display: flex !important;
-    page-break-after: always;
-    break-after: page;
-    width: 100vw;
-    height: 100vh;
-    max-width: none;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  .slide:last-child {
-    page-break-after: auto;
-    break-after: auto;
-  }
-
-  .controls {
-    display: none;
-  }
-
-  .notes {
-    display: none;
-  }
-}
+/* Print / PDF styles are injected by the renderer (slide-renderer.js)
+   so they work with every theme, not just this one. */
