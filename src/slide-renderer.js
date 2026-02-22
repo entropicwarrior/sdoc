@@ -238,7 +238,23 @@ function renderSlides(nodes, options = {}) {
   const title = meta.properties?.title
     || (nodes.length === 1 && nodes[0].title ? nodes[0].title : "Slides");
 
-  const cssTag = themeCss ? `<style>\n${themeCss}\n</style>` : "";
+  // Structural print/PDF styles — always injected regardless of theme.
+  // Themes provide visual styling; page-break behaviour is not theme-specific.
+  const printCss = `@media print {
+  @page { size: 13.333in 7.5in; margin: 0; }
+  body { overflow: visible; height: auto; }
+  .slide {
+    display: flex !important;
+    page-break-after: always; break-after: page;
+    width: 100vw; height: 100vh; max-width: none;
+    page-break-inside: avoid; break-inside: avoid;
+  }
+  .slide:last-child { page-break-after: auto; break-after: auto; }
+  .controls { display: none; }
+  .notes { display: none; }
+}`;
+
+  const cssTag = `<style>\n${themeCss}\n${printCss}\n</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
 
   return `<!DOCTYPE html>
