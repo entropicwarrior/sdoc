@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "Preview SDOC files.",
-  "version": "0.0.33",
+  "version": "0.0.34",
   "publisher": "local",
   "engines": {
     "vscode": "^1.95.0"

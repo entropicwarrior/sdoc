@@ -114,6 +114,52 @@ function detectImplicitRoot(cursor) {
   return isImplicit;
 }
 
+const BARE_DIRECTIVES = new Set(["meta", "about"]);
+
+function parseBareDirective(trimmed) {
+  // Match @meta, @about, @meta {, @about {
+  if (!trimmed.startsWith("@")) return null;
+  const withoutAt = trimmed.slice(1);
+  // Check for "@directive {" (K&R style)
+  const spaceIdx = withoutAt.indexOf(" ");
+  if (spaceIdx === -1) {
+    // Bare "@directive" with no trailing brace — only valid if next line is "{"
+    return BARE_DIRECTIVES.has(withoutAt) ? { id: withoutAt, hasOpenBrace: false } : null;
+  }
+  const name = withoutAt.slice(0, spaceIdx);
+  const rest = withoutAt.slice(spaceIdx).trim();
+  if (!BARE_DIRECTIVES.has(name)) return null;
+  if (rest === COMMAND_SCOPE_OPEN) return { id: name, hasOpenBrace: true };
+  return null;
+}
+
+function parseBareScope(cursor, directive) {
+  const scopeStartLine = cursor.index + 1;
+  cursor.next();
+
+  if (directive.hasOpenBrace) {
+    // Brace was on the same line — parse contents until closing }
+    const children = parseBlock(cursor, "normal");
+    return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
+  }
+
+  // Brace should be on the next non-blank line
+  const saved = cursor.index;
+  while (!cursor.eof() && cursor.current().trim() === "") {
+    cursor.next();
+  }
+  if (!cursor.eof() && cursor.current().trim() === COMMAND_SCOPE_OPEN) {
+    cursor.next();
+    const children = parseBlock(cursor, "normal");
+    return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
+  }
+
+  // No opening brace found — treat as braceless scope (content until next heading, }, or EOF)
+  cursor.index = saved;
+  const children = parseBracelessBlock(cursor);
+  return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
+}
+
 function parseBlock(cursor, kind) {
   const nodes = [];
   let paragraphLines = [];
@@ -177,6 +223,13 @@ function parseBlock(cursor, kind) {
     if (implicitListInfo && kind === "normal") {
       flushParagraph();
       nodes.push(parseImplicitListBlock(cursor, implicitListInfo.type));
+      continue;
+    }
+
+    const bareDirective = parseBareDirective(trimmed);
+    if (bareDirective) {
+      flushParagraph();
+      nodes.push(parseBareScope(cursor, bareDirective));
       continue;
     }
 
@@ -381,6 +434,12 @@ function parseBracelessBlock(cursor) {
 
     // Stop on # heading — becomes sibling, don't advance
     if (isHeadingLine(trimmedLeft)) {
+      flushParagraph();
+      break;
+    }
+
+    // Stop on bare @meta / @about — becomes sibling, don't advance
+    if (parseBareDirective(trimmed)) {
       flushParagraph();
       break;
     }

@@ -22,7 +22,7 @@
         {
             ```
             # My Presentation {
-                # Meta @meta {
+                @meta {
                     type: slides
                 }
 
@@ -285,7 +285,7 @@
 
         ```
         # Product Update — Q1 2026 {
-            # Meta @meta {
+            @meta {
                 type: slides
 
                 title: Product Update Q1 2026
@@ -381,13 +381,13 @@
 
         ```
         # Wrong — these become one paragraph:
-        # Meta @meta {
+        @meta {
             type: slides
             title: My Deck
         }
 
         # Correct:
-        # Meta @meta {
+        @meta {
             type: slides
 
             title: My Deck
