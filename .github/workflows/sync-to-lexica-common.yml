@@ -47,6 +47,7 @@ jobs:
           cp sdoc/src/slide-pdf.js lexica-common/server/vendor/slide-pdf.cjs
 
           # Build tool (patch require paths for vendored layout)
+          mkdir -p lexica-common/tools
           sed \
             -e 's|require("../src/sdoc")|require("../server/vendor/sdoc-parser.cjs")|' \
             -e 's|require("../src/slide-renderer")|require("../server/vendor/slide-renderer.cjs")|' \
