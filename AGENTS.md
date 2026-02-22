@@ -47,6 +47,7 @@ examples/           Example and reference files
 src/                Source code
   sdoc.js             Parser and HTML renderer (~2000 lines)
   slide-renderer.js   SDOC-to-HTML slide deck renderer
+  slide-pdf.js        PDF export via headless Chrome (used by build-slides.js --pdf)
   extension.js        VS Code extension with preview and document server
   site-template/      Shared viewer templates (index.html, viewer.css)
 
@@ -60,7 +61,7 @@ test/               Test files
   *.sdoc              Test fixture files
 
 tools/              CLI tools
-  build-slides.js     Build HTML slides from SDOC (node tools/build-slides.js)
+  build-slides.js     Build HTML slides from SDOC (node tools/build-slides.js [--pdf])
   serve_docs.py       CLI to start a local SDOC document server
   generate_guide.js   Generates SDOC_GUIDE.md from parser source
   generate_index.js   Generates INDEX.sdoc for a lexica/ directory

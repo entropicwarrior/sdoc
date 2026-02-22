@@ -168,3 +168,34 @@ img {
   color: #aaa;
   user-select: none;
 }
+
+/* --- Print / PDF export --- */
+
+@media print {
+  body {
+    overflow: visible;
+    height: auto;
+  }
+
+  .slide {
+    display: flex !important;
+    page-break-after: always;
+    break-after: page;
+    height: 100vh;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .slide:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .controls {
+    display: none;
+  }
+
+  .notes {
+    display: none;
+  }
+}

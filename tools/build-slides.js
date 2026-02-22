@@ -2,32 +2,36 @@
 // SDOC Slides — CLI tool
 //
 // Usage:
-//   node tools/build-slides.js input.sdoc [-o output.html] [--theme path/to/theme]
+//   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme] [--pdf]
 //
-// If -o is omitted, writes to input.html (same name, .html extension).
+// If -o is omitted, writes to input.html (or input.pdf with --pdf).
 // If --theme is omitted, uses the built-in default theme.
 
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { parseSdoc, extractMeta } = require("../src/sdoc");
 const { renderSlides } = require("../src/slide-renderer");
 
 function usage() {
-  console.error("Usage: build-slides <input.sdoc> [-o output.html] [--theme path/to/theme]");
+  console.error("Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme] [--pdf]");
   process.exit(1);
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   let inputPath = null;
   let outputPath = null;
   let themePath = null;
+  let pdfMode = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-o" && i + 1 < args.length) {
       outputPath = args[++i];
     } else if (args[i] === "--theme" && i + 1 < args.length) {
       themePath = args[++i];
+    } else if (args[i] === "--pdf") {
+      pdfMode = true;
     } else if (args[i] === "--help" || args[i] === "-h") {
       usage();
     } else if (!inputPath) {
@@ -48,12 +52,6 @@ function main() {
     console.error(`File not found: ${resolvedInput}`);
     process.exit(1);
   }
-
-  // Resolve output
-  if (!outputPath) {
-    outputPath = resolvedInput.replace(/\.sdoc$/i, "") + ".html";
-  }
-  const resolvedOutput = path.resolve(outputPath);
 
   // Resolve theme
   if (!themePath) {
@@ -96,10 +94,44 @@ function main() {
   const { nodes, meta } = extractMeta(parsed.nodes);
   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
-  // Write output
-  fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
-  fs.writeFileSync(resolvedOutput, html, "utf-8");
-  console.log(`Built: ${resolvedOutput}`);
+  if (pdfMode) {
+    const { exportPdf } = require("../src/slide-pdf");
+
+    // Determine PDF output path
+    let pdfOutput;
+    if (outputPath) {
+      pdfOutput = path.resolve(outputPath);
+    } else {
+      pdfOutput = resolvedInput.replace(/\.sdoc$/i, "") + ".pdf";
+    }
+
+    // Write HTML to temp file for Chrome to consume
+    const tmpHtml = path.join(os.tmpdir(), "sdoc-slides-" + Date.now() + ".html");
+    fs.writeFileSync(tmpHtml, html, "utf-8");
+
+    try {
+      await exportPdf(tmpHtml, pdfOutput);
+      console.log(`PDF: ${pdfOutput}`);
+    } catch (err) {
+      console.error(err.message);
+      process.exit(1);
+    } finally {
+      try { fs.unlinkSync(tmpHtml); } catch {}
+    }
+  } else {
+    // Resolve HTML output
+    if (!outputPath) {
+      outputPath = resolvedInput.replace(/\.sdoc$/i, "") + ".html";
+    }
+    const resolvedOutput = path.resolve(outputPath);
+
+    fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
+    fs.writeFileSync(resolvedOutput, html, "utf-8");
+    console.log(`Built: ${resolvedOutput}`);
+  }
 }
 
-main();
+main().catch((err) => {
+  console.error(err.message);
+  process.exit(1);
+});
