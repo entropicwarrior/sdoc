@@ -571,6 +571,52 @@ test("no company or confidential produces no extra elements", () => {
 });
 
 // ============================================================
+console.log("\n--- Mermaid diagrams ---");
+
+test("mermaid code block in slide renders as pre.mermaid", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Architecture {
+        \`\`\`mermaid
+        graph LR
+          A --> B
+        \`\`\`
+    }
+}
+`);
+  assert(html.includes('<pre class="mermaid">'), "should have pre.mermaid");
+  assert(html.includes("graph LR"), "should have diagram content");
+  assert(!html.includes('language-mermaid'), "should not use language-mermaid");
+});
+
+test("mermaid blocks in slides trigger CDN script", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Diagram {
+        \`\`\`mermaid
+        graph TD
+          X --> Y
+        \`\`\`
+    }
+}
+`);
+  assert(html.includes("cdn.jsdelivr.net"), "should include CDN URL");
+});
+
+test("slides without mermaid have no mermaid script", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Code {
+        \`\`\`python
+        print("hello")
+        \`\`\`
+    }
+}
+`);
+  assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+});
+
+// ============================================================
 // Summary — wait for async tests before reporting
 Promise.all(asyncTests).then(() => {
   console.log("\n" + "=".repeat(40));

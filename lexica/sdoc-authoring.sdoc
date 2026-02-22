@@ -192,6 +192,21 @@
             ````
         }
 
+        # Mermaid Diagrams @mermaid
+        {
+            Code blocks with the \`mermaid\` language tag are rendered as SVG diagrams using the Mermaid JS library. No special syntax is needed — use a standard code fence:
+
+            ````
+            ```mermaid
+            graph LR
+              A[Client] --> B[Server]
+              B --> C[Database]
+            ```
+            ````
+
+            Mermaid supports flowcharts (\`graph\`), sequence diagrams (\`sequenceDiagram\`), class diagrams (\`classDiagram\`), state diagrams (\`stateDiagram-v2\`), and more. The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
+        }
+
         # Blockquotes @blockquotes
         {
             ```

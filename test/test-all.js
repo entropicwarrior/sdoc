@@ -1478,5 +1478,32 @@ test("bare directives do not match non-meta/about", () => {
 });
 
 // ============================================================
+console.log("\n--- Mermaid diagrams ---");
+
+test("mermaid code block renders as pre.mermaid", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}", "Test");
+  assert(html.includes('class="mermaid"'), "should have pre.mermaid");
+  assert(html.includes("graph LR"), "should have diagram content");
+  assert(!html.includes('language-mermaid'), "should not have language-mermaid code block");
+});
+
+test("mermaid blocks trigger CDN script injection", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}", "Test");
+  assert(html.includes("mermaid"), "should have mermaid script");
+  assert(html.includes("cdn.jsdelivr.net"), "should include CDN URL");
+});
+
+test("no mermaid blocks means no mermaid script", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}", "Test");
+  assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+});
+
+test("regular code blocks still render normally", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}", "Test");
+  assert(html.includes('class="language-javascript"'), "should have language class");
+  assert(html.includes("<code"), "should have code element");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

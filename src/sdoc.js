@@ -1343,6 +1343,9 @@ function renderNode(node, depth) {
       return `<p class="sdoc-paragraph"${dl}${editable}>${renderInline(node.text)}</p>`;
     }
     case "code": {
+      if (node.lang === "mermaid") {
+        return `<pre class="mermaid"${dl}>${escapeHtml(node.text)}</pre>`;
+      }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
       return `<pre class="sdoc-code"${dl}><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
     }
@@ -1766,6 +1769,21 @@ const DEFAULT_STYLE = `
   }
 `;
 
+const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+
+function hasMermaidBlocks(nodes) {
+  for (const node of nodes) {
+    if (node.type === "code" && node.lang === "mermaid") return true;
+    if (node.children && hasMermaidBlocks(node.children)) return true;
+    if (node.items) {
+      for (const item of node.items) {
+        if (item.children && hasMermaidBlocks(item.children)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   _renderOptions = options.renderOptions ?? {};
   const body = parsed.nodes
@@ -1796,6 +1814,9 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
   const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
+  const mermaidScript = hasMermaidBlocks(parsed.nodes)
+    ? `\n<script type="module">import mermaid from "${MERMAID_CDN}";mermaid.initialize({startOnLoad:true});</script>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1818,7 +1839,7 @@ ${cssBase}${cssAppend}
       </main>
     </div>
     ${footerContent ? `<footer class="sdoc-page-footer">${footerContent}</footer>` : ""}
-  </div>${scriptTag}
+  </div>${scriptTag}${mermaidScript}
 </body>
 </html>`;
 }
