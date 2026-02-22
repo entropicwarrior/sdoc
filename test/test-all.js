@@ -1382,5 +1382,39 @@ test("extractMeta finds @meta inside document scope", () => {
 });
 
 // ============================================================
+console.log("\n--- Company and confidential ---");
+
+test("extractMeta promotes company and confidential", () => {
+  const r = parseSdoc("# Meta @meta\n{\n    company: Acme Corp\n\n    confidential: true\n}\n# Body\n{\n    text\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.meta.company === "Acme Corp", "should promote company");
+  assert(result.meta.confidential === "true", "should promote confidential");
+});
+
+test("confidential: true renders notice in doc HTML", () => {
+  const html = renderHtmlDocument("# Meta @meta\n{\n    confidential: true\n}\n# Body\n{\n    Content.\n}", "Test");
+  assert(html.includes("sdoc-confidential-notice"), "should have notice element");
+  assert(html.includes("CONFIDENTIAL"), "should contain CONFIDENTIAL text");
+});
+
+test("confidential with company renders entity in doc HTML", () => {
+  const html = renderHtmlDocument("# Meta @meta\n{\n    company: Acme Corp\n\n    confidential: true\n}\n# Body\n{\n    Content.\n}", "Test");
+  assert(html.includes("Acme Corp"), "should include company name in notice");
+});
+
+test("company renders in footer of doc HTML", () => {
+  const html = renderHtmlDocument("# Meta @meta\n{\n    company: Acme Corp\n}\n# Body\n{\n    Content.\n}", "Test");
+  assert(html.includes("sdoc-company-footer"), "should have company in footer");
+  assert(html.includes("Acme Corp"), "should have company name");
+  assert(html.includes("sdoc-page-footer"), "should have footer element");
+});
+
+test("no company or confidential produces no notice or company footer", () => {
+  const html = renderHtmlDocument("# Meta @meta\n{\n    type: doc\n}\n# Body\n{\n    Content.\n}", "Test");
+  assert(!html.includes('<div class="sdoc-confidential-notice">'), "no notice element");
+  assert(!html.includes('<span class="sdoc-company-footer">'), "no company footer element");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

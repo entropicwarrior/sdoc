@@ -166,7 +166,7 @@ function extractNotes(children) {
 // Slide rendering
 // ---------------------------------------------------------------------------
 
-function renderSlide(scope, slideIndex) {
+function renderSlide(scope, slideIndex, overlayHtml) {
   const { config, contentNodes: afterConfig } = extractSlideConfig(scope.children);
   const { notes, contentNodes } = extractNotes(afterConfig);
 
@@ -204,8 +204,9 @@ function renderSlide(scope, slideIndex) {
     : "";
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
+  const overlay = overlayHtml || "";
 
-  return `<div class="${classes.join(" ")}"${idAttr}>\n${title}\n${bodyHtml}${notesHtml}\n</div>`;
+  return `<div class="${classes.join(" ")}"${idAttr}>\n${title}\n${bodyHtml}${notesHtml}${overlay}\n</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,16 +232,46 @@ function renderSlides(nodes, options = {}) {
   // Filter to scope nodes only (skip stray paragraphs at top level)
   const slides = slideScopes.filter((n) => n.type === "scope");
 
+  // Build per-slide overlay (company + confidential) embedded inside each slide
+  const overlayParts = [];
+  if (meta.company) {
+    overlayParts.push(`<div class="sdoc-company-footer">${escapeHtml(meta.company)}</div>`);
+  }
+  if (meta.confidential) {
+    const val = meta.confidential.trim();
+    const entity = val.toLowerCase() === "true" ? meta.company : val;
+    const text = entity
+      ? `CONFIDENTIAL \u2014 ${escapeHtml(entity)}`
+      : "CONFIDENTIAL";
+    overlayParts.push(`<div class="sdoc-confidential-notice">${text}</div>`);
+  }
+  const overlayHtml = overlayParts.length
+    ? `\n<div class="slide-overlay">${overlayParts.join("\n")}</div>`
+    : "";
+
   const slidesHtml = slides
-    .map((scope, index) => renderSlide(scope, index))
+    .map((scope, index) => renderSlide(scope, index, overlayHtml))
     .join("\n\n");
 
   const title = meta.properties?.title
     || (nodes.length === 1 && nodes[0].title ? nodes[0].title : "Slides");
 
-  // Structural print/PDF styles — always injected regardless of theme.
-  // Themes provide visual styling; page-break behaviour is not theme-specific.
-  const printCss = `@media print {
+  // Structural styles — always injected regardless of theme.
+  const structuralCss = `
+.slide { position: relative; }
+.slide-overlay { position: absolute; bottom: 0; left: 0; right: 0; pointer-events: none; }
+.sdoc-company-footer {
+  position: absolute; bottom: 20px; left: 32px;
+  font-size: 0.7em; color: rgba(0,0,0,0.35);
+  letter-spacing: 0.04em;
+}
+.sdoc-confidential-notice {
+  text-align: center; padding: 5px 0;
+  font-size: 0.65em; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(160, 40, 40, 0.6);
+}
+@media print {
   @page { size: 13.333in 7.5in; margin: 0; }
   body { overflow: visible; height: auto; }
   .slide {
@@ -254,7 +285,7 @@ function renderSlides(nodes, options = {}) {
   .notes { display: none; }
 }`;
 
-  const cssTag = `<style>\n${themeCss}\n${printCss}\n</style>`;
+  const cssTag = `<style>\n${themeCss}\n${structuralCss}\n</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
 
   return `<!DOCTYPE html>
