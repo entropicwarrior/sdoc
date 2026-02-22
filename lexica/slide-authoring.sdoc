@@ -47,10 +47,10 @@
 
         # Building Slides @building
         {
-            Use the CLI tool from the sdoc repo:
+            Use the CLI tool from the lexica-common repo:
 
             ```
-            node ~/repos/sdoc/tools/build-slides.js deck.sdoc
+            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc
             ```
 
             This produces \`deck.html\` — a self-contained HTML file. Open it
@@ -59,28 +59,29 @@
             To specify output path:
 
             ```
-            node ~/repos/sdoc/tools/build-slides.js deck.sdoc -o output.html
+            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc -o output.html
             ```
 
             To export as PDF:
 
             ```
-            node ~/repos/sdoc/tools/build-slides.js deck.sdoc --pdf
+            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc --pdf
             ```
 
-            This produces \`deck.pdf\` using headless Chrome. Each slide becomes
-            one page. Requires Chrome or Chromium installed on the system.
+            This produces \`deck.pdf\` using headless Chrome in 16:9 landscape
+            format. Each slide becomes one page. Requires Chrome or Chromium
+            installed on the system.
 
             To use the company theme:
 
             ```
-            node ~/repos/sdoc/tools/build-slides.js deck.sdoc --theme ~/repos/lexica-common/slides/themes/company
+            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc --theme ~/repos/lexica-common/slides/themes/company
             ```
 
             Flags can be combined:
 
             ```
-            node ~/repos/sdoc/tools/build-slides.js deck.sdoc --pdf --theme ~/repos/lexica-common/slides/themes/company -o presentation.pdf
+            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc --pdf --theme ~/repos/lexica-common/slides/themes/company -o presentation.pdf
             ```
         }
 
