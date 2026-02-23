@@ -50,8 +50,11 @@
             Use the CLI tool from the lexica-common repo:
 
             ```
-            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc
+            node <lexica-common>/tools/build-slides.cjs deck.sdoc
             ```
+
+            \`<lexica-common>\` refers to wherever you cloned the lexica-common
+            repo.
 
             This produces \`deck.html\` — a self-contained HTML file. Open it
             in any browser. Navigate with arrow keys or swipe on touch devices.
@@ -59,13 +62,13 @@
             To specify output path:
 
             ```
-            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc -o output.html
+            node <lexica-common>/tools/build-slides.cjs deck.sdoc -o output.html
             ```
 
             To export as PDF:
 
             ```
-            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc --pdf
+            node <lexica-common>/tools/build-slides.cjs deck.sdoc --pdf
             ```
 
             This produces \`deck.pdf\` using headless Chrome in 16:9 landscape
@@ -75,13 +78,13 @@
             To use the company theme:
 
             ```
-            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc --theme ~/repos/lexica-common/slides/themes/company
+            node <lexica-common>/tools/build-slides.cjs deck.sdoc --theme <lexica-common>/presentations/themes/company
             ```
 
             Flags can be combined:
 
             ```
-            node ~/repos/lexica-common/tools/build-slides.cjs deck.sdoc --pdf --theme ~/repos/lexica-common/slides/themes/company -o presentation.pdf
+            node <lexica-common>/tools/build-slides.cjs deck.sdoc --pdf --theme <lexica-common>/presentations/themes/company -o presentation.pdf
             ```
         }
 
@@ -254,11 +257,11 @@
 
         # Company Theme @company-theme
         {
-            Located at \`lexica-common/slides/themes/company/\`. Uses company
-            brand colours and typography. Pass it via the CLI:
+            Located at \`<lexica-common>/presentations/themes/company/\`. Uses
+            company brand colours and typography. Pass it via the CLI:
 
             ```
-            --theme ~/repos/lexica-common/slides/themes/company
+            --theme <lexica-common>/presentations/themes/company
             ```
         }
 
