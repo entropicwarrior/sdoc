@@ -1,0 +1,224 @@
+# Meta @meta
+{
+    # StyleAppend
+    {
+        example-overrides.css
+    }
+    # Header
+    {
+        Example *page* header (overrides the global header)
+    }
+    # Footer
+    {
+        Example footer for this file
+    }
+}
+
+# Example Simple/Smart Document
+{
+    # Overview @overview
+    {
+        This is an example document. Scopes are explicit.
+        The style of a heading is based on its nesting depth.
+        References look like @overview.
+
+        You can use *emphasis*, **strong**, and `inline code`.
+        External links look like [SDOC](https://example.com).
+    }
+    # Examples
+    {
+        There can be multiple scoped entities at a particular level.
+
+        # Lists
+        {
+            It is very very easy to create numbered lists.
+
+            # Example Bulleted List
+            {[.]
+                - Item 1
+                {
+                    This is information about item 1
+                }
+                - Item 2 @interestingItem
+                {
+                    This is information about item 2 and it can be multi-line
+                    Like this with a nice paragraph space.
+
+                    # Item 2.2
+                    {
+                        This is nested item information for item 2
+                    }
+                }
+            }
+
+            # Example simple bulleted list
+            {
+                - item 1
+                - item 2
+                - item 3
+            }
+
+            # Example simple numbered list
+            {
+                1. Item 1
+                2. Item 2
+            }
+
+            # Example Nested numbered lists
+            {[#]
+                # Item 1
+                {
+                    Item 1 information. Can point at @interestingItem.
+                }
+                - Item 2
+                {
+                    Item 2 information
+                    # Item 2.1
+                    {
+                        Nested item 2.1
+                    }
+                }
+                {
+                    Item 3 has no heading
+                }
+            }
+
+            # Anonymous List Items (no headings)
+            {[.]
+                {
+                    This item has no heading — just body content inside a bare block.
+                }
+                {
+                    Another headingless item. Useful for simple lists where
+                    items are paragraphs rather than titled entries.
+                }
+            }
+
+            # Multi-line List Items
+            {[.]
+                - This is a long list item that
+                  continues on the next line
+                - A short item
+                - Another long item spanning
+                  multiple lines of text
+                {
+                    This body belongs to the multi-line item above.
+                }
+            }
+
+            # Task list
+            {[.]
+                - [ ] Write the parser
+                - [x] Wire up the preview
+            }
+
+            # Table
+            {[table]
+                Name | Age | City
+                Alice | 30 | New York
+                Bob | 25 | Los Angeles
+                Charlie | 35 | Chicago
+                Diana | 28 | Seattle
+            }
+
+            # Inline Blocks
+            {
+                Scopes can use single-line inline blocks for short content:
+
+                # Author
+                { Jane Doe }
+
+                # Version
+                { 1.0 }
+            }
+
+            # Escaping
+            {
+                Use backslash to escape special characters:
+
+                \# This line starts with a literal hash (not a heading).
+
+                A literal brace: \{ and \}, a literal at-sign: \@, and backtick: \`.
+            }
+
+            # Images
+            {
+                A local image (relative path):
+
+                ![Waterfall pool](PXL_20230816_195120268.jpg)
+
+                A remote image (direct URL):
+
+                ![Distant galaxy](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/NGC_4414_%28NASA-med%29.jpg/600px-NGC_4414_%28NASA-med%29.jpg)
+            }
+
+            # K&R Brace Style
+            {
+                Scopes can use K&R style with the opening brace on the heading line:
+
+                # Inline example {
+                    This scope uses K&R style.
+                }
+
+                # K&R with a list {[.]
+                    - First item
+                    - Second item
+                }
+
+                # K&R with an ID @knr-example {
+                    Heading IDs go before the brace.
+                }
+            }
+
+            # Braceless Scopes
+            {
+                Headings without braces create braceless scopes, terminated by the next heading:
+
+                # First Topic
+                This content belongs to First Topic.
+                It can have multiple paragraphs.
+
+                # Second Topic
+                This content belongs to Second Topic.
+
+                # Third Topic with Code
+                Here is some code:
+
+                ```js
+                console.log("braceless!");
+                ```
+            }
+
+            # Headingless Scopes
+            {
+                A bare block (no heading) groups content with indentation:
+
+                {
+                    This paragraph is nested one level deeper.
+
+                    {
+                        And this is nested two levels deep.
+                    }
+                }
+
+                Back to the outer level.
+            }
+
+            # Extras
+            {
+                Inline formatting: emphasis, strong, strike, code. External links: SDOC, https://example.com, and mailto:hello@example.com.
+                ---
+
+                > This is a quote block.
+                > It can span multiple lines.
+                >
+                > This is a second paragraph in the same quote.
+
+                ```txt
+# This is raw text inside a code block
+{[.] not parsed as a list }
+                ```
+            }
+        }
+    }
+}

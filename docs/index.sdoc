@@ -1,0 +1,29 @@
+# SDOC Documentation
+{
+    # Overview
+    {
+        SDOC ("Simple/Smart Documentation") is a plain text documentation format with explicit scoping. Unlike Markdown, structure is never inferred — braces make scope boundaries explicit, which means tools and AI agents can extract exactly the section they need, every time, with no heuristics. Inline formatting is borrowed from Markdown, so there is almost nothing new to learn.
+
+        Use the sidebar to navigate. Shift+Click two docs to compare them side by side.
+    }
+
+    # Quick Links
+    {
+        - [Guide: Introduction](#docs/guide/intro.sdoc)
+        - [Guide: Setup](#docs/guide/setup.sdoc)
+        - [Tutorial: First Steps](#docs/tutorials/first-steps.sdoc)
+        - [Reference: Syntax](#docs/reference/syntax.sdoc)
+        - [Reference: API](#docs/reference/api.sdoc)
+        - [Reference: CLI](#docs/reference/cli.sdoc)
+    }
+
+    # Sections
+    {[.]
+        - Guide
+        { Getting started with SDOC: what it is and how to set it up. }
+        - Reference
+        { Syntax details, the JavaScript API, and CLI tools. }
+        - Tutorials
+        { Step-by-step walkthroughs for common tasks. }
+    }
+}

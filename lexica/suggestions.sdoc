@@ -1,0 +1,205 @@
+# SDOC Feature Suggestions @sdoc-suggestions
+{
+    # Meta @meta
+    {
+        type: doc
+    }
+
+    # About @about
+    {
+        Proposed additions to the SDOC spec. Each suggestion references
+        requirements it serves, includes priority, and explains rationale.
+        Check here before designing new features.
+    }
+
+    # Context @context
+    {
+        This document suggests additions to the SDOC spec based on gaps identified in v0.1. Each suggestion references the requirements it serves (see requirements.sdoc). Suggestions are ordered by priority.
+
+        When a suggestion is accepted and implemented, it should be moved into specification.sdoc and removed from this document.
+    }
+
+    # S2: Document Metadata Beyond Styling @s2
+    {
+        Priority: High (partially addressed)
+        Serves: @r5, @r6, @r7
+
+        The @meta scope currently handles style, header, and footer. Richer metadata (author, date, version, status, tags) is now supported via key:value syntax inside the @meta scope. Both sub-scope and key:value styles work:
+
+        ```
+        # Meta @meta
+        {
+            author: Jane Smith
+            date: 2026-02-06
+            version: 0.3
+            status: Draft
+            tags: specification, api, v2
+            style: styles/custom.css
+        }
+        ```
+
+        Remaining work: defining a canonical set of well-known keys and ensuring tooling consistently exposes `meta.properties` to downstream consumers (renderers, AI agents, search indices).
+    }
+
+    # S3: Comments @s3
+    {
+        Priority: High
+        Serves: @r5, @r8
+
+        Currently flagged as an open question in the spec. Comments are essential across all use cases: reminders to self in notes, editorial annotations in project docs, and AI agent instructions in software docs.
+
+        Suggested syntax options:
+        {[#]
+            - Line comments
+            {
+                ```
+                // This is a comment and won't be rendered
+                # Visible Heading
+                {
+                    Visible content
+                }
+                ```
+                Pros: familiar from programming. Line-based, consistent with SDOC's line-oriented parser.
+                Cons: // is common in URLs and code blocks, so context sensitivity is needed.
+            }
+            - Comment scopes
+            {
+                ```
+                # TODO @comment
+                {
+                    This entire scope is a comment and won't render.
+                    Could be used for AI agent instructions.
+                }
+                ```
+                Pros: consistent with scope-based philosophy. Can contain rich structured content.
+                Cons: more verbose for quick one-liners.
+            }
+            - Both
+            {
+                Line comments for quick annotations, comment scopes for structured non-rendered content. This is probably the right answer. A line comment for fast capture, and a comment scope for complex annotations.
+            }
+        }
+    }
+
+    # S4: Semantic Scope Types @s4
+    {
+        Priority: High
+        Serves: @r5, @r7
+
+        Currently all scopes are structurally identical. The only differentiation is the heading text and optional ID. For AI agents to navigate documents effectively, scopes need semantic meaning.
+
+        Consider a type annotation on scopes:
+
+        ```
+        # User Authentication @auth :requirement
+        {
+            The system shall authenticate users via OAuth 2.0.
+        }
+
+        # OAuth Implementation @auth-spec :specification
+        {
+            Implements @auth using the authorization code flow.
+        }
+
+        # Auth Test Plan @auth-test :test
+        {
+            - [ ] Test login flow
+            - [ ] Test token refresh
+            - [ ] Test logout
+        }
+        ```
+
+        This allows AI agents to filter scopes by type: "show me all requirements", "find tests for this specification", "what is the status of all tasks". The types would be user-defined, not a fixed enum, though the spec could suggest well-known types (requirement, specification, test, note, warning, definition, example).
+    }
+
+    # S5: Cross-File References @s5
+    {
+        Priority: Medium
+        Serves: @r9
+
+        The @id reference system is per-file. For multi-file projects, you need to reference scopes in other files.
+
+        Suggested approach:
+
+        ```
+        See @guide/intro#overview for the introduction.
+        ```
+
+        Where the path before # is the file (relative to project root), and after # is the scope ID within that file. The short form @id should continue to resolve within the current file first, then optionally search the project.
+    }
+
+    # S6: Include/Transclusion @s6
+    {
+        Priority: Medium
+        Serves: @r9, @r7
+
+        The ability to include one SDOC file (or a specific scope from it) inside another. Essential for large documents assembled from modular parts.
+
+        Possible syntax:
+
+        ```
+        # Full Project Documentation
+        {
+            @include(architecture/overview.sdoc)
+            @include(architecture/design.sdoc#api-layer)
+        }
+        ```
+
+        This keeps the source files independent and editable, while allowing composed views. The rendered output inlines the included content at the specified position.
+    }
+
+    # S7: Definition Lists @s7
+    {
+        Priority: Medium
+        Serves: @r7
+
+        Technical specs, glossaries, and legal documents frequently use definition lists (term + definition pairs). Currently these would be modelled as scopes where the heading is the term and the body is the definition, which works but loses the semantic distinction.
+
+        Possible syntax:
+
+        ```
+        {[def]
+            - API
+            { Application Programming Interface. A set of protocols for building software. }
+            - SDK
+            { Software Development Kit. A collection of tools for a specific platform. }
+        }
+        ```
+
+        This follows the existing list type pattern ({[.]} for bullet, {[#]} for numbered, {[def]} for definition).
+    }
+
+    # S8: Admonitions/Callouts @s8
+    {
+        Priority: Low
+        Serves: @r7
+
+        Warning, note, tip, and caution boxes are common in technical documentation. Could be modelled as a scope type annotation (see @s4), which would make a dedicated syntax unnecessary.
+
+        If @s4 is implemented:
+        ```
+        # Important @note1 :warning
+        {
+            This API is deprecated and will be removed in v2.0.
+        }
+        ```
+
+        The rendering pipeline would style :warning, :note, :tip, :caution scopes with appropriate visual treatment.
+    }
+
+    # S9: Reserved Syntax Space @s9
+    {
+        Priority: Low
+        Serves: @r10
+
+        The spec should explicitly document which character sequences are reserved for future use, even if they don't currently have meaning. This prevents existing documents from accidentally using syntax that later becomes meaningful.
+
+        Candidates for reservation:
+        {[.]
+            - {[...]} patterns (for future list/scope types)
+            - @keyword patterns at line start (for directives like @include)
+            - :: or :word after scope IDs (for type annotations per @s4)
+            - %% or similar (for future comment syntax if // is problematic)
+        }
+    }
+}

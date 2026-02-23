@@ -1,0 +1,411 @@
+# SDOC Slide Authoring Guide @slide-authoring
+{
+    # Meta @meta
+    {
+        type: skill
+    }
+
+    # About @about
+    {
+        How to create HTML presentation slides from SDOC files. Covers the slide
+        deck structure, available layouts (center, two-column), speaker notes,
+        theme system, and CLI usage. Read the Quick Reference for everyday
+        authoring. Read the Full Example for a complete deck template.
+    }
+
+    # Quick Reference @quick-reference
+    {
+        A slide deck is an SDOC file where each top-level scope becomes one
+        slide. Set \`type: slides\` in the \`@meta\` section.
+
+        # Minimal Deck @minimal
+        {
+            ```
+            # My Presentation {
+                @meta {
+                    type: slides
+                }
+
+                # Title Slide {
+                    config: center
+
+                    Welcome to the presentation.
+                }
+
+                # Content Slide {
+                    Key points:
+
+                    {[.]
+                        - First point
+                        - Second point
+                        - Third point
+                    }
+                }
+            }
+            ```
+        }
+
+        # Building Slides @building
+        {
+            Use the CLI tool:
+
+            ```
+            node tools/build-slides.js deck.sdoc
+            ```
+
+            This produces \`deck.html\` — a self-contained HTML file. Open it
+            in any browser. Navigate with arrow keys or swipe on touch devices.
+
+            To specify output path:
+
+            ```
+            node tools/build-slides.js deck.sdoc -o output.html
+            ```
+
+            To export as PDF:
+
+            ```
+            node tools/build-slides.js deck.sdoc --pdf
+            ```
+
+            This produces \`deck.pdf\` using headless Chrome in 16:9 landscape
+            format. Each slide becomes one page. Requires Chrome or Chromium
+            installed on the system.
+
+            To use a custom theme:
+
+            ```
+            node tools/build-slides.js deck.sdoc --theme path/to/theme
+            ```
+
+            Flags can be combined:
+
+            ```
+            node tools/build-slides.js deck.sdoc --pdf --theme path/to/theme -o presentation.pdf
+            ```
+        }
+
+        # Slide Properties @properties
+        {
+            Add \`config:\` lines at the top of a slide scope (before content)
+            to control layout:
+
+            \`config: center\` — centres content vertically and horizontally.
+            Use for title slides, section dividers, and closing slides.
+
+            \`config: two-column\` — child scopes become side-by-side columns.
+            Use for comparisons, before/after, pros/cons.
+
+            No config line means default layout: left-aligned, top-to-bottom.
+        }
+
+        # Speaker Notes @notes
+        {
+            Add a child scope with id \`notes\` inside any slide. Notes are
+            hidden in the output but present in the HTML.
+
+            ```
+            # My Slide {
+                Visible content.
+
+                # Notes @notes {
+                    Only the presenter sees this.
+                }
+            }
+            ```
+        }
+    }
+
+    # Slide Structure @structure
+    {
+        # Document Root @root
+        {
+            The outermost scope is the document wrapper. Its title is used as
+            the HTML page title (unless overridden by \`title:\` in \`@meta\`).
+            Every child scope of the root becomes one slide.
+
+            The \`@meta\` scope is extracted and never rendered as a slide.
+        }
+
+        # Meta Properties @meta-properties
+        {
+            Supported properties in \`@meta\` (separate each with a blank line):
+
+            \`type: slides\` — identifies this file as a slide deck.
+
+            \`title: Presentation Title\` — sets the HTML page title.
+
+            \`company: Name\` — company name, shown in the bottom-left of
+            every slide.
+
+            \`confidential: true\` — adds a confidentiality notice across
+            the bottom of every slide. Uses the \`company\` name if set.
+            Use \`confidential: Custom Entity\` to override with a specific
+            entity name.
+
+            \`theme: company\` — names the intended theme (informational;
+            the actual theme is selected via the \`--theme\` CLI flag).
+
+            \`author: Name\` — author name (metadata only).
+
+            \`date: 2026-02-20\` — date (metadata only).
+        }
+
+        # What Maps to What @mapping
+        {
+            {[table]
+                SDOC Construct | HTML Output
+                Top-level scope | Slide (\`<div class="slide">\`)
+                Scope heading | Slide title (\`<h2>\`)
+                Paragraph | \`<p>\`
+                \`{[.]}\` bullet list | \`<ul>\`
+                \`{[#]}\` numbered list | \`<ol>\`
+                \`{[table]}\` | \`<table>\`
+                Code fence | \`<pre><code>\`
+                Mermaid code fence | \`<pre class="mermaid">\` (rendered as SVG)
+                \`**bold**\` | \`<strong>\`
+                \`*italic*\` | \`<em>\`
+                \`\\\`code\\\`\` | \`<code>\`
+                \`[text](url)\` | \`<a>\`
+                \`![alt](src)\` | \`<img>\`
+                Nested scope | \`<section>\` within the slide
+                \`@notes\` child | Hidden \`<aside class="notes">\`
+            }
+        }
+    }
+
+    # Layouts @layouts
+    {
+        # Default Layout @default-layout
+        {
+            No \`config:\` line needed. Content flows top-to-bottom,
+            left-aligned. Good for most content slides.
+
+            ```
+            # Regular Slide {
+                A paragraph of text.
+
+                {[.]
+                    - A bullet list
+                    - With items
+                }
+            }
+            ```
+        }
+
+        # Center Layout @center-layout
+        {
+            Use \`config: center\` for title slides, section dividers,
+            and closing slides.
+
+            ```
+            # Welcome {
+                config: center
+
+                My Presentation Title
+
+                A subtitle or tagline.
+            }
+            ```
+        }
+
+        # Two-Column Layout @two-column-layout
+        {
+            Use \`config: two-column\`. Child scopes become columns.
+            Good for comparisons, before/after, side-by-side content.
+
+            ```
+            # Comparison {
+                config: two-column
+
+                # Before {
+                    Manual HTML slides.
+
+                    Tedious and inconsistent.
+                }
+
+                # After {
+                    Write SDOC, get slides.
+
+                    Fast and branded.
+                }
+            }
+            ```
+
+            Any content before the child scopes appears above the columns.
+        }
+    }
+
+    # Theme System @themes
+    {
+        Themes control the visual appearance of slides. A theme is a directory
+        containing:
+
+        \`theme.css\` — all visual styling (typography, colours, spacing, layouts).
+
+        \`theme.js\` (optional) — runtime behaviour (keyboard nav, touch support,
+        slide counter). The built-in default theme includes this.
+
+        # Built-in Default Theme @default-theme
+        {
+            Used when no \`--theme\` flag is provided. Clean, minimal styling
+            with keyboard navigation and touch swipe support.
+        }
+
+        # Custom Themes @custom-themes
+        {
+            Create a directory with \`theme.css\` and optionally \`theme.js\`,
+            then pass it via the CLI:
+
+            ```
+            --theme path/to/your/theme
+            ```
+        }
+
+        # Navigation Controls @navigation
+        {
+            All themes include these controls by default:
+
+            Arrow right or Space — next slide.
+
+            Arrow left — previous slide.
+
+            Home — first slide.
+
+            End — last slide.
+
+            Touch swipe left/right on mobile devices.
+
+            Slide counter shown in the bottom-right corner.
+        }
+    }
+
+    # Full Example @full-example
+    {
+        A complete slide deck demonstrating all features:
+
+        ````
+        # Product Update — Q1 2026 {
+            @meta {
+                type: slides
+
+                title: Product Update Q1 2026
+
+                author: Team Lead
+
+                date: 2026-03-15
+            }
+
+            # Product Update {
+                config: center
+
+                Q1 2026
+            }
+
+            # What We Shipped {
+                Key deliverables this quarter:
+
+                {[.]
+                    - New authentication system
+                    - Dashboard redesign
+                    - API v2 launch
+                }
+
+                # Notes @notes {
+                    Mention the 40% performance improvement.
+                }
+            }
+
+            # Metrics {
+                {[table]
+                    Metric | Q4 2025 | Q1 2026
+                    Users | 12,000 | 18,500
+                    API calls/day | 1.2M | 2.1M
+                    Uptime | 99.9% | 99.95%
+                }
+            }
+
+            # Before and After {
+                config: two-column
+
+                # Before {
+                    Manual deployments.
+
+                    2-hour release cycles.
+
+                    Frequent rollbacks.
+                }
+
+                # After {
+                    Automated CI/CD.
+
+                    15-minute releases.
+
+                    Zero rollbacks this quarter.
+                }
+            }
+
+            # Architecture {
+                The new system:
+
+                ```mermaid
+                graph LR
+                  Client --> Gateway[API Gateway]
+                  Gateway --> Auth[Auth Service]
+                  Gateway --> Core[Core Service]
+                  Gateway --> Analytics
+                ```
+            }
+
+            # What's Next {
+                Q2 priorities:
+
+                {[#]
+                    - Mobile app launch
+                    - Internationalisation
+                    - Enterprise SSO
+                }
+            }
+
+            # Thank You {
+                config: center
+
+                Questions?
+            }
+        }
+        ````
+    }
+
+    # Common Mistakes @common-mistakes
+    {
+        **Forgetting blank lines between meta properties.** SDOC joins
+        consecutive lines into a single paragraph. Put a blank line between
+        each \`key: value\` pair in \`@meta\`:
+
+        ```
+        # Wrong — these become one paragraph:
+        @meta {
+            type: slides
+            title: My Deck
+        }
+
+        # Correct:
+        @meta {
+            type: slides
+
+            title: My Deck
+        }
+        ```
+
+        **Putting config after content.** The \`config:\` line must appear
+        before any content in the slide scope. If it appears after a paragraph,
+        it will be rendered as regular text.
+
+        **Using config on the document root.** \`config:\` only works on slide
+        scopes (direct children of the root), not on the root itself.
+
+        **Forgetting the @notes id.** Speaker notes require the \`@notes\` id
+        on the child scope heading. Without it, the scope renders as a visible
+        section.
+    }
+}

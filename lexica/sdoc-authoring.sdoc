@@ -1,0 +1,400 @@
+# SDOC Authoring Guide @sdoc-authoring
+{
+    # Meta @meta
+    {
+        type: skill
+    }
+
+    # About @about
+    {
+        How to write correct SDOC files. Covers document structure, inline
+        formatting, block types (lists, tables, code, blockquotes), and common
+        mistakes. Read the Quick Reference for everyday authoring. Read Common
+        Mistakes before generating SDOC for the first time.
+    }
+
+    # Quick Reference @quick-reference
+    {
+        # Core Principle @core-principle
+        {
+            Structure comes from explicit brace scoping. \`{ }\` provides unambiguous scope boundaries. Whitespace and indentation are cosmetic — use them freely for readability but they never affect meaning.
+
+            Write each paragraph as a single long line. Do not hard-wrap body text at 72 or 80 characters. The renderer handles line wrapping based on the viewer's window width. A blank line separates paragraphs.
+        }
+
+        # Scopes @scopes
+        {
+            A scope is a heading followed by content in braces:
+
+            ```
+            # Document Title
+            {
+                # Section @section-id
+                {
+                    Paragraph text goes here.
+
+                    # Subsection
+                    {
+                        Deeper content.
+                    }
+                }
+            }
+            ```
+
+            {[.]
+                - \`#\` starts a heading (multiple \`#\` characters are allowed but don't affect depth — only nesting does)
+                - \`@slug\` at the end of a heading line assigns a referenceable ID — the \`@\` character followed directly by the slug. There is no \`@id\` keyword.
+                - \`{ }\` delimits the scope's content
+            }
+
+            The opening brace can appear at the end of the heading line (K&R style):
+
+            ```
+            # Title {
+                Content goes here.
+            }
+
+            # Smart Pointers @smart-ptrs {
+                The @slug goes before the brace.
+            }
+
+            # Error Handling @error-handling {
+                Another example with a slug.
+            }
+            ```
+        }
+
+        # Braceless Scopes @braceless-scopes
+        {
+            A heading not followed by \`{\` creates a braceless scope. Content
+            runs until the next \`#\` heading, a closing \`}\`, or end of file:
+
+            ```
+            # Section A
+            Content of Section A.
+            It can span multiple lines.
+
+            # Section B
+            Content of Section B.
+            ```
+
+            Braceless and explicit scopes can be mixed freely in the same
+            document.
+        }
+
+        # Paragraphs @paragraphs
+        {
+            Consecutive text lines form a paragraph. A blank line or a new scope
+            ends the paragraph.
+
+            ```
+            # About
+            {
+                This is the first paragraph.
+                These lines join together.
+
+                This is a second paragraph.
+            }
+            ```
+        }
+
+        # Lists @lists
+        {
+            **Simple bullet lists** — inside a normal scope, a run of \`-\` lines automatically becomes an implicit list. This is the easiest form for simple single-line items:
+
+            ```
+            # Features {
+                - Fast parsing
+                - Explicit structure
+                - Easy references
+            }
+            ```
+
+            **Explicit list blocks** — use \`{[.]\` (note: no closing \`}\` on this line) for bullet lists or \`{[#]\` for numbered lists. The block is closed by a separate \`}\` after the items. Use explicit blocks when items need body content or for numbered lists:
+
+            ```
+            {[.]
+                - Item with details
+                {
+                    This paragraph belongs to the item above.
+                    Code blocks, nested lists, etc. go here too.
+                }
+                - Simple item
+            }
+
+            {[#]
+                1. Install the extension
+                2. Create a .sdoc file
+                3. Open the preview
+            }
+            ```
+
+            **Important:** \`{[.]}\` with the closing brace on the same line creates an empty list — the brace closes the block immediately. Always put the closing \`}\` on a separate line after the items.
+
+            Implicit lists only work for bullet lists (\`-\`) where every item is a single line. For numbered lists, always use the explicit \`{[#]\` block form.
+        }
+
+        # Tables @tables
+        {
+            Opened with \`{[table]\` (no closing brace on this line). First row is the header, columns separated by \`|\`. Closed by a separate \`}\`:
+
+            ```
+            {[table]
+                Name | Age | City
+                Alice | 30 | NYC
+                Bob | 25 | LA
+            }
+            ```
+        }
+
+        # Inline Formatting @inline-formatting
+        {
+            {[table]
+                Syntax | Result
+                \`*text*\` | Emphasis
+                \`**text**\` | Strong
+                \`~~text~~\` | Strikethrough
+                \`\\\`code\\\`\` | Inline code
+            }
+
+            Links: \`[Link text](https://example.com)\`
+
+            Images: \`![Alt text](path/to/image.png)\`
+
+            Autolinks: \`\<https://example.com\>\`
+        }
+
+        # References @references
+        {
+            Assign a slug with \`@slug\` on a heading, then reference it anywhere with \`@slug\`:
+
+            ```
+            # Setup @setup {
+                Follow these instructions.
+            }
+
+            # Usage {
+                Make sure you complete @setup first.
+            }
+            ```
+        }
+
+        # Code Blocks @code-blocks
+        {
+            Fenced with triple backticks. Content inside is raw (no parsing):
+
+            ````
+            ```javascript
+            function hello() {
+                console.log("Hello!");
+            }
+            ```
+            ````
+        }
+
+        # Mermaid Diagrams @mermaid
+        {
+            Code blocks with the \`mermaid\` language tag are rendered as SVG diagrams using the Mermaid JS library. No special syntax is needed — use a standard code fence:
+
+            ````
+            ```mermaid
+            graph LR
+              A[Client] --> B[Server]
+              B --> C[Database]
+            ```
+            ````
+
+            Mermaid supports flowcharts (\`graph\`), sequence diagrams (\`sequenceDiagram\`), class diagrams (\`classDiagram\`), state diagrams (\`stateDiagram-v2\`), and more. The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
+        }
+
+        # Blockquotes @blockquotes
+        {
+            ```
+            > This is a quoted line.
+            > Another line in the same quote.
+            ```
+        }
+
+        # Meta Scope @meta-scope
+        {
+            The reserved \`@meta\` scope configures per-file settings and is not rendered in the document body. Use the bare \`@meta\` form (preferred) or the heading form:
+
+            ```
+            @meta {
+                type: doc
+
+                company: Irreversible Inc.
+
+                confidential: true
+
+                style: styles/custom.css
+
+                header: My Header
+
+                footer: My Footer
+            }
+            ```
+
+            The heading form \`# Meta @meta { }\` also works but the bare form is preferred because \`@meta\` is structural, not content.
+
+            Supported properties (separate each with a blank line):
+
+            \`type: doc\` or \`type: skill\` or \`type: slides\` — document type.
+
+            \`company: Name\` — company name, shown in the document footer.
+
+            \`confidential: true\` — adds a confidentiality notice banner.
+            Uses the \`company\` name if set. Use \`confidential: Custom Entity\`
+            to override with a specific entity name.
+
+            \`style: path/to/file.css\` — custom stylesheet (replaces default).
+
+            \`style-append: path/to/file.css\` — additional stylesheet (appended).
+
+            \`header: text\` — page header text (or use a \`# Header\` sub-scope
+            for rich content).
+
+            \`footer: text\` — page footer text (or use a \`# Footer\` sub-scope
+            for rich content).
+
+            \`uuid: ...\` — unique identifier.
+
+            \`tags: tag1, tag2\` — comma-separated tags.
+        }
+
+        # About Scope @about-scope
+        {
+            The reserved \`@about\` scope provides a discovery summary for the document. It is used by \`list_knowledge\` to describe the file but is not rendered in the document body. Use the bare \`@about\` form (preferred) or the heading form:
+
+            ```
+            @about {
+                How to write correct SDOC files. Covers document structure, inline formatting, block types, and common mistakes.
+            }
+            ```
+
+            The heading form \`# About @about { }\` also works but the bare form is preferred.
+        }
+
+        # Escaping @escaping
+        {
+            Backslash escapes special characters: \`\\\\\` \`\\{\` \`\\}\` \`\\@\`
+            \`\\[\` \`\\]\` \`\\(\` \`\\)\` \`\\*\` \`\\~\` \`\\#\` \`\\!\` \`\\\<\`
+            \`\\\>\`
+
+            A line starting with \`\\#\` renders as a literal \`#\` (not a heading).
+        }
+    }
+
+    # Common Mistakes @common-mistakes
+    {
+        These are easy errors to make — especially for AI agents generating SDOC.
+
+        # Self-Closing Block Syntax @self-closing-blocks
+        {
+            Writing \`{[.]}\` or \`{[table]}\` with the closing brace on the same line creates an empty block — the \`}\` closes it immediately. Items that follow are bare content outside the block and will not render correctly.
+
+            **Wrong** — the \`}\` closes the block on the same line:
+
+            ```
+            {[.]}
+            - Item one
+            - Item two
+            ```
+
+            **Right** — the opening \`{[.]\` has no closing brace; items go inside; a separate \`}\` closes:
+
+            ```
+            {[.]
+                - Item one
+                - Item two
+            }
+            ```
+
+            Same applies to \`{[#]}\` and \`{[table]}\`.
+        }
+
+        # Bare Content Inside List Blocks @bare-content-in-lists
+        {
+            Inside a list block (\`{[.]}\` or \`{[#]}\`), the **only** valid
+            children are list items (\`-\`, \`1.\`, \`#\` headings, or anonymous
+            \`{ }\` blocks). Bare paragraphs, code fences, or other content
+            floating between items is a **parser error**.
+
+            **Wrong** — bare paragraph inside a list block:
+
+            ```
+            {[.]
+                - First item title
+
+                  This paragraph is NOT inside a body block.
+                  It will cause a parser error.
+
+                - Second item
+            }
+            ```
+
+            **Right** — wrap rich content in a \`{ }\` body block:
+
+            ```
+            {[.]
+                - First item title
+                {
+                    This paragraph belongs to the item above.
+
+                    So does this one, and any code blocks, nested lists, etc.
+                }
+                - Second item
+            }
+            ```
+
+            This is the single most common SDOC mistake. If a list item needs
+            **anything** beyond its title line, that content **must** go in a
+            \`{ }\` body block immediately after the item.
+        }
+
+        # Unescaped Angle Brackets @unescaped-angles
+        {
+            Angle brackets in regular text (outside of inline code backticks)
+            can be misinterpreted as autolinks. Escape them with \`\\\<\` and
+            \`\\\>\`:
+
+            **Wrong:** \`observer<T>\`
+
+            **Right:** \`observer\\\<T\\\>\` or \`\\\`observer<T>\\\`\`
+
+            Inside backtick code spans, angle brackets are fine — code spans
+            are raw.
+        }
+
+        # Blank Lines Stop Multi-Line List Titles @blank-lines-in-lists
+        {
+            A list item title can span multiple continuation lines, but a blank
+            line terminates the title. Content after the blank line is bare
+            content in the list block (a parser error) unless wrapped in a body
+            block:
+
+            **Wrong:**
+
+            ```
+            {[.]
+                - This is a long item title
+                  that continues here
+
+                  But this is NOT a continuation — it's a bare paragraph (error).
+            }
+            ```
+
+            **Right:**
+
+            ```
+            {[.]
+                - This is a long item title
+                  that continues here
+                {
+                    This extra content is properly in a body block.
+                }
+            }
+            ```
+        }
+    }
+}

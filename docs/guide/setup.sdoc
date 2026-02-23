@@ -1,0 +1,107 @@
+# Setup
+{
+    # Requirements
+    {
+        {[.]
+            - [Visual Studio Code](https://code.visualstudio.com/) (v1.95 or later)
+            - The SDOC extension (`.vsix` file)
+        }
+    }
+
+    # Installing the Extension
+    {
+        Build the extension from source:
+
+        ```bash
+npm install
+npm run package
+        ```
+
+        This produces a `.vsix` file in the `dist/` folder. Install it:
+
+        ```bash
+code --install-extension dist/sdoc-*.vsix
+        ```
+
+        Or install from within VS Code: open the Command Palette, run "Extensions: Install from VSIX...", and select the `.vsix` file.
+    }
+
+    # Previewing Documents
+    {
+        Once installed, open any `.sdoc` file and use one of:
+
+        {[.]
+            - **SDOC: Open Preview** to preview in the current pane
+            - **SDOC: Open Preview to the Side** for a side-by-side view
+        }
+
+        The preview updates live as you edit.
+    }
+
+    # Interactive Preview
+    {
+        The preview panel supports interactive features:
+
+        {[.]
+            - **Click-to-navigate**: click any element in the preview to jump to its source line in the editor
+            - **Collapsible scopes**: hover over a heading with children to reveal a toggle triangle. Click it to collapse or expand the section. Collapse state persists across refreshes.
+            - **Inline editing**: click a paragraph to edit it directly in the preview. Press Enter or click away to save changes back to the source file. Press Escape to cancel.
+        }
+    }
+
+    # Formatting Documents
+    {
+        Use **Format Document** (Shift+Option+F on macOS, Shift+Alt+F on Windows/Linux) to auto-indent the current `.sdoc` file based on brace depth. The formatter respects your VS Code tab size and spaces/tabs preference.
+
+        Formatting is purely cosmetic -- it adjusts indentation without changing document structure. Code blocks are left untouched.
+    }
+
+    # Export and Print
+    {
+        Two commands are available from the Command Palette when a preview is active:
+
+        {[.]
+            - **SDOC: Export HTML** -- saves a standalone `.html` file with all styles embedded
+            - **SDOC: Open in Browser** -- opens the document in the system browser
+        }
+
+        Both outputs support collapsible scope toggles. For PDF export, use the browser's print function (Ctrl+P / Cmd+P).
+    }
+
+    # Configuration
+    {
+        Place a `sdoc.config.json` in your project root to set defaults for all documents:
+
+        ```json
+{
+    "style": "path/to/custom.css",
+    "header": "My Project",
+    "footer": "Footer text"
+}
+        ```
+
+        {[.]
+            - `style` replaces the default stylesheet (path relative to the config file)
+            - `styleAppend` adds CSS after the base stylesheet
+            - `header` and `footer` set page-level text with inline formatting
+        }
+
+        Configs are hierarchical: place `sdoc.config.json` in subfolders to override parent settings for documents in that folder.
+
+        See `examples/sdoc.config.json` for a sample config and `examples/sdoc.template.css` for the default theme.
+    }
+
+    # Document Server
+    {
+        Browse all `.sdoc` files in the project with a local HTTP server:
+
+        ```bash
+python3 tools/serve_docs.py                    # serve current dir on :4070
+python3 tools/serve_docs.py docs/ -p 8080      # serve docs/ on :8080
+        ```
+
+        Or use the **SDOC: Browse Documents** command from the VSCode Command Palette. It prompts you to serve from the entire workspace or choose a specific subfolder.
+
+        The viewer opens in your browser with a sidebar, search, and split-pane comparison. Edits to `.sdoc` files are reflected on browser refresh.
+    }
+}
