@@ -295,6 +295,28 @@ function activate(context) {
   context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand, newKnowledgeFileCommand, generateAboutCommand);
 
   context.subscriptions.push(
+    vscode.languages.registerDocumentSymbolProvider("sdoc", {
+      provideDocumentSymbols(document) {
+        const { parseSdoc } = require("./sdoc");
+        const parsed = parseSdoc(document.getText());
+        return buildSymbols(parsed.nodes, document);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.languages.registerFoldingRangeProvider("sdoc", {
+      provideFoldingRanges(document) {
+        const { parseSdoc } = require("./sdoc");
+        const parsed = parseSdoc(document.getText());
+        const ranges = [];
+        collectFoldingRanges(parsed.nodes, document, ranges);
+        return ranges;
+      }
+    })
+  );
+
+  context.subscriptions.push(
     vscode.languages.registerDocumentFormattingEditProvider("sdoc", {
       provideDocumentFormattingEdits(document, options) {
         const { formatSdoc } = require("./sdoc");
@@ -475,6 +497,43 @@ function updatePreview(document) {
   }
   panel.title = buildTitle(document.uri);
   panel.webview.html = buildHtml(document, panel.title, panel.webview);
+}
+
+function buildSymbols(nodes, document) {
+  const symbols = [];
+  for (const node of nodes) {
+    if (node.type !== "scope") continue;
+    const name = node.title || (node.id ? `@${node.id}` : "{}");
+    const startLine = Math.max(0, (node.lineStart || 1) - 1);
+    const endLine = Math.max(startLine, (node.lineEnd || node.lineStart || 1) - 1);
+    const range = new vscode.Range(startLine, 0, endLine, document.lineAt(Math.min(endLine, document.lineCount - 1)).text.length);
+    const symbol = new vscode.DocumentSymbol(
+      name,
+      node.id ? `@${node.id}` : "",
+      vscode.SymbolKind.Namespace,
+      range,
+      range
+    );
+    if (node.children && node.children.length) {
+      symbol.children = buildSymbols(node.children, document);
+    }
+    symbols.push(symbol);
+  }
+  return symbols;
+}
+
+function collectFoldingRanges(nodes, document, ranges) {
+  for (const node of nodes) {
+    if (node.type !== "scope") continue;
+    const startLine = Math.max(0, (node.lineStart || 1) - 1);
+    const endLine = Math.max(startLine, (node.lineEnd || node.lineStart || 1) - 1);
+    if (endLine > startLine) {
+      ranges.push(new vscode.FoldingRange(startLine, endLine));
+    }
+    if (node.children) {
+      collectFoldingRanges(node.children, document, ranges);
+    }
+  }
 }
 
 function buildTitle(uri) {
