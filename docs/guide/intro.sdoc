@@ -1,0 +1,108 @@
+# Introduction to SDOC
+{
+    # What is SDOC?
+    {
+        SDOC is a plain text format for writing structured documentation. It uses explicit scoping to define document structure, with optional braces for unambiguous nesting.
+
+        The simplest SDOC document is just a heading followed by content:
+
+        ```
+# My Document
+
+This is a paragraph.
+        ```
+
+        For richer structure, use braces to scope content explicitly:
+
+        ```
+# My Section
+{
+    Content goes here.
+}
+        ```
+
+        Scopes nest naturally:
+
+        ```
+# Outer
+{
+    # Inner
+    {
+        Nested content.
+    }
+}
+        ```
+
+        Or use braceless scopes for simpler documents:
+
+        ```
+# Outer
+{
+    # Section A
+    Content for section A.
+
+    # Section B
+    Content for section B.
+}
+        ```
+
+        Heading depth is determined by nesting, not by the number of `#` characters. A single `#` is all you need.
+    }
+
+    # Why SDOC?
+    {
+        # For Humans
+        {
+            SDOC reads like plain text. The braces are there, but they fade into the background the same way indentation does. You get:
+
+            {[.]
+                - **Unlimited nesting** with no ambiguity. Scope boundaries are explicit, not guessed from heading levels or indentation. A ten-level-deep legal document parses the same way as a three-section readme.
+                - **Familiar inline formatting.** Bold, italic, code, links, and lists work the way you expect from Markdown. There is almost nothing new to learn.
+                - **No rendering required.** The raw file is the document. You can read and edit it in any text editor, on any device, with no tooling at all.
+                - **Stable cross-references.** Tag any scope with `@id` and reference it with `@id` in text. Rename the heading, the reference still works.
+            }
+        }
+
+        # For AI Agents and Tools
+        {
+            This is where SDOC's design pays off most. Every property of the format was chosen to make programmatic consumption reliable and token-efficient.
+
+            **Deterministic parsing.** Two parsers, same input, same tree. Always. Markdown cannot guarantee this because section boundaries are inferred from heading levels, and different parsers make different choices about where a section ends. In SDOC, a scope starts with `{` and ends with the matching `}`. There is no ambiguity to resolve.
+
+            **Exact section extraction.** An agent that needs "the error handling section" calls `get_section("error-handling")` and gets exactly that scope back, with its children, every time. In Markdown, extracting a section means guessing: does it end at the next heading of equal depth? Lesser depth? What if heading levels are inconsistent? SDOC makes this a solved problem.
+
+            **Token-efficient navigation.** Agents do not need to load entire files. With progressive disclosure, the cost of a targeted lookup is roughly:
+
+            {[.]
+                - **Discovery:** list all files with summaries \~200 tokens for 50 files
+                - **Orientation:** list section headings of one file \~50-100 tokens
+                - **Detail:** load one section \~200-1000 tokens
+            }
+
+            Total: roughly 750 tokens for a precise answer. Loading the whole file in Markdown would cost 5,000+ tokens and pollute the context window with irrelevant material.
+
+            **AI agents can write it reliably.** Brace matching is unambiguous to produce. A template that says "fill in the content between the braces" is straightforward. In Markdown, agents must track heading levels carefully, and a single `##` where `###` was needed silently restructures the entire document.
+
+            **Structured metadata in the same format.** The `@meta` scope uses the same SDOC syntax as everything else. No YAML frontmatter with different escaping rules parsed by different tools. Metadata is just another scope.
+        }
+    }
+
+    # Core Concepts
+    {
+        # Scopes
+        {
+            A scope is the fundamental building block. It has a heading line starting with `#`, an optional `@id` tag, and a body block in braces:
+
+            ```
+# Section Title @section-id
+{
+    Body text here.
+}
+            ```
+
+            Scopes nest to any depth. Inline formatting (`*bold*`, `` `code` ``, `[links](url)`, `@references`) works the same way as Markdown inside any scope.
+
+            See the [Syntax Reference](#docs/reference/syntax.sdoc) for the full list of features, or follow the [First Steps tutorial](#docs/tutorials/first-steps.sdoc) to try it hands-on.
+        }
+    }
+}

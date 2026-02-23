@@ -1,0 +1,9 @@
+node_modules/
+dist/
+_sdoc_site/
+.DS_Store
+__pycache__/
+.env*
+.claude/
+*.log
+*.vsix

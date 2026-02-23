@@ -1,0 +1,135 @@
+{
+  "name": "sdoc",
+  "displayName": "SDOC",
+  "description": "Preview SDOC files.",
+  "version": "0.0.35",
+  "publisher": "entropicwarrior",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/entropicwarrior/sdoc"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:sdoc",
+    "onCommand:sdoc.preview",
+    "onCommand:sdoc.previewToSide",
+    "onCommand:sdoc.exportHtml",
+    "onCommand:sdoc.openInBrowser",
+    "onCommand:sdoc.browseDocs",
+    "onCommand:sdoc.newKnowledgeFile",
+    "onCommand:sdoc.generateAbout"
+  ],
+  "scripts": {
+    "package": "npx vsce package --out dist/ --allow-missing-repository"
+  },
+  "main": "./src/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "sdoc",
+        "aliases": [
+          "SDOC"
+        ],
+        "extensions": [
+          ".sdoc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sdoc",
+        "scopeName": "source.sdoc",
+        "path": "./syntaxes/sdoc.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "sdoc.preview",
+        "title": "SDOC: Open Preview"
+      },
+      {
+        "command": "sdoc.previewToSide",
+        "title": "SDOC: Open Preview to the Side",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "sdoc.exportHtml",
+        "title": "SDOC: Export HTML",
+        "icon": "$(desktop-download)"
+      },
+      {
+        "command": "sdoc.openInBrowser",
+        "title": "SDOC: Open in Browser",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "sdoc.browseDocs",
+        "title": "SDOC: Browse Documents"
+      },
+      {
+        "command": "sdoc.newKnowledgeFile",
+        "title": "SDOC: New Knowledge File"
+      },
+      {
+        "command": "sdoc.generateAbout",
+        "title": "SDOC: Generate About"
+      }
+    ],
+    "configurationDefaults": {
+      "[sdoc]": {
+        "editor.wordWrap": "on"
+      }
+    },
+    "languageModelTools": [
+      {
+        "name": "sdoc_reference",
+        "tags": ["sdoc", "documentation"],
+        "toolReferenceName": "sdoc",
+        "displayName": "SDOC Reference",
+        "modelDescription": "Returns the SDOC format reference guide. Use this tool when you need to create, edit, or understand .sdoc files. SDOC is a plain text documentation format with explicit brace scoping, headings with #, inline formatting like Markdown, and features like braceless scopes, implicit root, lists, tables, code blocks, and meta scopes.",
+        "userDescription": "Get the SDOC format reference guide for creating and editing .sdoc files.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(book)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "sdoc.previewToSide",
+          "when": "editorLangId == sdoc",
+          "group": "navigation"
+        },
+        {
+          "command": "sdoc.exportHtml",
+          "when": "activeWebviewPanelId == 'sdoc.preview'",
+          "group": "navigation"
+        },
+        {
+          "command": "sdoc.openInBrowser",
+          "when": "activeWebviewPanelId == 'sdoc.preview'",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "sdoc.newKnowledgeFile",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.7.1"
+  }
+}

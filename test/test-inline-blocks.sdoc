@@ -1,0 +1,48 @@
+# Test Inline Blocks @test
+{
+    # Meta @meta
+    {
+        # Version
+        { 1.0.0 }
+        # Author
+        { Test User }
+        # Status
+        { Testing inline blocks }
+    }
+
+    # Overview @overview
+    {
+        This document tests inline block parsing.
+
+        # Simple Inline Blocks @simple
+        {
+            # Name
+            { John Doe }
+
+            # Age
+            { 30 }
+
+            # Empty Block
+            { }
+        }
+
+        # Multi-line Blocks Still Work @multiline
+        {
+            # Description
+            {
+                This is a multi-line block.
+                It can contain multiple paragraphs.
+
+                And it still works as expected.
+            }
+        }
+
+        # Nested Structures @nested
+        {
+            {[.]
+                - Item with inline block { some data }
+                - Another item { more data }
+            }
+        }
+    }
+}

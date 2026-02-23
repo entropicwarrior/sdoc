@@ -1,0 +1,145 @@
+# SDOC Project Status @sdoc-status
+{
+    # Meta @meta
+    {
+        type: doc
+    }
+
+    # About @about
+    {
+        Current state of the SDOC project. Tracks what is completed, what
+        is in progress, and what is next. Read this first when starting a
+        new task.
+    }
+
+    # Current State @current-state
+    {
+        SDOC is in early active development. The v0.1 spec is drafted, a working parser and HTML renderer exist, and a VSCode extension provides live preview. The format is being used internally for project documentation (including this file).
+
+        The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable (@r10).
+    }
+
+    # Completed @completed
+    {
+        # Spec and Documentation
+        {
+            - [x] v0.1 spec drafted (specification.sdoc)
+            - [x] Abstract requirements defined (requirements.sdoc, R1-R10)
+            - [x] Concrete requirements defined (requirements.sdoc, C1-C5)
+            - [x] Feature suggestions documented (suggestions.sdoc, S2-S9)
+            - [x] Project folder separated from user docs
+            - [x] Lexica knowledge system designed (see lexica-common repo for design docs)
+            - [x] AGENTS.md with project structure and Lexica conventions
+        }
+
+        # Parser and Renderer
+        {
+            - [x] Line-based parser (src/sdoc.js) with LineCursor pattern and error collection
+            - [x] Parsed AST output (parseSdoc, extractMeta)
+            - [x] HTML renderer (renderHtmlDocument, renderHtmlDocumentFromParsed)
+            - [x] Parser extensions for Lexica: slugify, listSections, extractSection, extractAbout
+            - [x] Enhanced extractMeta with uuid, type, tags promotion
+            - [x] Inline formatting: emphasis, strong, strikethrough, code, links, images, references
+            - [x] Explicit lists ({[.]} and {[#]})
+            - [x] Implicit lists (shorthand "- " lines inside normal scopes)
+            - [x] Task lists (checkboxes)
+            - [x] Tables ({[table]} with pipe-delimited columns)
+            - [x] Blockquotes
+            - [x] Code blocks with language tags
+            - [x] Horizontal rules
+            - [x] Escaping
+            - [x] Headingless scopes (bare { } blocks for grouping without a title)
+            - [x] K&R brace style (opening brace on same line as heading or list item)
+            - [x] Braceless leaf scopes (heading without braces, terminated by next heading or EOF)
+            - [x] Implicit root scope (first braceless heading wraps entire document)
+            - [x] Key:value meta syntax (lightweight alternative to sub-scopes in @meta)
+            - [x] Multi-line list item shorthand (continuation lines in explicit list blocks)
+            - [x] Scope indentation (visual nesting via CSS padding)
+            - [x] Print support (@media print CSS overrides)
+        }
+
+        # Tooling
+        {
+            - [x] VSCode extension with live preview (sdoc.preview, sdoc.previewToSide)
+            - [x] Hierarchical config system (sdoc.config.json merging)
+            - [x] Per-file meta scope overrides (@meta for style, header, footer)
+            - [x] TextMate syntax highlighting grammar (syntaxes/sdoc.tmLanguage.json)
+            - [x] Local and remote image rendering in webview preview
+            - [x] Document server: Python CLI (tools/serve_docs.py) with argparse
+            - [x] Document server: VSCode command (sdoc.browseDocs) with folder picker and status bar
+            - [x] Web viewer with sidebar, search, split-pane comparison, collapsible scopes
+            - [x] Site template deduplication (src/site-template/ shared by both servers)
+            - [x] VSIX packaging for extension distribution
+            - [x] Language registration (.sdoc file type recognition in VSCode)
+            - [x] Interactive preview: click-to-navigate (click element to jump to source line)
+            - [x] Interactive preview: collapsible scopes (toggle triangles on headings, persistent state)
+            - [x] Interactive preview: inline text editing (edit paragraphs directly in preview)
+            - [x] Parser line tracking (lineStart/lineEnd on all AST nodes)
+            - [x] Export HTML (sdoc.exportHtml) -- standalone HTML with collapsible toggles
+            - [x] Open in Browser (sdoc.openInBrowser) -- preview in system browser
+            - [x] Document formatter (Format Document / Shift+Option+F) -- auto-indent based on brace depth
+            - [x] AI skill reference tool (sdoc_reference) -- returns SDOC format guide to language models with reading guidance preamble
+            - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
+            - [x] Generate About command (sdoc.generateAbout) -- uses VS Code LM API to generate @about section from document content
+        }
+
+        # Repository
+        {
+            - [x] .gitignore covers node_modules/, dist/, _sdoc_site/, .DS_Store
+            - [x] @vscode/vsce moved from dependencies to devDependencies
+            - [x] All knowledge files in lexica/ folder
+            - [x] User docs in docs/ folder (guide, reference, tutorials)
+            - [x] Project knowledge in lexica/ folder (Lexica convention)
+            - [x] Build artifacts (VSIX) output to dist/
+            - [x] Example files in examples/, test files in test/
+            - [x] Generated _sdoc_site/ directory gitignored
+        }
+    }
+
+    # In Progress @in-progress
+    {
+        # Auto-Sync GitHub Action @auto-sync
+        {
+            The workflow file is written (\`.github/workflows/sync-to-lexica-common.yml\`)
+            but needs a \`LEXICA_COMMON_PAT\` secret in the sdoc repo before it
+            will work. An org owner at irreversible-tech must approve the
+            fine-grained token request first. See \`lexica-plan.sdoc\` in the
+            lexica-common repo (\@deferred-publishing) for the full steps.
+        }
+
+        Lexica Phases 1-3 are complete. Lexica design docs have moved to the
+        lexica-common repo. See sdoc-plan.sdoc for the SDOC-specific roadmap.
+    }
+
+    # Next Up @next-up
+    {
+        These are agreed tasks ready to be picked up, not a full backlog.
+
+        # Parser Improvements
+        {
+            - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See @c1.
+            - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See @c2.
+        }
+
+        # Extension Improvements
+        {
+            - [ ] Preview should auto-update when switching active editor tabs (currently requires re-running the preview command)
+        }
+
+        # High-Priority Spec Additions
+        {
+            These are the suggestions most needed to make SDOC viable across all three use cases. See suggestions.sdoc for full details.
+
+            - [ ] Document metadata (@s2) -- key:value meta is implemented; remaining work is defining canonical well-known keys and exposing `meta.properties` to downstream consumers
+            - [ ] Comments (@s3) -- currently an open question in the spec
+            - [ ] Semantic scope types (@s4) -- type annotations on scopes for AI agent consumption
+        }
+
+        # Export Pipeline
+        {
+            - [ ] SDOC to Google Docs export (for collaboration with non-technical people)
+            - [ ] SDOC to DOCX export
+            - [ ] Simple Google Docs / DOCX to SDOC import (for round-tripping simple documents)
+        }
+    }
+}

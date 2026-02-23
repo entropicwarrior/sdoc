@@ -1,0 +1,131 @@
+# JavaScript API Reference
+{
+    The SDOC parser and renderer are in `src/sdoc.js`. All functions are exported via CommonJS.
+
+    # parseSdoc(text)
+    {
+        Parses an SDOC string into an AST.
+
+        ```javascript
+const { parseSdoc } = require("./src/sdoc");
+const { nodes, errors } = parseSdoc(sdocText);
+        ```
+
+        {[.]
+            - `text` -- the SDOC source string
+            - Returns `{ nodes, errors }` where `nodes` is an array of AST nodes and `errors` is an array of `{ message, line }` objects
+        }
+    }
+
+    # extractMeta(nodes)
+    {
+        Extracts the `@meta` scope from parsed nodes and returns the remaining body nodes.
+
+        ```javascript
+const { parseSdoc, extractMeta } = require("./src/sdoc");
+const parsed = parseSdoc(text);
+const { nodes, meta } = extractMeta(parsed.nodes);
+        ```
+
+        {[.]
+            - `nodes` -- the AST node array from `parseSdoc`
+            - Returns `{ nodes, meta }` where `meta` contains `stylePath`, `styleAppendPath`, `headerNodes`, `footerNodes`, `headerText`, `footerText`, and `properties`
+            - `headerText` and `footerText` are set by key:value meta syntax (e.g., `header: My Header`)
+            - `properties` is an object of arbitrary key:value pairs from the meta scope (e.g., `author`, `date`, `version`)
+        }
+    }
+
+    # renderHtmlDocument(text, title, options)
+    {
+        Parses and renders a complete HTML page from SDOC source.
+
+        ```javascript
+const { renderHtmlDocument } = require("./src/sdoc");
+const html = renderHtmlDocument(sdocText, "Page Title", {
+    config: { header: "My Header", footer: "My Footer" },
+    cssOverride: customCssString,
+    cssAppend: additionalCssString
+});
+        ```
+
+        {[.]
+            - `text` -- SDOC source string
+            - `title` -- HTML page title
+            - `options.config` -- object with `header` and `footer` strings
+            - `options.cssOverride` -- replaces the default stylesheet
+            - `options.cssAppend` -- appended after the base stylesheet
+            - Automatically extracts and applies `@meta` scope settings
+        }
+    }
+
+    # renderHtmlDocumentFromParsed(parsed, title, options)
+    {
+        Renders a complete HTML page from pre-parsed data. Use this when you need to parse and extract meta separately.
+
+        ```javascript
+const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed } = require("./src/sdoc");
+const parsed = parseSdoc(text);
+const metaResult = extractMeta(parsed.nodes);
+const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Page Title",
+    { meta: metaResult.meta }
+);
+        ```
+    }
+
+    # renderFragment(nodes, depth)
+    {
+        Renders an array of AST nodes to an HTML fragment (no `<html>` wrapper).
+
+        ```javascript
+const { parseSdoc, renderFragment } = require("./src/sdoc");
+const { nodes } = parseSdoc(text);
+const html = renderFragment(nodes, 2);
+        ```
+
+        {[.]
+            - `nodes` -- array of AST nodes
+            - `depth` -- starting heading depth (default: 2)
+        }
+    }
+
+    # renderTextParagraphs(text)
+    {
+        Renders a plain text string as HTML paragraphs with inline formatting. Used internally for header/footer rendering from config values.
+    }
+
+    # formatSdoc(text, indentStr)
+    {
+        Reformats an SDOC string by adjusting indentation based on brace depth. Structure is not changed -- only whitespace is modified.
+
+        ```javascript
+const { formatSdoc } = require("./src/sdoc");
+const formatted = formatSdoc(sdocText, "    ");
+        ```
+
+        {[.]
+            - `text` -- the SDOC source string
+            - `indentStr` -- the string to use for each indentation level (default: four spaces)
+            - Returns the reformatted string
+            - Code block content is passed through raw
+            - Inline blocks (`{ content }`) are kept on one line
+            - K&R style lines (heading ending with opener) are handled correctly
+        }
+    }
+
+    # AST Node Types
+    {
+        The parser produces these node types:
+
+        {[.]
+            - `scope` -- a section with `title`, `id`, `children`, `hasHeading`, and optional `task`
+            - `paragraph` -- a text block with `text`
+            - `list` -- a list with `listType` (`"bullet"` or `"number"`) and `items`
+            - `blockquote` -- a quote with `paragraphs` (array of strings)
+            - `table` -- a table with `headers` (array of strings) and `rows` (array of string arrays)
+            - `code` -- a code block with `lang` and `text`
+            - `hr` -- a horizontal rule
+        }
+    }
+}

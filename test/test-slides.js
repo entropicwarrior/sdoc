@@ -1,0 +1,626 @@
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const { parseSdoc, extractMeta } = require("../src/sdoc.js");
+const { renderSlides, renderSlide, renderNode, renderInline } = require("../src/slide-renderer.js");
+
+let pass = 0, fail = 0;
+const asyncTests = [];
+function test(name, fn) {
+  try {
+    const result = fn();
+    if (result && typeof result.then === "function") {
+      asyncTests.push(result.then(
+        () => { pass++; console.log("  PASS: " + name); },
+        (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
+      ));
+    } else {
+      pass++; console.log("  PASS: " + name);
+    }
+  } catch (e) {
+    fail++; console.log("  FAIL: " + name + " — " + e.message);
+  }
+}
+function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
+
+function parseAndRender(sdoc, options = {}) {
+  const parsed = parseSdoc(sdoc);
+  assert(parsed.errors.length === 0, "parse errors: " + parsed.errors.map(e => e.message).join(", "));
+  const { nodes, meta } = extractMeta(parsed.nodes);
+  return renderSlides(nodes, { meta, ...options });
+}
+
+function parseSlides(sdoc) {
+  const parsed = parseSdoc(sdoc);
+  const { nodes, meta } = extractMeta(parsed.nodes);
+  return { nodes, meta };
+}
+
+// ============================================================
+console.log("--- Basic slide generation ---");
+
+test("single slide", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Hello World {
+        This is a slide.
+    }
+}
+`);
+  assert(html.includes('<div class="slide">'), "should have slide div");
+  assert(html.includes("<h2>Hello World</h2>"), "should have slide title");
+  assert(html.includes("<p>This is a slide.</p>"), "should have paragraph");
+});
+
+test("multiple slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide One {
+        First slide.
+    }
+    # Slide Two {
+        Second slide.
+    }
+}
+`);
+  const slideCount = (html.match(/<div class="slide">/g) || []).length;
+  assert(slideCount === 2, "should have 2 slides, got " + slideCount);
+  assert(html.includes("<h2>Slide One</h2>"), "should have first title");
+  assert(html.includes("<h2>Slide Two</h2>"), "should have second title");
+});
+
+test("slide with @id", () => {
+  const html = parseAndRender(`
+# Deck {
+    # My Slide @my-slide {
+        Content.
+    }
+}
+`);
+  assert(html.includes('id="my-slide"'), "should have id attribute");
+});
+
+// ============================================================
+console.log("\n--- Meta extraction ---");
+
+test("title from meta", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        title: My Presentation
+    }
+    # Slide {
+        Hello.
+    }
+}
+`);
+  assert(html.includes("<title>My Presentation</title>"), "should use title from meta");
+});
+
+test("meta scope is excluded from slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+    }
+    # Slide {
+        Hello.
+    }
+}
+`);
+  const slideCount = (html.match(/<div class="slide">/g) || []).length;
+  assert(slideCount === 1, "meta should not become a slide, got " + slideCount);
+});
+
+test("title falls back to document scope title", () => {
+  const html = parseAndRender(`
+# My Deck Title {
+    # Slide {
+        Hello.
+    }
+}
+`);
+  assert(html.includes("<title>My Deck Title</title>"), "should fall back to doc title");
+});
+
+// ============================================================
+console.log("\n--- Layouts ---");
+
+test("center layout", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Centered Slide {
+        config: center
+
+        Some centered content.
+    }
+}
+`);
+  assert(html.includes('class="slide center"'), "should have center class");
+  assert(!html.includes("config:"), "config line should be stripped from content");
+  assert(html.includes("<p>Some centered content.</p>"), "content should still render");
+});
+
+test("two-column layout", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Comparison {
+        config: two-column
+
+        # Left {
+            Left content.
+        }
+        # Right {
+            Right content.
+        }
+    }
+}
+`);
+  assert(html.includes('class="slide two-column"'), "should have two-column class");
+  assert(html.includes('class="columns"'), "should have columns container");
+  assert(html.includes('class="column"'), "should have column divs");
+  assert(html.includes("<h3>Left</h3>"), "should have column headings");
+  assert(html.includes("<p>Left content.</p>"), "left column content");
+  assert(html.includes("<p>Right content.</p>"), "right column content");
+});
+
+test("default layout (no config)", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Plain Slide {
+        Just text.
+    }
+}
+`);
+  assert(html.includes('class="slide"'), "should have plain slide class");
+  assert(!html.includes('class="slide center"'), "should not have center class on slide");
+  assert(!html.includes('class="slide two-column"'), "should not have two-column class on slide");
+});
+
+// ============================================================
+console.log("\n--- Speaker notes ---");
+
+test("notes scope becomes hidden aside", () => {
+  const html = parseAndRender(`
+# Deck {
+    # My Slide {
+        Visible content.
+
+        # Speaker Notes @notes {
+            These are my notes.
+        }
+    }
+}
+`);
+  assert(html.includes('<aside class="notes">'), "should have notes aside");
+  assert(html.includes("These are my notes."), "notes content should be present");
+  assert(html.includes("<p>Visible content.</p>"), "slide content should be present");
+});
+
+test("notes are separated from content", () => {
+  const html = parseAndRender(`
+# Deck {
+    # My Slide {
+        Content.
+
+        # Notes @notes {
+            Secret notes.
+        }
+    }
+}
+`);
+  // Notes should not appear inside the main slide content flow
+  const slideDiv = html.match(/<div class="slide">([\s\S]*?)<\/div>/);
+  assert(slideDiv, "should have slide div");
+  assert(slideDiv[1].includes("Content."), "content in slide");
+  assert(slideDiv[1].includes('<aside class="notes">'), "notes in slide as aside");
+});
+
+// ============================================================
+console.log("\n--- Content rendering ---");
+
+test("bullet list", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Lists {
+        {[.]
+            - First item
+            - Second item
+        }
+    }
+}
+`);
+  assert(html.includes("<ul>"), "should have ul");
+  assert(html.includes("<li>First item</li>"), "should have first item");
+  assert(html.includes("<li>Second item</li>"), "should have second item");
+});
+
+test("numbered list", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Lists {
+        {[#]
+            - Step one
+            - Step two
+        }
+    }
+}
+`);
+  assert(html.includes("<ol>"), "should have ol");
+});
+
+test("table", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Data {
+        {[table]
+            Name | Value
+            Alice | 30
+            Bob | 25
+        }
+    }
+}
+`);
+  assert(html.includes("<table>"), "should have table");
+  assert(html.includes("<th>Name</th>"), "should have header");
+  assert(html.includes("<td>Alice</td>"), "should have cell");
+});
+
+test("code block", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Code {
+        \`\`\`js
+        const x = 42;
+        \`\`\`
+    }
+}
+`);
+  assert(html.includes("<pre>"), "should have pre");
+  assert(html.includes('class="language-js"'), "should have language class");
+  assert(html.includes("const x = 42;"), "should have code content");
+});
+
+test("blockquote", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Quote {
+        > The documentation is the product.
+    }
+}
+`);
+  assert(html.includes("<blockquote>"), "should have blockquote");
+  assert(html.includes("The documentation is the product."), "should have quote text");
+});
+
+test("inline formatting", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Formatting {
+        This has **bold** and *italic* and \`code\` and ~~strike~~.
+    }
+}
+`);
+  assert(html.includes("<strong>bold</strong>"), "should have bold");
+  assert(html.includes("<em>italic</em>"), "should have italic");
+  assert(html.includes("<code>code</code>"), "should have inline code");
+  assert(html.includes("<del>strike</del>"), "should have strikethrough");
+});
+
+test("links", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Links {
+        Visit [Example](https://example.com) for more.
+    }
+}
+`);
+  assert(html.includes('href="https://example.com"'), "should have link href");
+  assert(html.includes(">Example</a>"), "should have link text");
+});
+
+test("images", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Images {
+        ![Logo](logo.png)
+    }
+}
+`);
+  assert(html.includes('src="logo.png"'), "should have image src");
+  assert(html.includes('alt="Logo"'), "should have image alt");
+});
+
+// ============================================================
+console.log("\n--- Theme injection ---");
+
+test("theme CSS is inlined", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide {
+        Hello.
+    }
+}
+`, { themeCss: "body { color: red; }" });
+  assert(html.includes("body { color: red; }"), "should inline CSS");
+  assert(html.includes("<style>"), "should have style tag");
+});
+
+test("theme JS is inlined", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide {
+        Hello.
+    }
+}
+`, { themeJs: "console.log('loaded');" });
+  assert(html.includes("console.log('loaded');"), "should inline JS");
+  assert(html.includes("<script>"), "should have script tag");
+});
+
+// ============================================================
+console.log("\n--- HTML document structure ---");
+
+test("produces valid HTML document", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide {
+        Hello.
+    }
+}
+`);
+  assert(html.includes("<!DOCTYPE html>"), "should have doctype");
+  assert(html.includes("<html lang=\"en\">"), "should have html tag");
+  assert(html.includes("<head>"), "should have head");
+  assert(html.includes("<body>"), "should have body");
+  assert(html.includes("</html>"), "should close html");
+});
+
+test("includes slide footer with nav indicators", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide {
+        Hello.
+    }
+}
+`);
+  assert(html.includes('class="slide-footer"'), "should have slide footer");
+  assert(html.includes('class="nav-prev"'), "should have nav-prev");
+  assert(html.includes('class="nav-next"'), "should have nav-next");
+});
+
+// ============================================================
+console.log("\n--- Edge cases ---");
+
+test("nested scope inside slide", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Main Slide {
+        Intro.
+
+        # Sub Section {
+            Detail.
+        }
+    }
+}
+`);
+  assert(html.includes("<section>"), "nested scope should render as section");
+  assert(html.includes("<h3>Sub Section</h3>"), "nested scope heading");
+  assert(html.includes("<p>Detail.</p>"), "nested scope content");
+});
+
+test("empty slide", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Empty Slide {
+    }
+}
+`);
+  assert(html.includes('<div class="slide">'), "should still render slide");
+  assert(html.includes("<h2>Empty Slide</h2>"), "should still have title");
+});
+
+test("config line with extra whitespace", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide {
+        config:   center
+
+        Content.
+    }
+}
+`);
+  assert(html.includes('class="slide center"'), "should handle whitespace in config");
+});
+
+// ============================================================
+console.log("\n--- PDF export ---");
+
+test("rendered slides include print styles", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("@media print"), "should have @media print block");
+  assert(html.includes("page-break-after"), "should have page-break rules");
+  assert(html.includes("display: flex !important"), "should force slides visible in print");
+});
+
+test("findChrome returns a string or null", () => {
+  const { findChrome } = require("../src/slide-pdf");
+  const result = findChrome();
+  assert(result === null || typeof result === "string", "should return string or null");
+  if (result) {
+    assert(fs.existsSync(result), "returned path should exist: " + result);
+  }
+});
+
+test("exportPdf produces a file (integration)", async () => {
+  const { exportPdf, findChrome } = require("../src/slide-pdf");
+  if (!findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+
+  const themeCss = fs.readFileSync(
+    path.join(__dirname, "..", "themes", "default", "theme.css"), "utf-8"
+  );
+  const html = parseAndRender(`
+# Deck {
+    # Slide 1 { Hello. }
+    # Slide 2 { World. }
+}
+`, { themeCss });
+
+  const tmpHtml = path.join(os.tmpdir(), "test-slides-" + Date.now() + ".html");
+  const tmpPdf = tmpHtml.replace(".html", ".pdf");
+
+  fs.writeFileSync(tmpHtml, html, "utf-8");
+  try {
+    await exportPdf(tmpHtml, tmpPdf);
+    assert(fs.existsSync(tmpPdf), "PDF file should exist");
+    const stat = fs.statSync(tmpPdf);
+    assert(stat.size > 0, "PDF should not be empty");
+  } finally {
+    try { fs.unlinkSync(tmpHtml); } catch {}
+    try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+});
+
+// ============================================================
+console.log("\n--- Company and confidential ---");
+
+test("company meta renders footer on slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        company: Irreversible Inc.
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("sdoc-company-footer"), "should have company footer");
+  assert(html.includes("Irreversible Inc."), "should have company name");
+});
+
+test("confidential: true with company renders notice", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        company: Irreversible Inc.
+
+        confidential: true
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("sdoc-confidential-notice"), "should have confidential notice");
+  assert(html.includes("CONFIDENTIAL"), "should say CONFIDENTIAL");
+  assert(html.includes("Irreversible Inc."), "should include company name");
+});
+
+test("confidential with explicit entity overrides company", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        company: Irreversible Inc.
+
+        confidential: Acme Corp
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("Acme Corp"), "should use explicit entity");
+  assert(!html.includes("sdoc-confidential-notice\">CONFIDENTIAL \u2014 Irreversible"), "should not use company");
+});
+
+test("confidential: true without company renders plain notice", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+
+        confidential: true
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("sdoc-confidential-notice"), "should have notice");
+  assert(html.includes(">CONFIDENTIAL</span>"), "should be plain CONFIDENTIAL");
+});
+
+test("no company or confidential produces no extra elements", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Meta @meta {
+        type: slides
+    }
+    # Slide { Hello. }
+}
+`);
+  assert(!html.includes('<span class="sdoc-company-footer">'), "no company footer element");
+  assert(!html.includes('<span class="sdoc-confidential-notice">'), "no confidential notice element");
+});
+
+// ============================================================
+console.log("\n--- Mermaid diagrams ---");
+
+test("mermaid code block in slide renders as pre.mermaid", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Architecture {
+        \`\`\`mermaid
+        graph LR
+          A --> B
+        \`\`\`
+    }
+}
+`);
+  assert(html.includes('<pre class="mermaid">'), "should have pre.mermaid");
+  assert(html.includes("graph LR"), "should have diagram content");
+  assert(!html.includes('language-mermaid'), "should not use language-mermaid");
+});
+
+test("mermaid blocks in slides trigger CDN script", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Diagram {
+        \`\`\`mermaid
+        graph TD
+          X --> Y
+        \`\`\`
+    }
+}
+`);
+  assert(html.includes("cdn.jsdelivr.net"), "should include CDN URL");
+});
+
+test("slides without mermaid have no mermaid script", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Code {
+        \`\`\`python
+        print("hello")
+        \`\`\`
+    }
+}
+`);
+  assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+});
+
+// ============================================================
+// Summary — wait for async tests before reporting
+Promise.all(asyncTests).then(() => {
+  console.log("\n" + "=".repeat(40));
+  console.log(`Results: ${pass} passed, ${fail} failed`);
+  process.exit(fail > 0 ? 1 : 0);
+});

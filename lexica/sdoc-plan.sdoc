@@ -1,0 +1,120 @@
+# SDOC Plan @sdoc-plan
+{
+    # Meta @meta
+    {
+        type: doc
+    }
+
+    # About @about
+    {
+        Roadmap for the SDOC format and tooling. Covers parser improvements,
+        spec additions, export pipeline, and extension enhancements. Read
+        before proposing new features or picking up work. See status.sdoc
+        for what is already completed.
+    }
+
+    # Parser Improvements @parser
+    {
+        # Enforce Single Root Scope @single-root
+        {
+            Priority: Medium
+
+            The grammar says \`document = scope\` but the parser currently allows
+            multiple top-level scopes without warning. Should warn on violation.
+            See \@c1 in requirements.sdoc.
+        }
+
+        # Decouple Rendering from AST @renderer-separation
+        {
+            Priority: Medium
+
+            Current renderer functions are HTML-centric. Need format-neutral AST
+            consumption with separate renderer modules (HTML, DOCX, PDF, Google
+            Docs). See \@c2 in requirements.sdoc.
+        }
+    }
+
+    # Spec Additions @spec-additions
+    {
+        These are the highest-priority additions to the SDOC spec. See
+        suggestions.sdoc for full details on each.
+
+        # Document Metadata (\@s2) @metadata
+        {
+            Priority: High (partially done)
+
+            Key:value meta syntax is implemented. Remaining work: define canonical
+            well-known keys and expose \`meta.properties\` consistently to downstream
+            consumers (renderers, AI agents, search indices).
+        }
+
+        # Comments (\@s3) @comments
+        {
+            Priority: High
+
+            Currently an open question in the spec. Line comments (\`//\`) and/or
+            comment scopes (\`@comment\`) for annotations, TODOs, and AI agent
+            instructions that should not render.
+        }
+
+        # Semantic Scope Types (\@s4) @scope-types
+        {
+            Priority: High
+
+            Type annotations on scopes (e.g., \`:requirement\`, \`:test\`,
+            \`:warning\`) so agents can filter and navigate by semantic meaning.
+        }
+
+        # Cross-File References (\@s5) @cross-refs
+        {
+            Priority: Medium
+
+            Syntax for referencing scopes in other files, e.g.,
+            \`@guide/intro#overview\`. Currently \@id is per-file only.
+        }
+
+        # Definition Lists (\@s7) @def-lists
+        {
+            Priority: Medium
+
+            \`{[def]}\` list type for glossaries and technical specs.
+        }
+    }
+
+    # Export Pipeline @export
+    {
+        # Google Docs Export @gdocs-export
+        {
+            Priority: High
+
+            SDOC to Google Docs for collaboration with non-technical people.
+            Essential for the organisational documentation use case.
+        }
+
+        # DOCX Export @docx-export
+        {
+            Priority: Medium
+
+            SDOC to DOCX for offline sharing and legal/formal documents.
+        }
+
+        # Import (Round-Trip) @import
+        {
+            Priority: Low
+
+            Simple Google Docs / DOCX to SDOC import for round-tripping.
+            Perfect fidelity not required — structural intent should survive.
+        }
+    }
+
+    # Extension Improvements @extension
+    {
+        # Auto-Update Preview on Tab Switch @preview-tab-switch
+        {
+            Priority: Low
+
+            Preview should auto-update when switching active editor tabs.
+            Currently requires re-running the preview command.
+        }
+    }
+}

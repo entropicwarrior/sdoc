@@ -1,0 +1,163 @@
+/* SDOC Slides — Default Theme */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: #fff;
+  color: #1a1a1a;
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* --- Slide layout --- */
+
+.slide {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  padding: 60px 100px;
+  height: 100vh;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.slide.active { display: flex; }
+
+/* Center layout */
+.slide.center {
+  align-items: center;
+  text-align: center;
+}
+
+/* Two-column layout */
+.columns {
+  display: flex;
+  gap: 50px;
+  align-items: flex-start;
+  margin-top: 1em;
+}
+
+.columns > .column { flex: 1; }
+
+/* --- Typography --- */
+
+h1 {
+  font-size: 2.8em;
+  font-weight: 700;
+  margin-bottom: 0.4em;
+  color: #111;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 2em;
+  font-weight: 700;
+  margin-bottom: 0.6em;
+  color: #111;
+}
+
+h3 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin-bottom: 0.4em;
+  color: #333;
+}
+
+p, li {
+  font-size: 1.25em;
+  line-height: 1.6;
+  color: #333;
+}
+
+p + p { margin-top: 0.8em; }
+
+/* --- Lists --- */
+
+ul, ol {
+  margin: 0.5em 0 0.5em 1.5em;
+}
+
+li { margin-bottom: 0.4em; }
+
+/* --- Tables --- */
+
+table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 1.05em;
+  width: 100%;
+}
+
+th, td {
+  text-align: left;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+th {
+  font-weight: 600;
+  color: #555;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* --- Code --- */
+
+pre {
+  background: #f4f5f7;
+  border: 1px solid #e1e4e8;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  font-size: 0.78em;
+  line-height: 1.5;
+}
+
+code {
+  font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+pre code { font-size: 1em; }
+
+p code, li code {
+  background: #f4f5f7;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* --- Blockquotes --- */
+
+blockquote {
+  border-left: 4px solid #2563eb;
+  padding-left: 20px;
+  margin: 1em 0;
+  font-style: italic;
+  color: #444;
+}
+
+blockquote p {
+  font-size: 1.4em;
+  color: #444;
+}
+
+/* --- Images --- */
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* --- Speaker notes (hidden by default) --- */
+
+.notes {
+  display: none;
+}
+
+
+/* Print / PDF styles are injected by the renderer (slide-renderer.js)
+   so they work with every theme, not just this one. */

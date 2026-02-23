@@ -1,0 +1,30 @@
+# Edge Case Tests @edge-cases
+{
+    # Empty Inline Block @empty
+    { }
+
+    # Whitespace Only @whitespace
+    {     }
+
+    # Special Characters @special
+    { Value with * and ** and `code` }
+
+    # Numbers and Decimals @numbers
+    { 3.14159 }
+
+    # With Inline Formatting @formatting
+    { This has *emphasis* and **strong** text }
+
+    # With References @refs
+    { See @overview for details }
+
+    # With Escaped Characters @escaped
+    { Use \{ and \} for literal braces }
+
+    # Multi-line Still Works @multiline
+    {
+        This is
+        a multi-line
+        block
+    }
+}
