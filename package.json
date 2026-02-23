@@ -1,8 +1,8 @@
 {
   "name": "sdoc",
   "displayName": "SDOC",
-  "description": "Preview SDOC files.",
-  "version": "0.0.35",
+  "description": "A plain-text documentation format with explicit brace scoping — deterministic parsing, AI-agent efficiency, and 10-50x token savings vs Markdown.",
+  "version": "0.1.0",
   "publisher": "entropicwarrior",
   "license": "MIT",
   "repository": {
