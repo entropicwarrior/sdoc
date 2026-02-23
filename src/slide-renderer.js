@@ -235,22 +235,23 @@ function renderSlides(nodes, options = {}) {
   // Filter to scope nodes only (skip stray paragraphs at top level)
   const slides = slideScopes.filter((n) => n.type === "scope");
 
-  // Build per-slide overlay (company + confidential) embedded inside each slide
-  const overlayParts = [];
-  if (meta.company) {
-    overlayParts.push(`<div class="sdoc-company-footer">${escapeHtml(meta.company)}</div>`);
-  }
+  // Build per-slide footer: <  CONFIDENTIAL  ---gap---  Company  >
+  const footerParts = [];
+  footerParts.push(`<span class="nav-prev">&lsaquo;</span>`);
   if (meta.confidential) {
     const val = meta.confidential.trim();
     const entity = val.toLowerCase() === "true" ? meta.company : val;
     const text = entity
       ? `CONFIDENTIAL \u2014 ${escapeHtml(entity)}`
       : "CONFIDENTIAL";
-    overlayParts.push(`<div class="sdoc-confidential-notice">${text}</div>`);
+    footerParts.push(`<span class="sdoc-confidential-notice">${text}</span>`);
   }
-  const overlayHtml = overlayParts.length
-    ? `\n<div class="slide-overlay">${overlayParts.join("\n")}</div>`
-    : "";
+  footerParts.push(`<span class="slide-footer-gap"></span>`);
+  if (meta.company) {
+    footerParts.push(`<span class="sdoc-company-footer">${escapeHtml(meta.company)}</span>`);
+  }
+  footerParts.push(`<span class="nav-next">&rsaquo;</span>`);
+  const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>`;
 
   const slidesHtml = slides
     .map((scope, index) => renderSlide(scope, index, overlayHtml))
@@ -262,17 +263,27 @@ function renderSlides(nodes, options = {}) {
   // Structural styles — always injected regardless of theme.
   const structuralCss = `
 .slide { position: relative; }
-.slide-overlay { position: absolute; bottom: 0; left: 0; right: 0; pointer-events: none; }
+.slide-footer {
+  position: absolute; bottom: 20px; left: 32px; right: 32px;
+  display: flex; align-items: baseline;
+  pointer-events: none;
+}
+.slide-footer-gap { flex: 1; }
+.nav-prev, .nav-next {
+  font-size: 1.4em; color: #ccc;
+  cursor: pointer; pointer-events: auto;
+  user-select: none;
+}
 .sdoc-company-footer {
-  position: absolute; bottom: 20px; left: 32px;
   font-size: 0.7em; color: rgba(0,0,0,0.35);
   letter-spacing: 0.04em;
+  margin-right: 0.8em;
 }
 .sdoc-confidential-notice {
-  text-align: center; padding: 5px 0;
   font-size: 0.65em; font-weight: 600;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: rgba(160, 40, 40, 0.6);
+  margin-left: 0.8em;
 }
 @media print {
   @page { size: 13.333in 7.5in; margin: 0; }
@@ -284,11 +295,11 @@ function renderSlides(nodes, options = {}) {
     page-break-inside: avoid; break-inside: avoid;
   }
   .slide:last-child { page-break-after: auto; break-after: auto; }
-  .controls { display: none; }
+  .nav-prev, .nav-next { display: none !important; }
   .notes { display: none; }
 }`;
 
-  const cssTag = `<style>\n${themeCss}\n${structuralCss}\n</style>`;
+  const cssTag = `<style>\n${structuralCss}\n${themeCss}\n</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
   const mermaidTag = slidesHtml.includes('class="mermaid"')
@@ -305,10 +316,6 @@ ${cssTag}
 </head>
 <body>
 ${slidesHtml}
-
-<div class="controls">
-  <span id="counter"></span>
-</div>
 
 ${jsTag}${mermaidTag}
 </body>

@@ -63,7 +63,7 @@ test("multiple slides", () => {
     }
 }
 `);
-  const slideCount = (html.match(/<div class="slide/g) || []).length;
+  const slideCount = (html.match(/<div class="slide">/g) || []).length;
   assert(slideCount === 2, "should have 2 slides, got " + slideCount);
   assert(html.includes("<h2>Slide One</h2>"), "should have first title");
   assert(html.includes("<h2>Slide Two</h2>"), "should have second title");
@@ -110,7 +110,7 @@ test("meta scope is excluded from slides", () => {
     }
 }
 `);
-  const slideCount = (html.match(/<div class="slide/g) || []).length;
+  const slideCount = (html.match(/<div class="slide">/g) || []).length;
   assert(slideCount === 1, "meta should not become a slide, got " + slideCount);
 });
 
@@ -378,7 +378,7 @@ test("produces valid HTML document", () => {
   assert(html.includes("</html>"), "should close html");
 });
 
-test("includes controls div", () => {
+test("includes slide footer with nav indicators", () => {
   const html = parseAndRender(`
 # Deck {
     # Slide {
@@ -386,8 +386,9 @@ test("includes controls div", () => {
     }
 }
 `);
-  assert(html.includes('class="controls"'), "should have controls");
-  assert(html.includes('id="counter"'), "should have counter");
+  assert(html.includes('class="slide-footer"'), "should have slide footer");
+  assert(html.includes('class="nav-prev"'), "should have nav-prev");
+  assert(html.includes('class="nav-next"'), "should have nav-next");
 });
 
 // ============================================================
@@ -554,7 +555,7 @@ test("confidential: true without company renders plain notice", () => {
 }
 `);
   assert(html.includes("sdoc-confidential-notice"), "should have notice");
-  assert(html.includes(">CONFIDENTIAL</"), "should be plain CONFIDENTIAL");
+  assert(html.includes(">CONFIDENTIAL</span>"), "should be plain CONFIDENTIAL");
 });
 
 test("no company or confidential produces no extra elements", () => {
@@ -566,8 +567,8 @@ test("no company or confidential produces no extra elements", () => {
     # Slide { Hello. }
 }
 `);
-  assert(!html.includes('<div class="sdoc-company-footer">'), "no company footer element");
-  assert(!html.includes('<div class="sdoc-confidential-notice">'), "no confidential notice element");
+  assert(!html.includes('<span class="sdoc-company-footer">'), "no company footer element");
+  assert(!html.includes('<span class="sdoc-confidential-notice">'), "no confidential notice element");
 });
 
 // ============================================================

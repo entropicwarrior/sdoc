@@ -158,16 +158,6 @@ img {
   display: none;
 }
 
-/* --- Slide counter --- */
-
-.controls {
-  position: fixed;
-  bottom: 24px;
-  right: 32px;
-  font-size: 0.85em;
-  color: #aaa;
-  user-select: none;
-}
 
 /* Print / PDF styles are injected by the renderer (slide-renderer.js)
    so they work with every theme, not just this one. */

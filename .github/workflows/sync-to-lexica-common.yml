@@ -52,13 +52,13 @@ jobs:
             -e 's|require("../src/sdoc")|require("../server/vendor/sdoc-parser.cjs")|' \
             -e 's|require("../src/slide-renderer")|require("../server/vendor/slide-renderer.cjs")|' \
             -e 's|require("../src/slide-pdf")|require("../server/vendor/slide-pdf.cjs")|' \
-            -e 's|"themes", "default"|"slides", "themes", "default"|' \
+            -e 's|"themes", "default"|"presentations", "themes", "default"|' \
             sdoc/tools/build-slides.js > lexica-common/tools/build-slides.cjs
 
           # Default theme
-          mkdir -p lexica-common/slides/themes/default
-          cp sdoc/themes/default/theme.css lexica-common/slides/themes/default/theme.css
-          cp sdoc/themes/default/theme.js lexica-common/slides/themes/default/theme.js
+          mkdir -p lexica-common/presentations/themes/default
+          cp sdoc/themes/default/theme.css lexica-common/presentations/themes/default/theme.css
+          cp sdoc/themes/default/theme.js lexica-common/presentations/themes/default/theme.js
 
           # Skill docs
           cp sdoc/lexica/sdoc-authoring.sdoc lexica-common/skills/skill-sdoc.sdoc
