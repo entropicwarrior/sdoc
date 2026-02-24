@@ -105,8 +105,6 @@ This project uses **Git Flow**:
 
 Release branches merge to both `main` and `develop`. No direct pushes to `main` or `develop`.
 
-**Auto-sync:** changes to the parser and skill files are automatically synced to a sibling repository via GitHub Actions. This only runs on the upstream repo — forks can ignore it.
-
 ## License
 
 [MIT](LICENSE) — 2026 Irreversible Inc.
