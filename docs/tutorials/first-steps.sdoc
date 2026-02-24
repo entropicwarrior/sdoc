@@ -103,8 +103,8 @@ Hello, this is my first SDOC document.
     # What's Next
     {
         {[.]
-            - Read the [Syntax Reference](#docs/reference/syntax.sdoc) for all available features
-            - Try the [Document Server](#docs/reference/cli.sdoc) to browse all your documents in a browser
+            - Read `docs/reference/syntax.sdoc` for all available features
+            - Read `docs/reference/cli.sdoc` for the document server and CLI tools
             - Look at `examples/example.sdoc` for a quick-reference document
         }
     }

@@ -102,7 +102,7 @@ This is a paragraph.
 
             Scopes nest to any depth. Inline formatting (`*bold*`, `` `code` ``, `[links](url)`, `@references`) works the same way as Markdown inside any scope.
 
-            See the [Syntax Reference](#docs/reference/syntax.sdoc) for the full list of features, or follow the [First Steps tutorial](#docs/tutorials/first-steps.sdoc) to try it hands-on.
+            See `reference/syntax.sdoc` for the full list of features, or follow `tutorials/first-steps.sdoc` to try it hands-on.
         }
     }
 }

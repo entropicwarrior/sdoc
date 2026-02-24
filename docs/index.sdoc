@@ -9,12 +9,14 @@
 
     # Quick Links
     {
-        - [Guide: Introduction](#docs/guide/intro.sdoc)
-        - [Guide: Setup](#docs/guide/setup.sdoc)
-        - [Tutorial: First Steps](#docs/tutorials/first-steps.sdoc)
-        - [Reference: Syntax](#docs/reference/syntax.sdoc)
-        - [Reference: API](#docs/reference/api.sdoc)
-        - [Reference: CLI](#docs/reference/cli.sdoc)
+        {[.]
+            - Guide: Introduction — `guide/intro.sdoc`
+            - Guide: Setup — `guide/setup.sdoc`
+            - Tutorial: First Steps — `tutorials/first-steps.sdoc`
+            - Reference: Syntax — `reference/syntax.sdoc`
+            - Reference: API — `reference/api.sdoc`
+            - Reference: CLI — `reference/cli.sdoc`
+        }
     }
 
     # Sections
