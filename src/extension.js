@@ -42,6 +42,12 @@ function activate(context) {
     showPreview(editor.document, vscode.ViewColumn.Beside);
   });
 
+  const previewFromExplorerCommand = vscode.commands.registerCommand("sdoc.previewFromExplorer", async (uri) => {
+    if (!uri) return;
+    const document = await vscode.workspace.openTextDocument(uri);
+    showPreview(document, vscode.ViewColumn.Active);
+  });
+
   const exportHtmlCommand = vscode.commands.registerCommand("sdoc.exportHtml", () => {
     exportHtml();
   });
@@ -292,7 +298,7 @@ function activate(context) {
     await vscode.workspace.applyEdit(editBuilder);
   });
 
-  context.subscriptions.push(previewCommand, previewToSideCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand, newKnowledgeFileCommand, generateAboutCommand);
+  context.subscriptions.push(previewCommand, previewToSideCommand, previewFromExplorerCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand, newKnowledgeFileCommand, generateAboutCommand);
 
   context.subscriptions.push(
     vscode.languages.registerDocumentSymbolProvider("sdoc", {
