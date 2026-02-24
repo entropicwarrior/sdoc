@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "A plain-text documentation format with explicit brace scoping — deterministic parsing, AI-agent efficiency, and 10-50x token savings vs Markdown.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "entropicwarrior",
   "license": "MIT",
   "repository": {
@@ -35,7 +35,8 @@
     "onCommand:sdoc.openInBrowser",
     "onCommand:sdoc.browseDocs",
     "onCommand:sdoc.newKnowledgeFile",
-    "onCommand:sdoc.generateAbout"
+    "onCommand:sdoc.generateAbout",
+    "onCommand:sdoc.previewFromExplorer"
   ],
   "scripts": {
     "package": "npx vsce package --out dist/"
@@ -92,6 +93,11 @@
       {
         "command": "sdoc.generateAbout",
         "title": "SDOC: Generate About"
+      },
+      {
+        "command": "sdoc.previewFromExplorer",
+        "title": "Open SDOC Preview",
+        "icon": "$(open-preview)"
       }
     ],
     "configurationDefaults": {
@@ -134,6 +140,11 @@
         }
       ],
       "explorer/context": [
+        {
+          "command": "sdoc.previewFromExplorer",
+          "when": "resourceExtname == .sdoc",
+          "group": "navigation"
+        },
         {
           "command": "sdoc.newKnowledgeFile",
           "group": "navigation"
