@@ -290,6 +290,9 @@ function renderSlides(nodes, options = {}) {
   body { overflow: visible; height: auto; }
   .slide {
     display: flex !important;
+    position: relative !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
     page-break-after: always; break-after: page;
     width: 100vw; height: 100vh; max-width: none;
     page-break-inside: avoid; break-inside: avoid;
