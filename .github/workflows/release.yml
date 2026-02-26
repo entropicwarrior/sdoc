@@ -20,7 +20,7 @@ jobs:
 
       - run: npm install
 
-      - run: npx vsce package --out dist/
+      - run: mkdir -p dist && npx vsce package --out dist/
 
       - name: Upload VSIX to release
         env:
