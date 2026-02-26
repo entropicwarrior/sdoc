@@ -14,8 +14,6 @@ vendor/
 themes/
 syntaxes/
 src/extension.js
-src/slide-renderer.js
-src/slide-pdf.js
 src/site-template/
 node_modules/
 *.vsix

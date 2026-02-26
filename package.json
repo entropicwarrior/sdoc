@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "A plain-text documentation format with explicit brace scoping — deterministic parsing, AI-agent efficiency, and 10-50x token savings vs Markdown.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "entropicwarrior",
   "license": "MIT",
   "repository": {
@@ -23,6 +23,8 @@
   ],
   "exports": {
     ".": "./index.js",
+    "./slides": "./src/slide-renderer.js",
+    "./slide-pdf": "./src/slide-pdf.js",
     "./notion": "./src/notion-renderer.js"
   },
   "engines": {
