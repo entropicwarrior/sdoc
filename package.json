@@ -21,6 +21,10 @@
     "preview",
     "ai-agent"
   ],
+  "exports": {
+    ".": "./index.js",
+    "./notion": "./src/notion-renderer.js"
+  },
   "engines": {
     "vscode": "^1.95.0"
   },
