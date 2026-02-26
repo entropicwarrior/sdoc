@@ -220,7 +220,8 @@ function renderSlides(nodes, options = {}) {
   const {
     meta = {},
     themeCss = "",
-    themeJs = ""
+    themeJs = "",
+    darkMode = false
   } = options;
 
   // The nodes from extractMeta have @meta already stripped.
@@ -302,11 +303,29 @@ function renderSlides(nodes, options = {}) {
   .notes { display: none; }
 }`;
 
-  const cssTag = `<style>\n${structuralCss}\n${themeCss}\n</style>`;
+  const darkCss = darkMode ? `
+/* Dark mode overrides */
+body { background: #1e1e1e; color: #d4d4d4; }
+h1, h2 { color: #e0e0e0; }
+h3 { color: #b0b0b0; }
+p, li { color: #b0b0b0; }
+th { color: #9d9d9d; }
+th, td { border-bottom-color: rgba(255, 255, 255, 0.1); }
+pre { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); }
+p code, li code { background: rgba(255, 255, 255, 0.08); }
+blockquote { border-left-color: #5b9bd5; color: #9d9d9d; }
+blockquote p { color: #9d9d9d; }
+.nav-prev, .nav-next { color: #555; }
+.sdoc-company-footer { color: rgba(255, 255, 255, 0.35); }
+.sdoc-confidential-notice { color: rgba(235, 120, 120, 0.7); }
+` : "";
+
+  const cssTag = `<style>\n${structuralCss}\n${themeCss}\n${darkCss}</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+  const mermaidTheme = darkMode ? "dark" : "neutral";
   const mermaidTag = slidesHtml.includes('class="mermaid"')
-    ? `\n<script src="${mermaidCdn}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
+    ? `\n<script src="${mermaidCdn}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"${mermaidTheme}",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
     : "";
 
   return `<!DOCTYPE html>

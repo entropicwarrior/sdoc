@@ -2,7 +2,7 @@
 // SDOC Slides — CLI tool
 //
 // Usage:
-//   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme] [--pdf]
+//   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme] [--pdf] [--dark]
 //
 // If -o is omitted, writes to input.html (or input.pdf with --pdf).
 // If --theme is omitted, uses the built-in default theme.
@@ -14,7 +14,7 @@ const { parseSdoc, extractMeta } = require("../src/sdoc");
 const { renderSlides } = require("../src/slide-renderer");
 
 function usage() {
-  console.error("Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme] [--pdf]");
+  console.error("Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme] [--pdf] [--dark]");
   process.exit(1);
 }
 
@@ -24,6 +24,7 @@ async function main() {
   let outputPath = null;
   let themePath = null;
   let pdfMode = false;
+  let darkMode = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-o" && i + 1 < args.length) {
@@ -32,6 +33,8 @@ async function main() {
       themePath = args[++i];
     } else if (args[i] === "--pdf") {
       pdfMode = true;
+    } else if (args[i] === "--dark") {
+      darkMode = true;
     } else if (args[i] === "--help" || args[i] === "-h") {
       usage();
     } else if (!inputPath) {
@@ -92,7 +95,7 @@ async function main() {
 
   // Extract meta and render
   const { nodes, meta } = extractMeta(parsed.nodes);
-  const html = renderSlides(nodes, { meta, themeCss, themeJs });
+  const html = renderSlides(nodes, { meta, themeCss, themeJs, darkMode });
 
   if (pdfMode) {
     const { exportPdf } = require("../src/slide-pdf");
