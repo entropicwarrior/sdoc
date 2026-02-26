@@ -6,7 +6,11 @@
 .vscodeignore
 docs/
 examples/
-lexica/
+lexica/INDEX.sdoc
+lexica/requirements.sdoc
+lexica/sdoc-plan.sdoc
+lexica/status.sdoc
+lexica/suggestions.sdoc
 test/
 tools/
 dist/
