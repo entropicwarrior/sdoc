@@ -12,6 +12,7 @@
         {[.]
             - Guide: Introduction — `guide/intro.sdoc`
             - Guide: Setup — `guide/setup.sdoc`
+            - Guide: Notion Sync — `guide/notion-sync.sdoc`
             - Tutorial: First Steps — `tutorials/first-steps.sdoc`
             - Reference: Syntax — `reference/syntax.sdoc`
             - Reference: API — `reference/api.sdoc`

@@ -145,6 +145,26 @@
                 Bob | 25 | LA
             }
             ```
+
+            Optional flags control rendering:
+
+            ```
+            {[table borderless]
+                Feature | Status
+                Parser | Complete
+            }
+
+            {[table headerless]
+                Alice | 30
+                Bob | 25
+            }
+
+            {[table borderless headerless]
+                ![](a.png =100%) | ![](b.png =100%)
+            }
+            ```
+
+            \`borderless\` removes borders and row striping. \`headerless\` treats all rows as data (no header). Flags combine in any order.
         }
 
         # Inline Formatting @inline-formatting
@@ -160,6 +180,16 @@
             Links: \`[Link text](https://example.com)\`
 
             Images: \`![Alt text](path/to/image.png)\`
+
+            Images with width and alignment:
+
+            ```
+            ![Alt](image.png =50%)
+            ![Alt](image.png =50% center)
+            ![Alt](image.png =35% left)
+            ![Alt](image.png =35% right)
+            ![A](a.png =48%) ![B](b.png =48%)
+            ```
 
             Autolinks: \`\<https://example.com\>\`
         }
@@ -190,6 +220,21 @@
             }
             ```
             ````
+
+            # Include by Link @code-includes
+            {
+                A code block can reference an external file with \`src:\` on the fence line — the content stays in sync:
+
+                `````
+                ```json src:./data.json
+                ```
+
+                ```json src:./data.json lines:3-5
+                ```
+                `````
+
+                \`src:\` takes a file path (relative to the document) or URL. \`lines:\` optionally limits to a range (1-based, inclusive). The code block body is replaced by the resolved content.
+            }
         }
 
         # Mermaid Diagrams @mermaid

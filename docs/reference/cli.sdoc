@@ -32,6 +32,45 @@
         }
     }
 
+    # Notion Sync Tool
+    {
+        `tools/sync-notion.js` syncs SDOC files to Notion pages. See the [Notion Sync guide](../guide/notion-sync.sdoc) for full setup instructions.
+
+        ```bash
+node tools/sync-notion.js <file-or-directory> [options]
+        ```
+
+        # Options
+        {
+            {[.]
+                - `--page-id <id>` -- override the Notion page ID (single-file mode only)
+                - `--token <tok>` -- Notion integration token (default: `$NOTION_TOKEN` env var)
+                - `--dry-run` -- render blocks to stdout without calling the Notion API
+                - `--verbose` -- print progress to stderr
+                - `--help` / `-h` -- show usage information and exit
+            }
+        }
+
+        # Examples
+        {
+            ```bash
+# Sync a single file (page ID from @meta)
+node tools/sync-notion.js docs/architecture.sdoc --verbose
+
+# Scan a directory for files with notion-page in @meta
+node tools/sync-notion.js docs/ --verbose
+
+# Dry run -- inspect the rendered Notion blocks
+node tools/sync-notion.js docs/ --dry-run
+
+# Override page ID (for testing)
+node tools/sync-notion.js file.sdoc --page-id abc123def456
+            ```
+        }
+
+        Files opt in to sync by setting `notion-page: <page-id>` in their `@meta` scope. When given a directory, the tool scans recursively for `.sdoc` files with this property.
+    }
+
     # Building the Extension
     {
         ```bash

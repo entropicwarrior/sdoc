@@ -1,0 +1,173 @@
+# Notion Sync
+{
+    SDOC files can be synced to Notion as native blocks -- headings, paragraphs, lists, tables, code, and images all render as real Notion content. The repo is the source of truth; Notion is a read-only mirror that stays up to date automatically via CI.
+
+    # How It Works
+    {
+        {[#]
+            - An SDOC file declares its Notion page ID in its `@meta` scope
+            - The sync tool parses the file and converts the AST to Notion API block objects
+            - It clears the target page and replaces the content with the rendered blocks
+            - A callout banner is added at the top: "Auto-synced from path/file.sdoc — do not edit in Notion"
+        }
+
+        Top-level SDOC scopes render as **toggle headings** in Notion, matching the collapsible behaviour of the HTML preview. Deeper scopes render as flat headings due to Notion API nesting limits.
+    }
+
+    # Setup
+    {
+        # 1. Create a Notion Integration
+        {
+            {[#]
+                - Go to [https://www.notion.so/profile/integrations](https://www.notion.so/profile/integrations)
+                - Click **New integration**
+                - Give it a name (e.g. "SDOC Sync") and select your workspace
+                - Copy the **Internal Integration Secret** (starts with `secret_`)
+            }
+        }
+
+        # 2. Share Pages with the Integration
+        {
+            For each Notion page you want to sync to:
+
+            {[#]
+                - Open the page in Notion
+                - Click the **...** menu (top right) and select **Connect to**
+                - Find and select your integration
+            }
+
+            Copy the page ID from the URL. It is the 32-character hex string at the end:
+
+            ```
+https://www.notion.so/My-Page-3135217a0d6380acbcecfed64316ec91
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                  this is the page ID
+            ```
+        }
+
+        # 3. Add the Page ID to Your SDOC File
+        {
+            Add a `notion-page` property to the file's `@meta` scope:
+
+            ```sdoc
+# My Document @meta
+{
+    type: doc
+    notion-page: 3135217a0d6380acbcecfed64316ec91
+}
+            ```
+
+            Only files with `notion-page` in their meta will be synced. Files without it are ignored.
+        }
+
+        # 4. Set the Notion Token
+        {
+            The token is **never committed to the repo**. Set it as an environment variable:
+
+            ```bash
+export NOTION_TOKEN=secret_abc123...
+            ```
+
+            For CI, add it as a repository secret (see @ci-setup below).
+        }
+    }
+
+    # Running Manually
+    {
+        Sync a single file:
+
+        ```bash
+node tools/sync-notion.js path/to/file.sdoc --verbose
+        ```
+
+        Scan a directory and sync all files that have `notion-page` in their meta:
+
+        ```bash
+node tools/sync-notion.js docs/ --verbose
+        ```
+
+        Dry run (renders blocks to stdout without calling the Notion API):
+
+        ```bash
+node tools/sync-notion.js docs/ --dry-run
+        ```
+
+        Override the page ID from the command line (useful for testing):
+
+        ```bash
+node tools/sync-notion.js file.sdoc --page-id abc123def456 --verbose
+        ```
+    }
+
+    # CI Setup @ci-setup
+    {
+        This section describes a workflow to add to **your own repository** that uses SDOC (the sdoc repo itself does not include this workflow). A GitHub Actions workflow can sync automatically on every push. Add the Notion token as a repository secret:
+
+        {[#]
+            - Go to your repo's **Settings > Secrets and variables > Actions**
+            - Click **New repository secret**
+            - Name: `NOTION_TOKEN`, Value: your integration secret
+        }
+
+        Then add a workflow file at `.github/workflows/sync-notion.yml`:
+
+        ```yaml
+name: Sync SDOC to Notion
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '**.sdoc'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sync to Notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: node tools/sync-notion.js . --verbose
+        ```
+
+        This triggers only when `.sdoc` files change on push to `main` or `develop`.
+    }
+
+    # What Gets Rendered
+    {
+        {[table]
+            SDOC Element | Notion Block
+            Scopes (depth 1) | Toggle heading (collapsible)
+            Scopes (depth 2+) | Flat headings with content as siblings
+            Paragraphs | Paragraph blocks
+            Bullet lists | Bulleted list items
+            Numbered lists | Numbered list items
+            Task lists | To-do items (checked/unchecked)
+            Tables | Table blocks with rows
+            Code blocks | Code blocks (with language highlighting)
+            Blockquotes | Quote blocks
+            Horizontal rules | Divider blocks
+            Images (absolute URLs) | Image blocks
+            Images (relative paths) | Skipped (not supported by Notion)
+            Links | Rich text with link
+            Bold, italic, strikethrough, code | Rich text annotations
+            Refs (`@id`) | Literal text
+        }
+    }
+
+    # Limitations
+    {
+        {[.]
+            - **One-way sync only.** The repo is the source of truth. Edits made in Notion are overwritten on the next sync.
+            - **Images require absolute URLs.** Notion cannot fetch images from relative file paths. Use full `https://` URLs for images that should appear in Notion.
+            - **Nesting depth.** Notion's API limits block nesting to 2 levels. Only the top-level scope renders as a toggle heading; deeper scopes render as flat headings.
+            - **Refs are literal.** SDOC `@references` render as plain text in Notion since there is no equivalent for internal document cross-references.
+        }
+    }
+}

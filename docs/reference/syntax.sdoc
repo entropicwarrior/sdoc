@@ -81,9 +81,10 @@ Content of Section B.
             ```
 
             {[.]
-                - Works with `{`, `{[.]`, `{[#]`, and `{[table]`
+                - Works with `{`, `{[.]`, `{[#]`, `{[table]`, and `{[table <flags>]`
                 - Also works on list item lines: `- Item {`
                 - The `@id` goes before the opener: `# Title @id {`
+                - Table options work in K&R style: `# Data {[table borderless]`
                 - Trailing whitespace after the opener is allowed
                 - The closing `}` must still appear on its own line
                 - Inline blocks (`{ content }`) are not affected
@@ -230,9 +231,39 @@ Content of Section B.
 
         {[.]
             - Columns are separated by `|`
-            - The first row is always the header
+            - The first row is always the header (unless `headerless` is specified)
             - Cell contents support inline formatting
             - Leading and trailing whitespace in cells is trimmed
+        }
+
+        # Table Options
+        {
+            Add flags after `table` to control rendering:
+
+            ```
+{[table borderless]
+    Feature | Status
+    Parser | Complete
+    Renderer | Complete
+}
+
+{[table headerless]
+    Alice | 30 | New York
+    Bob | 25 | Los Angeles
+}
+
+{[table borderless headerless]
+    ![](a.png =100%) | ![](b.png =100%)
+    ![](c.png =100%) | ![](d.png =100%)
+}
+            ```
+
+            {[.]
+                - `borderless` removes all borders and row striping
+                - `headerless` treats the first row as data (no header)
+                - Flags can be combined in any order
+                - Works with K&R brace style: `# Data {[table borderless]`
+            }
         }
     }
 
@@ -270,6 +301,26 @@ Content of Section B.
             ```
 ![Alt text](https://example.com/image.png)
             ```
+
+            # Image Width and Alignment
+            {
+                Add `=<width>` after the URL (separated by a space) to control size. An optional alignment keyword follows:
+
+                ```
+![Photo](photo.png =50%)
+![Photo](photo.png =200px)
+![Photo](photo.png =50% center)
+![Photo](photo.png =35% left)
+![Photo](photo.png =35% right)
+                ```
+
+                {[.]
+                    - `center` centres the image with auto margins
+                    - `left` floats the image left (text wraps right)
+                    - `right` floats the image right (text wraps left)
+                    - Without alignment, images display inline — two adjacent images with widths sit side by side
+                }
+            }
         }
     }
 
@@ -313,6 +364,29 @@ Content of Section B.
             - Closing fence: three backticks on their own line
             - Content inside is raw text -- no parsing, no escapes, no inline formatting
             - Braces, `#`, `@`, and all other special characters are treated as literal text inside code blocks
+        }
+
+        # Include by Link
+        {
+            A code block can reference an external file with `src:` metadata on the fence line. The file contents replace the code block body:
+
+            `````
+```json src:./data.json
+```
+
+```json src:./data.json lines:3-5
+```
+
+```src:https://example.com/schema.json
+```
+            `````
+
+            {[.]
+                - `src:<path>` references a file (relative to the document) or URL
+                - `lines:<start>-<end>` limits to a line range (1-based, inclusive)
+                - The language tag is optional and goes before `src:`
+                - If the file cannot be read, an error message is shown in the code block
+            }
         }
     }
 

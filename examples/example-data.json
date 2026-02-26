@@ -1,0 +1,14 @@
+{
+  "name": "SDOC Example",
+  "version": "0.1.2",
+  "description": "A structured document format for VS Code",
+  "features": [
+    "Scoped headings",
+    "Inline formatting",
+    "Code blocks with syntax highlighting",
+    "Tables and lists",
+    "Image layout and alignment",
+    "Include by link"
+  ],
+  "repository": "https://github.com/example/sdoc"
+}

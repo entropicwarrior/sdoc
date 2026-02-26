@@ -118,8 +118,9 @@ Content of Section B.
 
                 {[.]
                     - The opener must be the last token on the line (trailing whitespace is allowed)
-                    - Applies to `{`, `{[.]`, `{[#]`, and `{[table]`
+                    - Applies to `{`, `{[.]`, `{[#]`, `{[table]`, and `{[table <flags>]`
                     - Also works on list-item shorthand lines (e.g., `- Item {`)
+                    - Table options (e.g., `{[table borderless]`) work in K&R style: `# Data {[table borderless]`
                     - Escaped braces (`\{`) are not treated as openers
                     - The closing `}` must still appear on its own line
                     - Inline blocks (`{ content }`) are not affected; a line ending with `}` is not treated as K&R
@@ -309,11 +310,41 @@ Content of Section B.
             ```
 
             {[.]
-                - The first row is always the header
+                - The first row is always the header (unless `headerless` is specified)
                 - Columns are separated by `|`
                 - Each row is a single line
                 - Cell contents support inline formatting
                 - Leading and trailing whitespace in cells is trimmed
+            }
+
+            # Table Options @table-options
+            {
+                Optional flags after `table` in the block opener control table rendering:
+
+                ```
+{[table borderless]
+    Feature | Status
+    Parser | Complete
+    Renderer | Complete
+}
+
+{[table headerless]
+    Alice | 30 | New York
+    Bob | 25 | Los Angeles
+}
+
+{[table borderless headerless]
+    ![](a.png =100%) | ![](b.png =100%)
+    ![](c.png =100%) | ![](d.png =100%)
+}
+                ```
+
+                {[.]
+                    - `borderless` removes all table borders and row striping
+                    - `headerless` treats the first row as data (no header row)
+                    - Flags can be combined in any order
+                    - Works with both Allman and K&R brace styles
+                }
             }
         }
 
@@ -363,6 +394,29 @@ Content of Section B.
             ```
             ![Alt text](https://example.com/image.png)
             ```
+
+            # Image Width and Alignment @image-width
+            {
+                An optional size and alignment suffix can follow the URL, separated by a space and introduced with `=`:
+
+                ```
+                ![Alt](image.png =50%)
+                ![Alt](image.png =200px)
+                ![Alt](image.png =50% center)
+                ![Alt](image.png =35% left)
+                ![Alt](image.png =35% right)
+                ```
+
+                {[.]
+                    - `=<number>%` or `=<number>px` sets the image width
+                    - An optional alignment keyword follows the width: `center`, `left`, or `right`
+                    - `center` uses auto margins for horizontal centering
+                    - `left` floats the image left with text wrapping on the right
+                    - `right` floats the image right with text wrapping on the left
+                    - Without an alignment keyword, images display inline (side by side when adjacent)
+                    - Two images on the same line with explicit widths sit side by side naturally
+                }
+            }
         }
 
         # Blockquotes @blockquotes
@@ -420,6 +474,31 @@ Content of Section B.
                 - The opening and closing fences must be on their own lines
                 - Anything inside is treated as raw text (no parsing, no escapes)
                 - Optional language tag after the opening fence
+            }
+
+            # Include by Link @code-includes
+            {
+                A code fence can reference an external file using `src:` metadata on the opening fence line. The code block body is replaced by the file contents:
+
+                `````
+                ```json src:./data.json
+                ```
+
+                ```json src:./data.json lines:3-5
+                ```
+
+                ```src:https://example.com/schema.json
+                ```
+                `````
+
+                {[.]
+                    - `src:<path>` references a file path (relative to the document) or URL
+                    - `lines:<start>-<end>` optionally limits to a line range (1-based, inclusive)
+                    - The language tag is optional and goes before `src:`
+                    - Any body text in the code block is replaced by the resolved file contents
+                    - If the file cannot be read, an error message is shown in the code block
+                    - URL sources are fetched and cached; the cache is cleared on document save
+                }
             }
         }
     }
@@ -610,7 +689,7 @@ Content of Section A.
             - `{` scope open
             - `}` scope close
             - `{[.]` / `{[#]` list open
-            - `{[table]` table open
+            - `{[table]` / `{[table <flags>]` table open
             - `>` blockquote line
             - `---` / `***` / `___` horizontal rule
             - `` ``` `` code fence
@@ -633,7 +712,7 @@ Content of Section A.
         heading       = "#" { "#" } ws title (ws id)? ;
         heading_with_opener = "#" { "#" } ws title (ws id)? ws block_opener ;
         id            = "@" ident ;
-        block_opener  = "{" | "{[.]" | "{[#]" | "{[table]" ;
+        block_opener  = "{" | "{[.]" | "{[#]" | table_open ;
         block         = "{" ws? block_body "}" ;
         braceless_body = { paragraph | code_block | blockquote | implicit_list
                          | horizontal_rule | headingless_scope | table_scope
@@ -646,7 +725,9 @@ Content of Section A.
         headingless_scope = "{" ws? block_body "}" ;
         list_scope    = list_open ws? list_body "}" ;
         list_open     = "{[.]" | "{[#]" ;
-        table_scope   = "{[table]" ws? table_body "}" ;
+        table_scope   = table_open ws? table_body "}" ;
+        table_open    = "{[table" { ws table_flag } "]" ;
+        table_flag    = "borderless" | "headerless" ;
         table_body    = table_row { table_row } ;
         table_row     = cell { "|" cell } ;
         list_body     = { blank | comma_sep | scope | list_item_shorthand
@@ -670,7 +751,7 @@ Content of Section A.
         horizontal_rule = "---" | "***" | "___" ;
 
         code_block    = fence_open raw_text fence_close ;
-        fence_open    = "```" [lang] newline ;
+        fence_open    = "```" [lang] [ws "src:" path] [ws "lines:" range] newline ;
         fence_close   = "```" newline ;
 
         comma_sep     = "," ;

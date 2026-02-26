@@ -56,6 +56,9 @@
             - [x] Multi-line list item shorthand (continuation lines in explicit list blocks)
             - [x] Scope indentation (visual nesting via CSS padding)
             - [x] Print support (@media print CSS overrides)
+            - [x] Image width and alignment (=50%, =50% center/left/right)
+            - [x] Table options (borderless, headerless flags on {[table]})
+            - [x] Include by link (src: and lines: metadata on code fences)
         }
 
         # Tooling
@@ -93,18 +96,12 @@
             - [x] Build artifacts (VSIX) output to dist/
             - [x] Example files in examples/, test files in test/
             - [x] Generated _sdoc_site/ directory gitignored
+            - [x] GitHub Actions workflow for VSIX build on release (.github/workflows/release.yml)
         }
     }
 
     # In Progress @in-progress
     {
-        # Auto-Sync GitHub Action @auto-sync
-        {
-            The workflow file is written (\`.github/workflows/sync-to-lexica-common.yml\`)
-            but needs a \`LEXICA_COMMON_PAT\` secret configured in the repo
-            settings before it will work.
-        }
-
         Lexica Phases 1-3 are complete. See sdoc-plan.sdoc for the
         SDOC-specific roadmap.
     }

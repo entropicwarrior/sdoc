@@ -114,6 +114,26 @@ const formatted = formatSdoc(sdocText, "    ");
         }
     }
 
+    # resolveIncludes(nodes, resolverFn)
+    {
+        Walks the AST and resolves code blocks with `src` metadata by loading the referenced file contents. This is an async function.
+
+        ```javascript
+const { parseSdoc, resolveIncludes } = require("./src/sdoc");
+const parsed = parseSdoc(text);
+await resolveIncludes(parsed.nodes, async (src) => {
+    return fs.readFileSync(path.resolve(docDir, src), "utf8");
+});
+        ```
+
+        {[.]
+            - `nodes` -- the AST node array to walk (modified in place)
+            - `resolverFn` -- async function `(src) => string` that resolves a `src:` path to file contents
+            - Applies `lines` range filtering if present on the code node
+            - If the resolver throws, the code block text is set to an error message
+        }
+    }
+
     # AST Node Types
     {
         The parser produces these node types:
@@ -123,9 +143,11 @@ const formatted = formatSdoc(sdocText, "    ");
             - `paragraph` -- a text block with `text`
             - `list` -- a list with `listType` (`"bullet"` or `"number"`) and `items`
             - `blockquote` -- a quote with `paragraphs` (array of strings)
-            - `table` -- a table with `headers` (array of strings) and `rows` (array of string arrays)
-            - `code` -- a code block with `lang` and `text`
+            - `table` -- a table with `headers` (array of strings), `rows` (array of string arrays), and optional `options` (`{ borderless, headerless }`)
+            - `code` -- a code block with `lang`, `text`, and optional `src` (file path/URL) and `lines` (`{ start, end }`)
             - `hr` -- a horizontal rule
         }
+
+        Inline image nodes (`type: "image"`) within paragraphs include `src`, `alt`, and optional `width` (e.g. `"50%"`) and `align` (`"center"`, `"left"`, or `"right"`).
     }
 }

@@ -1505,5 +1505,151 @@ test("regular code blocks still render normally", () => {
 });
 
 // ============================================================
+console.log("\n--- Image width syntax ---");
+
+test("image with percentage width", () => {
+  const r = parseSdoc("# Doc {\n    ![photo](pic.png =50%)\n}");
+  assert(r.errors.length === 0);
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =50%)\n}", "Test");
+  assert(html.includes('style="width:50%"'), "should have width style");
+  assert(html.includes('src="pic.png"'), "should have correct src");
+  assert(html.includes('alt="photo"'), "should have correct alt");
+});
+
+test("image with pixel width", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =200px)\n}", "Test");
+  assert(html.includes('style="width:200px"'), "should have pixel width");
+});
+
+test("image without width has no style", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png)\n}", "Test");
+  assert(!html.includes('style="width:'), "should not have width style");
+});
+
+test("image centered", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =50% center)\n}", "Test");
+  assert(html.includes("width:50%"), "should have width");
+  assert(html.includes("display:block"), "should be block");
+  assert(html.includes("margin-left:auto"), "should be centered");
+  assert(html.includes("margin-right:auto"), "should be centered");
+});
+
+test("image left aligned", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =40% left)\n}", "Test");
+  assert(html.includes("float:left"), "should float left");
+});
+
+test("image right aligned", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =40% right)\n}", "Test");
+  assert(html.includes("float:right"), "should float right");
+});
+
+test("image width without alignment stays inline", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =50%)\n}", "Test");
+  assert(!html.includes("display:block"), "should not be block");
+  assert(!html.includes("float:"), "should not float");
+});
+
+test("two images side by side", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![a](a.png =48%) ![b](b.png =48%)\n}", "Test");
+  assert(html.includes('style="width:48%"'), "should have width");
+  // Both images should render
+  assert(html.includes('src="a.png"'), "first image");
+  assert(html.includes('src="b.png"'), "second image");
+});
+
+// ============================================================
+console.log("\n--- Table options ---");
+
+test("borderless table", () => {
+  const r = parseSdoc("{[table borderless]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].type === "table");
+  assert(r.nodes[0].options && r.nodes[0].options.borderless === true);
+  const html = renderHtmlDocument("# Doc {\n    {[table borderless]\n        Name | Age\n        Alice | 30\n    }\n}", "Test");
+  assert(html.includes("sdoc-table-borderless"), "should have borderless class");
+});
+
+test("headerless table", () => {
+  const r = parseSdoc("{[table headerless]\n  A | B\n  C | D\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].type === "table");
+  assert(r.nodes[0].headers.length === 0, "headerless table should have no headers");
+  assert(r.nodes[0].rows.length === 2, "all rows should be data rows");
+  assert(r.nodes[0].rows[0][0] === "A");
+});
+
+test("borderless headerless table", () => {
+  const r = parseSdoc("{[table borderless headerless]\n  A | B\n  C | D\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].headers.length === 0);
+  assert(r.nodes[0].options.borderless === true);
+  assert(r.nodes[0].options.headerless === true);
+  const html = renderHtmlDocument("# Doc {\n    {[table borderless headerless]\n        A | B\n        C | D\n    }\n}", "Test");
+  assert(html.includes("sdoc-table-borderless"), "borderless class");
+  assert(html.includes("sdoc-table-headerless"), "headerless class");
+  assert(!html.includes("<thead"), "no thead for headerless");
+});
+
+test("plain table still works", () => {
+  const r = parseSdoc("{[table]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].headers[0] === "Name");
+  assert(r.nodes[0].rows[0][0] === "Alice");
+});
+
+test("K&R table with options", () => {
+  const r = parseSdoc("# Data {[table borderless]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children[0].type === "table");
+  assert(r.nodes[0].children[0].options.borderless === true);
+});
+
+// ============================================================
+console.log("\n--- Code block include syntax ---");
+
+test("code block with src attribute", () => {
+  const r = parseSdoc("# Doc {\n    ```json src:./data.json\n    ignored body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.type === "code");
+  assert(code.lang === "json");
+  assert(code.src === "./data.json");
+});
+
+test("code block with src and lines", () => {
+  const r = parseSdoc("# Doc {\n    ```json src:./data.json lines:10-20\n    body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === "./data.json");
+  assert(code.lines.start === 10);
+  assert(code.lines.end === 20);
+});
+
+test("code block with src only (no lang)", () => {
+  const r = parseSdoc("# Doc {\n    ```src:./file.txt\n    body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === "./file.txt");
+  assert(code.lang === undefined);
+});
+
+test("code block with URL src", () => {
+  const r = parseSdoc("# Doc {\n    ```json src:https://example.com/schema.json\n    body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === "https://example.com/schema.json");
+  assert(code.lang === "json");
+});
+
+test("code block without src has no src field", () => {
+  const r = parseSdoc("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === undefined, "plain code block should not have src");
+  assert(code.lang === "javascript");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);
