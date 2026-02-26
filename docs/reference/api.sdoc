@@ -1,13 +1,30 @@
 # JavaScript API Reference
 {
-    The SDOC parser and renderer are in `src/sdoc.js`. All functions are exported via CommonJS.
+    The SDOC parser and renderer are in `src/sdoc.js`. All functions are exported via CommonJS. The package is available on npm as `@entropicwarrior/sdoc`.
+
+    # Installation
+    {
+        ```bash
+npm install @entropicwarrior/sdoc
+        ```
+
+        Subpath exports are available for individual renderers:
+
+        ```javascript
+const { parseSdoc, extractMeta } = require("@entropicwarrior/sdoc");
+const { renderNotionBlocks } = require("@entropicwarrior/sdoc/notion");
+const { renderSlides } = require("@entropicwarrior/sdoc/slides");
+const { exportPdf } = require("@entropicwarrior/sdoc/slide-pdf");
+const { knowledgeDir } = require("@entropicwarrior/sdoc/knowledge");
+        ```
+    }
 
     # parseSdoc(text)
     {
         Parses an SDOC string into an AST.
 
         ```javascript
-const { parseSdoc } = require("./src/sdoc");
+const { parseSdoc } = require("@entropicwarrior/sdoc");
 const { nodes, errors } = parseSdoc(sdocText);
         ```
 
@@ -22,7 +39,7 @@ const { nodes, errors } = parseSdoc(sdocText);
         Extracts the `@meta` scope from parsed nodes and returns the remaining body nodes.
 
         ```javascript
-const { parseSdoc, extractMeta } = require("./src/sdoc");
+const { parseSdoc, extractMeta } = require("@entropicwarrior/sdoc");
 const parsed = parseSdoc(text);
 const { nodes, meta } = extractMeta(parsed.nodes);
         ```
@@ -40,7 +57,7 @@ const { nodes, meta } = extractMeta(parsed.nodes);
         Parses and renders a complete HTML page from SDOC source.
 
         ```javascript
-const { renderHtmlDocument } = require("./src/sdoc");
+const { renderHtmlDocument } = require("@entropicwarrior/sdoc");
 const html = renderHtmlDocument(sdocText, "Page Title", {
     config: { header: "My Header", footer: "My Footer" },
     cssOverride: customCssString,
@@ -63,7 +80,7 @@ const html = renderHtmlDocument(sdocText, "Page Title", {
         Renders a complete HTML page from pre-parsed data. Use this when you need to parse and extract meta separately.
 
         ```javascript
-const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed } = require("./src/sdoc");
+const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed } = require("@entropicwarrior/sdoc");
 const parsed = parseSdoc(text);
 const metaResult = extractMeta(parsed.nodes);
 const html = renderHtmlDocumentFromParsed(
@@ -79,7 +96,7 @@ const html = renderHtmlDocumentFromParsed(
         Renders an array of AST nodes to an HTML fragment (no `<html>` wrapper).
 
         ```javascript
-const { parseSdoc, renderFragment } = require("./src/sdoc");
+const { parseSdoc, renderFragment } = require("@entropicwarrior/sdoc");
 const { nodes } = parseSdoc(text);
 const html = renderFragment(nodes, 2);
         ```
@@ -100,7 +117,7 @@ const html = renderFragment(nodes, 2);
         Reformats an SDOC string by adjusting indentation based on brace depth. Structure is not changed -- only whitespace is modified.
 
         ```javascript
-const { formatSdoc } = require("./src/sdoc");
+const { formatSdoc } = require("@entropicwarrior/sdoc");
 const formatted = formatSdoc(sdocText, "    ");
         ```
 
@@ -119,7 +136,7 @@ const formatted = formatSdoc(sdocText, "    ");
         Walks the AST and resolves code blocks with `src` metadata by loading the referenced file contents. This is an async function.
 
         ```javascript
-const { parseSdoc, resolveIncludes } = require("./src/sdoc");
+const { parseSdoc, resolveIncludes } = require("@entropicwarrior/sdoc");
 const parsed = parseSdoc(text);
 await resolveIncludes(parsed.nodes, async (src) => {
     return fs.readFileSync(path.resolve(docDir, src), "utf8");

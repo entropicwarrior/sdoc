@@ -84,6 +84,8 @@
             - [x] AI skill reference tool (sdoc_reference) -- returns SDOC format guide to language models with reading guidance preamble
             - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
             - [x] Generate About command (sdoc.generateAbout) -- uses VS Code LM API to generate @about section from document content
+            - [x] Notion sync tool (tools/sync-notion.js) -- push SDOC files to Notion as native blocks
+            - [x] Notion renderer (src/notion-renderer.js) -- converts SDOC AST to Notion API block objects
         }
 
         # Repository
@@ -96,7 +98,11 @@
             - [x] Build artifacts (VSIX) output to dist/
             - [x] Example files in examples/, test files in test/
             - [x] Generated _sdoc_site/ directory gitignored
-            - [x] GitHub Actions workflow for VSIX build on release (.github/workflows/release.yml)
+            - [x] GitHub Actions workflow for VSIX build and npm publish on release (.github/workflows/release.yml)
+            - [x] Published to npm as @entropicwarrior/sdoc
+            - [x] Subpath exports for renderers (./slides, ./slide-pdf, ./notion, ./knowledge)
+            - [x] Knowledge files shipped in npm package via ./knowledge export
+            - [x] .npmignore for selective npm publishing (parser, renderers, knowledge files only)
         }
     }
 

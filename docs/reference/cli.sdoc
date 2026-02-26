@@ -71,6 +71,17 @@ node tools/sync-notion.js file.sdoc --page-id abc123def456
         Files opt in to sync by setting `notion-page: <page-id>` in their `@meta` scope. When given a directory, the tool scans recursively for `.sdoc` files with this property.
     }
 
+    # npm Package
+    {
+        The parser, renderers, and knowledge files are published to npm as `@entropicwarrior/sdoc`:
+
+        ```bash
+npm install @entropicwarrior/sdoc
+        ```
+
+        See the [API reference](api.sdoc) for available exports.
+    }
+
     # Building the Extension
     {
         ```bash
