@@ -81,6 +81,7 @@
             - [x] AI skill reference tool (sdoc_reference) -- returns SDOC format guide to language models with reading guidance preamble
             - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
             - [x] Generate About command (sdoc.generateAbout) -- uses VS Code LM API to generate @about section from document content
+            - [x] Dark mode: preview follows VSCode colour theme (light, dark, high contrast)
         }
 
         # Repository

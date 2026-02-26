@@ -511,6 +511,20 @@ Content of Section B.
     {
         The VSCode extension provides an interactive preview with the following features. These are preview-only behaviours and do not affect the SDOC format or static HTML export.
 
+        # Theme Support @theme-support
+        {
+            The preview automatically follows the user's VSCode colour theme. Light, dark, and high-contrast themes are all supported.
+
+            {[.]
+                - Theme detection is CSS-driven: VSCode adds \`vscode-dark\`, \`vscode-light\`, \`vscode-high-contrast\`, or \`vscode-high-contrast-light\` classes to the webview body element
+                - Dark mode overrides the \`--sdoc-*\` CSS custom properties and hardcoded \`rgba()\` colours (table headers, code blocks, confidential notices, error blocks)
+                - Mermaid diagrams use the \`dark\` theme when in a dark colour theme and \`neutral\` otherwise
+                - Theme changes take effect immediately (CSS-driven) and trigger a full preview rebuild (for Mermaid re-initialisation)
+                - Exported HTML and print output are not affected; they always use light theme colours
+                - Custom stylesheets (\`sdoc.config.json\` or \`@meta style\`) that use \`--sdoc-*\` variables inherit dark values automatically. Hardcoded colours in custom styles are not overridden
+            }
+        }
+
         # Collapsible Scopes @collapsible-scopes
         {
             Scope headings that have children display a toggle triangle, visible on hover. Clicking the triangle collapses the scope's children (hides the content below the heading). Clicking again expands them.

@@ -116,5 +116,17 @@
             Preview should auto-update when switching active editor tabs.
             Currently requires re-running the preview command.
         }
+
+        # Theme Compatibility Constraint @theme-compat
+        {
+            The preview supports light, dark, and high-contrast VSCode themes.
+            New preview features must remain compatible with all theme variants:
+
+            {[.]
+                - Use \`--sdoc-*\` CSS custom properties for colours, not hardcoded values
+                - If a hardcoded colour is unavoidable, add dark/high-contrast overrides in \`buildDarkModeCss()\` in extension.js
+                - Test new UI elements in both light and dark themes before merging
+            }
+        }
     }
 }

@@ -1814,8 +1814,9 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
   const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
+  const mermaidTheme = options.mermaidTheme ?? "neutral";
   const mermaidScript = hasMermaidBlocks(parsed.nodes)
-    ? `\n<script src="${MERMAID_CDN}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
+    ? `\n<script src="${MERMAID_CDN}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"${mermaidTheme}",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
     : "";
 
   return `<!DOCTYPE html>
