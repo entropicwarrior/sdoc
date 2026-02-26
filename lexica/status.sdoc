@@ -7,9 +7,7 @@
 
     # About @about
     {
-        Current state of the SDOC project. Tracks what is completed, what
-        is in progress, and what is next. Read this first when starting a
-        new task.
+        Current state of the SDOC project. Tracks what is completed, what is in progress, and what is next. Read this first when starting a new task.
     }
 
     # Current State @current-state
@@ -81,7 +79,7 @@
             - [x] AI skill reference tool (sdoc_reference) -- returns SDOC format guide to language models with reading guidance preamble
             - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
             - [x] Generate About command (sdoc.generateAbout) -- uses VS Code LM API to generate @about section from document content
-            - [x] Dark mode: preview follows VSCode colour theme (light, dark, high contrast)
+            - [x] Dark mode: preview follows VSCode colour theme (light, dark, high contrast); exported HTML follows OS preference
         }
 
         # Repository

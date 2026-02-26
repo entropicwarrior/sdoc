@@ -748,48 +748,56 @@ ${buildCollapseCss()}
 `;
 }
 
-function buildDarkModeCss() {
+function darkModeVarsCss() {
   return `
-  /* Dark mode overrides */
-  body.vscode-dark {
     --sdoc-bg: #1e1e1e;
     --sdoc-fg: #d4d4d4;
     --sdoc-muted: #9d9d9d;
     --sdoc-accent: #e0934a;
     --sdoc-accent-soft: rgba(224, 147, 74, 0.15);
-    --sdoc-border: rgba(255, 255, 255, 0.12);
-  }
+    --sdoc-border: rgba(255, 255, 255, 0.12);`;
+}
 
-  body.vscode-dark .sdoc-table-th {
+function darkModeElementsCss(prefix) {
+  return `
+  ${prefix} .sdoc-table-th {
     background: rgba(255, 255, 255, 0.06);
   }
 
-  body.vscode-dark .sdoc-table-body tr:nth-child(even) {
+  ${prefix} .sdoc-table-body tr:nth-child(even) {
     background: rgba(255, 255, 255, 0.03);
   }
 
-  body.vscode-dark .sdoc-table-td {
+  ${prefix} .sdoc-table-td {
     border-bottom-color: rgba(255, 255, 255, 0.06);
   }
 
-  body.vscode-dark .sdoc-inline-code {
+  ${prefix} .sdoc-inline-code {
     background: rgba(255, 255, 255, 0.08);
   }
 
-  body.vscode-dark .sdoc-code {
+  ${prefix} .sdoc-code {
     background: rgba(255, 255, 255, 0.06);
   }
 
-  body.vscode-dark .sdoc-confidential-notice {
+  ${prefix} .sdoc-confidential-notice {
     background: rgba(187, 68, 68, 0.15);
     border-bottom-color: rgba(187, 68, 68, 0.35);
     color: rgba(235, 120, 120, 0.9);
   }
 
-  body.vscode-dark .sdoc-errors {
+  ${prefix} .sdoc-errors {
     background: rgba(187, 112, 68, 0.18);
     border-color: rgba(187, 112, 68, 0.5);
+  }`;
+}
+
+function buildDarkModeCss() {
+  return `
+  /* Dark mode overrides */
+  body.vscode-dark {${darkModeVarsCss()}
   }
+${darkModeElementsCss("body.vscode-dark")}
 
   /* High contrast dark */
   body.vscode-high-contrast {
@@ -852,6 +860,16 @@ function buildDarkModeCss() {
 
   body.vscode-high-contrast-light .sdoc-code {
     background: rgba(0, 0, 0, 0.08);
+  }
+`;
+}
+
+function buildExportDarkModeCss() {
+  return `
+  @media (prefers-color-scheme: dark) {
+    :root {${darkModeVarsCss()}
+    }
+${darkModeElementsCss("")}
   }
 `;
 }
@@ -1090,6 +1108,7 @@ function buildCleanHtml(document) {
   const title = path.basename(document.uri.fsPath, ".sdoc");
 
   cssAppendParts.push(buildCollapseCss());
+  cssAppendParts.push(buildExportDarkModeCss());
 
   return renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
@@ -1099,7 +1118,8 @@ function buildCleanHtml(document) {
       config,
       cssOverride: cssOverride || undefined,
       cssAppend: cssAppendParts.join("\n"),
-      script: buildCollapseScript()
+      script: buildCollapseScript(),
+      mermaidTheme: "auto"
     }
   );
 }
