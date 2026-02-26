@@ -29,8 +29,15 @@ function renderInlineNodes(nodes) {
           return `<del>${renderInlineNodes(node.children)}</del>`;
         case "link":
           return `<a href="${escapeAttr(node.href)}" target="_blank" rel="noopener noreferrer">${renderInlineNodes(node.children)}</a>`;
-        case "image":
-          return `<img src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}" />`;
+        case "image": {
+          const imgParts = [];
+          if (node.width) imgParts.push(`width:${escapeAttr(node.width)}`);
+          if (node.align === "center") imgParts.push("display:block", "margin-left:auto", "margin-right:auto");
+          else if (node.align === "left") imgParts.push("display:block", "float:left", "margin-right:1rem");
+          else if (node.align === "right") imgParts.push("display:block", "float:right", "margin-left:1rem");
+          const imgStyle = imgParts.length ? ` style="${imgParts.join(";")}"` : "";
+          return `<img src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}"${imgStyle} />`;
+        }
         case "ref":
           return `@${escapeHtml(node.id)}`;
         default:
@@ -94,10 +101,19 @@ function renderList(list) {
 }
 
 function renderTable(table) {
-  const headerCells = table.headers
-    .map((cell) => `<th>${renderInline(cell)}</th>`)
-    .join("");
-  const thead = `<thead><tr>${headerCells}</tr></thead>`;
+  const opts = table.options || {};
+  const classes = [];
+  if (opts.borderless) classes.push("borderless");
+  if (opts.headerless) classes.push("headerless");
+  const classAttr = classes.length ? ` class="${classes.join(" ")}"` : "";
+
+  let thead = "";
+  if (table.headers.length > 0) {
+    const headerCells = table.headers
+      .map((cell) => `<th>${renderInline(cell)}</th>`)
+      .join("");
+    thead = `<thead><tr>${headerCells}</tr></thead>`;
+  }
 
   const bodyRows = table.rows
     .map((row) => {
@@ -107,7 +123,7 @@ function renderTable(table) {
     .join("\n");
   const tbody = bodyRows ? `<tbody>\n${bodyRows}\n</tbody>` : "";
 
-  return `<table>${thead}\n${tbody}</table>`;
+  return `<table${classAttr}>${thead}${thead ? "\n" : ""}${tbody}</table>`;
 }
 
 function renderNestedScope(scope) {

@@ -121,6 +121,40 @@
                 Diana | 28 | Seattle
             }
 
+            # Borderless Table
+            {[table borderless]
+                Feature | Status
+                Parser | Complete
+                Renderer | Complete
+                Slide Export | Complete
+            }
+
+            # Headerless Table
+            {[table headerless]
+                Alice | 30 | New York
+                Bob | 25 | Los Angeles
+                Charlie | 35 | Chicago
+            }
+
+            # Borderless Headerless Table (image grid)
+            {[table borderless headerless]
+                ![](example_image_1.jpeg =100%) | ![](example_image_2.jpg =100%)
+                ![](example_image_2.jpg =100%) | ![](example_image_1.jpeg =100%)
+            }
+
+            # Include by Link
+            {
+                A code block can reference an external file with `src:` — the content stays in sync:
+
+                ```json src:./example-data.json
+                ```
+
+                You can also include specific lines with `lines:start-end`:
+
+                ```json src:./example-data.json lines:3-5
+                ```
+            }
+
             # Inline Blocks
             {
                 Scopes can use single-line inline blocks for short content:
@@ -143,13 +177,58 @@
 
             # Images
             {
-                A local image (relative path):
+                # Full width (default)
+                {
+                    An image with no size specified takes its natural width up to 100%:
 
-                ![Waterfall pool](PXL_20230816_195120268.jpg)
+                    ![Full width](example_image_1.jpeg)
+                }
 
-                A remote image (direct URL):
+                # Explicit 100% width
+                {
+                    ![Full width explicit](example_image_2.jpg =100%)
+                }
 
-                ![Distant galaxy](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/NGC_4414_%28NASA-med%29.jpg/600px-NGC_4414_%28NASA-med%29.jpg)
+                # Small image (25%)
+                {
+                    ![Small image](example_image_1.jpeg =25%)
+                }
+
+                # Centred
+                {
+                    ![Centred image](example_image_1.jpeg =50% center)
+                }
+
+                # Left-aligned
+                {
+                    ![Left-aligned](example_image_2.jpg =35% left)
+
+                    This paragraph demonstrates text flowing around a left-aligned image.
+                    The image floats to the left and the text wraps naturally on the right side.
+                    This is useful for placing figures alongside descriptive content.
+                }
+
+                # Right-aligned
+                {
+                    ![Right-aligned](example_image_1.jpeg =35% right)
+
+                    This paragraph demonstrates text flowing around a right-aligned image.
+                    The image floats to the right and the text wraps naturally on the left side.
+                }
+
+                # Side by side
+                {
+                    Two images at 48% width each sit side by side:
+
+                    ![Image one](example_image_1.jpeg =48%) ![Image two](example_image_2.jpg =48%)
+                }
+
+                # Remote image (URL)
+                {
+                    An image loaded from a remote URL:
+
+                    ![Distant galaxy](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/NGC_4414_%28NASA-med%29.jpg/600px-NGC_4414_%28NASA-med%29.jpg =60% center)
+                }
             }
 
             # K&R Brace Style
