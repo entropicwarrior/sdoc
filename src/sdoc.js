@@ -1876,7 +1876,13 @@ const DEFAULT_STYLE = `
     padding-left: 1.2rem;
   }
 
+`;
+
+const PRINT_STYLE = `
   @media print {
+    html {
+      font-size: 80%;
+    }
     body {
       height: auto;
       overflow: visible;
@@ -1942,7 +1948,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const footerContent = [footerHtml, companyHtml].filter(Boolean).join("\n");
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
-  const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
+  const cssAppend = options.cssAppend ? `\n${options.cssAppend}\n${PRINT_STYLE}` : `\n${PRINT_STYLE}`;
   const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
   const mermaidScript = hasMermaidBlocks(parsed.nodes)
     ? `\n<script src="${MERMAID_CDN}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
