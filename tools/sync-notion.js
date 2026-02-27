@@ -96,7 +96,8 @@ function extractNotionPageId(filePath) {
   const text = fs.readFileSync(filePath, "utf-8");
   const parsed = parseSdoc(text);
   const { meta } = extractMeta(parsed.nodes);
-  const pageId = meta.properties["notion-page"] || meta.properties["notion_page"] || null;
+  const props = meta.properties || {};
+  const pageId = props["notion-page"] || props["notion_page"] || null;
   return pageId ? pageId.trim() : null;
 }
 
