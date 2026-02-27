@@ -12,7 +12,10 @@ lexica/sdoc-plan.sdoc
 lexica/status.sdoc
 lexica/suggestions.sdoc
 test/
-tools/
+tools/build-slides.js
+tools/generate_guide.js
+tools/generate_index.js
+tools/serve_docs.py
 dist/
 vendor/
 themes/
