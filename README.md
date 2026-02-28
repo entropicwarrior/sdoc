@@ -107,4 +107,4 @@ Release branches merge to both `main` and `develop`. No direct pushes to `main` 
 
 ## License
 
-[MIT](LICENSE) — 2026 Irreversible Inc.
+[MIT](LICENSE) — 2026 @entropicwarrior
