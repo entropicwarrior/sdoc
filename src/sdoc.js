@@ -1453,7 +1453,7 @@ function renderNode(node, depth) {
         return `<pre class="mermaid"${dl}>${escapeHtml(node.text)}</pre>`;
       }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
-      return `<pre class="sdoc-code"${dl}><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
+      return `<div class="sdoc-code-wrap"${dl}><pre class="sdoc-code"><code${langClass}>${escapeHtml(node.text)}</code></pre><button class="sdoc-copy-btn" title="Copy code">\u29C9</button></div>`;
     }
     default:
       return "";
@@ -1879,9 +1879,36 @@ const DEFAULT_STYLE = `
 `;
 
 const PRINT_STYLE = `
+  .sdoc-code-wrap {
+    position: relative;
+  }
+  .sdoc-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 2px 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .sdoc-code-wrap:hover .sdoc-copy-btn {
+    opacity: 0.75;
+  }
+  .sdoc-copy-btn:hover {
+    opacity: 1 !important;
+  }
   @media print {
     html {
       font-size: 80%;
+    }
+    .sdoc-copy-btn {
+      display: none;
     }
     body {
       height: auto;
