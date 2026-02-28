@@ -554,6 +554,36 @@ function buildWebviewScript() {
 (function() {
   const vscodeApi = acquireVsCodeApi();
 
+  // Copy code button
+  document.addEventListener('click', function(e) {
+    if (!e.target.classList.contains('sdoc-copy-btn')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    var wrap = e.target.closest('.sdoc-code-wrap');
+    if (!wrap) return;
+    var code = wrap.querySelector('code');
+    if (!code) return;
+    var text = code.textContent;
+    var btn = e.target;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = '\u2713';
+        setTimeout(function() { btn.textContent = '\u29C9'; }, 1500);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = '\u2713';
+      setTimeout(function() { btn.textContent = '\u29C9'; }, 1500);
+    }
+  });
+
   // Click-to-navigate
   document.addEventListener('click', function(e) {
     // Skip if clicking inside contenteditable or toggle
@@ -561,6 +591,9 @@ function buildWebviewScript() {
       return;
     }
     if (e.target.classList.contains('sdoc-toggle')) {
+      return;
+    }
+    if (e.target.classList.contains('sdoc-copy-btn')) {
       return;
     }
     const el = e.target.closest('[data-line]');
@@ -960,6 +993,34 @@ function buildCollapseScript() {
     e.stopPropagation();
     var scope = e.target.closest('.sdoc-scope');
     if (scope) scope.classList.toggle('sdoc-collapsed');
+  });
+  document.addEventListener('click', function(e) {
+    if (!e.target.classList.contains('sdoc-copy-btn')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    var wrap = e.target.closest('.sdoc-code-wrap');
+    if (!wrap) return;
+    var code = wrap.querySelector('code');
+    if (!code) return;
+    var text = code.textContent;
+    var btn = e.target;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = '\\u2713';
+        setTimeout(function() { btn.textContent = '\\u29C9'; }, 1500);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = '\\u2713';
+      setTimeout(function() { btn.textContent = '\\u29C9'; }, 1500);
+    }
   });
 })();
 `;

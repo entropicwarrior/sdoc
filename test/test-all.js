@@ -523,6 +523,18 @@ test("code block renders as pre+code", () => {
   assert(html.includes("const x = 1;"));
 });
 
+test("code block has copy button", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  ```js\n  const x = 1;\n  ```\n}", "Test");
+  assert(html.includes("sdoc-copy-btn"), "should have copy button");
+  assert(html.includes("sdoc-code-wrap"), "should have code wrapper div");
+});
+
+test("mermaid block does not have copy button", () => {
+  const { nodes } = parseSdoc("# Doc {\n    ```mermaid\n    graph LR\n    ```\n}");
+  const html = renderFragment(nodes, 2);
+  assert(!html.includes("sdoc-copy-btn"), "mermaid should not have copy button");
+});
+
 test("horizontal rule renders as hr", () => {
   const html = renderHtmlDocument("# Doc\n{\n  ---\n}", "Test");
   assert(html.includes("<hr"));

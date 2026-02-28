@@ -240,6 +240,34 @@
       if (pane.shadowRoot) return pane.shadowRoot;
       const shadow = pane.attachShadow({ mode: "open" });
       shadow.addEventListener("click", function(e) {
+        if (e.target.classList.contains("sdoc-copy-btn")) {
+          e.stopPropagation();
+          e.preventDefault();
+          var wrap = e.target.closest(".sdoc-code-wrap");
+          if (!wrap) return;
+          var code = wrap.querySelector("code");
+          if (!code) return;
+          var text = code.textContent;
+          var btn = e.target;
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(function() {
+              btn.textContent = "\u2713";
+              setTimeout(function() { btn.textContent = "\u29C9"; }, 1500);
+            });
+          } else {
+            var ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+            btn.textContent = "\u2713";
+            setTimeout(function() { btn.textContent = "\u29C9"; }, 1500);
+          }
+          return;
+        }
         if (!e.target.classList.contains("sdoc-toggle")) return;
         e.stopPropagation();
         var scope = e.target.closest(".sdoc-scope");
