@@ -454,7 +454,8 @@ Content of Section B.
                 - Display math: `$$E = mc^2$$` (centered block)
                 - Positive marker: `{+text+}` (green highlight)
                 - Neutral marker: `{=text=}` (blue highlight)
-                - Warning marker: `{!text!}` (amber highlight)
+                - Caution marker: `{^text^}` (amber highlight)
+                - Warning marker: `{!text!}` (orange highlight)
                 - Negative marker: `{-text-}` (red highlight)
                 - Highlight: `{~text~}` (yellow highlight)
             }
@@ -464,7 +465,7 @@ Content of Section B.
 
         # Escaping @escaping
         {
-            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` and `` \` ``.
+            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\^` and `` \` ``.
 
             Escapes are processed before reference detection.
 
@@ -788,7 +789,7 @@ Content of Section A.
             - Comment syntax (if any)
             - Duplicate ID resolution (error vs warning vs nearest-scope)
             - Additional list types (checkboxes, alpha, roman)
-            - Additional inline formatting (underline, highlight)
+            - Additional inline formatting (underline)
         }
     }
 }

@@ -62,7 +62,7 @@ Hello, this is my first SDOC document.
     {
         SDOC supports *emphasis*, **strong**, `code`, ~~strikethrough~~, and math like $E = mc^2$.
 
-        Semantic markers: {+passed+}, {=info=}, {!caution!}, {-failed-}, and {~highlighted~}.
+        Semantic markers: {+passed+}, {=info=}, {^caution^}, {!warning!}, {-failed-}, and {~highlighted~}.
     }
 
     # To Do

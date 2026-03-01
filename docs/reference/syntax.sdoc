@@ -282,7 +282,8 @@ Content of Section B.
             - `$$E = mc^2$$` renders as display math (centered)
             - `{+text+}` renders as {+positive (green) marker+}
             - `{=text=}` renders as {=neutral (blue) marker=}
-            - `{!text!}` renders as {!warning (amber) marker!}
+            - `{^text^}` renders as {^caution (amber) marker^}
+            - `{!text!}` renders as {!warning (orange) marker!}
             - `{-text-}` renders as {-negative (red) marker-}
             - `{~text~}` renders as {~highlighted text~}
         }

@@ -222,7 +222,8 @@ Add `borderless` and/or `headerless` flags after `table`:
 | `$$E = mc^2$$` | Display math (centered) |
 | `{+text+}` | Positive marker (green) |
 | `{=text=}` | Neutral marker (blue) |
-| `{!text!}` | Warning marker (amber) |
+| `{^text^}` | Caution marker (amber) |
+| `{!text!}` | Warning marker (orange) |
 | `{-text-}` | Negative marker (red) |
 | `{~text~}` | Highlight (yellow) |
 
@@ -360,7 +361,7 @@ A line of three or more `-`, `*`, or `_`:
 
 ### Escaping
 
-Backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\\``
+Backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\^` `\\``
 
 A line starting with `\#` renders as a literal `#` (not a heading). A line starting with `\>` renders as a literal `>` (not a blockquote). Use `\$` to prevent a dollar sign from starting math mode.
 

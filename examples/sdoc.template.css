@@ -233,7 +233,8 @@ main {
 }
 .sdoc-mark-positive { background-color: rgba(34, 139, 34, 0.15); color: #166016; }
 .sdoc-mark-neutral  { background-color: rgba(59, 130, 195, 0.15); color: #245d8a; }
-.sdoc-mark-warning  { background-color: rgba(200, 150, 30, 0.18); color: #7a5f0e; }
+.sdoc-mark-caution  { background-color: rgba(200, 150, 30, 0.18); color: #7a5f0e; }
+.sdoc-mark-warning  { background-color: rgba(255, 120, 0, 0.18); color: #b35400; }
 .sdoc-mark-negative { background-color: rgba(187, 50, 50, 0.15); color: #911e1e; }
 .sdoc-mark-highlight { background-color: rgba(255, 255, 0, 0.75); }
 
