@@ -77,6 +77,71 @@ Or use the **SDOC: Browse Documents** command from the VS Code Command Palette.
 }
 ```
 
+## Features
+
+### Inline Formatting
+
+`*emphasis*`, `**strong**`, `~~strikethrough~~`, `` `inline code` ``, `[links](url)`, and `<https://autolinks>`.
+
+### Semantic Markers
+
+Annotate text with semantic meaning that renders as colored highlights:
+
+| Syntax | Meaning | Color |
+|---|---|---|
+| `{+text+}` | Positive | Green |
+| `{=text=}` | Neutral | Blue |
+| `{!text!}` | Warning | Amber |
+| `{-text-}` | Negative | Red |
+| `{~text~}` | Highlight | Yellow |
+
+Markers nest with other inline formatting: `{+**all checks** passed+}`.
+
+### Math
+
+Inline math with `$x^2 + y^2$`, display math with `$$E = mc^2$$`, and multi-line equations with ` ```math ` code fences. Rendered via KaTeX.
+
+### Code Blocks
+
+Fenced with triple backticks, optional language tag for syntax highlighting. The `src:` directive includes external files inline:
+
+````
+```json src:./config.json lines:1-10
+```
+````
+
+### Mermaid Diagrams
+
+Code blocks tagged `mermaid` render as SVG diagrams — flowcharts, sequence diagrams, class diagrams, state diagrams, and more.
+
+### Images
+
+Markdown-style images with optional width and alignment:
+
+```
+![Photo](image.png =50% center)
+```
+
+### Tables
+
+Pipe-delimited tables with optional `borderless` and `headerless` flags.
+
+### Lists
+
+Bullet lists (`-`), numbered lists (`1.`), and task lists (`- [ ]` / `- [x]`). Items can have rich body content including nested lists, code blocks, and paragraphs.
+
+### References
+
+Tag any section with `@id` and cross-reference it anywhere with `@id` — renders as a clickable link.
+
+### Slides
+
+Turn any SDOC file into an HTML slide deck with themes, layouts (center, two-column), speaker notes, and PDF export.
+
+### Custom Styling
+
+Per-folder `sdoc.config.json` or per-file `@meta` scope for custom CSS, headers, footers, and confidentiality banners. Configs cascade from workspace root to file.
+
 ## Learning the Format
 
 - `docs/guide/intro.sdoc` — what SDOC is and why
