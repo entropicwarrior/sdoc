@@ -1,3 +1,5 @@
+const SDOC_FORMAT_VERSION = "0.1";
+
 const COMMAND_HEADING = "#";
 const COMMAND_SCOPE_OPEN = "{";
 const COMMAND_SCOPE_CLOSE = "}";
@@ -6,7 +8,29 @@ const COMMAND_LIST_NUMBER = "{[#]";
 const COMMAND_TABLE = "{[table]";
 const COMMAND_CODE_FENCE = "```";
 
-const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">"]);
+const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">", "$", "+", "=", "-"]);
+
+let _katex = null;
+let _katexLoaded = false;
+
+function getKatex() {
+  if (!_katexLoaded) {
+    _katexLoaded = true;
+    try {
+      _katex = require(require("path").join(__dirname, "..", "vendor", "katex.min.js"));
+    } catch { _katex = null; }
+  }
+  return _katex;
+}
+
+function renderKatex(latex, displayMode) {
+  const katex = getKatex();
+  if (katex) {
+    return katex.renderToString(latex, { displayMode, throwOnError: false });
+  }
+  const cls = displayMode ? "sdoc-math-fallback sdoc-math-display-fallback" : "sdoc-math-fallback";
+  return `<code class="${cls}">${escapeHtml(latex)}</code>`;
+}
 
 function isTableCommand(text) {
   return /^\{\[table(?:\s+[^\]]*?)?\]$/.test(text);
@@ -1132,6 +1156,28 @@ function parseInline(text) {
       }
     }
 
+    // Display math $$...$$ (must come before $ check)
+    if (text.startsWith("$$", i)) {
+      const end = findUnescaped(text, i + 2, "$$");
+      if (end !== -1 && end > i + 2) {
+        flush();
+        nodes.push({ type: "math_display", value: text.slice(i + 2, end) });
+        i = end + 2;
+        continue;
+      }
+    }
+
+    // Inline math $...$ (require non-whitespace after open and before close)
+    if (ch === "$" && next && next !== " " && next !== "\t" && next !== "$") {
+      const end = findUnescaped(text, i + 1, "$");
+      if (end !== -1 && end > i + 1 && text[end - 1] !== " " && text[end - 1] !== "\t") {
+        flush();
+        nodes.push({ type: "math_inline", value: text.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+    }
+
     if (text.startsWith("**", i)) {
       const end = findUnescaped(text, i + 2, "**");
       if (end !== -1) {
@@ -1151,6 +1197,25 @@ function parseInline(text) {
         nodes.push({ type: "strike", children: inner });
         i = end + 2;
         continue;
+      }
+    }
+
+    if (ch === "{") {
+      const mc = next;
+      let mt = null;
+      if (mc === "+") mt = "mark_positive";
+      else if (mc === "=") mt = "mark_neutral";
+      else if (mc === "!") mt = "mark_warning";
+      else if (mc === "-") mt = "mark_negative";
+      else if (mc === "~") mt = "mark_highlight";
+      if (mt) {
+        const end = findUnescaped(text, i + 2, mc + "}");
+        if (end !== -1) {
+          flush();
+          nodes.push({ type: mt, children: parseInline(text.slice(i + 2, end)) });
+          i = end + 2;
+          continue;
+        }
       }
     }
 
@@ -1296,6 +1361,16 @@ function renderInlineNodes(nodes) {
           return `<strong>${renderInlineNodes(node.children)}</strong>`;
         case "strike":
           return `<del>${renderInlineNodes(node.children)}</del>`;
+        case "mark_positive":
+          return `<span class="sdoc-mark sdoc-mark-positive">${renderInlineNodes(node.children)}</span>`;
+        case "mark_neutral":
+          return `<span class="sdoc-mark sdoc-mark-neutral">${renderInlineNodes(node.children)}</span>`;
+        case "mark_warning":
+          return `<span class="sdoc-mark sdoc-mark-warning">${renderInlineNodes(node.children)}</span>`;
+        case "mark_negative":
+          return `<span class="sdoc-mark sdoc-mark-negative">${renderInlineNodes(node.children)}</span>`;
+        case "mark_highlight":
+          return `<mark class="sdoc-mark sdoc-mark-highlight">${renderInlineNodes(node.children)}</mark>`;
         case "link":
           return `<a class="sdoc-link" href="${escapeAttr(node.href)}" target="_blank" rel="noopener noreferrer">${renderInlineNodes(
             node.children
@@ -1309,6 +1384,10 @@ function renderInlineNodes(nodes) {
           const imgStyle = imgParts.length ? ` style="${imgParts.join(";")}"` : "";
           return `<img class="sdoc-image" src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}"${imgStyle} />`;
         }
+        case "math_inline":
+          return `<span class="sdoc-math sdoc-math-inline">${renderKatex(node.value, false)}</span>`;
+        case "math_display":
+          return `<span class="sdoc-math sdoc-math-display">${renderKatex(node.value, true)}</span>`;
         default:
           return "";
       }
@@ -1452,6 +1531,9 @@ function renderNode(node, depth) {
       if (node.lang === "mermaid") {
         return `<pre class="mermaid"${dl}>${escapeHtml(node.text)}</pre>`;
       }
+      if (node.lang === "math") {
+        return `<div class="sdoc-math sdoc-math-block"${dl}>${renderKatex(node.text, true)}</div>`;
+      }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
       return `<div class="sdoc-code-wrap"${dl}><pre class="sdoc-code"><code${langClass}>${escapeHtml(node.text)}</code></pre><button class="sdoc-copy-btn" title="Copy code">\u29C9</button></div>`;
     }
@@ -1484,7 +1566,7 @@ function extractMeta(nodes) {
   }
 
   if (metaIndex === -1) {
-    return { nodes, meta: {} };
+    return { nodes, meta: {}, warnings: [] };
   }
 
   const metaNode = searchNodes[metaIndex];
@@ -1545,14 +1627,19 @@ function extractMeta(nodes) {
   meta.company = meta.properties.company || null;
   meta.confidential = meta.properties.confidential || null;
 
+  const warnings = [];
+  if (!meta.properties["sdoc-version"]) {
+    warnings.push("Missing sdoc-version in @meta (current format version is " + SDOC_FORMAT_VERSION + ")");
+  }
+
   if (doc) {
     // @meta was inside the document scope — strip it from children
     const filteredChildren = doc.children.filter((_, index) => index !== metaIndex);
     const stripped = { ...doc, children: filteredChildren };
-    return { nodes: [stripped], meta };
+    return { nodes: [stripped], meta, warnings };
   }
   const bodyNodes = nodes.filter((_, index) => index !== metaIndex);
-  return { nodes: bodyNodes, meta };
+  return { nodes: bodyNodes, meta, warnings };
 }
 
 function collectParagraphText(nodes) {
@@ -1834,6 +1921,17 @@ const DEFAULT_STYLE = `
     padding: 0 0.2em;
   }
 
+  .sdoc-mark {
+    border-radius: 3px;
+    padding: 0.05em 0.3em;
+    font-weight: 500;
+  }
+  .sdoc-mark-positive { background-color: rgba(34, 139, 34, 0.15); color: #166016; }
+  .sdoc-mark-neutral  { background-color: rgba(59, 130, 195, 0.15); color: #245d8a; }
+  .sdoc-mark-warning  { background-color: rgba(200, 150, 30, 0.18); color: #7a5f0e; }
+  .sdoc-mark-negative { background-color: rgba(187, 50, 50, 0.15); color: #911e1e; }
+  .sdoc-mark-highlight { background-color: rgba(255, 255, 0, 0.75); }
+
   .sdoc-image {
     display: inline-block;
     max-width: 100%;
@@ -1929,10 +2027,12 @@ const PRINT_STYLE = `
       white-space: pre-wrap;
       word-wrap: break-word;
     }
+    .sdoc-mark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 `;
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+const KATEX_CDN_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";
 
 function hasMermaidBlocks(nodes) {
   for (const node of nodes) {
@@ -1980,6 +2080,9 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const mermaidScript = hasMermaidBlocks(parsed.nodes)
     ? `\n<script src="${MERMAID_CDN}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
     : "";
+  const katexCssTag = body.includes('class="katex"')
+    ? `\n<link rel="stylesheet" href="${KATEX_CDN_CSS}" />`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1989,7 +2092,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
 <title>${escapeHtml(title)}</title>
 <style>
 ${cssBase}${cssAppend}
-</style>
+</style>${katexCssTag}
 </head>
 <body>
   <div class="sdoc-shell">
@@ -2236,6 +2339,7 @@ async function resolveIncludes(nodes, resolverFn) {
 }
 
 module.exports = {
+  SDOC_FORMAT_VERSION,
   parseSdoc,
   extractMeta,
   resolveIncludes,
@@ -2251,6 +2355,7 @@ module.exports = {
   extractAbout,
   // Low-level helpers for custom renderers (e.g. slide-renderer)
   parseInline,
+  renderKatex,
   escapeHtml,
   escapeAttr
 };

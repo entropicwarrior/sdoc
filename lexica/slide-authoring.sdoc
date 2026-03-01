@@ -3,6 +3,8 @@
     # Meta @meta
     {
         type: skill
+
+        sdoc-version: 0.1
     }
 
     # About @about

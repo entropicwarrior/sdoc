@@ -3,6 +3,8 @@
     # Meta @meta
     {
         type: doc
+
+        sdoc-version: 0.1
     }
 
     # About @about
@@ -448,16 +450,25 @@ Content of Section B.
                 - Strong: `**strong**`
                 - Strikethrough: `~~strike~~`
                 - Inline code: `` `code` ``
+                - Inline math: `$x^2$` (rendered via KaTeX)
+                - Display math: `$$E = mc^2$$` (centered block)
+                - Positive marker: `{+text+}` (green highlight)
+                - Neutral marker: `{=text=}` (blue highlight)
+                - Warning marker: `{!text!}` (amber highlight)
+                - Negative marker: `{-text-}` (red highlight)
+                - Highlight: `{~text~}` (yellow highlight)
             }
+
+            Inline math requires non-whitespace immediately after the opening `$` and before the closing `$`. A plain `$` followed by a digit (e.g. `$100`) does not trigger math mode because there is no closing `$`.
         }
 
         # Escaping @escaping
         {
-            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` and `` \` ``.
+            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` and `` \` ``.
 
             Escapes are processed before reference detection.
 
-            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`).
+            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`). Use `\$` to prevent a dollar sign from starting math mode.
         }
 
         # Code Blocks @code-blocks
@@ -474,6 +485,8 @@ Content of Section B.
                 - The opening and closing fences must be on their own lines
                 - Anything inside is treated as raw text (no parsing, no escapes)
                 - Optional language tag after the opening fence
+                - The special language tag `math` renders the block as a display equation via KaTeX (no copy button)
+                - The special language tag `mermaid` renders the block as an SVG diagram via the Mermaid library
             }
 
             # Include by Link @code-includes
@@ -570,13 +583,15 @@ Content of Section B.
                     date: 2026-02-09
                     version: 1.0
                     status: Draft
+                    sdoc-version: 0.1
                 }
                 ```
 
                 {[.]
                     - Key matching is case-insensitive
                     - The pattern requires at least one space after the colon (`key: value`, not `key:value`)
-                    - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`
+                    - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`, `sdoc-version`
+                    - `sdoc-version` identifies the SDOC format version the document targets (current: `0.1`). A parser warning is emitted when this key is missing.
                     - All other keys are stored as custom properties (e.g., `author`, `date`, `version`, `status`, `tags`)
                     - Sub-scope syntax takes precedence: if both `# Style { path }` and `style: path` exist, the sub-scope value wins
                     - Key:value and sub-scope syntax can be mixed freely in the same meta scope

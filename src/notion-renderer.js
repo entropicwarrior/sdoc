@@ -76,6 +76,7 @@ function richText(content, href, annotations) {
 function enforceContentLimit(richTexts, limit) {
   const result = [];
   for (const rt of richTexts) {
+    if (!rt.text) { result.push(rt); continue; }
     const content = rt.text.content;
     if (content.length <= limit) {
       result.push(rt);
@@ -128,6 +129,21 @@ function flattenInlineNodes(nodes, annotations, href) {
       case "image":
         // Images are extracted at the block level; skip here.
         break;
+      case "math_inline":
+      case "math_display":
+        result.push({
+          type: "equation",
+          equation: { expression: node.value },
+          annotations: ann
+        });
+        break;
+      case "mark_positive":
+      case "mark_neutral":
+      case "mark_warning":
+      case "mark_negative":
+      case "mark_highlight":
+        result.push(...flattenInlineNodes(node.children, ann, href));
+        break;
       default:
         break;
     }
@@ -160,7 +176,7 @@ function extractImagesFromInline(text) {
   }
 
   const rt = enforceContentLimit(flattenInlineNodes(textNodes), RICH_TEXT_LIMIT);
-  const hasText = rt.some((r) => r.text.content.trim() !== "");
+  const hasText = rt.some((r) => (r.text ? r.text.content.trim() !== "" : r.type === "equation"));
 
   const imageBlocks = [];
   for (const img of images) {
@@ -258,6 +274,9 @@ function renderNode(node, depth, nestLevel) {
     case "table":
       return renderTable(node);
     case "code":
+      if (node.lang === "math") {
+        return [{ type: "equation", equation: { expression: node.text || "" } }];
+      }
       return renderCode(node);
     case "blockquote":
       return renderBlockquote(node);

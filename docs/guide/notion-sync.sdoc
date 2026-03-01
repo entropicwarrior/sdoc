@@ -1,5 +1,9 @@
 # Notion Sync
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     SDOC files can be synced to Notion as native blocks -- headings, paragraphs, lists, tables, code, and images all render as real Notion content. The repo is the source of truth; Notion is a read-only mirror that stays up to date automatically via CI.
 
     # How It Works

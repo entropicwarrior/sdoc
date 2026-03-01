@@ -1,5 +1,9 @@
 # First Steps with SDOC
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     # Step 1: Create a File
     {
         Create a new file with a `.sdoc` extension, for example `notes.sdoc`:
@@ -49,14 +53,16 @@ Hello, this is my first SDOC document.
 
     # Step 4: Add Formatting
     {
-        Try adding inline formatting and a list:
+        Try adding inline formatting, math, and a list:
 
         ```
 # My Notes
 {
     # Introduction
     {
-        SDOC supports *emphasis*, **strong**, `code`, and ~~strikethrough~~.
+        SDOC supports *emphasis*, **strong**, `code`, ~~strikethrough~~, and math like $E = mc^2$.
+
+        Semantic markers: {+passed+}, {=info=}, {!caution!}, {-failed-}, and {~highlighted~}.
     }
 
     # To Do

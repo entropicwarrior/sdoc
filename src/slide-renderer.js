@@ -7,7 +7,7 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
-const { parseInline, escapeHtml, escapeAttr } = require("./sdoc");
+const { parseInline, renderKatex, escapeHtml, escapeAttr } = require("./sdoc");
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -40,6 +40,10 @@ function renderInlineNodes(nodes) {
         }
         case "ref":
           return `@${escapeHtml(node.id)}`;
+        case "math_inline":
+          return `<span class="sdoc-math sdoc-math-inline">${renderKatex(node.value, false)}</span>`;
+        case "math_display":
+          return `<span class="sdoc-math sdoc-math-display">${renderKatex(node.value, true)}</span>`;
         default:
           return "";
       }
@@ -66,6 +70,9 @@ function renderNode(node) {
     case "code": {
       if (node.lang === "mermaid") {
         return `<pre class="mermaid">${escapeHtml(node.text)}</pre>`;
+      }
+      if (node.lang === "math") {
+        return `<div class="sdoc-math sdoc-math-block">${renderKatex(node.text, true)}</div>`;
       }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
       return `<pre><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
@@ -324,6 +331,10 @@ function renderSlides(nodes, options = {}) {
   const mermaidTag = slidesHtml.includes('class="mermaid"')
     ? `\n<script src="${mermaidCdn}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
     : "";
+  const katexCssCdn = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";
+  const katexTag = slidesHtml.includes('class="katex"')
+    ? `\n<link rel="stylesheet" href="${katexCssCdn}" />`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -331,7 +342,7 @@ function renderSlides(nodes, options = {}) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHtml(title)}</title>
-${cssTag}
+${cssTag}${katexTag}
 </head>
 <body>
 ${slidesHtml}

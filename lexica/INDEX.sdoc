@@ -3,6 +3,8 @@
     # Meta @meta
     {
         generated: 2026-02-21
+
+        sdoc-version: 0.1
     }
 
     - **requirements.sdoc** (doc) — Why SDOC exists and what it must achieve. Defines ten abstract requirements (R1-R10) and concrete implementation constraints (C1-C6). Read before proposing spec changes or new features.

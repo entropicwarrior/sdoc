@@ -226,6 +226,17 @@ main {
   padding: 0 0.2em;
 }
 
+.sdoc-mark {
+  border-radius: 3px;
+  padding: 0.05em 0.3em;
+  font-weight: 500;
+}
+.sdoc-mark-positive { background-color: rgba(34, 139, 34, 0.15); color: #166016; }
+.sdoc-mark-neutral  { background-color: rgba(59, 130, 195, 0.15); color: #245d8a; }
+.sdoc-mark-warning  { background-color: rgba(200, 150, 30, 0.18); color: #7a5f0e; }
+.sdoc-mark-negative { background-color: rgba(187, 50, 50, 0.15); color: #911e1e; }
+.sdoc-mark-highlight { background-color: rgba(255, 255, 0, 0.75); }
+
 .sdoc-image {
   display: inline-block;
   max-width: 100%;
