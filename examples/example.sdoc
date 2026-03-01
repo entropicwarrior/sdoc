@@ -24,7 +24,7 @@
         References look like @overview.
 
         You can use *emphasis*, **strong**, and `inline code`.
-        Semantic markers: {+positive+}, {=neutral=}, {!warning!}, {-negative-}. Highlight: {~important note~}. Nesting works: {+**all checks** passed+}.
+        Semantic markers: {+positive+}, {=neutral=}, {^caution^}, {!warning!}, {-negative-}. Highlight: {~important note~}. Nesting works: {+**all checks** passed+}.
         External links look like [SDOC](https://example.com).
     }
     # Examples

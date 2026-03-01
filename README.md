@@ -91,7 +91,8 @@ Annotate text with semantic meaning that renders as colored highlights:
 |---|---|---|
 | `{+text+}` | Positive | Green |
 | `{=text=}` | Neutral | Blue |
-| `{!text!}` | Warning | Amber |
+| `{^text^}` | Caution | Amber |
+| `{!text!}` | Warning | Orange |
 | `{-text-}` | Negative | Red |
 | `{~text~}` | Highlight | Yellow |
 

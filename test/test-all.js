@@ -1788,9 +1788,14 @@ test("neutral marker renders with correct class", () => {
   assert(html.includes("sdoc-mark-neutral") && html.includes(">info</span>"), "should render neutral marker");
 });
 
+test("caution marker renders with correct class", () => {
+  const html = renderHtmlDocument("# T\n{\nNote: {^caution^}\n}", "Test");
+  assert(html.includes("sdoc-mark-caution") && html.includes(">caution</span>"), "should render caution marker");
+});
+
 test("warning marker renders with correct class", () => {
-  const html = renderHtmlDocument("# T\n{\nNote: {!caution!}\n}", "Test");
-  assert(html.includes("sdoc-mark-warning") && html.includes(">caution</span>"), "should render warning marker");
+  const html = renderHtmlDocument("# T\n{\nAlert: {!warning!}\n}", "Test");
+  assert(html.includes("sdoc-mark-warning") && html.includes(">warning</span>"), "should render warning marker");
 });
 
 test("negative marker renders with correct class", () => {
@@ -1826,8 +1831,9 @@ test("marker uses <mark> element", () => {
 });
 
 test("multiple markers on one line", () => {
-  const html = renderHtmlDocument("# T\n{\nResults: {+pass+} and {-fail-}\n}", "Test");
+  const html = renderHtmlDocument("# T\n{\nResults: {+pass+} and {^careful^} and {-fail-}\n}", "Test");
   assert(html.includes("sdoc-mark-positive"), "should have positive marker");
+  assert(html.includes("sdoc-mark-caution"), "should have caution marker");
   assert(html.includes("sdoc-mark-negative"), "should have negative marker");
 });
 
@@ -1840,6 +1846,7 @@ test("parseInline produces correct node types for markers", () => {
   const types = [
     ["{+text+}", "mark_positive"],
     ["{=text=}", "mark_neutral"],
+    ["{^text^}", "mark_caution"],
     ["{!text!}", "mark_warning"],
     ["{-text-}", "mark_negative"],
     ["{~text~}", "mark_highlight"],

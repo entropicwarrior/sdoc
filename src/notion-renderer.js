@@ -139,6 +139,7 @@ function flattenInlineNodes(nodes, annotations, href) {
         break;
       case "mark_positive":
       case "mark_neutral":
+      case "mark_caution":
       case "mark_warning":
       case "mark_negative":
       case "mark_highlight":
