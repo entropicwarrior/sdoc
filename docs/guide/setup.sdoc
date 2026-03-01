@@ -1,5 +1,9 @@
 # Setup
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     # Requirements
     {
         {[.]

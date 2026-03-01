@@ -1,5 +1,6 @@
 # Meta @meta
 {
+    sdoc-version: 0.1
     # StyleAppend
     {
         example-overrides.css
@@ -23,6 +24,7 @@
         References look like @overview.
 
         You can use *emphasis*, **strong**, and `inline code`.
+        Semantic markers: {+positive+}, {=neutral=}, {!warning!}, {-negative-}. Highlight: {~important note~}. Nesting works: {+**all checks** passed+}.
         External links look like [SDOC](https://example.com).
     }
     # Examples
@@ -281,6 +283,26 @@
                 }
 
                 Back to the outer level.
+            }
+
+            # Math
+            {
+                Inline math blends with text: the quadratic formula $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$ solves any quadratic.
+
+                Display math is centred on its own line:
+
+                $$\int_{-\infty}^{\infty} e^{-x^2} \, dx = \sqrt{\pi}$$
+
+                Multi-line equations use a code fence:
+
+                ```math
+                \begin{pmatrix} a & b \\ c & d \end{pmatrix}
+                \begin{pmatrix} x \\ y \end{pmatrix}
+                =
+                \begin{pmatrix} ax + by \\ cx + dy \end{pmatrix}
+                ```
+
+                A plain dollar sign like $100 does not trigger math mode.
             }
 
             # Extras

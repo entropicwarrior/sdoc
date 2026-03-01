@@ -1,5 +1,9 @@
 # CLI and Tools Reference
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     # VSCode Extension Commands
     {
         The SDOC extension registers seven commands, available from the Command Palette:

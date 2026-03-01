@@ -76,16 +76,23 @@
         { "include": "#escape" },
         { "include": "#reference" },
         { "include": "#inline-code" },
+        { "include": "#display-math" },
+        { "include": "#inline-math" },
         { "include": "#image" },
         { "include": "#link" },
         { "include": "#autolink" },
         { "include": "#strong" },
         { "include": "#emphasis" },
-        { "include": "#strikethrough" }
+        { "include": "#strikethrough" },
+        { "include": "#mark-positive" },
+        { "include": "#mark-neutral" },
+        { "include": "#mark-warning" },
+        { "include": "#mark-negative" },
+        { "include": "#mark-highlight" }
       ]
     },
     "escape": {
-      "match": "\\\\[\\\\{}@\\[\\]()*`#!~<>]",
+      "match": "\\\\[\\\\{}@\\[\\]()*`#!~<>$+=-]",
       "name": "constant.character.escape.sdoc"
     },
     "reference": {
@@ -134,6 +141,34 @@
       "captures": {
         "0": { "name": "markup.strikethrough.sdoc" }
       }
+    },
+    "mark-positive": {
+      "match": "\\{\\+(.+?)\\+\\}",
+      "name": "markup.inserted.sdoc"
+    },
+    "mark-neutral": {
+      "match": "\\{=(.+?)=\\}",
+      "name": "markup.quote.sdoc"
+    },
+    "mark-warning": {
+      "match": "\\{!(.+?)!\\}",
+      "name": "markup.changed.sdoc"
+    },
+    "mark-negative": {
+      "match": "\\{-(.+?)-\\}",
+      "name": "markup.deleted.sdoc"
+    },
+    "mark-highlight": {
+      "match": "\\{~(.+?)~\\}",
+      "name": "markup.other.highlight.sdoc"
+    },
+    "display-math": {
+      "match": "\\$\\$(.+?)\\$\\$",
+      "name": "markup.math.display.sdoc"
+    },
+    "inline-math": {
+      "match": "\\$(?=[^\\s$])([^$]*[^\\s$])\\$(?!\\$)",
+      "name": "markup.math.inline.sdoc"
     }
   }
 }

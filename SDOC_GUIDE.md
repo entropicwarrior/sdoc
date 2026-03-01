@@ -218,6 +218,23 @@ Add `borderless` and/or `headerless` flags after `table`:
 | `**text**` | Strong |
 | `~~text~~` | Strikethrough |
 | `\`code\`` | Inline code |
+| `$x^2$` | Inline math (KaTeX) |
+| `$$E = mc^2$$` | Display math (centered) |
+| `{+text+}` | Positive marker (green) |
+| `{=text=}` | Neutral marker (blue) |
+| `{!text!}` | Warning marker (amber) |
+| `{-text-}` | Negative marker (red) |
+| `{~text~}` | Highlight (yellow) |
+
+Use `` ```math `` code fences for multi-line equations:
+
+````
+```math
+\int_{-\infty}^{\infty} e^{-x^2} \, dx = \sqrt{\pi}
+```
+````
+
+A plain `$` followed by a digit (e.g. `$100`) does not trigger math mode. Use `\$` to escape a dollar sign next to math.
 
 ### Links and Images
 
@@ -304,6 +321,35 @@ Use `src:` on the fence line to include content from a file or URL. The code blo
 - The code block body is ignored when `src:` is present
 - If the file can't be resolved, the block shows an error message
 
+#### Math Blocks
+
+Use `` ```math `` to render multi-line LaTeX equations (rendered via KaTeX):
+
+````
+```math
+\begin{pmatrix} a & b \\ c & d \end{pmatrix}
+\begin{pmatrix} x \\ y \end{pmatrix}
+=
+\begin{pmatrix} ax + by \\ cx + dy \end{pmatrix}
+```
+````
+
+Math blocks render as display equations with no copy button.
+
+#### Mermaid Diagrams
+
+Code blocks with the `mermaid` language tag are rendered as SVG diagrams:
+
+````
+```mermaid
+graph LR
+  A[Client] --> B[Server]
+  B --> C[Database]
+```
+````
+
+The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
+
 ### Horizontal Rules
 
 A line of three or more `-`, `*`, or `_`:
@@ -314,9 +360,9 @@ A line of three or more `-`, `*`, or `_`:
 
 ### Escaping
 
-Backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\\``
+Backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\\``
 
-A line starting with `\#` renders as a literal `#` (not a heading). A line starting with `\>` renders as a literal `>` (not a blockquote).
+A line starting with `\#` renders as a literal `#` (not a heading). A line starting with `\>` renders as a literal `>` (not a blockquote). Use `\$` to prevent a dollar sign from starting math mode.
 
 ### Meta Scope
 
@@ -325,6 +371,7 @@ The reserved `@meta` scope configures per-file settings and is not rendered in t
 ```
 # Meta @meta
 {
+    sdoc-version: 0.1
     # Style
     { styles/custom.css }
     # StyleAppend
@@ -840,16 +887,18 @@ Content of Section B.
                 - Strong: `**strong**`
                 - Strikethrough: `~~strike~~`
                 - Inline code: `` `code` ``
+                - Inline math: `$x^2$` (rendered via KaTeX)
+                - Display math: `$$E = mc^2$$` (centered block)
             }
         }
 
         # Escaping @escaping
         {
-            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` and `` \` ``.
+            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` and `` \` ``.
 
             Escapes are processed before reference detection.
 
-            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`).
+            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`). Use `\$` to prevent a dollar sign from starting math mode.
         }
 
         # Code Blocks @code-blocks
@@ -866,6 +915,8 @@ Content of Section B.
                 - The opening and closing fences must be on their own lines
                 - Anything inside is treated as raw text (no parsing, no escapes)
                 - Optional language tag after the opening fence
+                - The special language tag `math` renders the block as a display equation via KaTeX (no copy button)
+                - The special language tag `mermaid` renders the block as an SVG diagram via the Mermaid library
             }
 
             # Include by Link @code-includes

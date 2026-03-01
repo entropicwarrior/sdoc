@@ -1,5 +1,9 @@
 # Syntax Reference
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     This is a practical reference for writing SDOC files. For the formal specification (edge cases, grammar, parsing rules), see \`lexica/specification.sdoc\`.
 
     # Scopes
@@ -274,7 +278,16 @@ Content of Section B.
             - `**strong**` renders as **strong**
             - `~~strikethrough~~` renders as ~~strikethrough~~
             - `` `code` `` renders as `code`
+            - `$x^2$` renders as inline math (KaTeX)
+            - `$$E = mc^2$$` renders as display math (centered)
+            - `{+text+}` renders as {+positive (green) marker+}
+            - `{=text=}` renders as {=neutral (blue) marker=}
+            - `{!text!}` renders as {!warning (amber) marker!}
+            - `{-text-}` renders as {-negative (red) marker-}
+            - `{~text~}` renders as {~highlighted text~}
         }
+
+        A plain `$` followed by a digit (e.g. `$100`) does not trigger math. Use `\$` to escape dollar signs adjacent to math.
     }
 
     # Links and Images
@@ -364,6 +377,8 @@ Content of Section B.
             - Closing fence: three backticks on their own line
             - Content inside is raw text -- no parsing, no escapes, no inline formatting
             - Braces, `#`, `@`, and all other special characters are treated as literal text inside code blocks
+            - The special language tag `math` renders the block as a display equation via KaTeX (no copy button)
+            - The special language tag `mermaid` renders the block as an SVG diagram
         }
 
         # Include by Link
@@ -401,11 +416,12 @@ Content of Section B.
 
     # Escaping
     {
-        A backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` and `` \` ``.
+        A backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` and `` \` ``.
 
         {[.]
             - `\#` at the start of a line makes it a paragraph line instead of a heading
             - `\>` at the start of a line makes it a paragraph line instead of a blockquote
+            - `\$` prevents a dollar sign from starting math mode
             - Escapes are processed before reference detection
         }
     }
@@ -467,13 +483,15 @@ Content of section A.
     author: Jane Smith
     date: 2026-02-09
     version: 1.0
+    sdoc-version: 0.1
 }
             ```
 
             {[.]
                 - Key matching is case-insensitive
                 - Requires at least one space after the colon
-                - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`
+                - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`, `sdoc-version`
+                - `sdoc-version` identifies the format version (current: `0.1`); a warning is emitted when missing
                 - Other keys (e.g., `author`, `date`, `version`) are stored as custom properties
                 - Sub-scope syntax takes precedence over key:value when both exist
             }

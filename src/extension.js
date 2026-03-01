@@ -113,6 +113,7 @@ function activate(context) {
       `        uuid: ${uuid}`,
       `        type: ${typeName}`,
       `        date: ${date}`,
+      "        sdoc-version: 0.1",
       "    }",
       "",
       "    # About @about",
@@ -830,6 +831,7 @@ async function buildHtml(document, title, webview) {
   if (webview) {
     html = rewriteLocalImages(html, docDir, webview);
     html = rewriteMermaidScript(html, webview);
+    html = rewriteKatexCss(html, webview);
   }
 
   return html;
@@ -854,6 +856,16 @@ function rewriteMermaidScript(html, webview) {
   return html.replace(
     /https:\/\/cdn\.jsdelivr\.net\/npm\/mermaid@11\/dist\/mermaid\.min\.js/g,
     mermaidUri.toString()
+  );
+}
+
+function rewriteKatexCss(html, webview) {
+  const katexCssPath = path.join(__dirname, "..", "vendor", "katex.min.css");
+  if (!fs.existsSync(katexCssPath)) return html;
+  const katexCssUri = webview.asWebviewUri(vscode.Uri.file(katexCssPath));
+  return html.replace(
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/katex@0\.16\/dist\/katex\.min\.css/g,
+    katexCssUri.toString()
   );
 }
 

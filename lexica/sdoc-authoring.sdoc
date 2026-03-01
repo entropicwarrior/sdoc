@@ -3,6 +3,8 @@
     # Meta @meta
     {
         type: skill
+
+        sdoc-version: 0.1
     }
 
     # About @about
@@ -175,6 +177,13 @@
                 \`**text**\` | Strong
                 \`~~text~~\` | Strikethrough
                 \`\\\`code\\\`\` | Inline code
+                \`\$x^2\$\` | Inline math (KaTeX)
+                \`\$\$E = mc^2\$\$\` | Display math (centered)
+                \`\{+text+\}\` | Positive marker (green)
+                \`\{=text=\}\` | Neutral marker (blue)
+                \`\{!text!\}\` | Warning marker (amber)
+                \`\{-text-\}\` | Negative marker (red)
+                \`\{~text~\}\` | Highlight (yellow)
             }
 
             Links: \`[Link text](https://example.com)\`
@@ -192,6 +201,8 @@
             ```
 
             Autolinks: \`\<https://example.com\>\`
+
+            Math: Use \`\$...\$\` for inline math and \`\$\$...\$\$\` for display math. Use \`\\\`\\\`\\\`math\` code fences for multi-line equations. A plain \`\$\` followed by a digit (e.g. \`\$100\`) does not trigger math mode.
         }
 
         # References @references
@@ -252,6 +263,19 @@
             Mermaid supports flowcharts (\`graph\`), sequence diagrams (\`sequenceDiagram\`), class diagrams (\`classDiagram\`), state diagrams (\`stateDiagram-v2\`), and more. The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
         }
 
+        # Math Blocks @math-blocks
+        {
+            Code blocks with the \`math\` language tag are rendered as display equations via KaTeX:
+
+            ````
+            ```math
+            \\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}
+            ```
+            ````
+
+            Math blocks render as centered display equations with no copy button. The KaTeX CSS is loaded from CDN only when a document contains math content.
+        }
+
         # Blockquotes @blockquotes
         {
             ```
@@ -267,6 +291,8 @@
             ```
             @meta {
                 type: doc
+
+                sdoc-version: 0.1
 
                 company: Irreversible Inc.
 
@@ -305,6 +331,9 @@
             \`uuid: ...\` — unique identifier.
 
             \`tags: tag1, tag2\` — comma-separated tags.
+
+            \`sdoc-version: 0.1\` — SDOC format version. A parser warning is
+            emitted when this key is missing from \`@meta\`.
         }
 
         # About Scope @about-scope
@@ -324,9 +353,9 @@
         {
             Backslash escapes special characters: \`\\\\\` \`\\{\` \`\\}\` \`\\@\`
             \`\\[\` \`\\]\` \`\\(\` \`\\)\` \`\\*\` \`\\~\` \`\\#\` \`\\!\` \`\\\<\`
-            \`\\\>\`
+            \`\\\>\` \`\\\$\` \`\\+\` \`\\=\` \`\\-\`
 
-            A line starting with \`\\#\` renders as a literal \`#\` (not a heading).
+            A line starting with \`\\#\` renders as a literal \`#\` (not a heading). Use \`\\\$\` to prevent a dollar sign from starting math mode.
         }
     }
 
