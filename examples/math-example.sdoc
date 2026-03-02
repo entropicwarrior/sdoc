@@ -1,0 +1,93 @@
+# Math & Formula Examples
+
+@meta {
+    type: doc
+
+    sdoc-version: 0.1
+}
+
+@about {
+    Demonstrates KaTeX math support in SDOC. Three syntax forms are available: inline \$...\$, display \$\$...\$\$, and \`\`\`math code fences.
+}
+
+# Inline Math @inline {
+    Inline math blends with text. The quadratic formula $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$ solves $ax^2 + bx + c = 0$.
+
+    Euler's identity $e^{i\pi} + 1 = 0$ connects five fundamental constants.
+
+    Subscripts and superscripts: $a_1, a_2, \ldots, a_n$ and $2^{10} = 1024$.
+}
+
+# Display Math @display {
+    Display math renders centered on its own line. The Gaussian integral:
+
+    $$\int_{-\infty}^{\infty} e^{-x^2} \, dx = \sqrt{\pi}$$
+
+    The Cauchy-Schwarz inequality:
+
+    $$\left( \sum_{k=1}^{n} a_k b_k \right)^2 \leq \left( \sum_{k=1}^{n} a_k^2 \right) \left( \sum_{k=1}^{n} b_k^2 \right)$$
+
+    Maxwell's equations in differential form:
+
+    $$\nabla \cdot \mathbf{E} = \frac{\rho}{\varepsilon_0}$$
+}
+
+# Code Fence Math @fence {
+    The code fence form is useful for multi-line equations. Bayes' theorem:
+
+    ```math
+    P(A \mid B) = \frac{P(B \mid A) \, P(A)}{P(B)}
+    ```
+
+    A matrix equation:
+
+    ```math
+    \begin{pmatrix}
+    a & b \\
+    c & d
+    \end{pmatrix}
+    \begin{pmatrix}
+    x \\
+    y
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+    ax + by \\
+    cx + dy
+    \end{pmatrix}
+    ```
+
+    Taylor series for $e^x$:
+
+    ```math
+    e^x = \sum_{n=0}^{\infty} \frac{x^n}{n!} = 1 + x + \frac{x^2}{2!} + \frac{x^3}{3!} + \cdots
+    ```
+}
+
+# Mixed Content @mixed {
+    Math works alongside all other SDOC features.
+
+    # Physics @physics {
+        Einstein's mass-energy equivalence $E = mc^2$ is perhaps the most famous equation. In its full relativistic form:
+
+        $$E^2 = (pc)^2 + (mc^2)^2$$
+
+        The Schrodinger equation governs quantum mechanics:
+
+        ```math
+        i\hbar \frac{\partial}{\partial t} \Psi(\mathbf{r}, t) = \hat{H} \Psi(\mathbf{r}, t)
+        ```
+    }
+
+    # Greek Letters and Symbols @symbols {
+        Common symbols: $\alpha, \beta, \gamma, \delta, \epsilon, \theta, \lambda, \mu, \pi, \sigma, \omega$.
+
+        Operators: $\sum, \prod, \int, \partial, \nabla, \infty, \approx, \neq, \leq, \geq$.
+    }
+
+    # Dollar Signs Without Math @escaping {
+        A plain dollar sign does not trigger math: $100 is just text.
+
+        To write a literal dollar sign next to math, escape it: \$5 is the cost, and $x + y$ is the formula.
+    }
+}

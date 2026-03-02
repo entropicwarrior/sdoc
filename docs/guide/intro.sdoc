@@ -1,5 +1,9 @@
 # Introduction to SDOC
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     # What is SDOC?
     {
         SDOC is a plain text format for writing structured documentation. It uses explicit scoping to define document structure, with optional braces for unambiguous nesting.
@@ -100,7 +104,7 @@ This is a paragraph.
 }
             ```
 
-            Scopes nest to any depth. Inline formatting (`*bold*`, `` `code` ``, `[links](url)`, `@references`) works the same way as Markdown inside any scope.
+            Scopes nest to any depth. Inline formatting (`*bold*`, `` `code` ``, `[links](url)`, `@references`, `$math$`) works the same way as Markdown inside any scope.
 
             See `reference/syntax.sdoc` for the full list of features, or follow `tutorials/first-steps.sdoc` to try it hands-on.
         }

@@ -184,6 +184,32 @@ Declared with `{[table]}`. First row is the header, columns separated by `|`:
 }
 ```
 
+#### Table Options
+
+Add `borderless` and/or `headerless` flags after `table`:
+
+```
+{[table borderless]
+    Feature | Status
+    Parser | Complete
+    Renderer | Complete
+}
+
+{[table headerless]
+    Alice | 30 | NYC
+    Bob | 25 | LA
+}
+
+{[table borderless headerless]
+    ![](a.png) | ![](b.png)
+    ![](c.png) | ![](d.png)
+}
+```
+
+- `borderless` removes all table borders and striping
+- `headerless` treats all rows as data rows (no header row)
+- Options also work with K&R style: `# Data {[table borderless]`
+
 ### Inline Formatting
 
 | Syntax | Result |
@@ -192,6 +218,24 @@ Declared with `{[table]}`. First row is the header, columns separated by `|`:
 | `**text**` | Strong |
 | `~~text~~` | Strikethrough |
 | `\`code\`` | Inline code |
+| `$x^2$` | Inline math (KaTeX) |
+| `$$E = mc^2$$` | Display math (centered) |
+| `{+text+}` | Positive marker (green) |
+| `{=text=}` | Neutral marker (blue) |
+| `{^text^}` | Caution marker (amber) |
+| `{!text!}` | Warning marker (orange) |
+| `{-text-}` | Negative marker (red) |
+| `{~text~}` | Highlight (yellow) |
+
+Use `` ```math `` code fences for multi-line equations:
+
+````
+```math
+\int_{-\infty}^{\infty} e^{-x^2} \, dx = \sqrt{\pi}
+```
+````
+
+A plain `$` followed by a digit (e.g. `$100`) does not trigger math mode. Use `\$` to escape a dollar sign next to math.
 
 ### Links and Images
 
@@ -200,6 +244,24 @@ Declared with `{[table]}`. First row is the header, columns separated by `|`:
 <https://example.com>
 <mailto:hello@example.com>
 ![Alt text](path/to/image.png)
+```
+
+#### Image Width and Alignment
+
+Control image size and positioning with `=` after the URL:
+
+```
+![photo](image.png =50%)          ← 50% width, inline
+![photo](image.png =200px)        ← 200px width, inline
+![photo](image.png =50% center)   ← centered block
+![photo](image.png =40% left)     ← float left, text wraps
+![photo](image.png =40% right)    ← float right, text wraps
+```
+
+Two images without alignment sit side by side when their widths fit:
+
+```
+![left](a.png =48%) ![right](b.png =48%)
 ```
 
 ### References
@@ -239,6 +301,56 @@ function hello() {
 ```
 ````
 
+#### Include by Link
+
+Use `src:` on the fence line to include content from a file or URL. The code block body is replaced by the file contents:
+
+````
+```json src:./data.json
+```
+
+```json src:./config.json lines:10-20
+```
+
+```src:https://example.com/schema.json
+```
+````
+
+- `src:` — file path (relative to document) or URL
+- `lines:` — optional, `start-end` (1-based, inclusive)
+- Language tag is optional as always
+- The code block body is ignored when `src:` is present
+- If the file can't be resolved, the block shows an error message
+
+#### Math Blocks
+
+Use `` ```math `` to render multi-line LaTeX equations (rendered via KaTeX):
+
+````
+```math
+\begin{pmatrix} a & b \\ c & d \end{pmatrix}
+\begin{pmatrix} x \\ y \end{pmatrix}
+=
+\begin{pmatrix} ax + by \\ cx + dy \end{pmatrix}
+```
+````
+
+Math blocks render as display equations with no copy button.
+
+#### Mermaid Diagrams
+
+Code blocks with the `mermaid` language tag are rendered as SVG diagrams:
+
+````
+```mermaid
+graph LR
+  A[Client] --> B[Server]
+  B --> C[Database]
+```
+````
+
+The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
+
 ### Horizontal Rules
 
 A line of three or more `-`, `*`, or `_`:
@@ -249,9 +361,9 @@ A line of three or more `-`, `*`, or `_`:
 
 ### Escaping
 
-Backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\\``
+Backslash escapes special characters: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\^` `\\``
 
-A line starting with `\#` renders as a literal `#` (not a heading). A line starting with `\>` renders as a literal `>` (not a blockquote).
+A line starting with `\#` renders as a literal `#` (not a heading). A line starting with `\>` renders as a literal `>` (not a blockquote). Use `\$` to prevent a dollar sign from starting math mode.
 
 ### Meta Scope
 
@@ -260,6 +372,7 @@ The reserved `@meta` scope configures per-file settings and is not rendered in t
 ```
 # Meta @meta
 {
+    sdoc-version: 0.1
     # Style
     { styles/custom.css }
     # StyleAppend
@@ -459,7 +572,7 @@ Content of Section B.
 
                 {[.]
                     - The opener must be the last token on the line (trailing whitespace is allowed)
-                    - Applies to `{`, `{[.]`, `{[#]`, and `{[table]`
+                    - Applies to `{`, `{[.]`, `{[#]`, and `{[table]` (including table options like `{[table borderless]`)
                     - Also works on list-item shorthand lines (e.g., `- Item {`)
                     - Escaped braces (`\{`) are not treated as openers
                     - The closing `}` must still appear on its own line
@@ -650,11 +763,29 @@ Content of Section B.
             ```
 
             {[.]
-                - The first row is always the header
+                - The first row is always the header (unless `headerless` is specified)
                 - Columns are separated by `|`
                 - Each row is a single line
                 - Cell contents support inline formatting
                 - Leading and trailing whitespace in cells is trimmed
+            }
+
+            # Table Options @table-options
+            {
+                Optional flags can be added after `table` inside the brackets:
+
+                ```
+                {[table borderless]
+                {[table headerless]
+                {[table borderless headerless]
+                ```
+
+                {[.]
+                    - `borderless` removes all borders and row striping
+                    - `headerless` treats all rows as data rows (no header row, no `<thead>`)
+                    - Flags can be combined in any order
+                    - Options work with K&R style: `# Data {[table borderless]`
+                }
             }
         }
 
@@ -704,6 +835,28 @@ Content of Section B.
             ```
             ![Alt text](https://example.com/image.png)
             ```
+
+            # Image Width and Alignment @image-width
+            {
+                An optional width and alignment can be specified after the URL, separated by a space and preceded by `=`:
+
+                ```
+                ![alt](image.png =50%)
+                ![alt](image.png =200px)
+                ![alt](image.png =50% center)
+                ![alt](image.png =40% left)
+                ![alt](image.png =40% right)
+                ```
+
+                {[.]
+                    - Width accepts percentage (`50%`) or pixel (`200px`) values
+                    - Without an alignment keyword, the image remains inline (enables side-by-side layout)
+                    - `center` makes the image a block element with auto margins
+                    - `left` floats the image left with text wrapping on the right
+                    - `right` floats the image right with text wrapping on the left
+                    - Two inline images with widths totalling ≤100% sit side by side automatically
+                }
+            }
         }
 
         # Blockquotes @blockquotes
@@ -735,16 +888,18 @@ Content of Section B.
                 - Strong: `**strong**`
                 - Strikethrough: `~~strike~~`
                 - Inline code: `` `code` ``
+                - Inline math: `$x^2$` (rendered via KaTeX)
+                - Display math: `$$E = mc^2$$` (centered block)
             }
         }
 
         # Escaping @escaping
         {
-            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` and `` \` ``.
+            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` and `` \` ``.
 
             Escapes are processed before reference detection.
 
-            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`).
+            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`). Use `\$` to prevent a dollar sign from starting math mode.
         }
 
         # Code Blocks @code-blocks
@@ -761,6 +916,34 @@ Content of Section B.
                 - The opening and closing fences must be on their own lines
                 - Anything inside is treated as raw text (no parsing, no escapes)
                 - Optional language tag after the opening fence
+                - The special language tag `math` renders the block as a display equation via KaTeX (no copy button)
+                - The special language tag `mermaid` renders the block as an SVG diagram via the Mermaid library
+            }
+
+            # Include by Link @code-includes
+            {
+                A code block can reference an external file or URL with `src:` on the fence line. The block body is replaced by the resolved content:
+
+                `````
+                ```json src:./data.json
+                ```
+
+                ```json src:./config.json lines:10-20
+                ```
+
+                ```src:https://example.com/schema.json
+                ```
+                `````
+
+                {[.]
+                    - `src:` specifies a file path (relative to the document) or a URL
+                    - `lines:start-end` optionally limits inclusion to a range (1-based, inclusive)
+                    - The language tag is optional and appears before `src:`
+                    - When `src:` is present, the code block body is ignored (replaced by file contents)
+                    - If the file cannot be read or the URL fails, the block displays an error message
+                    - URL responses are cached in memory and cleared on document save
+                    - Resolution happens in the VS Code extension; the parser only records `src` and `lines` on the AST node
+                }
             }
         }
     }
@@ -951,7 +1134,7 @@ Content of Section A.
             - `{` scope open
             - `}` scope close
             - `{[.]` / `{[#]` list open
-            - `{[table]` table open
+            - `{[table]` / `{[table borderless]` / `{[table headerless]` table open
             - `>` blockquote line
             - `---` / `***` / `___` horizontal rule
             - `` ``` `` code fence
@@ -987,7 +1170,9 @@ Content of Section A.
         headingless_scope = "{" ws? block_body "}" ;
         list_scope    = list_open ws? list_body "}" ;
         list_open     = "{[.]" | "{[#]" ;
-        table_scope   = "{[table]" ws? table_body "}" ;
+        table_scope   = table_open ws? table_body "}" ;
+        table_open    = "{[table" { ws table_flag } "]" ;
+        table_flag    = "borderless" | "headerless" ;
         table_body    = table_row { table_row } ;
         table_row     = cell { "|" cell } ;
         list_body     = { blank | comma_sep | scope | list_item_shorthand
@@ -1011,8 +1196,9 @@ Content of Section A.
         horizontal_rule = "---" | "***" | "___" ;
 
         code_block    = fence_open raw_text fence_close ;
-        fence_open    = "```" [lang] newline ;
+        fence_open    = "```" [lang] [ws "src:" path] [ws "lines:" range] newline ;
         fence_close   = "```" newline ;
+        range         = number "-" number ;
 
         comma_sep     = "," ;
         blank         = newline ;

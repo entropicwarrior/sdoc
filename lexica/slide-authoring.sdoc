@@ -3,6 +3,8 @@
     # Meta @meta
     {
         type: skill
+
+        sdoc-version: 0.1
     }
 
     # About @about
@@ -167,7 +169,7 @@
                 \`*italic*\` | \`<em>\`
                 \`\\\`code\\\`\` | \`<code>\`
                 \`[text](url)\` | \`<a>\`
-                \`![alt](src)\` | \`<img>\`
+                \`![alt](src)\` / \`![alt](src =50% center)\` | \`<img>\` (with optional width/alignment)
                 Nested scope | \`<section>\` within the slide
                 \`@notes\` child | Hidden \`<aside class="notes">\`
             }

@@ -1,4 +1,5 @@
 const {
+  SDOC_FORMAT_VERSION,
   parseSdoc,
   extractMeta,
   renderFragment,
@@ -10,7 +11,9 @@ const {
   inferType,
   listSections,
   extractSection,
-  extractAbout
+  extractAbout,
+  parseInline,
+  renderKatex
 } = require("../src/sdoc.js");
 const fs = require("fs");
 const path = require("path");
@@ -521,6 +524,18 @@ test("code block renders as pre+code", () => {
   assert(html.includes("<pre"));
   assert(html.includes("<code"));
   assert(html.includes("const x = 1;"));
+});
+
+test("code block has copy button", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  ```js\n  const x = 1;\n  ```\n}", "Test");
+  assert(html.includes("sdoc-copy-btn"), "should have copy button");
+  assert(html.includes("sdoc-code-wrap"), "should have code wrapper div");
+});
+
+test("mermaid block does not have copy button", () => {
+  const { nodes } = parseSdoc("# Doc {\n    ```mermaid\n    graph LR\n    ```\n}");
+  const html = renderFragment(nodes, 2);
+  assert(!html.includes("sdoc-copy-btn"), "mermaid should not have copy button");
 });
 
 test("horizontal rule renders as hr", () => {
@@ -1554,6 +1569,345 @@ test("mermaid theme option has no effect without mermaid blocks", () => {
   );
   assert(!html.includes("mermaid.initialize"), "should not have mermaid init without mermaid blocks");
   assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+});
+
+// ============================================================
+console.log("\n--- Image width syntax ---");
+
+test("image with percentage width", () => {
+  const r = parseSdoc("# Doc {\n    ![photo](pic.png =50%)\n}");
+  assert(r.errors.length === 0);
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =50%)\n}", "Test");
+  assert(html.includes('style="width:50%"'), "should have width style");
+  assert(html.includes('src="pic.png"'), "should have correct src");
+  assert(html.includes('alt="photo"'), "should have correct alt");
+});
+
+test("image with pixel width", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =200px)\n}", "Test");
+  assert(html.includes('style="width:200px"'), "should have pixel width");
+});
+
+test("image without width has no style", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png)\n}", "Test");
+  assert(!html.includes('style="width:'), "should not have width style");
+});
+
+test("image centered", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =50% center)\n}", "Test");
+  assert(html.includes("width:50%"), "should have width");
+  assert(html.includes("display:block"), "should be block");
+  assert(html.includes("margin-left:auto"), "should be centered");
+  assert(html.includes("margin-right:auto"), "should be centered");
+});
+
+test("image left aligned", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =40% left)\n}", "Test");
+  assert(html.includes("float:left"), "should float left");
+});
+
+test("image right aligned", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =40% right)\n}", "Test");
+  assert(html.includes("float:right"), "should float right");
+});
+
+test("image width without alignment stays inline", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![photo](pic.png =50%)\n}", "Test");
+  assert(!html.includes("display:block"), "should not be block");
+  assert(!html.includes("float:"), "should not float");
+});
+
+test("two images side by side", () => {
+  const html = renderHtmlDocument("# Doc {\n    ![a](a.png =48%) ![b](b.png =48%)\n}", "Test");
+  assert(html.includes('style="width:48%"'), "should have width");
+  // Both images should render
+  assert(html.includes('src="a.png"'), "first image");
+  assert(html.includes('src="b.png"'), "second image");
+});
+
+// ============================================================
+console.log("\n--- Table options ---");
+
+test("borderless table", () => {
+  const r = parseSdoc("{[table borderless]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].type === "table");
+  assert(r.nodes[0].options && r.nodes[0].options.borderless === true);
+  const html = renderHtmlDocument("# Doc {\n    {[table borderless]\n        Name | Age\n        Alice | 30\n    }\n}", "Test");
+  assert(html.includes("sdoc-table-borderless"), "should have borderless class");
+});
+
+test("headerless table", () => {
+  const r = parseSdoc("{[table headerless]\n  A | B\n  C | D\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].type === "table");
+  assert(r.nodes[0].headers.length === 0, "headerless table should have no headers");
+  assert(r.nodes[0].rows.length === 2, "all rows should be data rows");
+  assert(r.nodes[0].rows[0][0] === "A");
+});
+
+test("borderless headerless table", () => {
+  const r = parseSdoc("{[table borderless headerless]\n  A | B\n  C | D\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].headers.length === 0);
+  assert(r.nodes[0].options.borderless === true);
+  assert(r.nodes[0].options.headerless === true);
+  const html = renderHtmlDocument("# Doc {\n    {[table borderless headerless]\n        A | B\n        C | D\n    }\n}", "Test");
+  assert(html.includes("sdoc-table-borderless"), "borderless class");
+  assert(html.includes("sdoc-table-headerless"), "headerless class");
+  assert(!html.includes("<thead"), "no thead for headerless");
+});
+
+test("plain table still works", () => {
+  const r = parseSdoc("{[table]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].headers[0] === "Name");
+  assert(r.nodes[0].rows[0][0] === "Alice");
+});
+
+test("K&R table with options", () => {
+  const r = parseSdoc("# Data {[table borderless]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children[0].type === "table");
+  assert(r.nodes[0].children[0].options.borderless === true);
+});
+
+// ============================================================
+console.log("\n--- Code block include syntax ---");
+
+test("code block with src attribute", () => {
+  const r = parseSdoc("# Doc {\n    ```json src:./data.json\n    ignored body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.type === "code");
+  assert(code.lang === "json");
+  assert(code.src === "./data.json");
+});
+
+test("code block with src and lines", () => {
+  const r = parseSdoc("# Doc {\n    ```json src:./data.json lines:10-20\n    body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === "./data.json");
+  assert(code.lines.start === 10);
+  assert(code.lines.end === 20);
+});
+
+test("code block with src only (no lang)", () => {
+  const r = parseSdoc("# Doc {\n    ```src:./file.txt\n    body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === "./file.txt");
+  assert(code.lang === undefined);
+});
+
+test("code block with URL src", () => {
+  const r = parseSdoc("# Doc {\n    ```json src:https://example.com/schema.json\n    body\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === "https://example.com/schema.json");
+  assert(code.lang === "json");
+});
+
+test("code block without src has no src field", () => {
+  const r = parseSdoc("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.src === undefined, "plain code block should not have src");
+  assert(code.lang === "javascript");
+});
+
+// ============================================================
+console.log("\n--- sdoc-version warnings ---");
+
+test("warning when @meta exists but sdoc-version is missing", () => {
+  const r = parseSdoc("# Meta @meta\n{\n    type: doc\n}\n# Body\n{\n    Content.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.warnings.length === 1, "expected 1 warning, got " + result.warnings.length);
+  assert(result.warnings[0].includes("Missing sdoc-version"), "warning should mention sdoc-version");
+});
+
+test("no warning when sdoc-version is present", () => {
+  const r = parseSdoc("# Meta @meta\n{\n    type: doc\n\n    sdoc-version: 0.1\n}\n# Body\n{\n    Content.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.warnings.length === 0, "expected no warnings, got " + result.warnings.length);
+});
+
+test("no warning when there is no @meta scope", () => {
+  const r = parseSdoc("# Doc\n{\nContent.\n}");
+  const result = extractMeta(r.nodes);
+  assert(result.warnings.length === 0, "expected no warnings, got " + result.warnings.length);
+});
+
+test("SDOC_FORMAT_VERSION is exported and equals 0.1", () => {
+  assert(SDOC_FORMAT_VERSION === "0.1", "expected 0.1, got " + SDOC_FORMAT_VERSION);
+});
+
+// ============================================================
+console.log("\n--- Math / KaTeX ---");
+
+test("inline math parsing", () => {
+  const nodes = parseInline("The formula $x^2$ is simple.");
+  const mathNode = nodes.find(n => n.type === "math_inline");
+  assert(mathNode, "should have math_inline node");
+  assert(mathNode.value === "x^2", "value should be x^2, got: " + mathNode.value);
+});
+
+test("display math parsing", () => {
+  const nodes = parseInline("See $$E = mc^2$$ here.");
+  const mathNode = nodes.find(n => n.type === "math_display");
+  assert(mathNode, "should have math_display node");
+  assert(mathNode.value === "E = mc^2", "value should be E = mc^2");
+});
+
+test("lone $ is not math ($100)", () => {
+  const nodes = parseInline("It costs $100.");
+  const mathNode = nodes.find(n => n.type === "math_inline");
+  assert(!mathNode, "$100 should not trigger math");
+});
+
+test("whitespace after opening $ prevents math", () => {
+  const nodes = parseInline("$ x$ is not math.");
+  const mathNode = nodes.find(n => n.type === "math_inline");
+  assert(!mathNode, "$ x$ should not trigger math");
+});
+
+test("whitespace before closing $ prevents math", () => {
+  const nodes = parseInline("$x $ is not math.");
+  const mathNode = nodes.find(n => n.type === "math_inline");
+  assert(!mathNode, "$x $ should not trigger math");
+});
+
+test("escaped dollar is literal", () => {
+  const html = renderHtmlDocument("# Doc {\n    Price is \\$100.\n}", "Test");
+  assert(html.includes("$100"), "should contain literal $100");
+  assert(!html.includes("sdoc-math"), "should not have math class");
+});
+
+test("inline math renders with sdoc-math-inline class", () => {
+  const html = renderHtmlDocument("# Doc {\n    The formula $x^2$ works.\n}", "Test");
+  assert(html.includes("sdoc-math-inline"), "should have sdoc-math-inline class");
+});
+
+test("display math renders with sdoc-math-display class", () => {
+  const html = renderHtmlDocument("# Doc {\n    Here: $$E = mc^2$$\n}", "Test");
+  assert(html.includes("sdoc-math-display"), "should have sdoc-math-display class");
+});
+
+test("math code block renders as sdoc-math-block", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```math\n    \\int_0^1 x^2 dx\n    ```\n}", "Test");
+  assert(html.includes("sdoc-math-block"), "should have sdoc-math-block class");
+  assert(!html.includes('<button class="sdoc-copy-btn"'), "math block should not have copy button element");
+});
+
+test("KaTeX CSS injected when math present", () => {
+  const html = renderHtmlDocument("# Doc {\n    Formula: $x^2$\n}", "Test");
+  assert(html.includes("katex"), "should reference katex CSS");
+  assert(html.includes("cdn.jsdelivr.net"), "should include CDN URL");
+});
+
+test("KaTeX CSS not injected when no math", () => {
+  const html = renderHtmlDocument("# Doc {\n    No math here.\n}", "Test");
+  assert(!html.includes("katex.min.css"), "should not include katex CSS");
+});
+
+test("renderKatex fallback when KaTeX unavailable", () => {
+  // We can't easily test the fallback without unloading KaTeX,
+  // but we can verify renderKatex produces valid output
+  const output = renderKatex("x^2", false);
+  assert(output.includes("katex") || output.includes("sdoc-math-fallback"), "should produce katex or fallback output");
+});
+
+test("adjacent dollar signs $$ start display math, not inline", () => {
+  const nodes = parseInline("$$x$$");
+  const displayNode = nodes.find(n => n.type === "math_display");
+  const inlineNode = nodes.find(n => n.type === "math_inline");
+  assert(displayNode, "should parse as display math");
+  assert(!inlineNode, "should not parse as inline math");
+});
+
+// ============================================================
+// Semantic Markers
+// ============================================================
+
+test("positive marker renders with correct class", () => {
+  const html = renderHtmlDocument("# T\n{\nResult: {+passed+}\n}", "Test");
+  assert(html.includes("sdoc-mark-positive") && html.includes(">passed</span>"), "should render positive marker");
+});
+
+test("neutral marker renders with correct class", () => {
+  const html = renderHtmlDocument("# T\n{\nStatus: {=info=}\n}", "Test");
+  assert(html.includes("sdoc-mark-neutral") && html.includes(">info</span>"), "should render neutral marker");
+});
+
+test("caution marker renders with correct class", () => {
+  const html = renderHtmlDocument("# T\n{\nNote: {^caution^}\n}", "Test");
+  assert(html.includes("sdoc-mark-caution") && html.includes(">caution</span>"), "should render caution marker");
+});
+
+test("warning marker renders with correct class", () => {
+  const html = renderHtmlDocument("# T\n{\nAlert: {!warning!}\n}", "Test");
+  assert(html.includes("sdoc-mark-warning") && html.includes(">warning</span>"), "should render warning marker");
+});
+
+test("negative marker renders with correct class", () => {
+  const html = renderHtmlDocument("# T\n{\nResult: {-failed-}\n}", "Test");
+  assert(html.includes("sdoc-mark-negative") && html.includes(">failed</span>"), "should render negative marker");
+});
+
+test("nested bold inside marker", () => {
+  const html = renderHtmlDocument("# T\n{\nResult: {+**bold** text+}\n}", "Test");
+  assert(html.includes("<strong>bold</strong> text</span>"), "should render bold inside marker");
+});
+
+test("nested emphasis inside marker", () => {
+  const html = renderHtmlDocument("# T\n{\nResult: {+*em* text+}\n}", "Test");
+  assert(html.includes("<em>em</em> text</span>"), "should render emphasis inside marker");
+});
+
+test("unclosed marker falls through as plain text", () => {
+  const nodes = parseInline("{+unclosed");
+  assert(nodes.length === 1 && nodes[0].type === "text", "should be plain text");
+  assert(nodes[0].value === "{+unclosed", "should preserve original text");
+});
+
+test("escaped marker delimiter prevents marker", () => {
+  const nodes = parseInline("\\{+text+}");
+  const hasMarker = nodes.some(n => n.type === "mark_positive");
+  assert(!hasMarker, "should not create marker when escaped");
+});
+
+test("marker uses <mark> element", () => {
+  const html = renderHtmlDocument("# T\n{\nResult: {+ok+}\n}", "Test");
+  assert(html.includes("sdoc-mark"), "should use sdoc-mark class");
+});
+
+test("multiple markers on one line", () => {
+  const html = renderHtmlDocument("# T\n{\nResults: {+pass+} and {^careful^} and {-fail-}\n}", "Test");
+  assert(html.includes("sdoc-mark-positive"), "should have positive marker");
+  assert(html.includes("sdoc-mark-caution"), "should have caution marker");
+  assert(html.includes("sdoc-mark-negative"), "should have negative marker");
+});
+
+test("highlight marker renders with <mark> element", () => {
+  const html = renderHtmlDocument("# T\n{\nNote: {~important~}\n}", "Test");
+  assert(html.includes("sdoc-mark-highlight") && html.includes(">important</mark>"), "should render highlight with <mark>");
+});
+
+test("parseInline produces correct node types for markers", () => {
+  const types = [
+    ["{+text+}", "mark_positive"],
+    ["{=text=}", "mark_neutral"],
+    ["{^text^}", "mark_caution"],
+    ["{!text!}", "mark_warning"],
+    ["{-text-}", "mark_negative"],
+    ["{~text~}", "mark_highlight"],
+  ];
+  for (const [input, expected] of types) {
+    const nodes = parseInline(input);
+    assert(nodes.length === 1, `should parse ${input} as single node`);
+    assert(nodes[0].type === expected, `${input} should produce ${expected}, got ${nodes[0].type}`);
+  }
 });
 
 // ============================================================

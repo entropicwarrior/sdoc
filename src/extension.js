@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const url = require("url");
 const vscode = require("vscode");
-const { parseSdoc, extractMeta, renderHtmlDocumentFromParsed, slugify, listSections } = require("./sdoc");
+const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections } = require("./sdoc");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -14,6 +14,7 @@ let suppressNextUpdate = false;
 
 let activeServer = null;  // { server, port, rootDir }
 let statusBarItem = null;
+const includeCache = new Map();
 
 function activate(context) {
   const previewCommand = vscode.commands.registerCommand("sdoc.preview", () => {
@@ -112,6 +113,7 @@ function activate(context) {
       `        uuid: ${uuid}`,
       `        type: ${typeName}`,
       `        date: ${date}`,
+      "        sdoc-version: 0.1",
       "    }",
       "",
       "    # About @about",
@@ -376,6 +378,7 @@ function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((document) => {
       if (document.languageId === "sdoc") {
+        includeCache.clear();
         updatePreview(document);
         return;
       }
@@ -501,14 +504,14 @@ function editParagraphInSource(document, lineStart, lineEnd, newText) {
   vscode.workspace.applyEdit(edit);
 }
 
-function updatePreview(document) {
+async function updatePreview(document) {
   const key = document.uri.toString();
   const panel = panels.get(key);
   if (!panel) {
     return;
   }
   panel.title = buildTitle(document.uri);
-  panel.webview.html = buildHtml(document, panel.title, panel.webview);
+  panel.webview.html = await buildHtml(document, panel.title, panel.webview);
 }
 
 function buildSymbols(nodes, document) {
@@ -558,6 +561,36 @@ function buildWebviewScript() {
 (function() {
   const vscodeApi = acquireVsCodeApi();
 
+  // Copy code button
+  document.addEventListener('click', function(e) {
+    if (!e.target.classList.contains('sdoc-copy-btn')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    var wrap = e.target.closest('.sdoc-code-wrap');
+    if (!wrap) return;
+    var code = wrap.querySelector('code');
+    if (!code) return;
+    var text = code.textContent;
+    var btn = e.target;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = '\u2713';
+        setTimeout(function() { btn.textContent = '\u29C9'; }, 1500);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = '\u2713';
+      setTimeout(function() { btn.textContent = '\u29C9'; }, 1500);
+    }
+  });
+
   // Click-to-navigate
   document.addEventListener('click', function(e) {
     // Skip if clicking inside contenteditable or toggle
@@ -565,6 +598,9 @@ function buildWebviewScript() {
       return;
     }
     if (e.target.classList.contains('sdoc-toggle')) {
+      return;
+    }
+    if (e.target.classList.contains('sdoc-copy-btn')) {
       return;
     }
     const el = e.target.closest('[data-line]');
@@ -874,11 +910,27 @@ ${darkModeElementsCss("")}
 `;
 }
 
-function buildHtml(document, title, webview) {
+async function resolveIncludeSrc(src, docDir) {
+  if (/^https?:\/\//i.test(src)) {
+    if (includeCache.has(src)) return includeCache.get(src);
+    const response = await fetch(src);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    includeCache.set(src, text);
+    return text;
+  }
+  const absPath = path.isAbsolute(src) ? src : path.join(docDir, src);
+  return fs.readFileSync(absPath, "utf8");
+}
+
+async function buildHtml(document, title, webview) {
   const parsed = parseSdoc(document.getText());
   const metaResult = extractMeta(parsed.nodes);
   const config = loadConfigForDocument(document);
   const metaStyles = resolveMetaStyles(metaResult.meta, document.uri.fsPath);
+
+  const docDir = path.dirname(document.uri.fsPath);
+  await resolveIncludes(metaResult.nodes, (src) => resolveIncludeSrc(src, docDir));
 
   const cssOverride = metaStyles.styleCss ?? loadCss(config.style);
   const cssAppendParts = [];
@@ -914,9 +966,9 @@ function buildHtml(document, title, webview) {
   );
 
   if (webview) {
-    const docDir = path.dirname(document.uri.fsPath);
     html = rewriteLocalImages(html, docDir, webview);
     html = rewriteMermaidScript(html, webview);
+    html = rewriteKatexCss(html, webview);
   }
 
   return html;
@@ -944,12 +996,22 @@ function rewriteMermaidScript(html, webview) {
   );
 }
 
+function rewriteKatexCss(html, webview) {
+  const katexCssPath = path.join(__dirname, "..", "vendor", "katex.min.css");
+  if (!fs.existsSync(katexCssPath)) return html;
+  const katexCssUri = webview.asWebviewUri(vscode.Uri.file(katexCssPath));
+  return html.replace(
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/katex@0\.16\/dist\/katex\.min\.css/g,
+    katexCssUri.toString()
+  );
+}
+
 function updateAllPreviews() {
   for (const [key, panel] of panels.entries()) {
     const uri = vscode.Uri.parse(key);
-    vscode.workspace.openTextDocument(uri).then((doc) => {
+    vscode.workspace.openTextDocument(uri).then(async (doc) => {
       panel.title = buildTitle(uri);
-      panel.webview.html = buildHtml(doc, panel.title, panel.webview);
+      panel.webview.html = await buildHtml(doc, panel.title, panel.webview);
     });
   }
 }
@@ -1081,15 +1143,46 @@ function buildCollapseScript() {
     var scope = e.target.closest('.sdoc-scope');
     if (scope) scope.classList.toggle('sdoc-collapsed');
   });
+  document.addEventListener('click', function(e) {
+    if (!e.target.classList.contains('sdoc-copy-btn')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    var wrap = e.target.closest('.sdoc-code-wrap');
+    if (!wrap) return;
+    var code = wrap.querySelector('code');
+    if (!code) return;
+    var text = code.textContent;
+    var btn = e.target;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = '\\u2713';
+        setTimeout(function() { btn.textContent = '\\u29C9'; }, 1500);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = '\\u2713';
+      setTimeout(function() { btn.textContent = '\\u29C9'; }, 1500);
+    }
+  });
 })();
 `;
 }
 
-function buildCleanHtml(document) {
+async function buildCleanHtml(document) {
   const parsed = parseSdoc(document.getText());
   const metaResult = extractMeta(parsed.nodes);
   const config = loadConfigForDocument(document);
   const metaStyles = resolveMetaStyles(metaResult.meta, document.uri.fsPath);
+
+  const docDir = path.dirname(document.uri.fsPath);
+  await resolveIncludes(metaResult.nodes, (src) => resolveIncludeSrc(src, docDir));
 
   const cssOverride = metaStyles.styleCss ?? loadCss(config.style);
   const cssAppendParts = [];
@@ -1144,7 +1237,7 @@ async function exportHtml() {
     return;
   }
 
-  const html = buildCleanHtml(document);
+  const html = await buildCleanHtml(document);
   fs.writeFileSync(target.fsPath, html, "utf8");
   vscode.window.showInformationMessage(`Exported: ${path.basename(target.fsPath)}`);
 }
@@ -1157,7 +1250,7 @@ async function openInBrowser() {
   }
 
   const document = await docPromise;
-  const html = buildCleanHtml(document);
+  const html = await buildCleanHtml(document);
 
   const tmpDir = os.tmpdir();
   const baseName = path.basename(document.uri.fsPath, ".sdoc") + ".html";

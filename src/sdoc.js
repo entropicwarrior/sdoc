@@ -1,3 +1,5 @@
+const SDOC_FORMAT_VERSION = "0.1";
+
 const COMMAND_HEADING = "#";
 const COMMAND_SCOPE_OPEN = "{";
 const COMMAND_SCOPE_CLOSE = "}";
@@ -6,7 +8,46 @@ const COMMAND_LIST_NUMBER = "{[#]";
 const COMMAND_TABLE = "{[table]";
 const COMMAND_CODE_FENCE = "```";
 
-const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">"]);
+const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">", "$", "+", "=", "-", "^"]);
+
+let _katex = null;
+let _katexLoaded = false;
+
+function getKatex() {
+  if (!_katexLoaded) {
+    _katexLoaded = true;
+    try {
+      _katex = require(require("path").join(__dirname, "..", "vendor", "katex.min.js"));
+    } catch { _katex = null; }
+  }
+  return _katex;
+}
+
+function renderKatex(latex, displayMode) {
+  const katex = getKatex();
+  if (katex) {
+    return katex.renderToString(latex, { displayMode, throwOnError: false });
+  }
+  const cls = displayMode ? "sdoc-math-fallback sdoc-math-display-fallback" : "sdoc-math-fallback";
+  return `<code class="${cls}">${escapeHtml(latex)}</code>`;
+}
+
+function isTableCommand(text) {
+  return /^\{\[table(?:\s+[^\]]*?)?\]$/.test(text);
+}
+
+function parseTableOptions(text) {
+  const match = text.match(/^\{\[table(?:\s+(.*))?\]$/);
+  if (!match) return {};
+  const flagStr = (match[1] || "").trim();
+  const flags = flagStr ? flagStr.split(/\s+/) : [];
+  const options = { borderless: false, headerless: false };
+  for (const flag of flags) {
+    if (flag === "borderless") options.borderless = true;
+    else if (flag === "headerless") options.headerless = true;
+  }
+  return options;
+}
 
 class LineCursor {
   constructor(lines) {
@@ -97,7 +138,7 @@ function detectImplicitRoot(cursor) {
     if (nextTrimmed === COMMAND_SCOPE_OPEN ||
         nextTrimmed === COMMAND_LIST_BULLET ||
         nextTrimmed === COMMAND_LIST_NUMBER ||
-        nextTrimmed === COMMAND_TABLE) {
+        isTableCommand(nextTrimmed)) {
       isImplicit = false;
     } else if (tryParseInlineBlock(nextTrimmed) !== null) {
       isImplicit = false;
@@ -245,7 +286,7 @@ function parseBlock(cursor, kind) {
       continue;
     }
 
-    if (trimmed === COMMAND_TABLE) {
+    if (isTableCommand(trimmed)) {
       flushParagraph();
       nodes.push(parseTableBlock(cursor));
       continue;
@@ -284,8 +325,16 @@ function extractTrailingOpener(text) {
   if (trimmed.endsWith(COMMAND_SCOPE_CLOSE)) {
     return null;
   }
-  // Check longest openers first to avoid partial matches
-  const openers = [COMMAND_TABLE, COMMAND_LIST_NUMBER, COMMAND_LIST_BULLET, COMMAND_SCOPE_OPEN];
+  // Check for table command with optional flags: {[table ...]}
+  const tableMatch = trimmed.match(/\{\[table(?:\s+[^\]]*?)?\]$/);
+  if (tableMatch) {
+    const pos = tableMatch.index;
+    if (!(pos > 0 && trimmed[pos - 1] === "\\")) {
+      return { text: trimmed.slice(0, pos).trimEnd(), opener: tableMatch[0] };
+    }
+  }
+  // Check other openers
+  const openers = [COMMAND_LIST_NUMBER, COMMAND_LIST_BULLET, COMMAND_SCOPE_OPEN];
   for (const opener of openers) {
     if (trimmed.endsWith(opener)) {
       const pos = trimmed.length - opener.length;
@@ -314,8 +363,9 @@ function parseScope(cursor) {
     if (trailing.opener === COMMAND_LIST_BULLET || trailing.opener === COMMAND_LIST_NUMBER) {
       const listBody = parseListBody(cursor, trailing.opener === COMMAND_LIST_BULLET ? "bullet" : "number");
       children = [listBody];
-    } else if (trailing.opener === COMMAND_TABLE) {
-      children = [parseTableBody(cursor, scopeStartLine)];
+    } else if (isTableCommand(trailing.opener)) {
+      const tableOpts = parseTableOptions(trailing.opener);
+      children = [parseTableBody(cursor, scopeStartLine, tableOpts)];
     } else {
       children = parseBlock(cursor, "normal");
     }
@@ -493,7 +543,7 @@ function parseBracelessBlock(cursor) {
       continue;
     }
 
-    if (trimmed === COMMAND_TABLE) {
+    if (isTableCommand(trimmed)) {
       flushParagraph();
       nodes.push(parseTableBlock(cursor));
       continue;
@@ -544,7 +594,7 @@ function parseScopeBlock(cursor) {
       };
     }
 
-    if (trimmed === COMMAND_TABLE) {
+    if (isTableCommand(trimmed)) {
       return { blockType: "normal", children: [parseTableBlock(cursor)] };
     }
 
@@ -642,7 +692,7 @@ function isListContinuationLine(trimmedLeft) {
   if (trimmed === COMMAND_SCOPE_OPEN) return false;
   if (trimmed === COMMAND_LIST_BULLET) return false;
   if (trimmed === COMMAND_LIST_NUMBER) return false;
-  if (trimmed === COMMAND_TABLE) return false;
+  if (isTableCommand(trimmed)) return false;
   if (trimmed === ",") return false;
   if (isHeadingLine(trimmedLeft)) return false;
   if (isBlockquoteLine(trimmedLeft)) return false;
@@ -668,8 +718,9 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
     if (trailing.opener === COMMAND_LIST_BULLET || trailing.opener === COMMAND_LIST_NUMBER) {
       const listBody = parseListBody(cursor, trailing.opener === COMMAND_LIST_BULLET ? "bullet" : "number");
       children = [listBody];
-    } else if (trailing.opener === COMMAND_TABLE) {
-      children = [parseTableBody(cursor, itemStartLine)];
+    } else if (isTableCommand(trailing.opener)) {
+      const tableOpts = parseTableOptions(trailing.opener);
+      children = [parseTableBody(cursor, itemStartLine, tableOpts)];
     } else {
       children = parseBlock(cursor, "normal");
     }
@@ -764,11 +815,13 @@ function parseImplicitListBlock(cursor, listType) {
 
 function parseTableBlock(cursor) {
   const tableStartLine = cursor.index + 1;
+  const options = parseTableOptions(cursor.current().trim());
   cursor.next();
-  return parseTableBody(cursor, tableStartLine);
+  return parseTableBody(cursor, tableStartLine, options);
 }
 
-function parseTableBody(cursor, tableStartLine) {
+function parseTableBody(cursor, tableStartLine, options) {
+  options = options || {};
   const rows = [];
 
   while (!cursor.eof()) {
@@ -790,9 +843,17 @@ function parseTableBody(cursor, tableStartLine) {
     cursor.next();
   }
 
+  if (options.headerless) {
+    const tableNode = { type: "table", headers: [], rows, lineStart: tableStartLine, lineEnd: cursor.index };
+    if (options.borderless || options.headerless) tableNode.options = options;
+    return tableNode;
+  }
+
   const headers = rows.length > 0 ? rows[0] : [];
   const body = rows.slice(1);
-  return { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
+  const tableNode = { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
+  if (options.borderless) tableNode.options = options;
+  return tableNode;
 }
 
 function parseOptionalBlock(cursor) {
@@ -829,7 +890,7 @@ function parseOptionalBlock(cursor) {
       };
     }
 
-    if (trimmed === COMMAND_TABLE) {
+    if (isTableCommand(trimmed)) {
       return { blockType: "normal", children: [parseTableBlock(cursor)] };
     }
 
@@ -847,13 +908,37 @@ function parseTaskPrefix(raw) {
   return { checked: match[1].toLowerCase() === "x", text: match[2] };
 }
 
+function parseFenceMetadata(meta) {
+  if (!meta) return {};
+  const tokens = meta.split(/\s+/).filter(Boolean);
+  let lang, src, lines;
+  for (const token of tokens) {
+    if (token.startsWith("src:")) {
+      src = token.slice(4);
+    } else if (token.startsWith("lines:")) {
+      const range = token.slice(6);
+      const match = range.match(/^(\d+)-(\d+)$/);
+      if (match) {
+        lines = { start: parseInt(match[1], 10), end: parseInt(match[2], 10) };
+      }
+    } else if (!lang) {
+      lang = token;
+    }
+  }
+  return { lang, src, lines };
+}
+
 function parseCodeBlock(cursor) {
   const codeStartLine = cursor.index + 1;
   const line = cursor.current();
   const trimmedLeft = line.replace(/^\s+/, "");
   const fenceMatch = trimmedLeft.match(/^(`{3,})/);
   const fenceLen = fenceMatch ? fenceMatch[1].length : 3;
-  const lang = trimmedLeft.slice(fenceLen).trim() || undefined;
+  const metaStr = trimmedLeft.slice(fenceLen).trim();
+  const fenceMeta = parseFenceMetadata(metaStr);
+  const lang = fenceMeta.lang || undefined;
+  // Indentation of the opening fence — strip this much from content lines.
+  const fenceIndent = line.length - trimmedLeft.length;
   cursor.next();
 
   const contentLines = [];
@@ -864,14 +949,29 @@ function parseCodeBlock(cursor) {
     const closeMatch = nextTrimmed.match(/^(`{3,})\s*$/);
     if (closeMatch && closeMatch[1].length >= fenceLen) {
       cursor.next();
-      return { type: "code", lang, text: contentLines.join("\n"), lineStart: codeStartLine, lineEnd: cursor.index };
+      const node = { type: "code", lang, text: stripIndent(contentLines, fenceIndent), lineStart: codeStartLine, lineEnd: cursor.index };
+      if (fenceMeta.src) node.src = fenceMeta.src;
+      if (fenceMeta.lines) node.lines = fenceMeta.lines;
+      return node;
     }
     contentLines.push(nextLine);
     cursor.next();
   }
 
   cursor.error("Unterminated code fence.");
-  return { type: "code", lang, text: contentLines.join("\n"), lineStart: codeStartLine, lineEnd: cursor.index };
+  const node = { type: "code", lang, text: stripIndent(contentLines, fenceIndent), lineStart: codeStartLine, lineEnd: cursor.index };
+  if (fenceMeta.src) node.src = fenceMeta.src;
+  if (fenceMeta.lines) node.lines = fenceMeta.lines;
+  return node;
+}
+
+/**
+ * Strip up to `indent` leading whitespace characters from each line.
+ * Preserves any extra indentation beyond the baseline.
+ */
+function stripIndent(lines, indent) {
+  const re = new RegExp(`^\\s{0,${indent}}`);
+  return lines.map((l) => l.replace(re, "")).join("\n");
 }
 
 function parseBlockquote(cursor) {
@@ -1014,6 +1114,16 @@ function isEscaped(text, index) {
   return count % 2 === 1;
 }
 
+function parseImageWidth(raw) {
+  const match = raw.match(/^(.*)\s+=(\d+(?:\.\d+)?(?:%|px))(?:\s+(center|left|right))?$/);
+  if (match) {
+    const result = { src: match[1].trim(), width: match[2] };
+    if (match[3]) result.align = match[3];
+    return result;
+  }
+  return { src: raw };
+}
+
 function parseInline(text) {
   const nodes = [];
   let buffer = "";
@@ -1046,6 +1156,28 @@ function parseInline(text) {
       }
     }
 
+    // Display math $$...$$ (must come before $ check)
+    if (text.startsWith("$$", i)) {
+      const end = findUnescaped(text, i + 2, "$$");
+      if (end !== -1 && end > i + 2) {
+        flush();
+        nodes.push({ type: "math_display", value: text.slice(i + 2, end) });
+        i = end + 2;
+        continue;
+      }
+    }
+
+    // Inline math $...$ (require non-whitespace after open and before close)
+    if (ch === "$" && next && next !== " " && next !== "\t" && next !== "$") {
+      const end = findUnescaped(text, i + 1, "$");
+      if (end !== -1 && end > i + 1 && text[end - 1] !== " " && text[end - 1] !== "\t") {
+        flush();
+        nodes.push({ type: "math_inline", value: text.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+    }
+
     if (text.startsWith("**", i)) {
       const end = findUnescaped(text, i + 2, "**");
       if (end !== -1) {
@@ -1068,6 +1200,26 @@ function parseInline(text) {
       }
     }
 
+    if (ch === "{") {
+      const mc = next;
+      let mt = null;
+      if (mc === "+") mt = "mark_positive";
+      else if (mc === "=") mt = "mark_neutral";
+      else if (mc === "^") mt = "mark_caution";
+      else if (mc === "!") mt = "mark_warning";
+      else if (mc === "-") mt = "mark_negative";
+      else if (mc === "~") mt = "mark_highlight";
+      if (mt) {
+        const end = findUnescaped(text, i + 2, mc + "}");
+        if (end !== -1) {
+          flush();
+          nodes.push({ type: mt, children: parseInline(text.slice(i + 2, end)) });
+          i = end + 2;
+          continue;
+        }
+      }
+    }
+
     if (ch === "*") {
       const end = findUnescaped(text, i + 1, "*");
       if (end !== -1) {
@@ -1085,10 +1237,14 @@ function parseInline(text) {
         const endUrl = findUnescaped(text, endLabel + 2, ")");
         if (endUrl !== -1) {
           const label = text.slice(i + 2, endLabel);
-          const url = text.slice(endLabel + 2, endUrl).trim();
-          if (url) {
+          const rawUrl = text.slice(endLabel + 2, endUrl).trim();
+          if (rawUrl) {
             flush();
-            nodes.push({ type: "image", alt: label, src: url });
+            const { src: imgSrc, width: imgWidth, align: imgAlign } = parseImageWidth(rawUrl);
+            const imgNode = { type: "image", alt: label, src: imgSrc };
+            if (imgWidth) imgNode.width = imgWidth;
+            if (imgAlign) imgNode.align = imgAlign;
+            nodes.push(imgNode);
             i = endUrl + 1;
             continue;
           }
@@ -1206,12 +1362,35 @@ function renderInlineNodes(nodes) {
           return `<strong>${renderInlineNodes(node.children)}</strong>`;
         case "strike":
           return `<del>${renderInlineNodes(node.children)}</del>`;
+        case "mark_positive":
+          return `<span class="sdoc-mark sdoc-mark-positive">${renderInlineNodes(node.children)}</span>`;
+        case "mark_neutral":
+          return `<span class="sdoc-mark sdoc-mark-neutral">${renderInlineNodes(node.children)}</span>`;
+        case "mark_caution":
+          return `<span class="sdoc-mark sdoc-mark-caution">${renderInlineNodes(node.children)}</span>`;
+        case "mark_warning":
+          return `<span class="sdoc-mark sdoc-mark-warning">${renderInlineNodes(node.children)}</span>`;
+        case "mark_negative":
+          return `<span class="sdoc-mark sdoc-mark-negative">${renderInlineNodes(node.children)}</span>`;
+        case "mark_highlight":
+          return `<mark class="sdoc-mark sdoc-mark-highlight">${renderInlineNodes(node.children)}</mark>`;
         case "link":
           return `<a class="sdoc-link" href="${escapeAttr(node.href)}" target="_blank" rel="noopener noreferrer">${renderInlineNodes(
             node.children
           )}</a>`;
-        case "image":
-          return `<img class="sdoc-image" src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}" />`;
+        case "image": {
+          const imgParts = [];
+          if (node.width) imgParts.push(`width:${escapeAttr(node.width)}`);
+          if (node.align === "center") imgParts.push("display:block", "margin-left:auto", "margin-right:auto");
+          else if (node.align === "left") imgParts.push("display:block", "float:left", "margin-right:1rem");
+          else if (node.align === "right") imgParts.push("display:block", "float:right", "margin-left:1rem");
+          const imgStyle = imgParts.length ? ` style="${imgParts.join(";")}"` : "";
+          return `<img class="sdoc-image" src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}"${imgStyle} />`;
+        }
+        case "math_inline":
+          return `<span class="sdoc-math sdoc-math-inline">${renderKatex(node.value, false)}</span>`;
+        case "math_display":
+          return `<span class="sdoc-math sdoc-math-display">${renderKatex(node.value, true)}</span>`;
         default:
           return "";
       }
@@ -1303,10 +1482,19 @@ function renderListItem(scope, listType, depth) {
 
 function renderTable(table) {
   const dl = dataLineAttrs(table);
-  const headerCells = table.headers
-    .map((cell) => `<th class="sdoc-table-th">${renderInline(cell)}</th>`)
-    .join("");
-  const thead = `<thead class="sdoc-table-head"><tr>${headerCells}</tr></thead>`;
+  const opts = table.options || {};
+  const classes = ["sdoc-table"];
+  if (opts.borderless) classes.push("sdoc-table-borderless");
+  if (opts.headerless) classes.push("sdoc-table-headerless");
+  const classAttr = classes.join(" ");
+
+  let thead = "";
+  if (table.headers.length > 0) {
+    const headerCells = table.headers
+      .map((cell) => `<th class="sdoc-table-th">${renderInline(cell)}</th>`)
+      .join("");
+    thead = `<thead class="sdoc-table-head"><tr>${headerCells}</tr></thead>`;
+  }
 
   const bodyRows = table.rows
     .map((row) => {
@@ -1318,7 +1506,7 @@ function renderTable(table) {
     .join("\n");
   const tbody = bodyRows ? `<tbody class="sdoc-table-body">${bodyRows}</tbody>` : "";
 
-  return `<table class="sdoc-table"${dl}>${thead}\n${tbody}</table>`;
+  return `<table class="${classAttr}"${dl}>${thead}${thead ? "\n" : ""}${tbody}</table>`;
 }
 
 function renderNode(node, depth) {
@@ -1346,8 +1534,11 @@ function renderNode(node, depth) {
       if (node.lang === "mermaid") {
         return `<pre class="mermaid"${dl}>${escapeHtml(node.text)}</pre>`;
       }
+      if (node.lang === "math") {
+        return `<div class="sdoc-math sdoc-math-block"${dl}>${renderKatex(node.text, true)}</div>`;
+      }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
-      return `<pre class="sdoc-code"${dl}><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
+      return `<div class="sdoc-code-wrap"${dl}><pre class="sdoc-code"><code${langClass}>${escapeHtml(node.text)}</code></pre><button class="sdoc-copy-btn" title="Copy code">\u29C9</button></div>`;
     }
     default:
       return "";
@@ -1378,7 +1569,7 @@ function extractMeta(nodes) {
   }
 
   if (metaIndex === -1) {
-    return { nodes, meta: {} };
+    return { nodes, meta: {}, warnings: [] };
   }
 
   const metaNode = searchNodes[metaIndex];
@@ -1439,14 +1630,19 @@ function extractMeta(nodes) {
   meta.company = meta.properties.company || null;
   meta.confidential = meta.properties.confidential || null;
 
+  const warnings = [];
+  if (!meta.properties["sdoc-version"]) {
+    warnings.push("Missing sdoc-version in @meta (current format version is " + SDOC_FORMAT_VERSION + ")");
+  }
+
   if (doc) {
     // @meta was inside the document scope — strip it from children
     const filteredChildren = doc.children.filter((_, index) => index !== metaIndex);
     const stripped = { ...doc, children: filteredChildren };
-    return { nodes: [stripped], meta };
+    return { nodes: [stripped], meta, warnings };
   }
   const bodyNodes = nodes.filter((_, index) => index !== metaIndex);
-  return { nodes: bodyNodes, meta };
+  return { nodes: bodyNodes, meta, warnings };
 }
 
 function collectParagraphText(nodes) {
@@ -1623,6 +1819,16 @@ const DEFAULT_STYLE = `
     border-bottom: none;
   }
 
+  .sdoc-table-borderless,
+  .sdoc-table-borderless th,
+  .sdoc-table-borderless td {
+    border: none;
+  }
+
+  .sdoc-table-borderless tr:nth-child(even) td {
+    background: none;
+  }
+
   .sdoc-task {
     display: inline-flex;
     align-items: center;
@@ -1718,12 +1924,29 @@ const DEFAULT_STYLE = `
     padding: 0 0.2em;
   }
 
+  .sdoc-mark {
+    border-radius: 3px;
+    padding: 0.05em 0.3em;
+    font-weight: 500;
+  }
+  .sdoc-mark-positive { background-color: rgba(34, 139, 34, 0.15); color: #166016; }
+  .sdoc-mark-neutral  { background-color: rgba(59, 130, 195, 0.15); color: #245d8a; }
+  .sdoc-mark-caution  { background-color: rgba(200, 150, 30, 0.18); color: #7a5f0e; }
+  .sdoc-mark-warning  { background-color: rgba(255, 120, 0, 0.18); color: #b35400; }
+  .sdoc-mark-negative { background-color: rgba(187, 50, 50, 0.15); color: #911e1e; }
+  .sdoc-mark-highlight { background-color: rgba(255, 255, 0, 0.75); }
+
   .sdoc-image {
     display: inline-block;
     max-width: 100%;
     border-radius: 10px;
     border: 1px solid var(--sdoc-border);
     margin: 0.4rem 0;
+    vertical-align: top;
+  }
+
+  .sdoc-image + .sdoc-image {
+    margin-left: 0.5%;
   }
 
   .sdoc-code {
@@ -1755,7 +1978,40 @@ const DEFAULT_STYLE = `
     padding-left: 1.2rem;
   }
 
+`;
+
+const PRINT_STYLE = `
+  .sdoc-code-wrap {
+    position: relative;
+  }
+  .sdoc-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 2px 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .sdoc-code-wrap:hover .sdoc-copy-btn {
+    opacity: 0.75;
+  }
+  .sdoc-copy-btn:hover {
+    opacity: 1 !important;
+  }
   @media print {
+    html {
+      font-size: 80%;
+    }
+    .sdoc-copy-btn {
+      display: none;
+    }
     body {
       height: auto;
       overflow: visible;
@@ -1766,10 +2022,21 @@ const DEFAULT_STYLE = `
     .sdoc-main {
       overflow: visible;
     }
+    .sdoc-code {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-x: visible;
+    }
+    .sdoc-code code {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .sdoc-mark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 `;
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+const KATEX_CDN_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";
 
 function hasMermaidBlocks(nodes) {
   for (const node of nodes) {
@@ -1812,7 +2079,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const footerContent = [footerHtml, companyHtml].filter(Boolean).join("\n");
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
-  const cssAppend = options.cssAppend ? `\n${options.cssAppend}` : "";
+  const cssAppend = options.cssAppend ? `\n${options.cssAppend}\n${PRINT_STYLE}` : `\n${PRINT_STYLE}`;
   const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
   const mermaidTheme = options.mermaidTheme ?? "neutral";
   const mermaidInit = mermaidTheme === "auto"
@@ -1820,6 +2087,9 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
     : `mermaid.initialize({startOnLoad:true,theme:"${mermaidTheme}",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`;
   const mermaidScript = hasMermaidBlocks(parsed.nodes)
     ? `\n<script src="${MERMAID_CDN}"></script>\n<script>${mermaidInit}</script>`
+    : "";
+  const katexCssTag = body.includes('class="katex"')
+    ? `\n<link rel="stylesheet" href="${KATEX_CDN_CSS}" />`
     : "";
 
   return `<!DOCTYPE html>
@@ -1830,7 +2100,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
 <title>${escapeHtml(title)}</title>
 <style>
 ${cssBase}${cssAppend}
-</style>
+</style>${katexCssTag}
 </head>
 <body>
   <div class="sdoc-shell">
@@ -1913,7 +2183,7 @@ function formatSdoc(text, indentStr = "    ") {
     if (trimmed === COMMAND_SCOPE_OPEN ||
         trimmed === COMMAND_LIST_BULLET ||
         trimmed === COMMAND_LIST_NUMBER ||
-        trimmed === COMMAND_TABLE) {
+        isTableCommand(trimmed)) {
       result.push(indentStr.repeat(depth) + trimmed);
       depth++;
       continue;
@@ -2053,9 +2323,34 @@ function extractAbout(nodes) {
   return null;
 }
 
+async function resolveIncludes(nodes, resolverFn) {
+  for (const node of nodes) {
+    if (node.type === "code" && node.src) {
+      try {
+        let text = await resolverFn(node.src);
+        if (node.lines) {
+          const allLines = text.split("\n");
+          text = allLines.slice(node.lines.start - 1, node.lines.end).join("\n");
+        }
+        node.text = text;
+      } catch (err) {
+        node.text = `// Error: Could not read ${node.src} — ${err.message}`;
+      }
+    }
+    if (node.children) {
+      await resolveIncludes(node.children, resolverFn);
+    }
+    if (node.items) {
+      await resolveIncludes(node.items, resolverFn);
+    }
+  }
+}
+
 module.exports = {
+  SDOC_FORMAT_VERSION,
   parseSdoc,
   extractMeta,
+  resolveIncludes,
   renderFragment,
   renderTextParagraphs,
   renderHtmlDocumentFromParsed,
@@ -2068,6 +2363,7 @@ module.exports = {
   extractAbout,
   // Low-level helpers for custom renderers (e.g. slide-renderer)
   parseInline,
+  renderKatex,
   escapeHtml,
   escapeAttr
 };

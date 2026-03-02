@@ -1,5 +1,9 @@
 # SDOC Documentation
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     # Overview
     {
         SDOC ("Simple/Smart Documentation") is a plain text documentation format with explicit scoping. Unlike Markdown, structure is never inferred — braces make scope boundaries explicit, which means tools and AI agents can extract exactly the section they need, every time, with no heuristics. Inline formatting is borrowed from Markdown, so there is almost nothing new to learn.
@@ -12,6 +16,7 @@
         {[.]
             - Guide: Introduction — `guide/intro.sdoc`
             - Guide: Setup — `guide/setup.sdoc`
+            - Guide: Notion Sync — `guide/notion-sync.sdoc`
             - Tutorial: First Steps — `tutorials/first-steps.sdoc`
             - Reference: Syntax — `reference/syntax.sdoc`
             - Reference: API — `reference/api.sdoc`

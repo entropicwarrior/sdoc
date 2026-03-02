@@ -3,6 +3,8 @@
     # Meta @meta
     {
         type: doc
+
+        sdoc-version: 0.1
     }
 
     # About @about
@@ -54,6 +56,9 @@
             - [x] Multi-line list item shorthand (continuation lines in explicit list blocks)
             - [x] Scope indentation (visual nesting via CSS padding)
             - [x] Print support (@media print CSS overrides)
+            - [x] Image width and alignment (=50%, =50% center/left/right)
+            - [x] Table options (borderless, headerless flags on {[table]})
+            - [x] Include by link (src: and lines: metadata on code fences)
         }
 
         # Tooling
@@ -80,6 +85,8 @@
             - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
             - [x] Generate About command (sdoc.generateAbout) -- uses VS Code LM API to generate @about section from document content
             - [x] Dark mode: preview follows VSCode colour theme (light, dark, high contrast); exported HTML follows OS preference
+            - [x] Notion sync tool (tools/sync-notion.js) -- push SDOC files to Notion as native blocks
+            - [x] Notion renderer (src/notion-renderer.js) -- converts SDOC AST to Notion API block objects
         }
 
         # Repository
@@ -92,18 +99,16 @@
             - [x] Build artifacts (VSIX) output to dist/
             - [x] Example files in examples/, test files in test/
             - [x] Generated _sdoc_site/ directory gitignored
+            - [x] GitHub Actions workflow for VSIX build and npm publish on release (.github/workflows/release.yml)
+            - [x] Published to npm as @entropicwarrior/sdoc
+            - [x] Subpath exports for renderers (./slides, ./slide-pdf, ./notion, ./knowledge)
+            - [x] Knowledge files shipped in npm package via ./knowledge export
+            - [x] .npmignore for selective npm publishing (parser, renderers, knowledge files only)
         }
     }
 
     # In Progress @in-progress
     {
-        # Auto-Sync GitHub Action @auto-sync
-        {
-            The workflow file is written (\`.github/workflows/sync-to-lexica-common.yml\`)
-            but needs a \`LEXICA_COMMON_PAT\` secret configured in the repo
-            settings before it will work.
-        }
-
         Lexica Phases 1-3 are complete. See sdoc-plan.sdoc for the
         SDOC-specific roadmap.
     }

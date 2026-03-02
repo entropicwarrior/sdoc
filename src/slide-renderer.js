@@ -7,7 +7,7 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
-const { parseInline, escapeHtml, escapeAttr } = require("./sdoc");
+const { parseInline, renderKatex, escapeHtml, escapeAttr } = require("./sdoc");
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -29,10 +29,21 @@ function renderInlineNodes(nodes) {
           return `<del>${renderInlineNodes(node.children)}</del>`;
         case "link":
           return `<a href="${escapeAttr(node.href)}" target="_blank" rel="noopener noreferrer">${renderInlineNodes(node.children)}</a>`;
-        case "image":
-          return `<img src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}" />`;
+        case "image": {
+          const imgParts = [];
+          if (node.width) imgParts.push(`width:${escapeAttr(node.width)}`);
+          if (node.align === "center") imgParts.push("display:block", "margin-left:auto", "margin-right:auto");
+          else if (node.align === "left") imgParts.push("display:block", "float:left", "margin-right:1rem");
+          else if (node.align === "right") imgParts.push("display:block", "float:right", "margin-left:1rem");
+          const imgStyle = imgParts.length ? ` style="${imgParts.join(";")}"` : "";
+          return `<img src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}"${imgStyle} />`;
+        }
         case "ref":
           return `@${escapeHtml(node.id)}`;
+        case "math_inline":
+          return `<span class="sdoc-math sdoc-math-inline">${renderKatex(node.value, false)}</span>`;
+        case "math_display":
+          return `<span class="sdoc-math sdoc-math-display">${renderKatex(node.value, true)}</span>`;
         default:
           return "";
       }
@@ -59,6 +70,9 @@ function renderNode(node) {
     case "code": {
       if (node.lang === "mermaid") {
         return `<pre class="mermaid">${escapeHtml(node.text)}</pre>`;
+      }
+      if (node.lang === "math") {
+        return `<div class="sdoc-math sdoc-math-block">${renderKatex(node.text, true)}</div>`;
       }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
       return `<pre><code${langClass}>${escapeHtml(node.text)}</code></pre>`;
@@ -94,10 +108,19 @@ function renderList(list) {
 }
 
 function renderTable(table) {
-  const headerCells = table.headers
-    .map((cell) => `<th>${renderInline(cell)}</th>`)
-    .join("");
-  const thead = `<thead><tr>${headerCells}</tr></thead>`;
+  const opts = table.options || {};
+  const classes = [];
+  if (opts.borderless) classes.push("borderless");
+  if (opts.headerless) classes.push("headerless");
+  const classAttr = classes.length ? ` class="${classes.join(" ")}"` : "";
+
+  let thead = "";
+  if (table.headers.length > 0) {
+    const headerCells = table.headers
+      .map((cell) => `<th>${renderInline(cell)}</th>`)
+      .join("");
+    thead = `<thead><tr>${headerCells}</tr></thead>`;
+  }
 
   const bodyRows = table.rows
     .map((row) => {
@@ -107,7 +130,7 @@ function renderTable(table) {
     .join("\n");
   const tbody = bodyRows ? `<tbody>\n${bodyRows}\n</tbody>` : "";
 
-  return `<table>${thead}\n${tbody}</table>`;
+  return `<table${classAttr}>${thead}${thead ? "\n" : ""}${tbody}</table>`;
 }
 
 function renderNestedScope(scope) {
@@ -327,6 +350,10 @@ blockquote p { color: #9d9d9d; }
   const mermaidTag = slidesHtml.includes('class="mermaid"')
     ? `\n<script src="${mermaidCdn}"></script>\n<script>mermaid.initialize({startOnLoad:true,theme:"${mermaidTheme}",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});</script>`
     : "";
+  const katexCssCdn = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";
+  const katexTag = slidesHtml.includes('class="katex"')
+    ? `\n<link rel="stylesheet" href="${katexCssCdn}" />`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -334,7 +361,7 @@ blockquote p { color: #9d9d9d; }
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHtml(title)}</title>
-${cssTag}
+${cssTag}${katexTag}
 </head>
 <body>
 ${slidesHtml}

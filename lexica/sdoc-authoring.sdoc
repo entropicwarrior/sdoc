@@ -3,6 +3,8 @@
     # Meta @meta
     {
         type: skill
+
+        sdoc-version: 0.1
     }
 
     # About @about
@@ -145,6 +147,26 @@
                 Bob | 25 | LA
             }
             ```
+
+            Optional flags control rendering:
+
+            ```
+            {[table borderless]
+                Feature | Status
+                Parser | Complete
+            }
+
+            {[table headerless]
+                Alice | 30
+                Bob | 25
+            }
+
+            {[table borderless headerless]
+                ![](a.png =100%) | ![](b.png =100%)
+            }
+            ```
+
+            \`borderless\` removes borders and row striping. \`headerless\` treats all rows as data (no header). Flags combine in any order.
         }
 
         # Inline Formatting @inline-formatting
@@ -155,13 +177,33 @@
                 \`**text**\` | Strong
                 \`~~text~~\` | Strikethrough
                 \`\\\`code\\\`\` | Inline code
+                \`\$x^2\$\` | Inline math (KaTeX)
+                \`\$\$E = mc^2\$\$\` | Display math (centered)
+                \`\{+text+\}\` | Positive marker (green)
+                \`\{=text=\}\` | Neutral marker (blue)
+                \`\{^text^\}\` | Caution marker (amber)
+                \`\{!text!\}\` | Warning marker (orange)
+                \`\{-text-\}\` | Negative marker (red)
+                \`\{~text~\}\` | Highlight (yellow)
             }
 
             Links: \`[Link text](https://example.com)\`
 
             Images: \`![Alt text](path/to/image.png)\`
 
+            Images with width and alignment:
+
+            ```
+            ![Alt](image.png =50%)
+            ![Alt](image.png =50% center)
+            ![Alt](image.png =35% left)
+            ![Alt](image.png =35% right)
+            ![A](a.png =48%) ![B](b.png =48%)
+            ```
+
             Autolinks: \`\<https://example.com\>\`
+
+            Math: Use \`\$...\$\` for inline math and \`\$\$...\$\$\` for display math. Use \`\\\`\\\`\\\`math\` code fences for multi-line equations. A plain \`\$\` followed by a digit (e.g. \`\$100\`) does not trigger math mode.
         }
 
         # References @references
@@ -190,6 +232,21 @@
             }
             ```
             ````
+
+            # Include by Link @code-includes
+            {
+                A code block can reference an external file with \`src:\` on the fence line — the content stays in sync:
+
+                `````
+                ```json src:./data.json
+                ```
+
+                ```json src:./data.json lines:3-5
+                ```
+                `````
+
+                \`src:\` takes a file path (relative to the document) or URL. \`lines:\` optionally limits to a range (1-based, inclusive). The code block body is replaced by the resolved content.
+            }
         }
 
         # Mermaid Diagrams @mermaid
@@ -207,6 +264,19 @@
             Mermaid supports flowcharts (\`graph\`), sequence diagrams (\`sequenceDiagram\`), class diagrams (\`classDiagram\`), state diagrams (\`stateDiagram-v2\`), and more. The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
         }
 
+        # Math Blocks @math-blocks
+        {
+            Code blocks with the \`math\` language tag are rendered as display equations via KaTeX:
+
+            ````
+            ```math
+            \\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}
+            ```
+            ````
+
+            Math blocks render as centered display equations with no copy button. The KaTeX CSS is loaded from CDN only when a document contains math content.
+        }
+
         # Blockquotes @blockquotes
         {
             ```
@@ -222,6 +292,8 @@
             ```
             @meta {
                 type: doc
+
+                sdoc-version: 0.1
 
                 company: Irreversible Inc.
 
@@ -260,6 +332,9 @@
             \`uuid: ...\` — unique identifier.
 
             \`tags: tag1, tag2\` — comma-separated tags.
+
+            \`sdoc-version: 0.1\` — SDOC format version. A parser warning is
+            emitted when this key is missing from \`@meta\`.
         }
 
         # About Scope @about-scope
@@ -279,9 +354,9 @@
         {
             Backslash escapes special characters: \`\\\\\` \`\\{\` \`\\}\` \`\\@\`
             \`\\[\` \`\\]\` \`\\(\` \`\\)\` \`\\*\` \`\\~\` \`\\#\` \`\\!\` \`\\\<\`
-            \`\\\>\`
+            \`\\\>\` \`\\\$\` \`\\+\` \`\\=\` \`\\-\` \`\\^\`
 
-            A line starting with \`\\#\` renders as a literal \`#\` (not a heading).
+            A line starting with \`\\#\` renders as a literal \`#\` (not a heading). Use \`\\\$\` to prevent a dollar sign from starting math mode.
         }
     }
 

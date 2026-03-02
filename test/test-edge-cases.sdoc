@@ -1,5 +1,9 @@
 # Edge Case Tests @edge-cases
 {
+    @meta {
+        sdoc-version: 0.1
+    }
+
     # Empty Inline Block @empty
     { }
 
