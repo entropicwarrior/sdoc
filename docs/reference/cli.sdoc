@@ -6,13 +6,14 @@
 
     # VSCode Extension Commands
     {
-        The SDOC extension registers seven commands, available from the Command Palette:
+        The SDOC extension registers eight commands, available from the Command Palette:
 
         {[.]
             - **SDOC: Open Preview** (`sdoc.preview`) -- opens a rendered preview of the current `.sdoc` file
             - **SDOC: Open Preview to the Side** (`sdoc.previewToSide`) -- opens the preview in a side pane
-            - **SDOC: Export HTML** (`sdoc.exportHtml`) -- exports the active preview as a standalone HTML file
-            - **SDOC: Open in Browser** (`sdoc.openInBrowser`) -- opens the active preview in the system browser
+            - **SDOC: Export HTML** (`sdoc.exportHtml`) -- exports the current document as a standalone HTML file
+            - **SDOC: Export PDF** (`sdoc.exportPdf`) -- exports the current document as an A4 PDF via headless Chrome
+            - **SDOC: Open in Browser** (`sdoc.openInBrowser`) -- opens the current document in the system browser
             - **SDOC: Browse Documents** (`sdoc.browseDocs`) -- starts a local document server and opens the viewer in a browser
             - **SDOC: New Knowledge File** (`sdoc.newKnowledgeFile`) -- creates a new `.sdoc` file from a template in the selected folder
             - **SDOC: Generate About** (`sdoc.generateAbout`) -- generates an About section for the current document
@@ -27,13 +28,43 @@
 
         # Export HTML
         {
-            Exports the currently previewed document as a self-contained `.html` file. The exported file includes all styles and supports collapsible scope toggles in the browser. Use the browser's print function (Ctrl+P / Cmd+P) for PDF export.
+            Exports the current SDOC document as a self-contained `.html` file. Works from the editor or the preview panel. The exported file includes all styles and supports collapsible scope toggles in the browser.
+        }
+
+        # Export PDF
+        {
+            Exports the current SDOC document as an A4 PDF. Works from the editor or the preview panel. Requires Google Chrome or Chromium installed on the system (or set the `CHROME_PATH` environment variable). The PDF uses print-optimized styles with correct font sizes and preserved marker colors.
         }
 
         # Open in Browser
         {
-            Opens the currently previewed document in the system's default browser. A temporary HTML file is created and opened. Like Export HTML, the output supports collapsible toggles and printing.
+            Opens the current SDOC document in the system's default browser. Works from the editor or the preview panel. A temporary HTML file is created and opened. Like Export HTML, the output supports collapsible toggles and printing.
         }
+    }
+
+    # Build Document Tool
+    {
+        `tools/build-doc.js` exports SDOC files to HTML or PDF from the command line.
+
+        ```bash
+node tools/build-doc.js input.sdoc                   # PDF output (default)
+node tools/build-doc.js input.sdoc -o output.pdf      # PDF with custom path
+node tools/build-doc.js input.sdoc --html             # HTML output
+node tools/build-doc.js input.sdoc --html -o out.html  # HTML with custom path
+        ```
+
+        # Options
+        {
+            {[.]
+                - `-o <path>` -- output file path (default: input name with `.pdf` or `.html` extension)
+                - `--html` -- export as HTML instead of PDF
+                - `--help` / `-h` -- show usage information and exit
+            }
+        }
+
+        PDF export requires Google Chrome or Chromium. Set the `CHROME_PATH` environment variable to override auto-detection. The output uses A4 page size with print-optimized styles.
+
+        The tool respects `sdoc.config.json` files in the directory hierarchy and per-file `@meta` style overrides, just like the VS Code extension.
     }
 
     # Notion Sync Tool

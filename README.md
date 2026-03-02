@@ -20,6 +20,8 @@ A plain-text documentation format designed for AI-agent efficiency. Explicit bra
 
 **A document site builder** — serve a folder of SDOC files as a browsable site with sidebar navigation, search, and split-pane comparison.
 
+**PDF and HTML export** — export any document to A4 PDF via headless Chrome, or to standalone HTML. Available as both a CLI tool and a VS Code command.
+
 **A VS Code extension** — live preview, sticky scroll, code folding, document symbols, mermaid rendering, and commands for all the above.
 
 ## Quick Start
@@ -40,6 +42,15 @@ node tools/build-slides.js deck.sdoc -o slides.html
 ```
 
 Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `lexica/slide-authoring.sdoc` for the full authoring guide.
+
+### Export to PDF or HTML
+
+```bash
+node tools/build-doc.js doc.sdoc                   # PDF (requires Chrome)
+node tools/build-doc.js doc.sdoc --html -o doc.html # HTML
+```
+
+Or use **SDOC: Export PDF** / **SDOC: Export HTML** from the VS Code Command Palette.
 
 ### Browse documents
 

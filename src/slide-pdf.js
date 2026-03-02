@@ -1,4 +1,4 @@
-// SDOC Slides — PDF export via headless Chrome.
+// SDOC — PDF export via headless Chrome.
 // Zero dependencies: uses child_process to shell out to the system Chrome/Chromium.
 
 const { execFile } = require("child_process");
@@ -51,7 +51,11 @@ function findChrome() {
   return null;
 }
 
-function exportPdf(htmlPath, pdfPath) {
+// Generic PDF export. Options:
+//   paperWidth  — inches (default 8.27 = A4)
+//   paperHeight — inches (default 11.69 = A4)
+//   noHeaderFooter — suppress Chrome header/footer (default true)
+function chromePdf(htmlPath, pdfPath, options = {}) {
   return new Promise((resolve, reject) => {
     const chrome = findChrome();
     if (!chrome) {
@@ -69,19 +73,25 @@ function exportPdf(htmlPath, pdfPath) {
     // the browser process by default, which corrupts PDF output).
     const tmpProfile = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-chrome-"));
 
-    // 13.333 x 7.5 inches = 16:9 landscape (standard presentation aspect ratio)
+    const paperWidth = options.paperWidth ?? 8.27;
+    const paperHeight = options.paperHeight ?? 11.69;
+
     const args = [
       "--headless=new",
       "--disable-gpu",
       "--no-first-run",
       "--no-default-browser-check",
       "--user-data-dir=" + tmpProfile,
-      "--no-pdf-header-footer",
       "--print-to-pdf=" + resolvedPdf,
-      "--print-to-pdf-paper-width=13.333",
-      "--print-to-pdf-paper-height=7.5",
-      fileUrl,
+      "--print-to-pdf-paper-width=" + paperWidth,
+      "--print-to-pdf-paper-height=" + paperHeight,
     ];
+
+    if (options.noHeaderFooter !== false) {
+      args.push("--no-pdf-header-footer");
+    }
+
+    args.push(fileUrl);
 
     execFile(chrome, args, { timeout: 30000 }, (err, _stdout, stderr) => {
       // Clean up temp profile
@@ -96,4 +106,14 @@ function exportPdf(htmlPath, pdfPath) {
   });
 }
 
-module.exports = { findChrome, exportPdf };
+// Slide PDF: 16:9 landscape (13.333 x 7.5 inches)
+function exportSlidePdf(htmlPath, pdfPath) {
+  return chromePdf(htmlPath, pdfPath, { paperWidth: 13.333, paperHeight: 7.5 });
+}
+
+// Document PDF: A4 portrait (8.27 x 11.69 inches)
+function exportDocPdf(htmlPath, pdfPath) {
+  return chromePdf(htmlPath, pdfPath);
+}
+
+module.exports = { findChrome, exportSlidePdf, exportDocPdf, chromePdf };
