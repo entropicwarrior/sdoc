@@ -618,6 +618,60 @@ test("slides without mermaid have no mermaid script", () => {
 });
 
 // ============================================================
+console.log("\n--- Dark mode ---");
+
+test("darkMode injects dark CSS overrides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Intro {
+        Hello world
+    }
+}
+`, { darkMode: true });
+  assert(html.includes("background: #1e1e1e"), "should have dark background");
+  assert(html.includes("color: #d4d4d4"), "should have light text color");
+});
+
+test("darkMode false does not inject dark CSS overrides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Intro {
+        Hello world
+    }
+}
+`);
+  assert(!html.includes("background: #1e1e1e"), "should not have dark background");
+});
+
+test("darkMode initializes mermaid with dark theme", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Diagram {
+        \`\`\`mermaid
+        graph LR
+          A --> B
+        \`\`\`
+    }
+}
+`, { darkMode: true });
+  assert(html.includes('theme:"dark"'), "should use dark mermaid theme");
+});
+
+test("mermaid uses neutral theme when darkMode is false", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Diagram {
+        \`\`\`mermaid
+        graph LR
+          A --> B
+        \`\`\`
+    }
+}
+`);
+  assert(html.includes('theme:"neutral"'), "should use neutral mermaid theme");
+});
+
+// ============================================================
 // Summary — wait for async tests before reporting
 Promise.all(asyncTests).then(() => {
   console.log("\n" + "=".repeat(40));

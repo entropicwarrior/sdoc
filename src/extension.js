@@ -404,6 +404,12 @@ function activate(context) {
       }
     })
   );
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveColorTheme(() => {
+      updateAllPreviews();
+    })
+  );
 }
 
 function deactivate() {
@@ -778,6 +784,132 @@ ${buildCollapseCss()}
 `;
 }
 
+function darkModeVarsCss() {
+  return `
+    --sdoc-bg: #1e1e1e;
+    --sdoc-fg: #d4d4d4;
+    --sdoc-muted: #9d9d9d;
+    --sdoc-accent: #e0934a;
+    --sdoc-accent-soft: rgba(224, 147, 74, 0.15);
+    --sdoc-border: rgba(255, 255, 255, 0.12);`;
+}
+
+function darkModeElementsCss(prefix) {
+  return `
+  ${prefix} .sdoc-table-th {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  ${prefix} .sdoc-table-body tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  ${prefix} .sdoc-table-td {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+
+  ${prefix} .sdoc-inline-code {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  ${prefix} .sdoc-code {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  ${prefix} .sdoc-confidential-notice {
+    background: rgba(187, 68, 68, 0.15);
+    border-bottom-color: rgba(187, 68, 68, 0.35);
+    color: rgba(235, 120, 120, 0.9);
+  }
+
+  ${prefix} .sdoc-errors {
+    background: rgba(187, 112, 68, 0.18);
+    border-color: rgba(187, 112, 68, 0.5);
+  }`;
+}
+
+function buildDarkModeCss() {
+  return `
+  /* Dark mode overrides */
+  body.vscode-dark {${darkModeVarsCss()}
+  }
+${darkModeElementsCss("body.vscode-dark")}
+
+  /* High contrast dark */
+  body.vscode-high-contrast {
+    --sdoc-bg: #000000;
+    --sdoc-fg: #ffffff;
+    --sdoc-muted: #cccccc;
+    --sdoc-accent: #f0a050;
+    --sdoc-accent-soft: rgba(240, 160, 80, 0.2);
+    --sdoc-border: rgba(255, 255, 255, 0.3);
+  }
+
+  body.vscode-high-contrast .sdoc-table-th {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  body.vscode-high-contrast .sdoc-table-body tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  body.vscode-high-contrast .sdoc-table-td {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+
+  body.vscode-high-contrast .sdoc-inline-code {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  body.vscode-high-contrast .sdoc-code {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  body.vscode-high-contrast .sdoc-confidential-notice {
+    background: rgba(187, 68, 68, 0.2);
+    border-bottom-color: rgba(187, 68, 68, 0.5);
+    color: rgba(255, 140, 140, 1);
+  }
+
+  body.vscode-high-contrast .sdoc-errors {
+    background: rgba(187, 112, 68, 0.25);
+    border-color: rgba(187, 112, 68, 0.6);
+  }
+
+  /* High contrast light */
+  body.vscode-high-contrast-light {
+    --sdoc-bg: #ffffff;
+    --sdoc-fg: #000000;
+    --sdoc-muted: #333333;
+    --sdoc-accent: #a04010;
+    --sdoc-accent-soft: rgba(160, 64, 16, 0.15);
+    --sdoc-border: rgba(0, 0, 0, 0.4);
+  }
+
+  body.vscode-high-contrast-light .sdoc-table-th {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  body.vscode-high-contrast-light .sdoc-inline-code {
+    background: rgba(0, 0, 0, 0.08);
+  }
+
+  body.vscode-high-contrast-light .sdoc-code {
+    background: rgba(0, 0, 0, 0.08);
+  }
+`;
+}
+
+function buildExportDarkModeCss() {
+  return `
+  @media screen and (prefers-color-scheme: dark) {
+    :root {${darkModeVarsCss()}
+    }
+${darkModeElementsCss("")}
+  }
+`;
+}
+
 async function resolveIncludeSrc(src, docDir) {
   if (/^https?:\/\//i.test(src)) {
     if (includeCache.has(src)) return includeCache.get(src);
@@ -814,6 +946,10 @@ async function buildHtml(document, title, webview) {
     cssAppendParts.push(metaStyles.styleAppendCss);
   }
   cssAppendParts.push(buildInteractiveCss());
+  cssAppendParts.push(buildDarkModeCss());
+
+  const isDark = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark
+    || vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrast;
 
   let html = renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
@@ -824,6 +960,7 @@ async function buildHtml(document, title, webview) {
       cssOverride: cssOverride || undefined,
       cssAppend: cssAppendParts.join("\n"),
       script: buildWebviewScript(),
+      mermaidTheme: isDark ? "dark" : "neutral",
       renderOptions: { editable: true }
     }
   );
@@ -1064,6 +1201,7 @@ async function buildCleanHtml(document) {
   const title = path.basename(document.uri.fsPath, ".sdoc");
 
   cssAppendParts.push(buildCollapseCss());
+  cssAppendParts.push(buildExportDarkModeCss());
 
   return renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
@@ -1073,7 +1211,8 @@ async function buildCleanHtml(document) {
       config,
       cssOverride: cssOverride || undefined,
       cssAppend: cssAppendParts.join("\n"),
-      script: buildCollapseScript()
+      script: buildCollapseScript(),
+      mermaidTheme: "auto"
     }
   );
 }
