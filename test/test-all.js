@@ -1504,6 +1504,58 @@ test("regular code blocks still render normally", () => {
   assert(html.includes("<code"), "should have code element");
 });
 
+test("mermaid theme defaults to neutral", () => {
+  const text = "# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}";
+  const parsed = parseSdoc(text);
+  const metaResult = extractMeta(parsed.nodes);
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { meta: metaResult.meta }
+  );
+  assert(html.includes('theme:"neutral"'), "should default to neutral theme");
+  assert(!html.includes("prefers-color-scheme"), "should not have auto detection");
+});
+
+test("mermaid theme dark produces theme:dark", () => {
+  const text = "# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}";
+  const parsed = parseSdoc(text);
+  const metaResult = extractMeta(parsed.nodes);
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { meta: metaResult.meta, mermaidTheme: "dark" }
+  );
+  assert(html.includes('theme:"dark"'), "should use dark theme");
+  assert(!html.includes("prefers-color-scheme"), "should not have auto detection");
+});
+
+test("mermaid theme auto uses matchMedia for prefers-color-scheme", () => {
+  const text = "# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}";
+  const parsed = parseSdoc(text);
+  const metaResult = extractMeta(parsed.nodes);
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { meta: metaResult.meta, mermaidTheme: "auto" }
+  );
+  assert(html.includes('prefers-color-scheme:dark'), "should use matchMedia for dark detection");
+  assert(html.includes('theme:isDark?"dark":"neutral"'), "should pick dark or neutral based on media query");
+});
+
+test("mermaid theme option has no effect without mermaid blocks", () => {
+  const text = "# Doc {\n    Hello world\n}";
+  const parsed = parseSdoc(text);
+  const metaResult = extractMeta(parsed.nodes);
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { meta: metaResult.meta, mermaidTheme: "dark" }
+  );
+  assert(!html.includes("mermaid.initialize"), "should not have mermaid init without mermaid blocks");
+  assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+});
+
 // ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

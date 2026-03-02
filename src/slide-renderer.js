@@ -315,7 +315,7 @@ pre { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0
 p code, li code { background: rgba(255, 255, 255, 0.08); }
 blockquote { border-left-color: #5b9bd5; color: #9d9d9d; }
 blockquote p { color: #9d9d9d; }
-.nav-prev, .nav-next { color: #555; }
+.nav-prev, .nav-next { color: rgba(255, 255, 255, 0.7); }
 .sdoc-company-footer { color: rgba(255, 255, 255, 0.35); }
 .sdoc-confidential-notice { color: rgba(235, 120, 120, 0.7); }
 ` : "";

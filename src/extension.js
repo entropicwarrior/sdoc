@@ -866,7 +866,7 @@ ${darkModeElementsCss("body.vscode-dark")}
 
 function buildExportDarkModeCss() {
   return `
-  @media (prefers-color-scheme: dark) {
+  @media screen and (prefers-color-scheme: dark) {
     :root {${darkModeVarsCss()}
     }
 ${darkModeElementsCss("")}
