@@ -62,14 +62,15 @@ code --install-extension dist/sdoc-*.vsix
 
     # Export and Print
     {
-        Two commands are available from the Command Palette when a preview is active:
+        Three export commands are available from the Command Palette or the editor title bar when an `.sdoc` file is open:
 
         {[.]
             - **SDOC: Export HTML** -- saves a standalone `.html` file with all styles embedded
+            - **SDOC: Export PDF** -- exports the document as an A4 PDF via headless Chrome
             - **SDOC: Open in Browser** -- opens the document in the system browser
         }
 
-        Both outputs support collapsible scope toggles. For PDF export, use the browser's print function (Ctrl+P / Cmd+P).
+        HTML and browser outputs support collapsible scope toggles. PDF export requires Chrome or Chromium installed on the system. For command-line export, see `tools/build-doc.js` in the [CLI reference](../reference/cli.sdoc).
     }
 
     # Configuration

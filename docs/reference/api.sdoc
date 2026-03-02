@@ -18,7 +18,7 @@ npm install @entropicwarrior/sdoc
 const { parseSdoc, extractMeta } = require("@entropicwarrior/sdoc");
 const { renderNotionBlocks } = require("@entropicwarrior/sdoc/notion");
 const { renderSlides } = require("@entropicwarrior/sdoc/slides");
-const { exportPdf } = require("@entropicwarrior/sdoc/slide-pdf");
+const { exportSlidePdf, exportDocPdf } = require("@entropicwarrior/sdoc/slide-pdf");
 const { knowledgeDir } = require("@entropicwarrior/sdoc/knowledge");
         ```
     }
@@ -170,5 +170,39 @@ await resolveIncludes(parsed.nodes, async (src) => {
         }
 
         Inline image nodes (`type: "image"`) within paragraphs include `src`, `alt`, and optional `width` (e.g. `"50%"`) and `align` (`"center"`, `"left"`, or `"right"`).
+    }
+
+    # exportSlidePdf(htmlPath, pdfPath)
+    {
+        Exports an HTML file to PDF using headless Chrome with 16:9 landscape dimensions (slide format).
+
+        ```javascript
+const { exportSlidePdf } = require("@entropicwarrior/sdoc/slide-pdf");
+await exportSlidePdf("/tmp/slides.html", "/tmp/slides.pdf");
+        ```
+
+        {[.]
+            - `htmlPath` -- path to the HTML file to convert
+            - `pdfPath` -- path for the output PDF
+            - Returns a Promise that resolves with the output path
+            - Requires Chrome or Chromium (auto-detected, or set `CHROME_PATH`)
+        }
+    }
+
+    # exportDocPdf(htmlPath, pdfPath)
+    {
+        Exports an HTML file to PDF using headless Chrome with A4 portrait dimensions (document format).
+
+        ```javascript
+const { exportDocPdf } = require("@entropicwarrior/sdoc/slide-pdf");
+await exportDocPdf("/tmp/document.html", "/tmp/document.pdf");
+        ```
+
+        {[.]
+            - `htmlPath` -- path to the HTML file to convert
+            - `pdfPath` -- path for the output PDF
+            - Returns a Promise that resolves with the output path
+            - Uses A4 paper (8.27 x 11.69 inches) with print-optimized styles
+        }
     }
 }

@@ -53,6 +53,10 @@ function activate(context) {
     exportHtml();
   });
 
+  const exportPdfCommand = vscode.commands.registerCommand("sdoc.exportPdf", () => {
+    exportPdfDoc();
+  });
+
   const openInBrowserCommand = vscode.commands.registerCommand("sdoc.openInBrowser", () => {
     openInBrowser();
   });
@@ -300,7 +304,7 @@ function activate(context) {
     await vscode.workspace.applyEdit(editBuilder);
   });
 
-  context.subscriptions.push(previewCommand, previewToSideCommand, previewFromExplorerCommand, exportHtmlCommand, openInBrowserCommand, browseDocsCommand, newKnowledgeFileCommand, generateAboutCommand);
+  context.subscriptions.push(previewCommand, previewToSideCommand, previewFromExplorerCommand, exportHtmlCommand, exportPdfCommand, openInBrowserCommand, browseDocsCommand, newKnowledgeFileCommand, generateAboutCommand);
 
   context.subscriptions.push(
     vscode.languages.registerDocumentSymbolProvider("sdoc", {
@@ -1131,6 +1135,11 @@ function getActivePreviewDocument() {
       return vscode.workspace.openTextDocument(vscode.Uri.parse(key));
     }
   }
+  // Fall back to the active editor if it's an .sdoc file
+  const editor = vscode.window.activeTextEditor;
+  if (editor && editor.document.languageId === "sdoc") {
+    return Promise.resolve(editor.document);
+  }
   return null;
 }
 
@@ -1220,7 +1229,7 @@ async function buildCleanHtml(document) {
 async function exportHtml() {
   const docPromise = getActivePreviewDocument();
   if (!docPromise) {
-    vscode.window.showInformationMessage("No SDOC preview is active.");
+    vscode.window.showInformationMessage("No SDOC document is open.");
     return;
   }
 
@@ -1242,10 +1251,43 @@ async function exportHtml() {
   vscode.window.showInformationMessage(`Exported: ${path.basename(target.fsPath)}`);
 }
 
+async function exportPdfDoc() {
+  const docPromise = getActivePreviewDocument();
+  if (!docPromise) {
+    vscode.window.showInformationMessage("No SDOC document is open.");
+    return;
+  }
+
+  const document = await docPromise;
+  const baseName = path.basename(document.uri.fsPath, ".sdoc") + ".pdf";
+  const defaultUri = vscode.Uri.file(path.join(path.dirname(document.uri.fsPath), baseName));
+
+  const target = await vscode.window.showSaveDialog({
+    defaultUri,
+    filters: { "PDF": ["pdf"] }
+  });
+
+  if (!target) return;
+
+  const html = await buildCleanHtml(document);
+  const tmpHtml = path.join(os.tmpdir(), "sdoc-pdf-" + Date.now() + ".html");
+  fs.writeFileSync(tmpHtml, html, "utf8");
+
+  try {
+    const { exportDocPdf } = require("./slide-pdf");
+    await exportDocPdf(tmpHtml, target.fsPath);
+    vscode.window.showInformationMessage(`Exported: ${path.basename(target.fsPath)}`);
+  } catch (err) {
+    vscode.window.showErrorMessage(`PDF export failed: ${err.message}`);
+  } finally {
+    try { fs.unlinkSync(tmpHtml); } catch {}
+  }
+}
+
 async function openInBrowser() {
   const docPromise = getActivePreviewDocument();
   if (!docPromise) {
-    vscode.window.showInformationMessage("No SDOC preview is active.");
+    vscode.window.showInformationMessage("No SDOC document is open.");
     return;
   }
 

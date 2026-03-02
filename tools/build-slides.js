@@ -98,7 +98,7 @@ async function main() {
   const html = renderSlides(nodes, { meta, themeCss, themeJs, darkMode });
 
   if (pdfMode) {
-    const { exportPdf } = require("../src/slide-pdf");
+    const { exportSlidePdf } = require("../src/slide-pdf");
 
     // Determine PDF output path
     let pdfOutput;
@@ -113,7 +113,7 @@ async function main() {
     fs.writeFileSync(tmpHtml, html, "utf-8");
 
     try {
-      await exportPdf(tmpHtml, pdfOutput);
+      await exportSlidePdf(tmpHtml, pdfOutput);
       console.log(`PDF: ${pdfOutput}`);
     } catch (err) {
       console.error(err.message);

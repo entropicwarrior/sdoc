@@ -2,7 +2,7 @@
   "name": "sdoc",
   "displayName": "SDOC",
   "description": "A plain-text documentation format with explicit brace scoping — deterministic parsing, AI-agent efficiency, and 10-50x token savings vs Markdown.",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "publisher": "entropicwarrior",
   "license": "MIT",
   "repository": {
@@ -42,6 +42,7 @@
     "onCommand:sdoc.preview",
     "onCommand:sdoc.previewToSide",
     "onCommand:sdoc.exportHtml",
+    "onCommand:sdoc.exportPdf",
     "onCommand:sdoc.openInBrowser",
     "onCommand:sdoc.browseDocs",
     "onCommand:sdoc.newKnowledgeFile",
@@ -86,6 +87,11 @@
         "command": "sdoc.exportHtml",
         "title": "SDOC: Export HTML",
         "icon": "$(desktop-download)"
+      },
+      {
+        "command": "sdoc.exportPdf",
+        "title": "SDOC: Export PDF",
+        "icon": "$(file-pdf)"
       },
       {
         "command": "sdoc.openInBrowser",
@@ -160,12 +166,17 @@
         },
         {
           "command": "sdoc.exportHtml",
-          "when": "activeWebviewPanelId == 'sdoc.preview'",
+          "when": "activeWebviewPanelId == 'sdoc.preview' || editorLangId == sdoc",
+          "group": "navigation"
+        },
+        {
+          "command": "sdoc.exportPdf",
+          "when": "activeWebviewPanelId == 'sdoc.preview' || editorLangId == sdoc",
           "group": "navigation"
         },
         {
           "command": "sdoc.openInBrowser",
-          "when": "activeWebviewPanelId == 'sdoc.preview'",
+          "when": "activeWebviewPanelId == 'sdoc.preview' || editorLangId == sdoc",
           "group": "navigation"
         }
       ],

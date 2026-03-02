@@ -459,7 +459,7 @@ test("findChrome returns a string or null", () => {
 });
 
 test("exportPdf produces a file (integration)", async () => {
-  const { exportPdf, findChrome } = require("../src/slide-pdf");
+  const { exportSlidePdf, findChrome } = require("../src/slide-pdf");
   if (!findChrome()) {
     console.log("    SKIP: Chrome not found");
     return;
@@ -480,7 +480,7 @@ test("exportPdf produces a file (integration)", async () => {
 
   fs.writeFileSync(tmpHtml, html, "utf-8");
   try {
-    await exportPdf(tmpHtml, tmpPdf);
+    await exportSlidePdf(tmpHtml, tmpPdf);
     assert(fs.existsSync(tmpPdf), "PDF file should exist");
     const stat = fs.statSync(tmpPdf);
     assert(stat.size > 0, "PDF should not be empty");

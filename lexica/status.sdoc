@@ -79,7 +79,9 @@
             - [x] Interactive preview: inline text editing (edit paragraphs directly in preview)
             - [x] Parser line tracking (lineStart/lineEnd on all AST nodes)
             - [x] Export HTML (sdoc.exportHtml) -- standalone HTML with collapsible toggles
+            - [x] Export PDF (sdoc.exportPdf) -- A4 PDF via headless Chrome
             - [x] Open in Browser (sdoc.openInBrowser) -- preview in system browser
+            - [x] Document export CLI (tools/build-doc.js) -- HTML and PDF export from command line
             - [x] Document formatter (Format Document / Shift+Option+F) -- auto-indent based on brace depth
             - [x] AI skill reference tool (sdoc_reference) -- returns SDOC format guide to language models with reading guidance preamble
             - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
