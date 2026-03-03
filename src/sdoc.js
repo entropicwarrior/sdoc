@@ -8,7 +8,7 @@ const COMMAND_LIST_NUMBER = "{[#]";
 const COMMAND_TABLE = "{[table]";
 const COMMAND_CODE_FENCE = "```";
 
-const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">", "$", "+", "=", "-", "^"]);
+const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">", "$", "+", "=", "-", "^", "?"]);
 
 let _katex = null;
 let _katexLoaded = false;
@@ -1205,7 +1205,8 @@ function parseInline(text) {
       let mt = null;
       if (mc === "+") mt = "mark_positive";
       else if (mc === "=") mt = "mark_neutral";
-      else if (mc === "^") mt = "mark_caution";
+      else if (mc === "^") mt = "mark_note";
+      else if (mc === "?") mt = "mark_caution";
       else if (mc === "!") mt = "mark_warning";
       else if (mc === "-") mt = "mark_negative";
       else if (mc === "~") mt = "mark_highlight";
@@ -1366,6 +1367,8 @@ function renderInlineNodes(nodes) {
           return `<span class="sdoc-mark sdoc-mark-positive">${renderInlineNodes(node.children)}</span>`;
         case "mark_neutral":
           return `<span class="sdoc-mark sdoc-mark-neutral">${renderInlineNodes(node.children)}</span>`;
+        case "mark_note":
+          return `<span class="sdoc-mark sdoc-mark-note">${renderInlineNodes(node.children)}</span>`;
         case "mark_caution":
           return `<span class="sdoc-mark sdoc-mark-caution">${renderInlineNodes(node.children)}</span>`;
         case "mark_warning":
@@ -1929,11 +1932,12 @@ const DEFAULT_STYLE = `
     padding: 0.05em 0.3em;
     font-weight: 500;
   }
-  .sdoc-mark-positive { background-color: rgba(34, 139, 34, 0.15); color: #166016; }
-  .sdoc-mark-neutral  { background-color: rgba(59, 130, 195, 0.15); color: #245d8a; }
-  .sdoc-mark-caution  { background-color: rgba(200, 150, 30, 0.18); color: #7a5f0e; }
-  .sdoc-mark-warning  { background-color: rgba(255, 120, 0, 0.18); color: #b35400; }
-  .sdoc-mark-negative { background-color: rgba(187, 50, 50, 0.15); color: #911e1e; }
+  .sdoc-mark-positive  { background-color: rgba(34, 139, 34, 0.15); color: #166016; }
+  .sdoc-mark-neutral   { background-color: rgba(59, 130, 195, 0.15); color: #245d8a; }
+  .sdoc-mark-note      { background-color: rgba(190, 170, 0, 0.15); color: #6b5d00; }
+  .sdoc-mark-caution   { background-color: rgba(217, 130, 10, 0.18); color: #8a5000; }
+  .sdoc-mark-warning   { background-color: rgba(245, 115, 0, 0.20); color: #c05600; }
+  .sdoc-mark-negative  { background-color: rgba(210, 25, 25, 0.18); color: #a81414; }
   .sdoc-mark-highlight { background-color: rgba(255, 255, 0, 0.75); }
 
   .sdoc-image {

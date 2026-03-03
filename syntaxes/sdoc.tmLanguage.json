@@ -86,6 +86,7 @@
         { "include": "#strikethrough" },
         { "include": "#mark-positive" },
         { "include": "#mark-neutral" },
+        { "include": "#mark-note" },
         { "include": "#mark-caution" },
         { "include": "#mark-warning" },
         { "include": "#mark-negative" },
@@ -93,7 +94,7 @@
       ]
     },
     "escape": {
-      "match": "\\\\[\\\\{}@\\[\\]()*`#!~<>$+=\\-^]",
+      "match": "\\\\[\\\\{}@\\[\\]()*`#!~<>$+=\\-^?]",
       "name": "constant.character.escape.sdoc"
     },
     "reference": {
@@ -151,9 +152,13 @@
       "match": "\\{=(.+?)=\\}",
       "name": "markup.quote.sdoc"
     },
-    "mark-caution": {
+    "mark-note": {
       "match": "\\{\\^(.+?)\\^\\}",
       "name": "markup.changed.sdoc"
+    },
+    "mark-caution": {
+      "match": "\\{\\?(.+?)\\?\\}",
+      "name": "markup.keyword.caution.sdoc"
     },
     "mark-warning": {
       "match": "\\{!(.+?)!\\}",
