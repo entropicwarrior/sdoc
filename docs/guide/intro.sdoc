@@ -71,7 +71,7 @@ This is a paragraph.
         {
             This is where SDOC's design pays off most. Every property of the format was chosen to make programmatic consumption reliable and token-efficient.
 
-            **Deterministic parsing.** Two parsers, same input, same tree. Always. Markdown cannot guarantee this because section boundaries are inferred from heading levels, and different parsers make different choices about where a section ends. In SDOC, a scope starts with `{` and ends with the matching `}`. There is no ambiguity to resolve.
+            **Deterministic parsing.** Two parsers, same input, same tree. Always. Markdown cannot guarantee this because section boundaries are inferred from heading levels, and different parsers make different choices about where a section ends. In SDOC, a scope starts with `{` and ends with the matching `}`. There is no ambiguity to resolve. This is also a security property: when every parser produces the same tree, there is no interpretation gap that could be exploited to inject or hide content in automated processing pipelines.
 
             **Exact section extraction.** An agent that needs "the error handling section" calls `get_section("error-handling")` and gets exactly that scope back, with its children, every time. In Markdown, extracting a section means guessing: does it end at the next heading of equal depth? Lesser depth? What if heading levels are inconsistent? SDOC makes this a solved problem.
 

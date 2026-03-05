@@ -73,6 +73,19 @@
             Markdown cannot provide this guarantee because the CommonMark specification does not define document structure above the block level. SDOC can because structure is syntax, not convention.
         }
 
+        # Parsing Safety @parsing-safety
+        {
+            Deterministic parsing is not just a correctness property — it is a security property.
+
+            When a document format allows ambiguous structure, different parsers can produce different interpretations of the same input. This creates an attack surface. An attacker can craft content that looks benign to one parser but is interpreted differently by another — injecting content into the wrong section, hiding material behind an ambiguous boundary, or manipulating automated pipelines that process documents structurally.
+
+            The precedent is well established in a related domain: lenient HTML parsing across browsers enabled cross-site scripting attacks for years precisely because different engines disagreed on how to interpret malformed input. Markdown has an analogous structural property — implicit boundaries that parsers resolve differently — applied to documents that are routinely processed by automated systems. The attack mechanism is the same: exploit the gap between what one system sees and what another system sees.
+
+            SDOC eliminates this class of ambiguity. Explicit brace scoping means every parser produces the same tree. There is no interpretation gap to exploit. Content is where the braces say it is, and nowhere else.
+
+            For automated pipelines — CI/CD systems processing documentation, AI agents extracting and acting on content, compliance tools auditing document structure — this guarantee matters. The document you wrote is the document every system processes. No interpretation discrepancies, no silent misreads.
+        }
+
         # Progressive Disclosure @progressive-disclosure
         {
             SDOC documents are designed to be consumed incrementally:

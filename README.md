@@ -4,9 +4,12 @@ A plain-text documentation format designed for AI-agent efficiency. Explicit bra
 
 ## Why SDOC?
 
+Markdown has no formal structure — section boundaries are ambiguous, extraction requires heuristics, and AI agents waste tokens loading entire files to find one section. SDOC fixes this.
+
 - **Unambiguous structure** — `{ }` braces define scope, not whitespace or heading levels. No guessing where a section ends.
 - **Progressive disclosure** — AI agents can read a table of contents, then extract only the sections they need. No need to consume the whole file.
 - **Unlimited nesting** — Nest scopes as deep as you like. Structure follows your content, not format limitations.
+- **Parsing safety** — Deterministic parsing eliminates the ambiguity that creates injection surfaces in automated document processing pipelines.
 - **Content-presentation separation** — The AST is format-neutral. Render to HTML, slides, PDF, or anything else from the same source.
 - **Human-readable as plain text** — No build step required to read an SDOC file. It looks good in any text editor.
 

@@ -716,6 +716,8 @@ Content of Section A.
         }
 
         Blank lines are allowed anywhere and are ignored.
+
+        This line-start recognition rule, combined with explicit brace scoping, ensures that every SDOC document has exactly one valid parse tree. This determinism is a security property: there is no structural ambiguity that could be exploited to produce different interpretations in different processing pipelines.
     }
 
     # Formal Grammar @grammar
