@@ -25,7 +25,7 @@ jobs:
       - name: Upload VSIX to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.vsix
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.vsix --clobber
 
       - name: Publish to npm as @entropicwarrior/sdoc
         env:
