@@ -1054,18 +1054,7 @@ Content of Section B.
 
             {[.]
                 - Each rendered element carries a `data-line` attribute with its 1-indexed source line number
-                - Clicking inside an editable paragraph or on a collapse toggle does not trigger navigation
-            }
-        }
-
-        # Inline Text Editing @inline-editing
-        {
-            Paragraphs in the preview are directly editable. Clicking a paragraph gives it focus with a visible outline. Typing changes the text, and pressing Enter or clicking away writes the change back to the source file.
-
-            {[.]
-                - Only paragraph elements are editable (not headings, code blocks, etc.)
-                - Inline formatting (`*bold*`, `@ref`) in the original source is lost if the user edits text that contained it
-                - Escape also blurs the paragraph (discarding focus without triggering a save of the current edit state)
+                - Clicking on a collapse toggle or a hyperlink does not trigger navigation
             }
         }
     }

@@ -1283,6 +1283,33 @@ function parseInline(text) {
       }
     }
 
+    if (ch === "h" && text.slice(i, i + 8).match(/^https?:\/\//)) {
+      let j = i;
+      while (j < text.length && !/[\s)\]}>]/.test(text[j])) j++;
+      // Strip trailing punctuation that is likely sentence-level, not part of the URL
+      while (j > i && /[.,;:!?]/.test(text[j - 1])) j--;
+      const url = text.slice(i, j);
+      if (url.length > 8) {
+        flush();
+        nodes.push({ type: "link", href: url, children: [{ type: "text", value: url }] });
+        i = j;
+        continue;
+      }
+    }
+
+    if (ch === "m" && text.slice(i, i + 7) === "mailto:") {
+      let j = i + 7;
+      while (j < text.length && !/[\s)\]}>]/.test(text[j])) j++;
+      while (j > i && /[.,;:!?]/.test(text[j - 1])) j--;
+      const url = text.slice(i, j);
+      if (url.length > 7) {
+        flush();
+        nodes.push({ type: "link", href: url, children: [{ type: "text", value: url }] });
+        i = j;
+        continue;
+      }
+    }
+
     if (ch === "@" && next && isIdentStart(next)) {
       let j = i + 1;
       while (j < text.length && isIdentChar(text[j])) {

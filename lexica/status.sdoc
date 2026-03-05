@@ -76,7 +76,7 @@
             - [x] Language registration (.sdoc file type recognition in VSCode)
             - [x] Interactive preview: click-to-navigate (click element to jump to source line)
             - [x] Interactive preview: collapsible scopes (toggle triangles on headings, persistent state)
-            - [x] Interactive preview: inline text editing (edit paragraphs directly in preview)
+            - [x] Interactive preview: hyperlinks open in default browser
             - [x] Parser line tracking (lineStart/lineEnd on all AST nodes)
             - [x] Export HTML (sdoc.exportHtml) -- standalone HTML with collapsible toggles
             - [x] Export PDF (sdoc.exportPdf) -- A4 PDF via headless Chrome
