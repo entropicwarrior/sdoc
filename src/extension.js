@@ -10,7 +10,6 @@ const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
 
 const panels = new Map();
-let suppressNextUpdate = false;
 
 let activeServer = null;  // { server, port, rootDir }
 let statusBarItem = null;
@@ -371,13 +370,10 @@ function activate(context) {
       if (event.document.languageId !== "sdoc") {
         return;
       }
-      if (suppressNextUpdate) {
-        suppressNextUpdate = false;
-        return;
-      }
       updatePreview(event.document);
     })
   );
+
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((document) => {
@@ -468,8 +464,10 @@ function handleWebviewMessage(message, document) {
     case "navigateToLine":
       navigateToLine(document, message.line);
       break;
-    case "editParagraph":
-      editParagraphInSource(document, message.lineStart, message.lineEnd, message.newText);
+    case "openLink":
+      if (message.href) {
+        vscode.env.openExternal(vscode.Uri.parse(message.href));
+      }
       break;
   }
 }
@@ -483,29 +481,6 @@ function navigateToLine(document, line) {
     selection,
     preserveFocus: false
   });
-}
-
-function editParagraphInSource(document, lineStart, lineEnd, newText) {
-  const startIndex = Math.max(0, lineStart - 1);
-  const endIndex = Math.max(0, lineEnd - 1);
-
-  const firstLine = document.lineAt(startIndex);
-  const indentMatch = firstLine.text.match(/^(\s*)/);
-  const indent = indentMatch ? indentMatch[1] : "";
-
-  const newLines = newText.split("\n").map((l, i) => (i === 0 ? indent + l : indent + l));
-  const newContent = newLines.join("\n");
-
-  const range = new vscode.Range(
-    new vscode.Position(startIndex, 0),
-    new vscode.Position(endIndex, document.lineAt(endIndex).text.length)
-  );
-
-  const edit = new vscode.WorkspaceEdit();
-  edit.replace(document.uri, range, newContent);
-
-  suppressNextUpdate = true;
-  vscode.workspace.applyEdit(edit);
 }
 
 async function updatePreview(document) {
@@ -595,12 +570,20 @@ function buildWebviewScript() {
     }
   });
 
+  // Handle link clicks — open externally
+  document.addEventListener('click', function(e) {
+    var anchor = e.target.closest('a[href]');
+    if (!anchor) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var href = anchor.getAttribute('href');
+    if (href) {
+      vscodeApi.postMessage({ type: 'openLink', href: href });
+    }
+  }, true);
+
   // Click-to-navigate
   document.addEventListener('click', function(e) {
-    // Skip if clicking inside contenteditable or toggle
-    if (e.target.closest('[contenteditable]') && !e.target.classList.contains('sdoc-toggle')) {
-      return;
-    }
     if (e.target.classList.contains('sdoc-toggle')) {
       return;
     }
@@ -682,30 +665,6 @@ function buildWebviewScript() {
     container.scrollTop = state.scrollTop;
   }
 
-  // Inline editing
-  document.addEventListener('focusout', function(e) {
-    var el = e.target;
-    if (el.tagName !== 'P' || !el.classList.contains('sdoc-paragraph') || !el.hasAttribute('contenteditable')) {
-      return;
-    }
-    var lineStart = parseInt(el.getAttribute('data-line'), 10);
-    var lineEnd = parseInt(el.getAttribute('data-line-end') || el.getAttribute('data-line'), 10);
-    if (isNaN(lineStart)) return;
-    var newText = el.innerText;
-    vscodeApi.postMessage({ type: 'editParagraph', lineStart: lineStart, lineEnd: lineEnd, newText: newText });
-  });
-
-  document.addEventListener('keydown', function(e) {
-    var el = e.target;
-    if (!el.hasAttribute('contenteditable')) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      el.blur();
-    }
-    if (e.key === 'Escape') {
-      el.blur();
-    }
-  });
 })();
 `;
 }
@@ -774,16 +733,6 @@ function buildInteractiveCss() {
     outline-offset: 2px;
   }
 
-  p.sdoc-paragraph[contenteditable]:hover {
-    outline: 1px solid var(--sdoc-border);
-    outline-offset: 2px;
-  }
-
-  p.sdoc-paragraph[contenteditable]:focus {
-    outline: 2px solid var(--sdoc-accent);
-    outline-offset: 2px;
-    cursor: text;
-  }
 ${buildCollapseCss()}
 `;
 }
@@ -965,7 +914,7 @@ async function buildHtml(document, title, webview) {
       cssAppend: cssAppendParts.join("\n"),
       script: buildWebviewScript(),
       mermaidTheme: isDark ? "dark" : "neutral",
-      renderOptions: { editable: true }
+      renderOptions: { editable: false }
     }
   );
 

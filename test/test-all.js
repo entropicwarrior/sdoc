@@ -356,6 +356,32 @@ test("autolink mailto", () => {
   assert(html.includes('href="mailto:hello@example.com"'));
 });
 
+test("bare URL autolink", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  See https://example.com for details.\n}", "Test");
+  assert(html.includes('href="https://example.com"'), "bare URL should become a link");
+  assert(html.includes(">https://example.com</a>"), "link text should be the URL");
+});
+
+test("bare URL strips trailing punctuation", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  Visit https://example.com.\n}", "Test");
+  assert(html.includes('href="https://example.com"'), "trailing period should not be in URL");
+});
+
+test("bare URL stops at closing paren", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  (see https://example.com)\n}", "Test");
+  assert(html.includes('href="https://example.com"'), "closing paren should not be in URL");
+});
+
+test("bare http URL autolink", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  See http://example.com for info.\n}", "Test");
+  assert(html.includes('href="http://example.com"'), "http URLs should also autolink");
+});
+
+test("bare URL with path", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  See https://example.com/path/to/page?q=1&r=2#anchor.\n}", "Test");
+  assert(html.includes('href="https://example.com/path/to/page?q=1&amp;r=2#anchor"'), "URL with path, query, and fragment should work");
+});
+
 test("image", () => {
   const html = renderHtmlDocument("# Doc\n{\n  ![Alt text](image.png)\n}", "Test");
   assert(html.includes('src="image.png"'));

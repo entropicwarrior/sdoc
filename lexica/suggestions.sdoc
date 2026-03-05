@@ -189,6 +189,49 @@
         The rendering pipeline would style :warning, :note, :tip, :caution scopes with appropriate visual treatment.
     }
 
+    # S10: Extended Meta Properties for Agent Navigation @s10
+    {
+        Priority: Medium
+        Serves: @r5, @r9
+
+        The `@about` scope provides a prose discovery summary that works well for both humans and agents (~50-80 tokens). The `@meta` scope carries structured metadata like `type`, `tags`, and `status`. Currently the set of well-known meta keys is small and focused on presentation (style, header, footer) or basic classification (type, tags, status).
+
+        Extending `@meta` with richer structured fields would help AI agents make faster navigation decisions without reading `@about` or section headings. The key insight: `@about` should remain prose (it serves both audiences well and is already cheap to consume), but `@meta` should carry the structured data that enables programmatic filtering and relationship discovery.
+
+        Suggested additional well-known keys:
+
+        ```
+        # Meta @meta
+        {
+            type: doc
+            tags: authentication, api, security
+            status: active
+
+            audience: contributors, security-reviewers
+            depends-on: @user-model, @api-gateway
+            related: architecture.sdoc, spec.sdoc
+            read-when: adding-auth-features, reviewing-security
+        }
+        ```
+
+        {[.]
+            - `audience` — who this document is for, enabling agents to skip irrelevant files based on their current task
+            - `depends-on` — references to other documents or sections this document assumes knowledge of, enabling agents to load prerequisites first
+            - `related` — sibling documents that cover adjacent topics, enabling agents to discover relevant context
+            - `read-when` — task descriptions that indicate when this document is useful, enabling agents to match documents to their current intent without parsing prose
+        }
+
+        These fields complement rather than replace `@about`. The prose summary carries nuance and intent for both humans and agents. The structured fields enable fast programmatic filtering — an agent with a task list could match `read-when` values against its current task without language comprehension, then read `@about` only for the matches.
+
+        Design constraints:
+        {[.]
+            - All values should be plain text or comma-separated lists — no nested structure in meta values
+            - Keys should be lowercase kebab-case
+            - Tooling (MCP servers, index generators) should expose these fields in discovery responses
+            - Unrecognised keys are preserved as custom properties — the set is extensible by convention
+        }
+    }
+
     # S9: Reserved Syntax Space @s9
     {
         Priority: Low

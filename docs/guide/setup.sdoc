@@ -49,7 +49,7 @@ code --install-extension dist/sdoc-*.vsix
         {[.]
             - **Click-to-navigate**: click any element in the preview to jump to its source line in the editor
             - **Collapsible scopes**: hover over a heading with children to reveal a toggle triangle. Click it to collapse or expand the section. Collapse state persists across refreshes.
-            - **Inline editing**: click a paragraph to edit it directly in the preview. Press Enter or click away to save changes back to the source file. Press Escape to cancel.
+            - **Links**: clicking a hyperlink in the preview opens it in your default browser
         }
     }
 
