@@ -66,7 +66,6 @@ test/               Test files
 tools/              CLI tools
   build-slides.js     Build HTML slides from SDOC (node tools/build-slides.js [--pdf])
   serve_docs.py       CLI to start a local SDOC document server
-  generate_guide.js   Generates SDOC_GUIDE.md from parser source
   generate_index.js   Generates INDEX.sdoc for a lexica/ directory
 ```
 

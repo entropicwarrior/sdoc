@@ -345,14 +345,14 @@ function activate(context) {
   context.subscriptions.push(
     vscode.lm.registerTool('sdoc_reference', {
       async invoke(options, token) {
-        const guidePath = path.join(context.extensionPath, 'SDOC_GUIDE.md');
+        const guidePath = path.join(context.extensionPath, 'lexica', 'sdoc-authoring.sdoc');
         const content = fs.readFileSync(guidePath, 'utf8');
         const preamble = [
           '## Reading Guidance',
           '',
           '- The **Quick Reference** section is sufficient for writing correct SDOC.',
           '- **Common Mistakes** is essential reading for any agent generating SDOC.',
-          '- Only read the **Full Specification** for edge cases or parser behaviour questions.',
+          '- For edge cases or parser behaviour questions, see `lexica/specification.sdoc`.',
           '- If this project uses Lexica, check `lexica/` directories for project-specific knowledge.',
           '',
           '---',
