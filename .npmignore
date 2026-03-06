@@ -13,7 +13,6 @@ lexica/status.sdoc
 lexica/suggestions.sdoc
 test/
 tools/build-slides.js
-tools/generate_guide.js
 tools/generate_index.js
 tools/serve_docs.py
 dist/
@@ -28,6 +27,5 @@ node_modules/
 .DS_Store
 .env*
 AGENTS.md
-SDOC_GUIDE.md
 language-configuration.json
 readme.md

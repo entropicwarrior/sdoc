@@ -73,7 +73,6 @@ Key resources for agents:
 |---|---|
 | [`lexica/sdoc-authoring.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/sdoc-authoring.sdoc) | Skill document — drop into context to read/write SDOC immediately |
 | [`lexica/specification.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/specification.sdoc) | Formal spec with EBNF grammar |
-| [`SDOC_GUIDE.md`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/SDOC_GUIDE.md) | Quick reference in Markdown |
 
 All files in `lexica/` are SDOC-format knowledge documents designed for progressive disclosure — read the `@about` scope first (~50 tokens), then scan headings, then load only the section you need.
 
@@ -177,7 +176,7 @@ Per-folder `sdoc.config.json` or per-file `@meta` scope for custom CSS, headers,
 - `docs/guide/intro.sdoc` — what SDOC is and why
 - `docs/tutorials/first-steps.sdoc` — write your first document
 - `docs/reference/syntax.sdoc` — full syntax reference
-- `SDOC_GUIDE.md` — quick reference in Markdown (also used by AI tools)
+- `lexica/sdoc-authoring.sdoc` — authoring guide with quick reference and common mistakes
 
 ## Contributing
 

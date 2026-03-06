@@ -84,6 +84,51 @@
             document.
         }
 
+        # Headingless Scopes @headingless-scopes
+        {
+            A bare \`{ }\` block without a heading creates a section with no title — useful for grouping content:
+
+            ```
+            {
+                This content is grouped but has no heading.
+            }
+            ```
+
+            Headingless scopes nest like any other scope and can appear anywhere a headed scope can.
+        }
+
+        # Inline Blocks @inline-blocks
+        {
+            Short content can be written on a single line:
+
+            ```
+            # Author
+            { Jane Doe }
+
+            # Version
+            { 1.0 }
+            ```
+
+            Inline blocks must not contain unescaped \`{\` or \`}\` characters.
+        }
+
+        # Implicit Root @implicit-root
+        {
+            If the first heading is not followed by \`{\`, the document uses implicit root mode — the first heading becomes the document title and everything after it becomes the body:
+
+            ```
+# My Document
+
+# Section A
+Content of Section A.
+
+# Section B
+Content of Section B.
+            ```
+
+            This is equivalent to wrapping the entire body in braces after the first heading. Use implicit root for simple flat documents.
+        }
+
         # Paragraphs @paragraphs
         {
             Consecutive text lines form a paragraph. A blank line or a new scope
@@ -134,6 +179,38 @@
             **Important:** \`{[.]}\` with the closing brace on the same line creates an empty list — the brace closes the block immediately. Always put the closing \`}\` on a separate line after the items.
 
             Implicit lists only work for bullet lists (\`-\`) where every item is a single line. For numbered lists, always use the explicit \`{[#]\` block form.
+
+            **Task lists** — checkbox syntax inside explicit list blocks:
+
+            ```
+            {[.]
+                - [ ] Pending task
+                - [x] Completed task
+            }
+            ```
+
+            **Anonymous list items** — items with no title, just a body block:
+
+            ```
+            {[.]
+                {
+                    First item, body only.
+                }
+                {
+                    Second item, body only.
+                }
+            }
+            ```
+
+            **Multi-line titles** — in explicit list blocks, item titles can span multiple lines. Continuation stops at blank lines, list markers, braces, and other command tokens:
+
+            ```
+            {[.]
+                - This is a long list item
+                  that continues on the next line
+                - Short item
+            }
+            ```
         }
 
         # Tables @tables
@@ -286,6 +363,15 @@
             ```
         }
 
+        # Horizontal Rules @horizontal-rules
+        {
+            A line of three or more \`-\`, \`*\`, or \`_\`:
+
+            ```
+            ---
+            ```
+        }
+
         # Meta Scope @meta-scope
         {
             The reserved \`@meta\` scope configures per-file settings and is not rendered in the document body. Use the bare \`@meta\` form (preferred) or the heading form:
@@ -358,6 +444,15 @@
             \`\\\>\` \`\\\$\` \`\\+\` \`\\=\` \`\\-\` \`\\^\`
 
             A line starting with \`\\#\` renders as a literal \`#\` (not a heading). Use \`\\\$\` to prevent a dollar sign from starting math mode.
+        }
+
+        # Conventions @conventions
+        {
+            {[.]
+                - **Indentation:** cosmetic — use any whitespace you like. Most authors use 4 spaces.
+                - **IDs:** lowercase kebab-case (\`@my-section\`). IDs should be unique within a document.
+                - **Commas:** commas between list items or scopes are allowed but ignored — use them if you find them readable.
+            }
         }
     }
 
