@@ -63,6 +63,20 @@ python3 tools/serve_docs.py docs/
 
 Or use the **SDOC: Browse Documents** command from the VS Code Command Palette.
 
+## For AI Agents
+
+This repo provides an [`llms.txt`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/llms.txt) file at the repo root for AI agent discovery.
+
+Key resources for agents:
+
+| Resource | What it gives you |
+|---|---|
+| [`lexica/sdoc-authoring.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/sdoc-authoring.sdoc) | Skill document — drop into context to read/write SDOC immediately |
+| [`lexica/specification.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/specification.sdoc) | Formal spec with EBNF grammar |
+| [`SDOC_GUIDE.md`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/SDOC_GUIDE.md) | Quick reference in Markdown |
+
+All files in `lexica/` are SDOC-format knowledge documents designed for progressive disclosure — read the `@about` scope first (~50 tokens), then scan headings, then load only the section you need.
+
 ## Format at a Glance
 
 ```sdoc
