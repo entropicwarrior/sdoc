@@ -4,17 +4,17 @@
 
 SDOC uses `{ }` braces to define document structure explicitly. Two parsers, same input, same tree — always. AI agents can navigate an SDOC knowledge base in ~200 tokens of discovery, then extract exactly the section they need in ~200-1000 tokens, instead of loading entire files at 5,000-50,000 tokens each.
 
-The authoring guide (`sdoc-authoring.sdoc`) is written as an AI agent skill document. Drop it into any agent's context and it can read and write SDOC immediately.
+The authoring guide (`docs/reference/sdoc-authoring.sdoc`) is written as an AI agent skill document. Drop it into any agent's context and it can read and write SDOC immediately.
 
 ## Docs
 
-- [SDOC Authoring Guide](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/sdoc-authoring.sdoc): Skill document — how to write correct SDOC files. Covers document structure, inline formatting, block types (lists, tables, code, blockquotes), mermaid diagrams, and common mistakes. Start here to learn the format.
+- [SDOC Authoring Guide](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/reference/sdoc-authoring.sdoc): Skill document — how to write correct SDOC files. Covers document structure, inline formatting, block types (lists, tables, code, blockquotes), mermaid diagrams, and common mistakes. Start here to learn the format.
 - [SDOC Specification](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/specification.sdoc): Formal v0.1 specification with EBNF grammar. Defines syntax for scopes, lists, tables, code blocks, inline formatting, references, and the meta scope.
-- [Why SDOC Over Markdown](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/why-sdoc.sdoc): The case for SDOC — structural problems with Markdown, why explicit scoping solves them, parsing safety as a security property, and the adoption path forward.
+- [Why SDOC Over Markdown](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/guide/why-sdoc.sdoc): The case for SDOC — structural problems with Markdown, why explicit scoping solves them, parsing safety as a security property, and the adoption path forward.
 
 ## Optional
 
 - [Requirements](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/requirements.sdoc): Why SDOC exists and what it must achieve. Ten abstract requirements (R1-R10) and concrete constraints (C1-C6).
-- [Slide Authoring Guide](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/slide-authoring.sdoc): How to create HTML slide decks from SDOC files.
+- [Slide Authoring Guide](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/reference/slide-authoring.sdoc): How to create HTML slide decks from SDOC files.
 - [Introduction](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/guide/intro.sdoc): Gentle introduction to the format for newcomers.
 - [Syntax Reference](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/reference/syntax.sdoc): Practical syntax reference with examples.

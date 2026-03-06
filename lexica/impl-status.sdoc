@@ -1,15 +1,17 @@
-# SDOC Project Status @sdoc-status
+# SDOC — Implementation Status @sdoc-impl-status
 {
     # Meta @meta
     {
         type: doc
+
+        status: active
 
         sdoc-version: 0.1
     }
 
     # About @about
     {
-        Current state of the SDOC project. Tracks what is completed, what is in progress, and what is next. Read this first when starting a new task.
+        Implementation status for the SDOC project. Tracks what is completed, what is in progress, and what is next. Read this first when starting a new task.
     }
 
     # Current State @current-state

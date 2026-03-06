@@ -6,6 +6,7 @@
 .git-backup/**
 AGENTS.md
 docs/**
+!docs/reference/sdoc-authoring.sdoc
 examples/**
 lexica/**
 test/**

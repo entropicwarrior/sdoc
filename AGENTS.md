@@ -8,34 +8,36 @@ JavaScript parser/renderer, and a VS Code extension for live preview.
 
 ## Project Knowledge
 
-This project uses the Lexica convention for organising knowledge. All
-knowledge files live in `lexica/` at the repo root.
+This project uses the Lexica convention for organising knowledge. Build
+knowledge lives in `lexica/` — the specification, requirements, and project
+status needed to work on the source code. User-facing documentation lives
+in `docs/` — authoring guides, tutorials, and references for people using
+the format.
 
 When starting a task:
 
-1. List the `lexica/` directory at the repo root.
-2. Read filenames to identify relevant knowledge.
-3. Open relevant files and read the About section near the top to confirm
-   relevance.
+1. Read `lexica/impl-status.sdoc` for current project state.
+2. If changing the parser, read `lexica/specification.sdoc`.
+3. If adding features, read `lexica/requirements.sdoc` and `lexica/suggestions.sdoc`.
 4. Read only the sections you need — scan headings first.
-5. Check parent directories for broader project-wide knowledge.
 
 ## Project Structure
 
 ```
-lexica/             Project knowledge (all skills and reference docs)
-  INDEX.sdoc          Auto-generated knowledge index
-  sdoc-authoring.sdoc How to write correct SDOC files (skill)
+lexica/             Build knowledge (what you need to work on the src)
   specification.sdoc  The formal v0.1 spec (doc)
   requirements.sdoc   Why SDOC exists, requirements R1-R10 (doc)
-  suggestions.sdoc    Proposed features S1-S9 (doc)
-  status.sdoc         What's done, what's in progress, what's next (doc)
+  impl-status.sdoc    What's done, what's in progress, what's next (doc)
   sdoc-plan.sdoc      Roadmap: parser, spec additions, export pipeline (doc)
+  suggestions.sdoc    Proposed features S1-S9 (doc)
 
 docs/               User-facing documentation (served by document browser)
-  guide/              Getting started, setup
-  reference/          API and CLI reference
-  tutorials/          Step-by-step tutorials
+  guide/              Getting started, setup, the case for SDOC
+    why-sdoc.sdoc       Why SDOC over Markdown
+  reference/          Authoring guides, syntax, API, CLI
+    sdoc-authoring.sdoc How to write correct SDOC files (skill)
+    slide-authoring.sdoc How to create slide decks (skill)
+  tutorials/          Step-by-step walkthroughs
   index.sdoc          Docs landing page
 
 examples/           Example and reference files
@@ -66,12 +68,11 @@ test/               Test files
 tools/              CLI tools
   build-slides.js     Build HTML slides from SDOC (node tools/build-slides.js [--pdf])
   serve_docs.py       CLI to start a local SDOC document server
-  generate_index.js   Generates INDEX.sdoc for a lexica/ directory
 ```
 
 ## Before Making Changes
 
-Read `lexica/status.sdoc` first — it has the current task list.
+Read `lexica/impl-status.sdoc` first — it has the current task list.
 
 If changing the parser or renderer, read `lexica/specification.sdoc`.
 If adding features, read `lexica/requirements.sdoc` and `lexica/suggestions.sdoc`.
