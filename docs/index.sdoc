@@ -15,9 +15,12 @@
     {
         {[.]
             - Guide: Introduction — `guide/intro.sdoc`
+            - Guide: Why SDOC — `guide/why-sdoc.sdoc`
             - Guide: Setup — `guide/setup.sdoc`
             - Guide: Notion Sync — `guide/notion-sync.sdoc`
             - Tutorial: First Steps — `tutorials/first-steps.sdoc`
+            - Reference: SDOC Authoring — `reference/sdoc-authoring.sdoc`
+            - Reference: Slide Authoring — `reference/slide-authoring.sdoc`
             - Reference: Syntax — `reference/syntax.sdoc`
             - Reference: API — `reference/api.sdoc`
             - Reference: CLI — `reference/cli.sdoc`
@@ -27,9 +30,9 @@
     # Sections
     {[.]
         - Guide
-        { Getting started with SDOC: what it is and how to set it up. }
+        { Getting started with SDOC: what it is, why it exists, and how to set it up. }
         - Reference
-        { Syntax details, the JavaScript API, and CLI tools. }
+        { Authoring guides, syntax details, the JavaScript API, and CLI tools. }
         - Tutorials
         { Step-by-step walkthroughs for common tasks. }
     }

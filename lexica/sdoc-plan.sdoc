@@ -11,7 +11,7 @@
     {
         Roadmap for the SDOC format and tooling. Covers parser improvements,
         spec additions, export pipeline, and extension enhancements. Read
-        before proposing new features or picking up work. See status.sdoc
+        before proposing new features or picking up work. See impl-status.sdoc
         for what is already completed.
     }
 

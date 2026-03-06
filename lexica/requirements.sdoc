@@ -51,7 +51,7 @@
 
             Implication: scope boundaries must be explicit, not inferred from indentation or heading levels.
 
-            This requirement is also a security property: when document structure is unambiguous, there is no interpretation gap that could be exploited to inject or hide content in automated document processing pipelines. See `why-sdoc.sdoc` (@parsing-safety) for the full argument.
+            This requirement is also a security property: when document structure is unambiguous, there is no interpretation gap that could be exploited to inject or hide content in automated document processing pipelines. See `docs/guide/why-sdoc.sdoc` (@parsing-safety) for the full argument.
         }
 
         # R2: Human Readability as Plain Text @r2

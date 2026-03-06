@@ -15,7 +15,7 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 ## What's in the Box
 
-**The format** — a formal specification (`lexica/specification.sdoc`) with EBNF grammar, plus a comprehensive authoring guide written as an AI agent skill document. Drop `lexica/sdoc-authoring.sdoc` into any AI agent's context and it can read and write SDOC immediately.
+**The format** — a formal specification (`lexica/specification.sdoc`) with EBNF grammar, plus a comprehensive authoring guide written as an AI agent skill document. Drop `docs/reference/sdoc-authoring.sdoc` into any AI agent's context and it can read and write SDOC immediately.
 
 **A zero-dependency JavaScript parser** — `src/sdoc.js` parses SDOC into a format-neutral AST. No runtime dependencies, works anywhere Node runs. Parsing and rendering are cleanly separated — build your own renderers on top.
 
@@ -44,7 +44,7 @@ Open any `.sdoc` file and click the preview icon in the editor title bar, or run
 node tools/build-slides.js deck.sdoc -o slides.html
 ```
 
-Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `lexica/slide-authoring.sdoc` for the full authoring guide.
+Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `docs/reference/slide-authoring.sdoc` for the full authoring guide.
 
 ### Export to PDF or HTML
 
@@ -71,10 +71,10 @@ Key resources for agents:
 
 | Resource | What it gives you |
 |---|---|
-| [`lexica/sdoc-authoring.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/sdoc-authoring.sdoc) | Skill document — drop into context to read/write SDOC immediately |
+| [`docs/reference/sdoc-authoring.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/reference/sdoc-authoring.sdoc) | Skill document — drop into context to read/write SDOC immediately |
 | [`lexica/specification.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/specification.sdoc) | Formal spec with EBNF grammar |
 
-All files in `lexica/` are SDOC-format knowledge documents designed for progressive disclosure — read the `@about` scope first (~50 tokens), then scan headings, then load only the section you need.
+All `.sdoc` files are designed for progressive disclosure — read the `@about` scope first (~50 tokens), then scan headings, then load only the section you need.
 
 ## Format at a Glance
 
@@ -174,9 +174,10 @@ Per-folder `sdoc.config.json` or per-file `@meta` scope for custom CSS, headers,
 ## Learning the Format
 
 - `docs/guide/intro.sdoc` — what SDOC is and why
+- `docs/guide/why-sdoc.sdoc` — the case for SDOC over Markdown
 - `docs/tutorials/first-steps.sdoc` — write your first document
+- `docs/reference/sdoc-authoring.sdoc` — authoring guide with quick reference and common mistakes
 - `docs/reference/syntax.sdoc` — full syntax reference
-- `lexica/sdoc-authoring.sdoc` — authoring guide with quick reference and common mistakes
 
 ## Contributing
 

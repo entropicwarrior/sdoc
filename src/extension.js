@@ -345,7 +345,7 @@ function activate(context) {
   context.subscriptions.push(
     vscode.lm.registerTool('sdoc_reference', {
       async invoke(options, token) {
-        const guidePath = path.join(context.extensionPath, 'lexica', 'sdoc-authoring.sdoc');
+        const guidePath = path.join(context.extensionPath, 'docs', 'reference', 'sdoc-authoring.sdoc');
         const content = fs.readFileSync(guidePath, 'utf8');
         const preamble = [
           '## Reading Guidance',
