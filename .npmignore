@@ -4,9 +4,12 @@
 .git/
 .gitignore
 .vscodeignore
-docs/
-!docs/reference/sdoc-authoring.sdoc
-!docs/reference/slide-authoring.sdoc
+docs/guide/
+docs/tutorials/
+docs/index.sdoc
+docs/reference/api.sdoc
+docs/reference/cli.sdoc
+docs/reference/syntax.sdoc
 examples/
 lexica/requirements.sdoc
 lexica/sdoc-plan.sdoc
