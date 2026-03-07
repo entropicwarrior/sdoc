@@ -2093,6 +2093,9 @@ const PRINT_STYLE = `
       word-wrap: break-word;
     }
     .sdoc-mark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .sdoc-table { break-inside: avoid; }
+    .sdoc-code { break-inside: avoid; }
+    .sdoc-blockquote { break-inside: avoid; }
   }
 `;
 
