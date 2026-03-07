@@ -1,6 +1,6 @@
 # Meta @meta
 {
-    sdoc-version: 0.1
+    sdoc-version: 0.2
     # StyleAppend
     {
         example-overrides.css
@@ -142,6 +142,48 @@
             {[table borderless headerless]
                 ![](example_image_1.jpeg =100%) | ![](example_image_2.jpg =100%)
                 ![](example_image_2.jpg =100%) | ![](example_image_1.jpeg =100%)
+            }
+
+            # Table Width and Alignment
+            {
+                Tables at 25% and 75% width (left-aligned by default):
+
+                {[table 25%]
+                    Code | Meaning
+                    200 | OK
+                    404 | Not Found
+                    500 | Server Error
+                }
+
+                {[table 75%]
+                    Code | Meaning
+                    200 | OK
+                    404 | Not Found
+                    500 | Server Error
+                }
+
+                Centered at 60%:
+
+                {[table 60% center]
+                    Endpoint | Status
+                    /v2/api | {+Active+}
+                    /v1/api | {-Deprecated-}
+                }
+
+                Auto-width shrinks to content:
+
+                {[table auto center borderless]
+                    Key | Value
+                    Version | 2.0
+                    Format | JSON
+                }
+
+                Right-aligned with pixel width:
+
+                {[table 300px right headerless]
+                    v2.0 | Current release
+                    v1.0 | Deprecated
+                }
             }
 
             # Include by Link
@@ -303,6 +345,25 @@
                 ```
 
                 A plain dollar sign like $100 does not trigger math mode.
+            }
+
+            # Data Blocks :example
+            {
+                A JSON code fence tagged with `:data` is parsed and validated:
+
+                ```json :data
+                {
+                    "format": "SDOC",
+                    "version": "0.2",
+                    "features": ["scopes", "lists", "tables", "data-blocks"]
+                }
+                ```
+            }
+
+            # Build Notes :comment
+            {
+                This scope is invisible in the rendered preview.
+                It stays in the AST for tooling and agents.
             }
 
             # Extras
