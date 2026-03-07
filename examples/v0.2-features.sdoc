@@ -1,0 +1,132 @@
+# Weather API :specification
+{
+    // This example exercises all three v0.2 features:
+    // scope types, data blocks, and comments.
+
+    @meta {
+        sdoc-version: 0.2
+    }
+
+    # Input Schema @input :schema
+    {
+        The API accepts a location query.
+
+        ```json :data
+        {
+            "type": "object",
+            "properties": {
+                "location": { "type": "string" },
+                "units": { "type": "string", "enum": ["metric", "imperial"] }
+            },
+            "required": ["location"]
+        }
+        ```
+    }
+
+    # Response Schema @response :schema
+    {
+        ```json :data
+        {
+            "type": "object",
+            "properties": {
+                "temperature": { "type": "number" },
+                "conditions": { "type": "string" },
+                "humidity": { "type": "number" }
+            }
+        }
+        ```
+    }
+
+    # Authentication @auth :requirement
+    {
+        All requests must include a valid API key in the
+        `X-API-Key` header.
+    }
+
+    # Rate Limiting @rate-limit :warning
+    {
+        - 100 requests per minute per API key
+        - 429 status code when exceeded
+    }
+
+    # Agent Instructions :comment
+    {
+        When modifying this API, ensure backward compatibility
+        with v1 clients. The @input schema must remain a superset
+        of the v1 schema — never remove fields.
+
+        ```json :data
+        {
+            "compatibility": "v1",
+            "breaking_change_policy": "never_remove_fields"
+        }
+        ```
+    }
+
+    # Usage Example :example
+    {
+        ```json
+        {
+            "location": "San Francisco",
+            "units": "metric"
+        }
+        ```
+    }
+
+    # Legacy Endpoint @old-api :deprecated
+    {
+        The `/v1/weather` endpoint is deprecated.
+        Use `/v2/weather` instead.
+    }
+
+    # Status Summary @status :example
+    {
+        A narrow, centered table for sparse data:
+
+        {[table 60% center]
+            Endpoint | Status
+            /v2/weather | Active
+            /v1/weather | Deprecated
+        }
+    }
+
+    # Compact Reference @compact :example
+    {
+        Auto-width shrinks to content:
+
+        {[table auto center borderless]
+            Key | Value
+            API Version | 2.0
+            Format | JSON
+        }
+    }
+
+    # Error Codes @errors :example
+    {
+        Left-aligned tables at 25% and 75% width:
+
+        {[table 25%]
+            Code | Meaning
+            401 | Unauthorized
+            429 | Rate limited
+            500 | Server error
+        }
+
+        {[table 75%]
+            Code | Meaning
+            401 | Unauthorized
+            429 | Rate limited
+            500 | Server error
+        }
+    }
+
+    # Changelog @changelog :example
+    {
+        Right-aligned sidebar table with pixel width:
+
+        {[table 300px right headerless]
+            v2.0 | Current release
+            v1.0 | Deprecated
+        }
+    }
+}
