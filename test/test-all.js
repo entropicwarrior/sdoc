@@ -4,6 +4,7 @@ const {
   extractMeta,
   renderFragment,
   renderTextParagraphs,
+  renderHtmlBody,
   renderHtmlDocumentFromParsed,
   renderHtmlDocument,
   formatSdoc,
@@ -1786,6 +1787,29 @@ test("K&R table with width and alignment", () => {
   assert(r.nodes[0].children[0].type === "table");
   assert(r.nodes[0].children[0].options.width === "60%");
   assert(r.nodes[0].children[0].options.align === "center");
+});
+
+// --- renderHtmlBody ---
+
+test("renderHtmlBody returns fragment without DOCTYPE", () => {
+  const html = renderHtmlBody("# Hello {\n    World\n}");
+  assert(!html.includes("<!DOCTYPE"), "should not contain DOCTYPE");
+  assert(!html.includes("<html"), "should not contain <html>");
+  assert(!html.includes("<head"), "should not contain <head>");
+  assert(!html.includes("<body"), "should not contain <body>");
+});
+
+test("renderHtmlBody produces structural HTML", () => {
+  const html = renderHtmlBody("# Doc {\n    A paragraph.\n\n    - Item one\n    - Item two\n}");
+  assert(html.includes("<h1"), "should contain heading");
+  assert(html.includes("<p"), "should contain paragraph");
+  assert(html.includes("<li"), "should contain list items");
+});
+
+test("renderHtmlBody strips meta scope", () => {
+  const html = renderHtmlBody("@meta {\n    sdoc-version: 0.2\n}\n# Doc {\n    Content\n}");
+  assert(!html.includes("sdoc-version"), "meta content should not appear in body");
+  assert(html.includes("Content"), "body content should appear");
 });
 
 // ============================================================

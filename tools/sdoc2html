@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+// SDOC → HTML fragment translator
+//
+// Usage:
+//   node tools/sdoc2html input.sdoc     # read from file
+//   cat input.sdoc | node tools/sdoc2html  # read from stdin
+//
+// Writes an HTML fragment to stdout (no <!DOCTYPE>, no <html>/<body> wrapper).
+// Designed for integration with github/markup as a translator script.
+
+const fs = require("fs");
+const { renderHtmlBody } = require("../src/sdoc");
+
+function main() {
+  let input;
+  const filename = process.argv[2];
+
+  if (filename) {
+    try {
+      input = fs.readFileSync(filename, "utf8");
+    } catch (err) {
+      process.stderr.write(`sdoc2html: ${err.message}\n`);
+      process.exit(1);
+    }
+  } else {
+    input = fs.readFileSync(0, "utf8");
+  }
+
+  process.stdout.write(renderHtmlBody(input) + "\n");
+}
+
+main();

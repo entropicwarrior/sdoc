@@ -2112,9 +2112,8 @@ function hasMermaidBlocks(nodes) {
   return false;
 }
 
-function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
-  _renderOptions = options.renderOptions ?? {};
-  const body = parsed.nodes
+function renderBodyNodes(nodes) {
+  return nodes
     .map((node, index) => {
       if (node.type === "scope" && index === 0) {
         return renderScope(node, 1, true);
@@ -2122,6 +2121,17 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
       return renderNode(node, 1);
     })
     .join("\n");
+}
+
+function renderHtmlBody(text) {
+  const parsed = parseSdoc(text);
+  const metaResult = extractMeta(parsed.nodes);
+  return renderBodyNodes(metaResult.nodes);
+}
+
+function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
+  _renderOptions = options.renderOptions ?? {};
+  const body = renderBodyNodes(parsed.nodes);
   _renderOptions = {};
   const errorHtml = renderErrors(parsed.errors);
 
@@ -2466,6 +2476,7 @@ module.exports = {
   resolveIncludes,
   renderFragment,
   renderTextParagraphs,
+  renderHtmlBody,
   renderHtmlDocumentFromParsed,
   renderHtmlDocument,
   formatSdoc,
