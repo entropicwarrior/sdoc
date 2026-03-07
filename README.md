@@ -87,19 +87,25 @@ All `.sdoc` files are designed for progressive disclosure — read the `@about` 
     {
         Unlimited nesting. Each scope is independently addressable.
 
-        {[code lang=python]
-            def hello():
-                print("Hello from SDOC")
+        ```python
+        def hello():
+            print("Hello from SDOC")
+        ```
+    }
+
+    # Status :example
+    {
+        {[table 60% center]
+            Endpoint | Status
+            /v2/api | {+Active+}
+            /v1/api | {-Deprecated-}
         }
     }
 
-    # A List
+    # Internal Notes :comment
     {
-        {[.]
-            - First item
-            - Second item with **bold**
-            - Third item
-        }
+        This scope is invisible in rendered output but
+        stays in the AST for tooling and agents.
     }
 }
 ```
@@ -153,7 +159,7 @@ Markdown-style images with optional width and alignment:
 
 ### Tables
 
-Pipe-delimited tables with optional `borderless` and `headerless` flags.
+Pipe-delimited tables with optional flags for appearance (`borderless`, `headerless`), width (`auto`, `60%`, `400px`), and alignment (`left`, `center`, `right`). All flags compose freely.
 
 ### Lists
 
@@ -166,6 +172,18 @@ Tag any section with `@id` and cross-reference it anywhere with `@id` — render
 ### Slides
 
 Turn any SDOC file into an HTML slide deck with themes, layouts (center, two-column), speaker notes, and PDF export.
+
+### Scope Types
+
+Classify scopes with a `:type` annotation — `:schema`, `:warning`, `:deprecated`, `:example`, or any custom label. Types render as `data-scope-type` attributes and CSS classes for styling.
+
+### Data Blocks
+
+Tag a JSON code fence with `:data` and the parser validates and stores the parsed result on the AST node. `extractDataBlocks()` gives programmatic access. Ideal for embedding schemas, configs, and structured metadata alongside prose.
+
+### Comment Scopes
+
+A `:comment` scope is excluded from rendered output but stays in the AST — perfect for agent instructions, internal notes, and build metadata that readers shouldn't see.
 
 ### Custom Styling
 
