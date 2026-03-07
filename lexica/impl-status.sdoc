@@ -6,7 +6,7 @@
 
         status: active
 
-        sdoc-version: 0.1
+        sdoc-version: 0.2
     }
 
     # About @about
@@ -16,7 +16,7 @@
 
     # Current State @current-state
     {
-        SDOC is in early active development. The v0.1 spec is drafted, a working parser and HTML renderer exist, and a VSCode extension provides live preview. The format is being used internally for project documentation (including this file).
+        SDOC is in early active development. The v0.2 spec is drafted, a working parser and HTML renderer exist, and a VSCode extension provides live preview. The format is being used internally for project documentation (including this file).
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable (@r10).
     }
@@ -61,6 +61,10 @@
             - [x] Image width and alignment (=50%, =50% center/left/right)
             - [x] Table options (borderless, headerless flags on {[table]})
             - [x] Include by link (src: and lines: metadata on code fences)
+            - [x] Scope types (:type annotation on headings, well-known types, both @id/:type orderings) (v0.2)
+            - [x] Data blocks (:data flag on JSON code fences, parsed into AST) (v0.2)
+            - [x] Line comments (// at line start, discarded from AST) (v0.2)
+            - [x] Comment scopes (:comment scope type, in AST but not rendered) (v0.2)
         }
 
         # Tooling
@@ -137,8 +141,8 @@
             These are the suggestions most needed to make SDOC viable across all three use cases. See suggestions.sdoc for full details.
 
             - [ ] Document metadata (@s2) -- key:value meta is implemented; remaining work is defining canonical well-known keys and exposing `meta.properties` to downstream consumers
-            - [ ] Comments (@s3) -- currently an open question in the spec
-            - [ ] Semantic scope types (@s4) -- type annotations on scopes for AI agent consumption
+            - [x] Comments (@s3) -- line comments (//) and comment scopes (:comment) implemented in v0.2
+            - [x] Semantic scope types (@s4) -- :type annotations on headings implemented in v0.2
         }
 
         # Export Pipeline

@@ -130,15 +130,26 @@ function renderTable(table) {
     .join("\n");
   const tbody = bodyRows ? `<tbody>\n${bodyRows}\n</tbody>` : "";
 
-  return `<table${classAttr}>${thead}${thead ? "\n" : ""}${tbody}</table>`;
+  const styleParts = [];
+  if (opts.width) {
+    styleParts.push(`width:${opts.width}`);
+    if (opts.width !== "auto") styleParts.push("table-layout:fixed");
+  }
+  if (opts.align === "center") styleParts.push("margin-left:auto", "margin-right:auto");
+  else if (opts.align === "right") styleParts.push("margin-left:auto", "margin-right:0");
+  const styleAttr = styleParts.length ? ` style="${styleParts.join(";")}"` : "";
+
+  return `<table${classAttr}${styleAttr}>${thead}${thead ? "\n" : ""}${tbody}</table>`;
 }
 
 function renderNestedScope(scope) {
+  if (scope.scopeType === "comment") return "";
   const heading = scope.hasHeading !== false && scope.title
     ? `<h3>${renderInline(scope.title)}</h3>`
     : "";
+  const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
   const children = scope.children.map((child) => renderNode(child)).join("\n");
-  return `<section>${heading}\n${children}</section>`;
+  return `<section${typeAttr}>${heading}\n${children}</section>`;
 }
 
 function renderChildren(nodes) {
@@ -179,6 +190,10 @@ function extractNotes(children) {
   const notes = [];
   const rest = [];
   for (const child of children) {
+    if (child.type === "scope" && child.scopeType === "comment") {
+      // :comment scopes are excluded from both notes and content
+      continue;
+    }
     if (child.type === "scope" && child.id && child.id.toLowerCase() === "notes") {
       notes.push(child);
     } else {
@@ -208,8 +223,8 @@ function renderSlide(scope, slideIndex, overlayHtml) {
   let bodyHtml;
   if (config.layout === "two-column") {
     // In two-column layout, child scopes become columns
-    const columns = contentNodes.filter((n) => n.type === "scope");
-    const nonColumns = contentNodes.filter((n) => n.type !== "scope");
+    const columns = contentNodes.filter((n) => n.type === "scope" && n.scopeType !== "comment");
+    const nonColumns = contentNodes.filter((n) => n.type !== "scope" || n.scopeType === "comment");
     const preamble = nonColumns.length ? renderChildren(nonColumns) : "";
     const columnsHtml = columns
       .map((col) => {
@@ -256,8 +271,8 @@ function renderSlides(nodes, options = {}) {
     slideScopes = nodes;
   }
 
-  // Filter to scope nodes only (skip stray paragraphs at top level)
-  const slides = slideScopes.filter((n) => n.type === "scope");
+  // Filter to scope nodes only (skip stray paragraphs and :comment scopes)
+  const slides = slideScopes.filter((n) => n.type === "scope" && n.scopeType !== "comment");
 
   // Build per-slide footer: <  CONFIDENTIAL  ---gap---  Company  >
   const footerParts = [];

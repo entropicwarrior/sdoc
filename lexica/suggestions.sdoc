@@ -4,7 +4,7 @@
     {
         type: doc
 
-        sdoc-version: 0.1
+        sdoc-version: 0.2
     }
 
     # About @about
@@ -18,7 +18,7 @@
     {
         This document suggests additions to the SDOC spec based on gaps identified in v0.1. Each suggestion references the requirements it serves (see requirements.sdoc). Suggestions are ordered by priority.
 
-        When a suggestion is accepted and implemented, it should be moved into specification.sdoc and removed from this document.
+        When a suggestion is accepted and implemented, it is retained here for historical context. The specification.sdoc carries the normative definition.
     }
 
     # S2: Document Metadata Beyond Styling @s2
@@ -48,39 +48,14 @@
         Priority: High
         Serves: @r5, @r8
 
-        Currently flagged as an open question in the spec. Comments are essential across all use cases: reminders to self in notes, editorial annotations in project docs, and AI agent instructions in software docs.
+        {+Implemented in v0.2.+} Both approaches were adopted:
 
-        Suggested syntax options:
-        {[#]
-            - Line comments
-            {
-                ```
-                // This is a comment and won't be rendered
-                # Visible Heading
-                {
-                    Visible content
-                }
-                ```
-                Pros: familiar from programming. Line-based, consistent with SDOC's line-oriented parser.
-                Cons: // is common in URLs and code blocks, so context sensitivity is needed.
-            }
-            - Comment scopes
-            {
-                ```
-                # TODO @comment
-                {
-                    This entire scope is a comment and won't render.
-                    Could be used for AI agent instructions.
-                }
-                ```
-                Pros: consistent with scope-based philosophy. Can contain rich structured content.
-                Cons: more verbose for quick one-liners.
-            }
-            - Both
-            {
-                Line comments for quick annotations, comment scopes for structured non-rendered content. This is probably the right answer. A line comment for fast capture, and a comment scope for complex annotations.
-            }
+        {[.]
+            - **Line comments:** `//` at line start (after optional indentation) skips the line entirely. Not in AST, not rendered. Mid-line `//` has no effect (URLs safe). No effect inside code blocks.
+            - **Comment scopes:** `# Title :comment` uses the scope type system. In AST but not rendered. Agents can extract them. Can contain any valid SDOC content.
         }
+
+        This resolves the open question from the v0.1 spec. Line comments handle quick annotations; comment scopes handle structured non-rendered content.
     }
 
     # S4: Semantic Scope Types @s4
@@ -88,9 +63,7 @@
         Priority: High
         Serves: @r5, @r7
 
-        Currently all scopes are structurally identical. The only differentiation is the heading text and optional ID. For AI agents to navigate documents effectively, scopes need semantic meaning.
-
-        Consider a type annotation on scopes:
+        {+Implemented in v0.2.+} Scope types use `:typename` after the optional `@id` on headings:
 
         ```
         # User Authentication @auth :requirement
@@ -111,7 +84,12 @@
         }
         ```
 
-        This allows AI agents to filter scopes by type: "show me all requirements", "find tests for this specification", "what is the status of all tasks". The types would be user-defined, not a fixed enum, though the spec could suggest well-known types (requirement, specification, test, note, warning, definition, example).
+        {[.]
+            - Syntax: `# Title @id :type` or `# Title :type @id` or `# Title :type` — both orderings supported
+            - `:type` requires whitespace before the colon (so `# Note: Important` is NOT a type)
+            - Any string is valid. Well-known types: `schema`, `example`, `requirement`, `specification`, `definition`, `note`, `warning`, `test`, `task`, `api`, `config`, `deprecated`, `comment`
+            - The `:comment` type creates scopes that are in the AST but not rendered (see @s3)
+        }
     }
 
     # S5: Cross-File References @s5
@@ -176,9 +154,8 @@
         Priority: Low
         Serves: @r7
 
-        Warning, note, tip, and caution boxes are common in technical documentation. Could be modelled as a scope type annotation (see @s4), which would make a dedicated syntax unnecessary.
+        Warning, note, tip, and caution boxes are common in technical documentation. This is handled by scope type annotations (see @s4), making a dedicated syntax unnecessary:
 
-        If @s4 is implemented:
         ```
         # Important @note1 :warning
         {
@@ -243,8 +220,7 @@
         {[.]
             - {[...]} patterns (for future list/scope types)
             - @keyword patterns at line start (for directives like @include)
-            - :: or :word after scope IDs (for type annotations per @s4)
-            - %% or similar (for future comment syntax if // is problematic)
+            - `:word` is now used for scope types (v0.2, see @s4). `::` remains reserved for potential future use.
         }
     }
 }

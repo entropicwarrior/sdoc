@@ -1,4 +1,9 @@
-const SDOC_FORMAT_VERSION = "0.1";
+const SDOC_FORMAT_VERSION = "0.2";
+
+const KNOWN_SCOPE_TYPES = [
+  "schema", "example", "requirement", "specification", "definition",
+  "note", "warning", "test", "task", "api", "config", "deprecated", "comment"
+];
 
 const COMMAND_HEADING = "#";
 const COMMAND_SCOPE_OPEN = "{";
@@ -45,6 +50,10 @@ function parseTableOptions(text) {
   for (const flag of flags) {
     if (flag === "borderless") options.borderless = true;
     else if (flag === "headerless") options.headerless = true;
+    else if (flag === "auto") options.width = "auto";
+    else if (/^\d+(?:\.\d+)?%$/.test(flag)) options.width = flag;
+    else if (/^\d+px$/.test(flag)) options.width = flag;
+    else if (flag === "center" || flag === "left" || flag === "right") options.align = flag;
   }
   return options;
 }
@@ -84,15 +93,7 @@ function parseSdoc(text) {
     const parsedHeading = parseHeading(cursor.current());
     cursor.next();
     const children = parseBlock(cursor, "normal");
-    const rootNode = {
-      type: "scope",
-      title: parsedHeading.title,
-      id: parsedHeading.id,
-      children,
-      hasHeading: true,
-      lineStart: scopeStartLine,
-      lineEnd: cursor.index
-    };
+    const rootNode = makeScopeNode(parsedHeading, children, true, scopeStartLine, cursor.index);
     return { nodes: [rootNode], errors: cursor.errors };
   }
 
@@ -228,6 +229,12 @@ function parseBlock(cursor, kind) {
       continue;
     }
 
+    // Line comments — skip, don't flush paragraph (invisible to AST)
+    if (trimmedLeft.startsWith("//")) {
+      cursor.next();
+      continue;
+    }
+
     if (trimmed === COMMAND_SCOPE_CLOSE) {
       flushParagraph();
       cursor.next();
@@ -348,6 +355,21 @@ function extractTrailingOpener(text) {
   return null;
 }
 
+function makeScopeNode(parsedHeading, children, hasHeading, lineStart, lineEnd, extra) {
+  const node = {
+    type: "scope",
+    title: parsedHeading.title,
+    id: parsedHeading.id,
+    children,
+    hasHeading,
+    lineStart,
+    lineEnd
+  };
+  if (parsedHeading.scopeType) node.scopeType = parsedHeading.scopeType;
+  if (extra) Object.assign(node, extra);
+  return node;
+}
+
 function parseScope(cursor) {
   const scopeStartLine = cursor.index + 1;
   const headingLine = cursor.current();
@@ -369,15 +391,7 @@ function parseScope(cursor) {
     } else {
       children = parseBlock(cursor, "normal");
     }
-    return {
-      type: "scope",
-      title: parsedHeading.title,
-      id: parsedHeading.id,
-      children,
-      hasHeading: true,
-      lineStart: scopeStartLine,
-      lineEnd: cursor.index
-    };
+    return makeScopeNode(parsedHeading, children, true, scopeStartLine, cursor.index);
   }
 
   const parsedHeading = parseHeading(headingLine);
@@ -385,38 +399,14 @@ function parseScope(cursor) {
 
   if (blockResult.blockType === "braceless") {
     const children = parseBracelessBlock(cursor);
-    return {
-      type: "scope",
-      title: parsedHeading.title,
-      id: parsedHeading.id,
-      children,
-      hasHeading: true,
-      lineStart: scopeStartLine,
-      lineEnd: cursor.index
-    };
+    return makeScopeNode(parsedHeading, children, true, scopeStartLine, cursor.index);
   }
 
   if (blockResult.blockType === "list") {
-    return {
-      type: "scope",
-      title: parsedHeading.title,
-      id: parsedHeading.id,
-      children: [blockResult.children],
-      hasHeading: true,
-      lineStart: scopeStartLine,
-      lineEnd: cursor.index
-    };
+    return makeScopeNode(parsedHeading, [blockResult.children], true, scopeStartLine, cursor.index);
   }
 
-  return {
-    type: "scope",
-    title: parsedHeading.title,
-    id: parsedHeading.id,
-    children: blockResult.children,
-    hasHeading: true,
-    lineStart: scopeStartLine,
-    lineEnd: cursor.index
-  };
+  return makeScopeNode(parsedHeading, blockResult.children, true, scopeStartLine, cursor.index);
 }
 
 function tryParseInlineBlock(trimmed) {
@@ -492,6 +482,12 @@ function parseBracelessBlock(cursor) {
     if (parseBareDirective(trimmed)) {
       flushParagraph();
       break;
+    }
+
+    // Line comments — skip, don't flush paragraph
+    if (trimmedLeft.startsWith("//")) {
+      cursor.next();
+      continue;
     }
 
     if (trimmed === ",") {
@@ -710,6 +706,9 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
   const textForOpener = task ? task.text : raw;
   const trailing = extractTrailingOpener(textForOpener);
 
+  const listExtra = { shorthand: true };
+  if (task) listExtra.task = { checked: task.checked };
+
   if (trailing) {
     const parsed = parseHeadingText(trailing.text);
     cursor.next();
@@ -725,17 +724,7 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
       children = parseBlock(cursor, "normal");
     }
 
-    return {
-      type: "scope",
-      title: parsed.title,
-      id: parsed.id,
-      children,
-      hasHeading: true,
-      shorthand: true,
-      task: task ? { checked: task.checked } : undefined,
-      lineStart: itemStartLine,
-      lineEnd: cursor.index
-    };
+    return makeScopeNode(parsed, children, true, itemStartLine, cursor.index, listExtra);
   }
 
   cursor.next();
@@ -756,44 +745,14 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
 
   const block = parseOptionalBlock(cursor);
   if (!block) {
-    return {
-      type: "scope",
-      title: parsed.title,
-      id: parsed.id,
-      children: [],
-      hasHeading: true,
-      shorthand: true,
-      task: task ? { checked: task.checked } : undefined,
-      lineStart: itemStartLine,
-      lineEnd: cursor.index
-    };
+    return makeScopeNode(parsed, [], true, itemStartLine, cursor.index, listExtra);
   }
 
   if (block.blockType === "list") {
-    return {
-      type: "scope",
-      title: parsed.title,
-      id: parsed.id,
-      children: [block.children],
-      hasHeading: true,
-      shorthand: true,
-      task: task ? { checked: task.checked } : undefined,
-      lineStart: itemStartLine,
-      lineEnd: cursor.index
-    };
+    return makeScopeNode(parsed, [block.children], true, itemStartLine, cursor.index, listExtra);
   }
 
-  return {
-    type: "scope",
-    title: parsed.title,
-    id: parsed.id,
-    children: block.children,
-    hasHeading: true,
-    shorthand: true,
-    task: task ? { checked: task.checked } : undefined,
-    lineStart: itemStartLine,
-    lineEnd: cursor.index
-  };
+  return makeScopeNode(parsed, block.children, true, itemStartLine, cursor.index, listExtra);
 }
 
 function parseImplicitListBlock(cursor, listType) {
@@ -843,16 +802,18 @@ function parseTableBody(cursor, tableStartLine, options) {
     cursor.next();
   }
 
+  const hasOptions = options.borderless || options.headerless || options.width || options.align;
+
   if (options.headerless) {
     const tableNode = { type: "table", headers: [], rows, lineStart: tableStartLine, lineEnd: cursor.index };
-    if (options.borderless || options.headerless) tableNode.options = options;
+    if (hasOptions) tableNode.options = options;
     return tableNode;
   }
 
   const headers = rows.length > 0 ? rows[0] : [];
   const body = rows.slice(1);
   const tableNode = { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
-  if (options.borderless) tableNode.options = options;
+  if (hasOptions) tableNode.options = options;
   return tableNode;
 }
 
@@ -911,7 +872,7 @@ function parseTaskPrefix(raw) {
 function parseFenceMetadata(meta) {
   if (!meta) return {};
   const tokens = meta.split(/\s+/).filter(Boolean);
-  let lang, src, lines;
+  let lang, src, lines, data = false;
   for (const token of tokens) {
     if (token.startsWith("src:")) {
       src = token.slice(4);
@@ -921,11 +882,13 @@ function parseFenceMetadata(meta) {
       if (match) {
         lines = { start: parseInt(match[1], 10), end: parseInt(match[2], 10) };
       }
+    } else if (token === ":data") {
+      data = true;
     } else if (!lang) {
       lang = token;
     }
   }
-  return { lang, src, lines };
+  return { lang, src, lines, data };
 }
 
 function parseCodeBlock(cursor) {
@@ -943,26 +906,37 @@ function parseCodeBlock(cursor) {
 
   const contentLines = [];
 
+  function buildCodeNode() {
+    const node = { type: "code", lang, text: stripIndent(contentLines, fenceIndent), lineStart: codeStartLine, lineEnd: cursor.index };
+    if (fenceMeta.src) node.src = fenceMeta.src;
+    if (fenceMeta.lines) node.lines = fenceMeta.lines;
+    if (fenceMeta.data) {
+      node.dataFlag = true;
+      if (lang === "json" && !node.src) {
+        try {
+          node.data = JSON.parse(node.text);
+        } catch {
+          cursor.error("Invalid JSON in :data code block.");
+        }
+      }
+    }
+    return node;
+  }
+
   while (!cursor.eof()) {
     const nextLine = cursor.current();
     const nextTrimmed = nextLine.replace(/^\s+/, "");
     const closeMatch = nextTrimmed.match(/^(`{3,})\s*$/);
     if (closeMatch && closeMatch[1].length >= fenceLen) {
       cursor.next();
-      const node = { type: "code", lang, text: stripIndent(contentLines, fenceIndent), lineStart: codeStartLine, lineEnd: cursor.index };
-      if (fenceMeta.src) node.src = fenceMeta.src;
-      if (fenceMeta.lines) node.lines = fenceMeta.lines;
-      return node;
+      return buildCodeNode();
     }
     contentLines.push(nextLine);
     cursor.next();
   }
 
   cursor.error("Unterminated code fence.");
-  const node = { type: "code", lang, text: stripIndent(contentLines, fenceIndent), lineStart: codeStartLine, lineEnd: cursor.index };
-  if (fenceMeta.src) node.src = fenceMeta.src;
-  if (fenceMeta.lines) node.lines = fenceMeta.lines;
-  return node;
+  return buildCodeNode();
 }
 
 /**
@@ -1016,12 +990,15 @@ function parseBlockquote(cursor) {
 function parseHeading(line) {
   const trimmedLeft = line.replace(/^\s+/, "");
   const raw = stripHeadingToken(trimmedLeft);
-  return parseHeadingText(raw);
+  const result = parseHeadingText(raw);
+  return result;
 }
 
 function parseHeadingText(raw) {
   const split = splitTrailingId(raw);
-  return { title: split.text.trimEnd(), id: split.id ? split.id.slice(1) : undefined };
+  const result = { title: split.text.trimEnd(), id: split.id ? split.id.slice(1) : undefined };
+  if (split.scopeType) result.scopeType = split.scopeType;
+  return result;
 }
 
 function stripHeadingToken(line) {
@@ -1033,27 +1010,49 @@ function stripHeadingToken(line) {
 }
 
 function splitTrailingId(raw) {
-  let i = raw.length - 1;
-  while (i >= 0 && /\s/.test(raw[i])) {
-    i -= 1;
-  }
+  let id = undefined;
+  let scopeType = undefined;
+  let remaining = raw;
 
-  const end = i;
-  while (i >= 0 && isIdentChar(raw[i])) {
-    i -= 1;
-  }
+  // Make up to two passes to extract trailing @id and :type in any order
+  for (let pass = 0; pass < 2; pass++) {
+    let i = remaining.length - 1;
+    while (i >= 0 && /\s/.test(remaining[i])) {
+      i -= 1;
+    }
+    if (i < 0) break;
 
-  if (i >= 0 && raw[i] === "@" && end > i && isIdentStart(raw[i + 1])) {
-    if (!isEscaped(raw, i)) {
-      if (i === 0 || /\s/.test(raw[i - 1])) {
-        const id = raw.slice(i, end + 1);
-        const text = raw.slice(0, i).trimEnd();
-        return { text, id };
+    const end = i;
+    while (i >= 0 && isIdentChar(remaining[i])) {
+      i -= 1;
+    }
+    if (i < 0 || end === i) break;
+
+    if (remaining[i] === "@" && !id && isIdentStart(remaining[i + 1])) {
+      if (!isEscaped(remaining, i)) {
+        if (i === 0 || /\s/.test(remaining[i - 1])) {
+          id = remaining.slice(i, end + 1);
+          remaining = remaining.slice(0, i).trimEnd();
+          continue;
+        }
       }
     }
+
+    if (remaining[i] === ":" && !scopeType && isIdentStart(remaining[i + 1])) {
+      if (i === 0 || /\s/.test(remaining[i - 1])) {
+        scopeType = remaining.slice(i + 1, end + 1);
+        remaining = remaining.slice(0, i).trimEnd();
+        continue;
+      }
+    }
+
+    break;
   }
 
-  return { text: raw };
+  const result = { text: remaining };
+  if (id) result.id = id;
+  if (scopeType) result.scopeType = scopeType;
+  return result;
 }
 
 function isHeadingLine(line) {
@@ -1429,13 +1428,18 @@ function renderInlineNodes(nodes) {
 }
 
 function renderScope(scope, depth, isTitleScope = false) {
+  // :comment scopes are not rendered
+  if (scope.scopeType === "comment") return "";
+
   const level = Math.min(6, Math.max(1, depth));
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
   const rootClass = isTitleScope ? " sdoc-root" : "";
   const dl = dataLineAttrs(scope);
+  const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
+  const typeClass = scope.scopeType ? ` sdoc-scope-type-${scope.scopeType}` : "";
 
   if (scope.hasHeading === false) {
-    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}"${dl}>${children}</section>`;
+    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}"${typeAttr}${dl}>${children}</section>`;
   }
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
@@ -1443,7 +1447,7 @@ function renderScope(scope, depth, isTitleScope = false) {
   const toggle = hasChildren ? `<span class="sdoc-toggle"></span>` : "";
   const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}"${dl}>${toggle}${renderInline(scope.title)}</h${level}>`;
   const childrenHtml = children ? `\n<div class="sdoc-scope-children">${children}</div>` : "";
-  return `<section class="sdoc-scope${rootClass}">${heading}${childrenHtml}</section>`;
+  return `<section class="sdoc-scope${rootClass}${typeClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
 }
 
 function renderList(list, depth) {
@@ -1536,7 +1540,16 @@ function renderTable(table) {
     .join("\n");
   const tbody = bodyRows ? `<tbody class="sdoc-table-body">${bodyRows}</tbody>` : "";
 
-  return `<table class="${classAttr}"${dl}>${thead}${thead ? "\n" : ""}${tbody}</table>`;
+  const styleParts = [];
+  if (opts.width) {
+    styleParts.push(`width:${opts.width}`);
+    if (opts.width !== "auto") styleParts.push("table-layout:fixed");
+  }
+  if (opts.align === "center") styleParts.push("margin-left:auto", "margin-right:auto");
+  else if (opts.align === "right") styleParts.push("margin-left:auto", "margin-right:0");
+  const styleAttr = styleParts.length ? ` style="${styleParts.join(";")}"` : "";
+
+  return `<table class="${classAttr}"${dl}${styleAttr}>${thead}${thead ? "\n" : ""}${tbody}</table>`;
 }
 
 function renderNode(node, depth) {
@@ -1568,7 +1581,8 @@ function renderNode(node, depth) {
         return `<div class="sdoc-math sdoc-math-block"${dl}>${renderKatex(node.text, true)}</div>`;
       }
       const langClass = node.lang ? ` class="language-${escapeAttr(node.lang)}"` : "";
-      return `<div class="sdoc-code-wrap"${dl}><pre class="sdoc-code"><code${langClass}>${escapeHtml(node.text)}</code></pre><button class="sdoc-copy-btn" title="Copy code">\u29C9</button></div>`;
+      const dataLabel = node.dataFlag ? `<span class="sdoc-data-label">data</span>` : "";
+      return `<div class="sdoc-code-wrap"${dl}>${dataLabel}<pre class="sdoc-code"><code${langClass}>${escapeHtml(node.text)}</code></pre><button class="sdoc-copy-btn" title="Copy code">\u29C9</button></div>`;
     }
     default:
       return "";
@@ -2009,6 +2023,22 @@ const DEFAULT_STYLE = `
     padding-left: 1.2rem;
   }
 
+  .sdoc-data-label {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    z-index: 1;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(59, 130, 195, 0.15);
+    color: #3b82c3;
+    pointer-events: none;
+  }
+
 `;
 
 const PRINT_STYLE = `
@@ -2314,17 +2344,35 @@ function listSections(nodes) {
     id: node.id || null,
     derivedId: slugify(node.title),
     title: node.title,
+    scopeType: node.scopeType || null,
     preview: firstParagraphPreview(node.children || [], 100)
   }));
+}
+
+function collectDataBlocks(children) {
+  const data = [];
+  for (const child of children) {
+    if (child.type === "code" && child.dataFlag && child.data !== undefined) {
+      data.push(child.data);
+    }
+  }
+  return data;
 }
 
 function extractSection(nodes, sectionId) {
   const scopes = getContentScopes(nodes);
 
+  function buildResult(node) {
+    const data = collectDataBlocks(node.children || []);
+    const result = { title: node.title, content: collectPlainText(node.children || []) };
+    if (data.length) result.data = data;
+    return result;
+  }
+
   // First pass: match explicit @id (case-sensitive)
   for (const node of scopes) {
     if (node.id && node.id === sectionId) {
-      return { title: node.title, content: collectPlainText(node.children || []) };
+      return buildResult(node);
     }
   }
 
@@ -2332,11 +2380,39 @@ function extractSection(nodes, sectionId) {
   const lowerTarget = sectionId.toLowerCase();
   for (const node of scopes) {
     if (slugify(node.title).toLowerCase() === lowerTarget) {
-      return { title: node.title, content: collectPlainText(node.children || []) };
+      return buildResult(node);
     }
   }
 
   return null;
+}
+
+function extractDataBlocks(nodes) {
+  const results = [];
+  function walk(nodeList, scopeId, scopeType, scopeTitle) {
+    for (const node of nodeList) {
+      if (node.type === "code" && node.dataFlag && node.data !== undefined) {
+        results.push({
+          scopeId: scopeId || null,
+          scopeType: scopeType || null,
+          scopeTitle: scopeTitle || null,
+          data: node.data
+        });
+      }
+      if (node.type === "scope") {
+        walk(node.children || [], node.id, node.scopeType, node.title);
+      }
+      if (node.type === "list" && node.items) {
+        for (const item of node.items) {
+          if (item.type === "scope") {
+            walk(item.children || [], item.id, item.scopeType, item.title);
+          }
+        }
+      }
+    }
+  }
+  walk(nodes, null, null, null);
+  return results;
 }
 
 function extractAbout(nodes) {
@@ -2364,6 +2440,12 @@ async function resolveIncludes(nodes, resolverFn) {
           text = allLines.slice(node.lines.start - 1, node.lines.end).join("\n");
         }
         node.text = text;
+        // Re-parse JSON for :data blocks after include resolution
+        if (node.dataFlag && node.lang === "json") {
+          try {
+            node.data = JSON.parse(node.text);
+          } catch { /* leave node.data undefined — caller can check */ }
+        }
       } catch (err) {
         node.text = `// Error: Could not read ${node.src} — ${err.message}`;
       }
@@ -2392,6 +2474,8 @@ module.exports = {
   listSections,
   extractSection,
   extractAbout,
+  extractDataBlocks,
+  KNOWN_SCOPE_TYPES,
   // Low-level helpers for custom renderers (e.g. slide-renderer)
   parseInline,
   renderKatex,

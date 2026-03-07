@@ -246,6 +246,7 @@ function renderNotionBlocks(nodes) {
   // Unwrap document scope wrapper (single root scope)
   if (nodes.length === 1 && nodes[0].type === "scope" && nodes[0].children) {
     const doc = nodes[0];
+    if (doc.scopeType === "comment") return [];
     if (doc.hasHeading && doc.title) {
       // Document title scope: render as top-level toggle heading
       const childBlocks = renderChildren(doc.children, 2, 1);
@@ -290,6 +291,8 @@ function renderNode(node, depth, nestLevel) {
 }
 
 function renderScope(scope, depth, nestLevel) {
+  if (scope.scopeType === "comment") return [];
+
   const level = Math.min(3, Math.max(1, depth));
 
   if (scope.hasHeading === false) {

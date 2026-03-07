@@ -12,6 +12,8 @@ const {
   listSections,
   extractSection,
   extractAbout,
+  extractDataBlocks,
+  KNOWN_SCOPE_TYPES,
   parseInline,
   renderKatex
 } = require("../src/sdoc.js");
@@ -1698,6 +1700,94 @@ test("K&R table with options", () => {
   assert(r.nodes[0].children[0].options.borderless === true);
 });
 
+// --- Table width and alignment ---
+
+test("table with auto width", () => {
+  const r = parseSdoc("{[table auto]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.width === "auto");
+});
+
+test("table with percentage width", () => {
+  const r = parseSdoc("{[table 60%]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.width === "60%");
+});
+
+test("table with decimal percentage width", () => {
+  const r = parseSdoc("{[table 33.3%]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.width === "33.3%");
+});
+
+test("table with pixel width", () => {
+  const r = parseSdoc("{[table 400px]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.width === "400px");
+});
+
+test("table with center alignment", () => {
+  const r = parseSdoc("{[table center]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.align === "center");
+});
+
+test("table with right alignment", () => {
+  const r = parseSdoc("{[table right]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.align === "right");
+});
+
+test("table with width and alignment combined", () => {
+  const r = parseSdoc("{[table 60% center]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.width === "60%");
+  assert(r.nodes[0].options.align === "center");
+});
+
+test("table with auto width and right alignment and borderless", () => {
+  const r = parseSdoc("{[table auto right borderless]\n  A | B\n  C | D\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].options.width === "auto");
+  assert(r.nodes[0].options.align === "right");
+  assert(r.nodes[0].options.borderless === true);
+});
+
+test("render table with width style", () => {
+  const html = renderHtmlDocument("# Doc {\n    {[table 60%]\n        Name | Age\n        Alice | 30\n    }\n}", "Test");
+  assert(html.includes("width:60%"), "should have width style");
+  assert(html.includes("table-layout:fixed"), "explicit width should use fixed layout");
+});
+
+test("render table with center alignment", () => {
+  const html = renderHtmlDocument("# Doc {\n    {[table auto center]\n        Name | Age\n        Alice | 30\n    }\n}", "Test");
+  assert(html.includes("width:auto"), "should have auto width");
+  assert(!html.includes("table-layout:fixed"), "auto width should not use fixed layout");
+  assert(html.includes("margin-left:auto"), "should have margin-left:auto");
+  assert(html.includes("margin-right:auto"), "should have margin-right:auto");
+});
+
+test("render table with right alignment", () => {
+  const html = renderHtmlDocument("# Doc {\n    {[table 400px right]\n        Name | Age\n        Alice | 30\n    }\n}", "Test");
+  assert(html.includes("width:400px"), "should have pixel width");
+  assert(html.includes("table-layout:fixed"), "pixel width should use fixed layout");
+  assert(html.includes("margin-left:auto"), "should have margin-left:auto");
+  assert(html.includes("margin-right:0"), "should have margin-right:0");
+});
+
+test("plain table has no inline style", () => {
+  const html = renderHtmlDocument("# Doc {\n    {[table]\n        Name | Age\n        Alice | 30\n    }\n}", "Test");
+  assert(!html.includes('style='), "plain table should have no inline style");
+});
+
+test("K&R table with width and alignment", () => {
+  const r = parseSdoc("# Data {[table 60% center]\n  Name | Age\n  Alice | 30\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children[0].type === "table");
+  assert(r.nodes[0].children[0].options.width === "60%");
+  assert(r.nodes[0].children[0].options.align === "center");
+});
+
 // ============================================================
 console.log("\n--- Code block include syntax ---");
 
@@ -1765,8 +1855,8 @@ test("no warning when there is no @meta scope", () => {
   assert(result.warnings.length === 0, "expected no warnings, got " + result.warnings.length);
 });
 
-test("SDOC_FORMAT_VERSION is exported and equals 0.1", () => {
-  assert(SDOC_FORMAT_VERSION === "0.1", "expected 0.1, got " + SDOC_FORMAT_VERSION);
+test("SDOC_FORMAT_VERSION is exported and equals 0.2", () => {
+  assert(SDOC_FORMAT_VERSION === "0.2", "expected 0.2, got " + SDOC_FORMAT_VERSION);
 });
 
 // ============================================================
@@ -1941,6 +2031,404 @@ test("parseInline produces correct node types for markers", () => {
     assert(nodes.length === 1, `should parse ${input} as single node`);
     assert(nodes[0].type === expected, `${input} should produce ${expected}, got ${nodes[0].type}`);
   }
+});
+
+// ============================================================
+console.log("\n--- Scope Types ---");
+
+test(":type after @id", () => {
+  const r = parseSdoc("# Auth @auth :requirement\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Auth");
+  assert(r.nodes[0].id === "auth");
+  assert(r.nodes[0].scopeType === "requirement");
+});
+
+test(":type without @id", () => {
+  const r = parseSdoc("# Schema :schema\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Schema");
+  assert(r.nodes[0].id === undefined);
+  assert(r.nodes[0].scopeType === "schema");
+});
+
+test("@id without :type", () => {
+  const r = parseSdoc("# Section @sec\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Section");
+  assert(r.nodes[0].id === "sec");
+  assert(r.nodes[0].scopeType === undefined);
+});
+
+test(":type before @id", () => {
+  const r = parseSdoc("# Endpoint :api @ep\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Endpoint");
+  assert(r.nodes[0].id === "ep");
+  assert(r.nodes[0].scopeType === "api");
+});
+
+test("colon in title is NOT a type (no whitespace before colon)", () => {
+  const r = parseSdoc("# Note: Important\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Note: Important");
+  assert(r.nodes[0].scopeType === undefined);
+});
+
+test("unknown scope types preserved", () => {
+  const r = parseSdoc("# Custom :foobar\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].scopeType === "foobar");
+});
+
+test("well-known types work", () => {
+  for (const t of ["schema", "example", "requirement", "deprecated", "comment"]) {
+    const r = parseSdoc(`# Section :${t}\n{\n  Content.\n}`);
+    assert(r.errors.length === 0, `errors for :${t}`);
+    assert(r.nodes[0].scopeType === t, `type for :${t}`);
+  }
+});
+
+test("KNOWN_SCOPE_TYPES exported", () => {
+  assert(Array.isArray(KNOWN_SCOPE_TYPES));
+  assert(KNOWN_SCOPE_TYPES.includes("schema"));
+  assert(KNOWN_SCOPE_TYPES.includes("comment"));
+});
+
+test("scope type with K&R brace style", () => {
+  const r = parseSdoc("# Auth @auth :requirement {\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Auth");
+  assert(r.nodes[0].id === "auth");
+  assert(r.nodes[0].scopeType === "requirement");
+});
+
+test("scope type in braceless scope", () => {
+  const r = parseSdoc("# Title :note\n\nSome content.");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].scopeType === "note");
+  assert(r.nodes[0].title === "Title");
+});
+
+test("scope type in implicit root", () => {
+  const r = parseSdoc("# Doc :specification\n\n# Sub\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].scopeType === "specification");
+});
+
+test("listSections returns scopeType", () => {
+  const r = parseSdoc("# Doc\n{\n  # Sub :schema\n  {\n    Content.\n  }\n}");
+  const sections = listSections(r.nodes);
+  const sub = sections.find(s => s.title === "Sub");
+  assert(sub, "Sub section exists");
+  assert(sub.scopeType === "schema", "scopeType is schema");
+});
+
+test("listSections returns null scopeType when absent", () => {
+  const r = parseSdoc("# Doc\n{\n  # Sub\n  {\n    Content.\n  }\n}");
+  const sections = listSections(r.nodes);
+  const sub = sections.find(s => s.title === "Sub");
+  assert(sub.scopeType === null);
+});
+
+test("colon without space before is not a type (Title:type)", () => {
+  const r = parseSdoc("# Title:type\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Title:type");
+  assert(r.nodes[0].scopeType === undefined);
+});
+
+test("multiple :type annotations — last one wins", () => {
+  const r = parseSdoc("# Title :type1 :type2\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].scopeType === "type2", "last :type wins");
+  assert(r.nodes[0].title === "Title :type1", "earlier :type remains in title");
+});
+
+test("bare colon at end of title is not a type", () => {
+  const r = parseSdoc("# Title :\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].title === "Title :");
+  assert(r.nodes[0].scopeType === undefined);
+});
+
+test("escaped colon is not a scope type", () => {
+  const r = parseSdoc("# Title \\:type\n{\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].scopeType === undefined, "escaped colon should not produce scopeType");
+  assert(r.nodes[0].title.includes(":type"), "colon should remain in title");
+});
+
+// ============================================================
+console.log("\n--- Line Comments ---");
+
+test("// line skipped in braced scope", () => {
+  const r = parseSdoc("# Doc\n{\n  // This is a comment\n  Visible text.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children.length === 1);
+  assert(r.nodes[0].children[0].text === "Visible text.");
+});
+
+test("// line skipped in braceless scope", () => {
+  const r = parseSdoc("# Doc\n\n// invisible\nVisible text.");
+  assert(r.errors.length === 0);
+  const children = r.nodes[0].children;
+  assert(children.length === 1, "should have 1 child, got " + children.length);
+  assert(children[0].text === "Visible text.");
+});
+
+test("// in code block preserved as raw text", () => {
+  const r = parseSdoc("# Doc\n{\n  ```\n  // code comment\n  ```\n}");
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.type === "code");
+  assert(code.text.includes("// code comment"));
+});
+
+test("// mid-line is paragraph text (not a comment)", () => {
+  const r = parseSdoc("# Doc\n{\n  See https://example.com for details.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children[0].text.includes("https://example.com"));
+});
+
+test("// with leading whitespace is still a comment", () => {
+  const r = parseSdoc("# Doc\n{\n    // indented comment\n  Content.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children.length === 1);
+  assert(r.nodes[0].children[0].text === "Content.");
+});
+
+test("multiple // lines all skipped", () => {
+  const r = parseSdoc("# Doc\n{\n  // line 1\n  // line 2\n  Visible.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children.length === 1);
+  assert(r.nodes[0].children[0].text === "Visible.");
+});
+
+test("// as only content produces empty scope", () => {
+  const r = parseSdoc("# Doc\n{\n  //\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children.length === 0, "comment-only scope should have no children");
+});
+
+test("bare // with no trailing text is a comment", () => {
+  const r = parseSdoc("# Doc\n{\n  //\n  Visible.\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children.length === 1);
+  assert(r.nodes[0].children[0].text === "Visible.");
+});
+
+test("// between paragraph lines joins them", () => {
+  const r = parseSdoc("# Doc\n{\n  Line one\n  // comment\n  line two\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].children.length === 1);
+  assert(r.nodes[0].children[0].text === "Line one line two");
+});
+
+// ============================================================
+console.log("\n--- Data Blocks ---");
+
+test(":data flag parsed from fence metadata", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json :data\n  {"key": "value"}\n  ```\n}');
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.type === "code");
+  assert(code.dataFlag === true);
+  assert(code.lang === "json");
+});
+
+test("valid JSON parsed into data field", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json :data\n  {"key": "value"}\n  ```\n}');
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.data !== undefined, "data should be present");
+  assert(code.data.key === "value");
+});
+
+test("invalid JSON produces error", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json :data\n  {invalid json}\n  ```\n}');
+  assert(r.errors.length === 1, "expected 1 error, got " + r.errors.length);
+  assert(r.errors[0].message.includes("Invalid JSON"));
+  const code = r.nodes[0].children[0];
+  assert(code.dataFlag === true);
+  assert(code.data === undefined);
+});
+
+test("data field absent without :data flag", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json\n  {"key": "value"}\n  ```\n}');
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.dataFlag === undefined);
+  assert(code.data === undefined);
+});
+
+test(":data on non-json language does not parse", () => {
+  const r = parseSdoc('# Doc\n{\n  ```yaml :data\n  key: value\n  ```\n}');
+  assert(r.errors.length === 0);
+  const code = r.nodes[0].children[0];
+  assert(code.dataFlag === true);
+  assert(code.data === undefined);
+});
+
+test("extractSection returns data array for sections with :data blocks", () => {
+  const r = parseSdoc('# Doc\n{\n  # Schema @schema :schema\n  {\n    ```json :data\n    {"type": "object"}\n    ```\n  }\n}');
+  const section = extractSection(r.nodes, "schema");
+  assert(section !== null);
+  assert(Array.isArray(section.data), "data should be array");
+  assert(section.data.length === 1);
+  assert(section.data[0].type === "object");
+});
+
+test("extractSection omits data key when no :data blocks", () => {
+  const r = parseSdoc("# Doc\n{\n  # Sub @sub\n  {\n    Plain text.\n  }\n}");
+  const section = extractSection(r.nodes, "sub");
+  assert(section !== null);
+  assert(section.data === undefined, "data should be undefined when no :data blocks");
+});
+
+test("extractDataBlocks returns all data blocks with scope context", () => {
+  const r = parseSdoc('# Doc\n{\n  # Schema @input :schema\n  {\n    ```json :data\n    {"type": "object"}\n    ```\n  }\n  # Config @cfg :config\n  {\n    ```json :data\n    {"debug": true}\n    ```\n  }\n}');
+  const blocks = extractDataBlocks(r.nodes);
+  assert(blocks.length === 2, "expected 2 data blocks, got " + blocks.length);
+  assert(blocks[0].scopeId === "input");
+  assert(blocks[0].scopeType === "schema");
+  assert(blocks[0].data.type === "object");
+  assert(blocks[1].scopeId === "cfg");
+  assert(blocks[1].scopeType === "config");
+  assert(blocks[1].data.debug === true);
+});
+
+test("extractDataBlocks returns empty array when no data blocks", () => {
+  const r = parseSdoc("# Doc\n{\n  Content.\n}");
+  const blocks = extractDataBlocks(r.nodes);
+  assert(Array.isArray(blocks));
+  assert(blocks.length === 0);
+});
+
+test(":data with empty fence content produces error", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json :data\n  ```\n}');
+  assert(r.errors.length === 1, "expected 1 error, got " + r.errors.length);
+  assert(r.errors[0].message.includes("Invalid JSON"));
+  assert(r.nodes[0].children[0].dataFlag === true);
+  assert(r.nodes[0].children[0].data === undefined);
+});
+
+test(":data with deeply nested JSON", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json :data\n  {"a": {"b": {"c": [1, 2, 3]}}}\n  ```\n}');
+  assert(r.errors.length === 0);
+  const data = r.nodes[0].children[0].data;
+  assert(data.a.b.c[0] === 1);
+  assert(data.a.b.c.length === 3);
+});
+
+test(":data with src: does not attempt JSON parse at parse time", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json :data src:schema.json\n  ```\n}');
+  assert(r.errors.length === 0, "should not emit error for :data + src:");
+  const code = r.nodes[0].children[0];
+  assert(code.dataFlag === true);
+  assert(code.src === "schema.json");
+  assert(code.data === undefined, "data not populated until resolveIncludes");
+});
+
+test("extractDataBlocks finds data blocks in deeply nested scopes", () => {
+  const r = parseSdoc('# Doc\n{\n  # Outer @outer\n  {\n    # Inner @inner :config\n    {\n      ```json :data\n      {"nested": true}\n      ```\n    }\n  }\n}');
+  const blocks = extractDataBlocks(r.nodes);
+  assert(blocks.length === 1);
+  assert(blocks[0].scopeId === "inner");
+  assert(blocks[0].scopeType === "config");
+  assert(blocks[0].data.nested === true);
+});
+
+test("extractDataBlocks includes data from :comment scopes", () => {
+  const r = parseSdoc('# Doc\n{\n  # Notes :comment\n  {\n    ```json :data\n    {"hidden": true}\n    ```\n  }\n}');
+  const blocks = extractDataBlocks(r.nodes);
+  assert(blocks.length === 1, "data blocks in comment scopes should be extracted");
+  assert(blocks[0].scopeType === "comment");
+  assert(blocks[0].data.hidden === true);
+});
+
+// ============================================================
+console.log("\n--- Comment Scopes ---");
+
+test(":comment scope in AST", () => {
+  const r = parseSdoc("# Doc\n{\n  # Notes :comment\n  {\n    Agent notes.\n  }\n}");
+  assert(r.errors.length === 0);
+  const notes = r.nodes[0].children.find(c => c.scopeType === "comment");
+  assert(notes !== undefined, "comment scope should be in AST");
+  assert(notes.title === "Notes");
+});
+
+test(":comment scope not rendered in HTML", () => {
+  const r = parseSdoc("# Doc\n{\n  # Notes :comment\n  {\n    Agent notes.\n  }\n  # Visible\n  {\n    Content.\n  }\n}");
+  const html = renderFragment(r.nodes);
+  assert(!html.includes("Agent notes"), "comment content should not render");
+  assert(html.includes("Content."), "visible content should render");
+});
+
+test(":comment scope still extractable via extractSection", () => {
+  const r = parseSdoc("# Doc\n{\n  # Notes @notes :comment\n  {\n    Agent notes.\n  }\n}");
+  const section = extractSection(r.nodes, "notes");
+  assert(section !== null);
+  assert(section.content.includes("Agent notes"));
+});
+
+test(":comment scope visible in listSections", () => {
+  const r = parseSdoc("# Doc\n{\n  # Notes :comment\n  {\n    Agent notes.\n  }\n}");
+  const sections = listSections(r.nodes);
+  const notes = sections.find(s => s.scopeType === "comment");
+  assert(notes !== undefined, "comment scope should appear in listSections");
+});
+
+// ============================================================
+console.log("\n--- HTML Rendering with Scope Types ---");
+
+test("scope type adds data-scope-type attribute", () => {
+  const r = parseSdoc("# Requirements :requirement\n{\n  Content.\n}");
+  const html = renderFragment(r.nodes);
+  assert(html.includes('data-scope-type="requirement"'), "should have data-scope-type attr");
+});
+
+test("scope type adds CSS class", () => {
+  const r = parseSdoc("# Schema :schema\n{\n  Content.\n}");
+  const html = renderFragment(r.nodes);
+  assert(html.includes("sdoc-scope-type-schema"), "should have scope type CSS class");
+});
+
+test("data block renders with data label", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json :data\n  {"key": "value"}\n  ```\n}');
+  const html = renderFragment(r.nodes);
+  assert(html.includes("sdoc-data-label"), "should have data label");
+  assert(html.includes(">data<"), "label should say 'data'");
+});
+
+test("regular code block has no data label", () => {
+  const r = parseSdoc('# Doc\n{\n  ```json\n  {"key": "value"}\n  ```\n}');
+  const html = renderFragment(r.nodes);
+  assert(!html.includes("sdoc-data-label"), "should not have data label");
+});
+
+// ============================================================
+console.log("\n--- Document Formatter — v0.2 features ---");
+
+test("formatSdoc preserves scope type annotation", () => {
+  const out = formatSdoc("# Title :schema\n{\nContent.\n}", "    ");
+  const lines = out.split("\n");
+  assert(lines[0] === "# Title :schema", "scope type should be preserved, got: " + lines[0]);
+});
+
+test("formatSdoc preserves comment lines", () => {
+  const out = formatSdoc("# Doc\n{\n// a comment\nContent.\n}", "    ");
+  const lines = out.split("\n");
+  assert(lines[2] === "    // a comment", "comment should be indented, got: " + lines[2]);
+});
+
+test("formatSdoc preserves :comment scope structure", () => {
+  const out = formatSdoc("# Doc\n{\n# Notes :comment\n{\nAgent notes.\n}\n}", "    ");
+  const lines = out.split("\n");
+  assert(lines[2] === "    # Notes :comment", "got: " + lines[2]);
+  assert(lines[3] === "    {");
+  assert(lines[4] === "        Agent notes.");
+  assert(lines[5] === "    }");
 });
 
 // ============================================================

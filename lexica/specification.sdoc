@@ -1,19 +1,20 @@
-# SDOC Specification v0.1 @sdoc-spec
+# SDOC Specification v0.2 @sdoc-spec
 {
     # Meta @meta
     {
         type: doc
 
-        sdoc-version: 0.1
+        sdoc-version: 0.2
     }
 
     # About @about
     {
-        The formal SDOC v0.1 specification. Defines syntax for scopes,
-        lists, tables, code blocks, inline formatting, references, and
-        the meta scope. Includes the formal EBNF grammar. Read for
-        edge cases and parser behaviour questions. For a friendlier
-        user-facing reference, see \`docs/reference/syntax.sdoc\`.
+        The formal SDOC v0.2 specification. Defines syntax for scopes,
+        lists, tables, code blocks, inline formatting, references,
+        the meta scope, scope types, data blocks, and comments.
+        Includes the formal EBNF grammar. Read for edge cases and
+        parser behaviour questions. For a friendlier user-facing
+        reference, see \`docs/reference/syntax.sdoc\`.
     }
 
     # Overview @overview
@@ -51,12 +52,17 @@
         {
             ```
             # Title text @id
+            # Title text @id :type
+            # Title text :type @id
+            # Title text :type
             ```
 
             {[.]
                 - The line must start with `#` (after optional indentation)
                 - Multiple `#` characters are allowed but do not affect depth. Depth comes only from scope nesting
-                - The optional `@id` must appear at the end of the line, separated by whitespace
+                - The optional `@id` must appear at the end of the line (or before `:type`), separated by whitespace
+                - The optional `:type` assigns a scope type (see @scope-types). Both `@id :type` and `:type @id` orderings are valid
+                - `:type` requires whitespace before the colon, so `# Note: Important` is NOT a scope type — the colon is part of the title
                 - If no `@id` is present, the scope has no ID
                 - If you need a literal `@` in the title, escape it (`\@`)
             }
@@ -122,7 +128,7 @@ Content of Section B.
                     - The opener must be the last token on the line (trailing whitespace is allowed)
                     - Applies to `{`, `{[.]`, `{[#]`, `{[table]`, and `{[table <flags>]`
                     - Also works on list-item shorthand lines (e.g., `- Item {`)
-                    - Table options (e.g., `{[table borderless]`) work in K&R style: `# Data {[table borderless]`
+                    - Table options (e.g., `{[table borderless]`, `{[table 60% center]`) work in K&R style: `# Data {[table borderless]`
                     - Escaped braces (`\{`) are not treated as openers
                     - The closing `}` must still appear on its own line
                     - Inline blocks (`{ content }`) are not affected; a line ending with `}` is not treated as K&R
@@ -344,9 +350,33 @@ Content of Section B.
                 {[.]
                     - `borderless` removes all table borders and row striping
                     - `headerless` treats the first row as data (no header row)
-                    - Flags can be combined in any order
+                    - `auto` sets width to shrink-to-content
+                    - A percentage value (e.g. `60%`, `33.3%`) sets an explicit percentage width
+                    - A pixel value (e.g. `400px`) sets an explicit pixel width
+                    - `center` centers the table (auto margins)
+                    - `right` right-aligns the table (margin-left: auto)
+                    - `left` left-aligns the table (default, no extra styles)
+                    - Default width is 100%; default alignment is left
+                    - All flags can be combined in any order
                     - Works with both Allman and K&R brace styles
                 }
+
+                ```
+{[table 60% center]
+    Endpoint | Status
+    /v2/weather | Active
+}
+
+{[table auto right borderless]
+    Key | Value
+    Version | 2.0
+}
+
+{[table 400px]
+    Name | Age
+    Alice | 30
+}
+                ```
             }
         }
 
@@ -387,6 +417,8 @@ Content of Section B.
             ```
 
             Only `http`, `https`, and `mailto` schemes are recognised.
+
+            Bare URLs starting with `http://`, `https://`, or `mailto:` are also auto-linked without angle brackets.
         }
 
         # Images @images
@@ -466,7 +498,7 @@ Content of Section B.
 
         # Escaping @escaping
         {
-            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\^` and `` \` ``.
+            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\^` `\?` and `` \` ``.
 
             Escapes are processed before reference detection.
 
@@ -514,6 +546,115 @@ Content of Section B.
                     - If the file cannot be read, an error message is shown in the code block
                     - URL sources are fetched and cached; the cache is cleared on document save
                 }
+            }
+        }
+
+        # Scope Types @scope-types
+        {
+            A scope type annotation provides semantic meaning to a scope. The type is specified with `:typename` on the heading line, after optional `@id`:
+
+            ```
+            # User Authentication @auth :requirement
+            {
+                The system shall authenticate users via OAuth 2.0.
+            }
+
+            # OAuth Flow :specification @oauth-flow
+            {
+                Implements @auth using the authorization code flow.
+            }
+
+            # Important :warning
+            {
+                This API is deprecated and will be removed in v3.0.
+            }
+            ```
+
+            {[.]
+                - Syntax: `# Title @id :type` or `# Title :type @id` or `# Title :type` — both orderings of `@id` and `:type` are supported
+                - The colon in `:type` requires whitespace before it, so `# Note: Important` is NOT a scope type — the colon is part of the title text
+                - Any string is valid as a type name
+                - Well-known types: `schema`, `example`, `requirement`, `specification`, `definition`, `note`, `warning`, `test`, `task`, `api`, `config`, `deprecated`, `comment`
+                - The type is stored on the AST node and available to renderers and tooling
+                - Scope types enable AI agents to filter and navigate by semantic meaning (e.g., "show all requirements", "find tests for this spec")
+                - Works with K&R brace style: `# Title :warning {`
+            }
+
+            # Comment Scopes @comment-scopes
+            {
+                The `:comment` scope type creates a scope that is present in the AST but not rendered in the document output. This is useful for editorial annotations, AI agent instructions, and internal notes:
+
+                ```
+                # TODO :comment
+                {
+                    Rewrite this section after the API stabilises.
+                    @alice please review the error handling.
+                }
+
+                # Agent Instructions :comment
+                {
+                    When summarising this document, focus on the
+                    requirements and skip the implementation details.
+                }
+                ```
+
+                {[.]
+                    - Comment scopes use the standard scope type system — no special syntax beyond `:comment`
+                    - The scope is parsed into the AST (agents and tooling can extract it)
+                    - The scope is not rendered in HTML, PDF, or other visual outputs
+                    - Comment scopes can contain any valid SDOC content (paragraphs, lists, code blocks, nested scopes)
+                    - Useful for structured annotations that are too complex for line comments
+                }
+            }
+        }
+
+        # Data Blocks @data-blocks
+        {
+            A code fence with the `:data` flag causes the parser to parse the content as structured data and attach it to the AST node:
+
+            `````
+            ```json :data
+            {
+                "name": "SDOC",
+                "version": "0.2",
+                "features": ["scopes", "lists", "tables"]
+            }
+            ```
+            `````
+
+            {[.]
+                - Syntax: ` ```json :data ` — the `:data` flag follows the language tag on the opening fence line
+                - The parser parses the JSON content and stores the result on the AST node
+                - Invalid JSON produces a parse error
+                - JSON is the only supported data format in v0.2
+                - Without the `:data` flag, JSON code blocks are treated as raw text (existing behaviour)
+                - Data blocks render visually the same as regular code blocks, but the parsed data is available to tooling and agents
+            }
+        }
+
+        # Line Comments @line-comments
+        {
+            A line starting with `//` (after optional indentation) is a line comment. The line is skipped entirely — it does not appear in the AST and is not rendered:
+
+            ```
+            # Configuration @config
+            {
+                // TODO: add validation rules
+                The config file uses JSON format.
+
+                // This paragraph is hidden from output
+                // but visible in the source file.
+
+                See @setup for installation steps.
+            }
+            ```
+
+            {[.]
+                - The `//` must be at the start of the line (after optional whitespace)
+                - Comment lines are discarded during parsing — they are not present in the AST
+                - Inside code blocks: `//` has no special meaning (code block content is raw)
+                - Mid-line `//` has no special meaning — URLs like `https://example.com` are safe
+                - Use line comments for quick annotations; use comment scopes (@comment-scopes) for structured non-rendered content
             }
         }
     }
@@ -585,7 +726,7 @@ Content of Section B.
                     date: 2026-02-09
                     version: 1.0
                     status: Draft
-                    sdoc-version: 0.1
+                    sdoc-version: 0.2
                 }
                 ```
 
@@ -593,7 +734,7 @@ Content of Section B.
                     - Key matching is case-insensitive
                     - The pattern requires at least one space after the colon (`key: value`, not `key:value`)
                     - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`, `sdoc-version`
-                    - `sdoc-version` identifies the SDOC format version the document targets (current: `0.1`). A parser warning is emitted when this key is missing.
+                    - `sdoc-version` identifies the SDOC format version the document targets (current: `0.2`). A parser warning is emitted when this key is missing.
                     - All other keys are stored as custom properties (e.g., `author`, `date`, `version`, `status`, `tags`)
                     - Sub-scope syntax takes precedence: if both `# Style { path }` and `style: path` exist, the sub-scope value wins
                     - Key:value and sub-scope syntax can be mixed freely in the same meta scope
@@ -713,6 +854,7 @@ Content of Section A.
             - `>` blockquote line
             - `---` / `***` / `___` horizontal rule
             - `` ``` `` code fence
+            - `//` line comment (discarded, not in AST)
         }
 
         Blank lines are allowed anywhere and are ignored.
@@ -731,25 +873,34 @@ Content of Section A.
         scope         = heading ws? block
                       | heading ws? braceless_body
                       | heading_with_opener block_body "}" ;
-        heading       = "#" { "#" } ws title (ws id)? ;
-        heading_with_opener = "#" { "#" } ws title (ws id)? ws block_opener ;
+        heading       = "#" { "#" } ws title
+                          ((ws id)? (ws scope_type)? | (ws scope_type)? (ws id)?) ;
+        heading_with_opener = "#" { "#" } ws title
+                          ((ws id)? (ws scope_type)? | (ws scope_type)? (ws id)?) ws block_opener ;
         id            = "@" ident ;
+        scope_type    = ":" ident ;   (* id and scope_type may appear in either order *)
         block_opener  = "{" | "{[.]" | "{[#]" | table_open ;
         block         = "{" ws? block_body "}" ;
-        braceless_body = { paragraph | code_block | blockquote | implicit_list
-                         | horizontal_rule | headingless_scope | table_scope
-                         | blank } ;
+        braceless_body = { paragraph | code_block | data_block | blockquote
+                         | implicit_list | horizontal_rule | headingless_scope
+                         | list_scope | table_scope | bare_directive
+                         | line_comment | blank } ;
 
-        block_body    = { blank | paragraph | scope | headingless_scope
-                        | list_scope | table_scope
+        bare_directive = "@" ("meta" | "about") (ws block | braceless_body) ;
+        block_body    = { blank | line_comment | paragraph | scope
+                        | headingless_scope | list_scope | table_scope
                         | implicit_list | blockquote | horizontal_rule
-                        | code_block | comma_sep } ;
+                        | code_block | data_block | bare_directive | comma_sep } ;
         headingless_scope = "{" ws? block_body "}" ;
         list_scope    = list_open ws? list_body "}" ;
         list_open     = "{[.]" | "{[#]" ;
         table_scope   = table_open ws? table_body "}" ;
         table_open    = "{[table" { ws table_flag } "]" ;
-        table_flag    = "borderless" | "headerless" ;
+        table_flag    = "borderless" | "headerless"
+                      | "auto" | percentage | pixels
+                      | "left" | "center" | "right" ;
+        percentage    = digit { digit } [ "." digit { digit } ] "%" ;
+        pixels        = digit { digit } "px" ;
         table_body    = table_row { table_row } ;
         table_row     = cell { "|" cell } ;
         list_body     = { blank | comma_sep | scope | list_item_shorthand
@@ -767,14 +918,18 @@ Content of Section A.
         paragraph     = text_line { ws? text_line } ;
         text_line     = line_not_starting_with_command ;
 
-        blockquote    = quote_line { quote_line | blank } ;
+        blockquote    = quote_line { quote_line } ;
         quote_line    = ">" text_line ;
 
         horizontal_rule = "---" | "***" | "___" ;
 
         code_block    = fence_open raw_text fence_close ;
+        data_block    = data_fence_open raw_text fence_close ;
         fence_open    = "```" [lang] [ws "src:" path] [ws "lines:" range] newline ;
+        data_fence_open = "```" lang ws ":data" newline ;
         fence_close   = "```" newline ;
+
+        line_comment  = "//" { any_char } newline ;  (* discarded, not in AST *)
 
         comma_sep     = "," ;
         blank         = newline ;
@@ -783,7 +938,10 @@ Content of Section A.
         ```
 
         {[.]
-            - `title` is the remainder of the heading line, excluding the optional trailing `@id`
+            - `title` is the remainder of the heading line, excluding the optional trailing `@id` and `:type`
+            - `scope_type` and `id` may appear in either order after the title
+            - `line_comment` lines are discarded during parsing and do not appear in the AST
+            - `data_block` content is parsed as JSON; invalid JSON produces a parse error
             - If a line starts with a command token, it is not a paragraph line
             - The grammar is line-oriented; practical parsers should operate on lines
         }
@@ -792,10 +950,10 @@ Content of Section A.
     # Open Questions @open-questions
     {
         {[.]
-            - Comment syntax (if any)
             - Duplicate ID resolution (error vs warning vs nearest-scope)
-            - Additional list types (checkboxes, alpha, roman)
+            - Additional list types (alpha, roman)
             - Additional inline formatting (underline)
+            - Additional data block formats beyond JSON (YAML, TOML)
         }
     }
 }
