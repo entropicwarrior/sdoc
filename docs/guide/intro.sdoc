@@ -1,12 +1,19 @@
 # Introduction to SDOC
 {
     @meta {
-        sdoc-version: 0.1
+        sdoc-version: 0.2
+    }
+
+    @about
+    {
+        What SDOC is, why it exists, and the core concepts. Start here if you are new to SDOC. For the full case against Markdown, see `guide/why-sdoc.sdoc`. For hands-on practice, see `tutorials/first-steps.sdoc`.
     }
 
     # What is SDOC?
     {
-        SDOC is a plain text format for writing structured documentation. It uses explicit scoping to define document structure, with optional braces for unambiguous nesting.
+        SDOC is a plain text documentation format that works everywhere Markdown does — READMEs, project docs, specifications, knowledge bases, slide decks — but with explicit structure that makes it deterministically parseable. Humans read and write it naturally. AI agents parse and navigate it precisely. Together, they use SDOC to build durable assets of structured knowledge — architecture documents, coding standards, operational guides — that persist across sessions and guide AI agents in writing code, making decisions, and maintaining systems over time.
+
+        The defining feature is explicit brace scoping: `{ }` braces mark section boundaries unambiguously, giving every document exactly one valid parse tree. AI agents can surgically extract or modify a single section without loading the entire file. Humans can see structure at a glance and refactor safely. The raw format is clean, readable plain text; the rendered output produces rich, navigable documents with collapsible sections, tables, images, math, diagrams, and code blocks.
 
         The simplest SDOC document is just a heading followed by content:
 
@@ -37,19 +44,6 @@ This is a paragraph.
 }
         ```
 
-        Or use braceless scopes for simpler documents:
-
-        ```
-# Outer
-{
-    # Section A
-    Content for section A.
-
-    # Section B
-    Content for section B.
-}
-        ```
-
         Heading depth is determined by nesting, not by the number of `#` characters. A single `#` is all you need.
     }
 
@@ -57,37 +51,39 @@ This is a paragraph.
     {
         # For Humans
         {
-            SDOC reads like plain text. The braces are there, but they fade into the background the same way indentation does. You get:
+            SDOC reads like plain text. The braces fade into the background the same way indentation does. You get:
 
             {[.]
-                - **Unlimited nesting** with no ambiguity. Scope boundaries are explicit, not guessed from heading levels or indentation. A ten-level-deep legal document parses the same way as a three-section readme.
+                - **Unlimited nesting** with no ambiguity. Scope boundaries are explicit, not guessed from heading levels or indentation.
                 - **Familiar inline formatting.** Bold, italic, code, links, and lists work the way you expect from Markdown. There is almost nothing new to learn.
                 - **No rendering required.** The raw file is the document. You can read and edit it in any text editor, on any device, with no tooling at all.
+                - **Rich rendering when you want it.** Collapsible sections, tables with width and alignment control, images with layout, math, diagrams, and syntax-highlighted code.
                 - **Stable cross-references.** Tag any scope with `@id` and reference it with `@id` in text. Rename the heading, the reference still works.
+                - **Safe auto-formatting.** Indentation is cosmetic — braces carry the structure. The IDE can reindent the entire document without changing meaning. In Markdown, indentation is structural (code blocks, list nesting), making auto-formatting dangerous.
             }
         }
 
-        # For AI Agents and Tools
+        # For AI Agents
         {
-            This is where SDOC's design pays off most. Every property of the format was chosen to make programmatic consumption reliable and token-efficient.
+            This is where SDOC's design pays off most. Every property of the format supports reliable, token-efficient programmatic consumption.
 
-            **Deterministic parsing.** Two parsers, same input, same tree. Always. Markdown cannot guarantee this because section boundaries are inferred from heading levels, and different parsers make different choices about where a section ends. In SDOC, a scope starts with `{` and ends with the matching `}`. There is no ambiguity to resolve. This is also a security property: when every parser produces the same tree, there is no interpretation gap that could be exploited to inject or hide content in automated processing pipelines.
+            **Deterministic parsing.** Two parsers, same input, same tree. Always. This is also a security property: when every parser produces the same tree, there is no interpretation gap that could be exploited to inject or hide content in automated processing pipelines.
 
-            **Exact section extraction.** An agent that needs "the error handling section" calls `get_section("error-handling")` and gets exactly that scope back, with its children, every time. In Markdown, extracting a section means guessing: does it end at the next heading of equal depth? Lesser depth? What if heading levels are inconsistent? SDOC makes this a solved problem.
+            **Exact section extraction.** An agent that needs "the error handling section" calls `get_section("error-handling")` and gets exactly that scope and its children. No heuristics, no silent failures.
 
             **Token-efficient navigation.** Agents do not need to load entire files. With progressive disclosure, the cost of a targeted lookup is roughly:
 
             {[.]
-                - **Discovery:** list all files with summaries \~200 tokens for 50 files
-                - **Orientation:** list section headings of one file \~50-100 tokens
-                - **Detail:** load one section \~200-1000 tokens
+                - **Discovery:** list all files with summaries — ~200 tokens for 50 files
+                - **Orientation:** list section headings of one file — ~50-100 tokens
+                - **Detail:** load one section — ~200-1000 tokens
             }
 
-            Total: roughly 750 tokens for a precise answer. Loading the whole file in Markdown would cost 5,000+ tokens and pollute the context window with irrelevant material.
+            Total: roughly 750 tokens for a precise answer. The same content in Markdown requires loading entire files — typically 5,000-50,000 tokens.
 
-            **AI agents can write it reliably.** Brace matching is unambiguous to produce. A template that says "fill in the content between the braces" is straightforward. In Markdown, agents must track heading levels carefully, and a single `##` where `###` was needed silently restructures the entire document.
+            **Reliable authoring.** Brace matching is unambiguous to produce. In Markdown, a single `##` where `###` was needed silently restructures the entire document.
 
-            **Structured metadata in the same format.** The `@meta` scope uses the same SDOC syntax as everything else. No YAML frontmatter with different escaping rules parsed by different tools. Metadata is just another scope.
+            **Structured metadata in the same format.** The `@meta` scope, scope types (`:schema`, `:warning`, `:comment`), and data blocks use the same SDOC syntax as content. No YAML frontmatter with different escaping rules.
         }
     }
 
@@ -104,9 +100,9 @@ This is a paragraph.
 }
             ```
 
-            Scopes nest to any depth. Inline formatting (`*bold*`, `` `code` ``, `[links](url)`, `@references`, `$math$`) works the same way as Markdown inside any scope.
+            Scopes nest to any depth. Inline formatting (`*bold*`, `` `code` ``, `[links](url)`, `@references`, `$math$`) works inside any scope.
 
-            See `reference/syntax.sdoc` for the full list of features, or follow `tutorials/first-steps.sdoc` to try it hands-on.
+            See `reference/sdoc-authoring.sdoc` for the full authoring guide, or follow `tutorials/first-steps.sdoc` to try it hands-on.
         }
     }
 }

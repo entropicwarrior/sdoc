@@ -1,7 +1,7 @@
 # First Steps with SDOC
 {
     @meta {
-        sdoc-version: 0.1
+        sdoc-version: 0.2
     }
 
     # Step 1: Create a File
