@@ -16,7 +16,7 @@
 
     # Current State @current-state
     {
-        SDOC is in early active development. The v0.2 spec is drafted, a working parser and HTML renderer exist, and a VSCode extension provides live preview. The format is being used internally for project documentation (including this file).
+        SDOC v0.2.0 is released. The parser, HTML renderer, slide renderer, and VS Code extension are stable and published. The format supports scope types, data blocks, comment scopes, table width/alignment, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable (@r10).
     }
@@ -39,6 +39,7 @@
             - [x] Line-based parser (src/sdoc.js) with LineCursor pattern and error collection
             - [x] Parsed AST output (parseSdoc, extractMeta)
             - [x] HTML renderer (renderHtmlDocument, renderHtmlDocumentFromParsed)
+            - [x] HTML body fragment renderer (renderHtmlBody -- no DOCTYPE/html/body wrapper, for embedding and github/markup integration) (v0.2)
             - [x] Parser extensions for Lexica: slugify, listSections, extractSection, extractAbout
             - [x] Enhanced extractMeta with uuid, type, tags promotion
             - [x] Inline formatting: emphasis, strong, strikethrough, code, links, images, references
@@ -57,9 +58,10 @@
             - [x] Key:value meta syntax (lightweight alternative to sub-scopes in @meta)
             - [x] Multi-line list item shorthand (continuation lines in explicit list blocks)
             - [x] Scope indentation (visual nesting via CSS padding)
-            - [x] Print support (@media print CSS overrides)
+            - [x] Print support (@media print CSS overrides, break-inside:avoid for tables/code/blockquotes)
             - [x] Image width and alignment (=50%, =50% center/left/right)
             - [x] Table options (borderless, headerless flags on {[table]})
+            - [x] Table width and alignment ({[table 60% center]}, auto/NN%/NNpx width, left/center/right alignment, table-layout:fixed for explicit widths) (v0.2)
             - [x] Include by link (src: and lines: metadata on code fences)
             - [x] Scope types (:type annotation on headings, well-known types, both @id/:type orderings) (v0.2)
             - [x] Data blocks (:data flag on JSON code fences, parsed into AST) (v0.2)
@@ -95,6 +97,7 @@
             - [x] Dark mode: preview follows VSCode colour theme (light, dark, high contrast); exported HTML follows OS preference
             - [x] Notion sync tool (tools/sync-notion.js) -- push SDOC files to Notion as native blocks
             - [x] Notion renderer (src/notion-renderer.js) -- converts SDOC AST to Notion API block objects
+            - [x] sdoc2html CLI translator (tools/sdoc2html) -- reads stdin or file, outputs HTML fragment to stdout, follows github/markup rest2html pattern (v0.2)
         }
 
         # Repository
@@ -113,12 +116,28 @@
             - [x] Knowledge files shipped in npm package via ./knowledge export
             - [x] .npmignore for selective npm publishing (parser, renderers, knowledge files only)
         }
+
+        # Documentation
+        {
+            - [x] Guide docs rewritten with BLUF structure and human/AI collaboration framing (intro.sdoc, why-sdoc.sdoc)
+            - [x] Example consolidation (v0.2-features.sdoc merged into example.sdoc)
+            - [x] All docs updated to sdoc-version 0.2
+            - [x] README updated with v0.2 features (scope types, data blocks, comment scopes, table width/alignment)
+        }
+
+        # GitHub Adoption
+        {
+            - [x] Issue opened on github/markup for SDOC rendering support (github/markup#2030)
+            - [x] Issue opened on github-linguist for .sdoc language recognition (github-linguist/linguist#7838)
+            - [x] sdoc2html CLI translator built as contribution artifact for github/markup
+            - [x] llms.txt at repo root for AI agent discovery
+        }
     }
 
     # In Progress @in-progress
     {
-        Lexica Phases 1-3 are complete. See sdoc-plan.sdoc for the
-        SDOC-specific roadmap.
+        - [ ] Awaiting feedback on github/markup issue (#2030) and github-linguist issue (#7838)
+        - [ ] Growing .sdoc file count on GitHub toward linguist recognition threshold (~200 unique repos)
     }
 
     # Next Up @next-up
