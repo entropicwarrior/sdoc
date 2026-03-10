@@ -1,0 +1,71 @@
+# Broken References Test @broken-refs-test
+{
+    # Meta @meta
+    {
+        sdoc-version: 0.2
+    }
+
+    # Valid References
+    {
+        This ref to @setup works (explicit ID).
+        This ref to @valid-references works (derived slug).
+        This ref to @broken-refs-test works (root scope).
+    }
+
+    # Setup @setup
+    {
+        Some setup content here.
+    }
+
+    # Broken References
+    {
+        This ref to @nonexistent-section is broken.
+        This ref to @also-missing is broken too.
+    }
+
+    # Link Tests
+    {
+        This [absolute link](https://example.com) should be fine.
+        This [mailto link](mailto:test@example.com) should be fine.
+        This [anchor link](#setup) should be fine.
+
+        This [broken link](./does-not-exist.sdoc) should warn on save.
+        This [also broken](../nope/missing.txt) should warn on save.
+    }
+
+    # Refs Inside List Items
+    {
+        {[.]
+            - Valid ref in list item: see @setup for details
+            - Broken ref in list item: see @totally-bogus for details
+            - Valid link in list item: [example](https://example.com)
+            - Broken link in list item: [missing](./no-such-file.sdoc)
+        }
+
+        Note: a trailing \`@word\` on a list item line is parsed as the item's scope ID (same as headings), not as an inline reference. Place refs mid-sentence to avoid this.
+    }
+
+    # Nested Scope Inside List Item @nested-test
+    {
+        {[.]
+            - Item with nested scope
+            {
+                # Deeply Nested @deep-id
+                {
+                    A ref to @setup from deep inside a list item (valid).
+
+                    A ref to @phantom from deep inside a list item (broken).
+                }
+            }
+        }
+
+        Ref to @deep-id should work (ID inside list item child).
+    }
+
+    # Links With Fragments
+    {
+        This [link with fragment](./test-broken-refs.sdoc#setup) should be fine on save (file exists, fragment stripped).
+
+        This [broken with fragment](./nope.sdoc#section) should warn on save (file missing).
+    }
+}

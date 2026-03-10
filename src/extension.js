@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const url = require("url");
 const vscode = require("vscode");
-const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections } = require("./sdoc");
+const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, validateRefs } = require("./sdoc");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -14,6 +14,8 @@ const panels = new Map();
 let activeServer = null;  // { server, port, rootDir }
 let statusBarItem = null;
 const includeCache = new Map();
+let diagnosticCollection = null;
+let diagnosticTimer = null;
 
 function activate(context) {
   const previewCommand = vscode.commands.registerCommand("sdoc.preview", () => {
@@ -342,6 +344,9 @@ function activate(context) {
     })
   );
 
+  diagnosticCollection = vscode.languages.createDiagnosticCollection("sdoc");
+  context.subscriptions.push(diagnosticCollection);
+
   context.subscriptions.push(
     vscode.lm.registerTool('sdoc_reference', {
       async invoke(options, token) {
@@ -371,6 +376,8 @@ function activate(context) {
         return;
       }
       updatePreview(event.document);
+      if (diagnosticTimer) clearTimeout(diagnosticTimer);
+      diagnosticTimer = setTimeout(() => updateDiagnostics(event.document, false), 500);
     })
   );
 
@@ -380,6 +387,8 @@ function activate(context) {
       if (document.languageId === "sdoc") {
         includeCache.clear();
         updatePreview(document);
+        if (diagnosticTimer) { clearTimeout(diagnosticTimer); diagnosticTimer = null; }
+        updateDiagnostics(document, true);
         return;
       }
 
@@ -402,6 +411,9 @@ function activate(context) {
         panel.dispose();
         panels.delete(key);
       }
+      if (diagnosticCollection && document.languageId === "sdoc") {
+        diagnosticCollection.delete(document.uri);
+      }
     })
   );
 
@@ -410,6 +422,59 @@ function activate(context) {
       updateAllPreviews();
     })
   );
+}
+
+function updateDiagnostics(document, fullValidation) {
+  if (!diagnosticCollection) return;
+  const parsed = parseSdoc(document.getText());
+  const metaResult = extractMeta(parsed.nodes);
+  const docDir = path.dirname(document.uri.fsPath);
+
+  const options = {};
+  if (fullValidation) {
+    options.resolveFilePath = (href) => {
+      const absPath = path.isAbsolute(href) ? href : path.join(docDir, href);
+      return fs.existsSync(absPath);
+    };
+  }
+
+  const warnings = validateRefs(metaResult.nodes, options);
+  const lines = document.getText().split("\n");
+  const diagnostics = warnings.map((warning) => {
+    const range = findWarningRange(document, lines, warning);
+    const diagnostic = new vscode.Diagnostic(range, warning.message, vscode.DiagnosticSeverity.Error);
+    diagnostic.source = "sdoc";
+    return diagnostic;
+  });
+  diagnosticCollection.set(document.uri, diagnostics);
+}
+
+function findWarningRange(document, lines, warning) {
+  const startLine = Math.max(0, (warning.lineStart || 1) - 1);
+  const endLine = Math.min(lines.length - 1, (warning.lineEnd || warning.lineStart || 1) - 1);
+
+  for (let i = startLine; i <= endLine; i++) {
+    const line = lines[i];
+    if (warning.type === "broken-ref") {
+      // Skip heading lines to avoid matching @id declarations
+      if (/^\s*#/.test(line)) continue;
+      const token = "@" + warning.id;
+      const col = line.indexOf(token);
+      if (col !== -1) {
+        return new vscode.Range(i, col, i, col + token.length);
+      }
+    } else if (warning.type === "broken-link") {
+      const token = "](" + warning.href + ")";
+      const col = line.indexOf(token);
+      if (col !== -1) {
+        // Highlight just the href portion (skip the "](" prefix)
+        return new vscode.Range(i, col + 2, i, col + 2 + warning.href.length);
+      }
+    }
+  }
+
+  // Fallback: highlight entire first line of range
+  return new vscode.Range(startLine, 0, startLine, lines[startLine].length);
 }
 
 function deactivate() {
@@ -778,6 +843,12 @@ function darkModeElementsCss(prefix) {
   ${prefix} .sdoc-errors {
     background: rgba(187, 112, 68, 0.18);
     border-color: rgba(187, 112, 68, 0.5);
+  }
+
+  ${prefix} .sdoc-broken-ref, ${prefix} .sdoc-link.sdoc-broken-link {
+    color: #f77;
+    text-decoration-color: #f77;
+    background: rgba(255, 119, 119, 0.1);
   }`;
 }
 
@@ -885,6 +956,20 @@ async function buildHtml(document, title, webview) {
   const docDir = path.dirname(document.uri.fsPath);
   await resolveIncludes(metaResult.nodes, (src) => resolveIncludeSrc(src, docDir));
 
+  // Validate refs and links for preview indicators
+  const refWarnings = validateRefs(metaResult.nodes, {
+    resolveFilePath: (href) => {
+      const absPath = path.isAbsolute(href) ? href : path.join(docDir, href);
+      return fs.existsSync(absPath);
+    }
+  });
+  const brokenRefIds = new Set();
+  const brokenLinkHrefs = new Set();
+  for (const w of refWarnings) {
+    if (w.type === "broken-ref") brokenRefIds.add(w.id);
+    else if (w.type === "broken-link") brokenLinkHrefs.add(w.href);
+  }
+
   const cssOverride = metaStyles.styleCss ?? loadCss(config.style);
   const cssAppendParts = [];
   if (config.styleAppend && config.styleAppend.length) {
@@ -914,7 +999,7 @@ async function buildHtml(document, title, webview) {
       cssAppend: cssAppendParts.join("\n"),
       script: buildWebviewScript(),
       mermaidTheme: isDark ? "dark" : "neutral",
-      renderOptions: { editable: false }
+      renderOptions: { editable: false, brokenRefIds, brokenLinkHrefs }
     }
   );
 
