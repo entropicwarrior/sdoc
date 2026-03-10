@@ -16,7 +16,9 @@ const {
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   parseInline,
-  renderKatex
+  renderKatex,
+  collectAllIds,
+  validateRefs
 } = require("../src/sdoc.js");
 const fs = require("fs");
 const path = require("path");
@@ -2453,6 +2455,134 @@ test("formatSdoc preserves :comment scope structure", () => {
   assert(lines[3] === "    {");
   assert(lines[4] === "        Agent notes.");
   assert(lines[5] === "    }");
+});
+
+// ============================================================
+console.log("\n--- Reference & Link Validation ---");
+
+test("broken @ref detected", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  See @nonexistent for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes);
+  assert(warnings.length === 1, "expected 1 warning, got " + warnings.length);
+  assert(warnings[0].type === "broken-ref");
+  assert(warnings[0].id === "nonexistent");
+});
+
+test("valid @ref not flagged (explicit @id)", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  # Section @my-section\n  {\n    Content.\n  }\n  See @my-section for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes);
+  assert(warnings.length === 0, "expected 0 warnings, got " + warnings.length);
+});
+
+test("derived slug @ref resolves", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  # My Section\n  {\n    Content.\n  }\n  See @my-section for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes);
+  assert(warnings.length === 0, "expected 0 warnings, got " + warnings.length);
+});
+
+test("absolute URLs skipped", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  Visit [Google](https://google.com) for search.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes, { resolveFilePath: () => false });
+  assert(warnings.length === 0, "expected 0 warnings for absolute URL, got " + warnings.length);
+});
+
+test("broken relative link detected", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  See [guide](./missing-file.sdoc) for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes, { resolveFilePath: () => false });
+  assert(warnings.length === 1, "expected 1 warning, got " + warnings.length);
+  assert(warnings[0].type === "broken-link");
+  assert(warnings[0].href === "./missing-file.sdoc");
+});
+
+test("valid relative link not flagged", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  See [guide](./existing-file.sdoc) for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes, { resolveFilePath: () => true });
+  assert(warnings.length === 0, "expected 0 warnings, got " + warnings.length);
+});
+
+test("mailto and #anchor links skipped", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  Email [us](mailto:hi@test.com) or jump to [top](#doc).\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes, { resolveFilePath: () => false });
+  assert(warnings.length === 0, "expected 0 warnings for mailto/anchor, got " + warnings.length);
+});
+
+test("broken ref in preview gets sdoc-broken-ref CSS class", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  See @bogus for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { renderOptions: { brokenRefIds: new Set(["bogus"]) } }
+  );
+  assert(html.includes("sdoc-broken-ref"), "expected sdoc-broken-ref class in output");
+  assert(html.includes("sdoc-broken-icon"), "expected warning icon in output");
+});
+
+test("broken link in preview gets sdoc-broken-link CSS class", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  See [guide](./missing.sdoc) for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { renderOptions: { brokenLinkHrefs: new Set(["./missing.sdoc"]) } }
+  );
+  assert(html.includes("sdoc-broken-link"), "expected sdoc-broken-link class in output");
+  assert(html.includes("sdoc-broken-icon"), "expected warning icon in output");
+});
+
+test("collectAllIds includes explicit IDs and derived slugs", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  # My Section @explicit\n  {\n    Content.\n  }\n  # Another Title\n  {\n    More.\n  }\n}");
+  const ids = collectAllIds(parsed.nodes);
+  assert(ids.has("doc"), "should have 'doc'");
+  assert(ids.has("explicit"), "should have 'explicit'");
+  assert(ids.has("my-section"), "should have derived slug 'my-section'");
+  assert(ids.has("another-title"), "should have derived slug 'another-title'");
+});
+
+test("broken ref inside list item detected", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  {[.]\n    - See @nonexistent for details\n  }\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes);
+  assert(warnings.length === 1, "expected 1 warning for ref in list item, got " + warnings.length);
+  assert(warnings[0].id === "nonexistent");
+});
+
+test("valid ref inside list item not flagged", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  # Setup @setup\n  { Content. }\n  {[.]\n    - See @setup for details\n  }\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes);
+  assert(warnings.length === 0, "expected 0 warnings, got " + warnings.length);
+});
+
+test("collectAllIds finds IDs nested inside list item children", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  {[.]\n    - Item\n    {\n      # Nested @nested-id\n      { Content. }\n    }\n  }\n}");
+  const ids = collectAllIds(parsed.nodes);
+  assert(ids.has("nested-id"), "should have 'nested-id' from inside list item");
+});
+
+test("relative link with fragment does not false-positive", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  See [guide](./exists.sdoc#section) for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes, {
+    resolveFilePath: (p) => p === "./exists.sdoc"
+  });
+  assert(warnings.length === 0, "expected 0 warnings for link with fragment, got " + warnings.length);
+});
+
+test("relative link with query string strips query for resolution", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  See [api](./api.sdoc?v=2) for details.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const warnings = validateRefs(metaResult.nodes, {
+    resolveFilePath: (p) => p === "./api.sdoc"
+  });
+  assert(warnings.length === 0, "expected 0 warnings for link with query, got " + warnings.length);
 });
 
 // ============================================================

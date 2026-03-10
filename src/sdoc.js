@@ -1379,6 +1379,9 @@ function renderInlineNodes(nodes) {
           return escapeHtml(node.value);
         case "ref": {
           const href = `#${escapeAttr(node.id)}`;
+          if (_renderOptions.brokenRefIds && _renderOptions.brokenRefIds.has(node.id)) {
+            return `<a class="sdoc-ref sdoc-broken-ref" href="${href}"><span class="sdoc-broken-icon">\u26A0</span>@${escapeHtml(node.id)}</a>`;
+          }
           return `<a class="sdoc-ref" href="${href}">@${escapeHtml(node.id)}</a>`;
         }
         case "code":
@@ -1404,6 +1407,11 @@ function renderInlineNodes(nodes) {
         case "mark_highlight":
           return `<mark class="sdoc-mark sdoc-mark-highlight">${renderInlineNodes(node.children)}</mark>`;
         case "link":
+          if (_renderOptions.brokenLinkHrefs && _renderOptions.brokenLinkHrefs.has(node.href)) {
+            return `<a class="sdoc-link sdoc-broken-link" href="${escapeAttr(node.href)}" target="_blank" rel="noopener noreferrer"><span class="sdoc-broken-icon">\u26A0</span>${renderInlineNodes(
+              node.children
+            )}</a>`;
+          }
           return `<a class="sdoc-link" href="${escapeAttr(node.href)}" target="_blank" rel="noopener noreferrer">${renderInlineNodes(
             node.children
           )}</a>`;
@@ -1981,6 +1989,19 @@ const DEFAULT_STYLE = `
   .sdoc-mark-negative  { background-color: rgba(210, 25, 25, 0.18); color: #a81414; }
   .sdoc-mark-highlight { background-color: rgba(255, 255, 0, 0.75); }
 
+  .sdoc-broken-ref, .sdoc-link.sdoc-broken-link {
+    color: #c33;
+    text-decoration: wavy underline #c33;
+    text-underline-offset: 2px;
+    background: rgba(204, 51, 51, 0.08);
+    border-radius: 2px;
+    padding: 0 0.15em;
+  }
+  .sdoc-broken-icon {
+    font-size: 0.75em;
+    margin-right: 0.15em;
+  }
+
   .sdoc-image {
     display: inline-block;
     max-width: 100%;
@@ -2443,6 +2464,127 @@ function extractAbout(nodes) {
   return null;
 }
 
+function collectAllIds(nodes) {
+  const ids = new Set();
+  function walk(nodeList) {
+    for (const node of nodeList) {
+      if (node.type === "scope") {
+        if (node.id) ids.add(node.id);
+        if (node.title) ids.add(slugify(node.title));
+      }
+      if (node.children) walk(node.children);
+      if (node.type === "list" && node.items) {
+        walk(node.items);
+      }
+    }
+  }
+  walk(nodes);
+  return ids;
+}
+
+function collectInlineRefs(nodes) {
+  const refs = [];
+  const links = [];
+
+  function walkInlineNodes(inlineNodes, lineStart, lineEnd) {
+    for (const node of inlineNodes) {
+      if (node.type === "ref") {
+        refs.push({ id: node.id, lineStart, lineEnd });
+      } else if (node.type === "link") {
+        links.push({ href: node.href, lineStart, lineEnd });
+      }
+      if (node.children) {
+        walkInlineNodes(node.children, lineStart, lineEnd);
+      }
+    }
+  }
+
+  function processText(text, lineStart, lineEnd) {
+    const inlineNodes = parseInline(text);
+    walkInlineNodes(inlineNodes, lineStart, lineEnd);
+  }
+
+  function walk(nodeList) {
+    for (const node of nodeList) {
+      if (node.type === "paragraph" && node.text) {
+        processText(node.text, node.lineStart, node.lineEnd);
+      } else if (node.type === "blockquote" && node.paragraphs) {
+        for (const para of node.paragraphs) {
+          processText(para, node.lineStart, node.lineEnd);
+        }
+      } else if (node.type === "scope") {
+        if (node.title) {
+          processText(node.title, node.lineStart, node.lineStart);
+        }
+        if (node.children) walk(node.children);
+      } else if (node.type === "list" && node.items) {
+        walk(node.items);
+      } else if (node.type === "table") {
+        if (node.headers) {
+          for (const cell of node.headers) {
+            processText(cell, node.lineStart, node.lineEnd);
+          }
+        }
+        if (node.rows) {
+          for (const row of node.rows) {
+            for (const cell of row) {
+              processText(cell, node.lineStart, node.lineEnd);
+            }
+          }
+        }
+      }
+      // Handle list items (no type field, but have title/children)
+      if (!node.type) {
+        if (node.title) processText(node.title, node.lineStart || 0, node.lineEnd || node.lineStart || 0);
+        if (node.children) walk(node.children);
+      }
+    }
+  }
+  walk(nodes);
+  return { refs, links };
+}
+
+function validateRefs(nodes, options = {}) {
+  const ids = collectAllIds(nodes);
+  const externalIds = options.externalIds || new Set();
+  const { refs, links } = collectInlineRefs(nodes);
+  const warnings = [];
+
+  for (const ref of refs) {
+    if (!ids.has(ref.id) && !externalIds.has(ref.id)) {
+      warnings.push({
+        type: "broken-ref",
+        id: ref.id,
+        message: `Broken reference: @${ref.id} does not match any scope ID or title`,
+        lineStart: ref.lineStart,
+        lineEnd: ref.lineEnd
+      });
+    }
+  }
+
+  for (const link of links) {
+    const href = link.href;
+    if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href) || href.startsWith("#") || href.startsWith("data:")) {
+      continue;
+    }
+    if (options.resolveFilePath) {
+      const filePath = href.split("#")[0].split("?")[0];
+      if (!filePath) continue;
+      if (!options.resolveFilePath(filePath)) {
+        warnings.push({
+          type: "broken-link",
+          href,
+          message: `Broken link: file not found — ${href}`,
+          lineStart: link.lineStart,
+          lineEnd: link.lineEnd
+        });
+      }
+    }
+  }
+
+  return warnings;
+}
+
 async function resolveIncludes(nodes, resolverFn) {
   for (const node of nodes) {
     if (node.type === "code" && node.src) {
@@ -2490,6 +2632,10 @@ module.exports = {
   extractAbout,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
+  // Validation
+  collectAllIds,
+  collectInlineRefs,
+  validateRefs,
   // Low-level helpers for custom renderers (e.g. slide-renderer)
   parseInline,
   renderKatex,
