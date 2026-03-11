@@ -651,7 +651,7 @@ function buildWebviewScript() {
     var anchor = e.target.closest('a[href]');
     if (!anchor) return;
     e.preventDefault();
-    e.stopPropagation();
+    e.stopImmediatePropagation();
     var href = anchor.getAttribute('href');
     if (href) {
       vscodeApi.postMessage({ type: 'openLink', href: href });
@@ -660,6 +660,9 @@ function buildWebviewScript() {
 
   // Click-to-navigate
   document.addEventListener('click', function(e) {
+    if (e.target.closest('a[href]')) {
+      return;
+    }
     if (e.target.classList.contains('sdoc-toggle')) {
       return;
     }
