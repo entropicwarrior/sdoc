@@ -298,7 +298,11 @@ Content of Section B.
         {
             ```
 [Link text](https://example.com)
+[Other document](./other-file.sdoc)
+[Parent doc](../guide/intro.sdoc)
             ```
+
+            Links can point to external URLs or relative file paths. Relative paths are resolved from the document's directory. Add a `#fragment` to link to a specific section: `[Display Math](./math-example.sdoc#display)`. In the VS Code preview, relative links open the target file's preview; external links open in the browser.
         }
 
         # Autolinks
@@ -355,7 +359,7 @@ Content of Section B.
 }
         ```
 
-        References render as clickable links to the target scope.
+        References render as clickable links to the target scope. Note: `@references` are parsed inside link labels too — use `\@` if you need a literal `@` in a label.
     }
 
     # Blockquotes

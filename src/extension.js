@@ -542,10 +542,40 @@ function handleWebviewMessage(message, document) {
       break;
     case "openLink":
       if (message.href) {
-        vscode.env.openExternal(vscode.Uri.parse(message.href));
+        openLink(message.href, document);
       }
       break;
   }
+}
+
+function openLink(href, document) {
+  // Absolute URLs — open in browser
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+    vscode.env.openExternal(vscode.Uri.parse(href));
+    return;
+  }
+  // Relative file link — resolve against the document's directory
+  const dir = path.dirname(document.uri.fsPath);
+  const fragment = href.includes("#") ? href.split("#")[1].split("?")[0] : null;
+  const filePath = href.split("#")[0].split("?")[0];
+  if (!filePath) return;
+  const resolved = path.resolve(dir, filePath);
+  const fileUri = vscode.Uri.file(resolved);
+  vscode.workspace.openTextDocument(fileUri).then(
+    (doc) => {
+      showPreview(doc, vscode.ViewColumn.Active);
+      if (fragment) {
+        // Give the webview a moment to render, then scroll to the fragment
+        setTimeout(() => {
+          const panel = panels.get(doc.uri.toString());
+          if (panel) {
+            panel.webview.postMessage({ type: "scrollToId", id: fragment });
+          }
+        }, 300);
+      }
+    },
+    () => vscode.window.showWarningMessage(`File not found: ${filePath}`)
+  );
 }
 
 function navigateToLine(document, line) {
@@ -646,14 +676,18 @@ function buildWebviewScript() {
     }
   });
 
-  // Handle link clicks — open externally
+  // Handle link clicks — internal anchors scroll, external links open outside
   document.addEventListener('click', function(e) {
     var anchor = e.target.closest('a[href]');
     if (!anchor) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     var href = anchor.getAttribute('href');
-    if (href) {
+    if (!href) return;
+    if (href.startsWith('#')) {
+      var target = document.getElementById(href.slice(1));
+      if (target) target.scrollIntoView({ behavior: 'smooth' });
+    } else {
       vscodeApi.postMessage({ type: 'openLink', href: href });
     }
   }, true);
@@ -743,6 +777,15 @@ function buildWebviewScript() {
     var container = document.querySelector('.sdoc-main') || document.documentElement;
     container.scrollTop = state.scrollTop;
   }
+
+  // Handle messages from the extension host
+  window.addEventListener('message', function(e) {
+    var msg = e.data;
+    if (msg && msg.type === 'scrollToId' && msg.id) {
+      var el = document.getElementById(msg.id);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
 
 })();
 `;

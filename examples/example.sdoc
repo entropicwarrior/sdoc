@@ -366,9 +366,22 @@
                 It stays in the AST for tooling and agents.
             }
 
+            # Links
+            {
+                External link: [SDOC on GitHub](https://example.com).
+
+                Autolinks: https://example.com and mailto:hello@example.com.
+
+                Relative file link to another SDOC: [Math Examples](./math-example.sdoc).
+
+                Relative link with section fragment: [Display Math](./math-example.sdoc#display).
+
+                Anchor link to a section in this document: [Overview](#overview).
+            }
+
             # Extras
             {
-                Inline formatting: emphasis, strong, strike, code. External links: SDOC, https://example.com, and mailto:hello@example.com.
+                Inline formatting: emphasis, strong, strike, code.
                 ---
 
                 > This is a quote block.

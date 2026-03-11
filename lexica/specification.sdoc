@@ -395,16 +395,26 @@ Content of Section B.
                 - A reference is `@id` in text (unescaped)
                 - References link to the scope with that ID
                 - ID uniqueness is strongly recommended; tooling may warn on duplicates
+                - References are parsed inside link labels — use `\@` to include a literal `@` in a link label without triggering a reference
             }
         }
 
-        # External Links @external-links
+        # Links @links
         {
-            Markdown-style links:
+            Markdown-style links with absolute URLs or relative file paths:
 
             ```
             [label](https://example.com)
+            [other doc](./other-file.sdoc)
+            [parent doc](../guide/intro.sdoc)
             ```
+
+            {[.]
+                - Absolute URLs (any scheme) open externally
+                - Relative paths are resolved from the document's directory
+                - Fragments (`./file.sdoc#section`) and query strings are stripped for file resolution
+                - Tooling may warn on broken relative links (target file does not exist)
+            }
         }
 
         # Autolinks @autolinks

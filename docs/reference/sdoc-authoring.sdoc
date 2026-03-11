@@ -286,7 +286,7 @@ Content of Section B.
                 \`\{~text~\}\` | Highlight (yellow)
             }
 
-            Links: \`[Link text](https://example.com)\`
+            Links: \`[Link text](https://example.com)\` or \`[Other doc](./other-file.sdoc)\`. Relative paths resolve from the document's directory.
 
             Images: \`![Alt text](path/to/image.png)\`
 
@@ -670,6 +670,21 @@ Content of Section B.
                 }
             }
             ```
+        }
+
+        # @References Inside Link Labels @refs-in-link-labels
+        {
+            Inline \`@references\` are parsed everywhere, including inside link labels. If you mention a scope ID in a link label, escape the \`@\` to prevent it being treated as a reference to the current document:
+
+            **Wrong:** \`[See domain-model.sdoc @my-section](./domain-model.sdoc#my-section)\`
+
+            The \`@my-section\` is parsed as a reference and flagged as broken (it does not exist in *this* file).
+
+            **Right:** \`[See domain-model.sdoc \\@my-section](./domain-model.sdoc#my-section)\`
+
+            Or simply omit the \`@\` from the label — the URL fragment already carries the target:
+
+            **Also right:** \`[See domain-model.sdoc § my-section](./domain-model.sdoc#my-section)\`
         }
     }
 }
