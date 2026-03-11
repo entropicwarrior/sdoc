@@ -59,6 +59,7 @@
   </div>
 
   <script src="sdoc-web.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
   <script>
     let docs = [];
     let cssMap = {};
@@ -350,6 +351,11 @@
         .sdoc-scope.sdoc-collapsed > .sdoc-scope-children { display: none; }
       `;
       shadow.innerHTML = `<style>${scopedCss}\n${collapseCss}</style>${parts.bodyHtml}`;
+      if (window.hljs) {
+        shadow.querySelectorAll('pre.sdoc-code code[class*="language-"]').forEach(function(block) {
+          hljs.highlightElement(block);
+        });
+      }
     }
 
     async function updateLayout(layout) {

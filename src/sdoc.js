@@ -2122,6 +2122,12 @@ const PRINT_STYLE = `
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
 const KATEX_CDN_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";
+const HLJS_CDN = "https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.11.1/highlight.min.js";
+
+// Highlight.js GitHub light theme (inline so it works inside shadow DOM in the web viewer)
+const HLJS_LIGHT_CSS = "pre code.hljs{display:block;overflow-x:auto;padding:1em}code.hljs{padding:3px 5px}.hljs{color:#24292e;background:#fff}.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#d73a49}.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#6f42c1}.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#005cc5}.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#032f62}.hljs-built_in,.hljs-symbol{color:#e36209}.hljs-code,.hljs-comment,.hljs-formula{color:#6a737d}.hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#22863a}.hljs-subst{color:#24292e}.hljs-section{color:#005cc5;font-weight:700}.hljs-bullet{color:#735c0f}.hljs-emphasis{color:#24292e;font-style:italic}.hljs-strong{color:#24292e;font-weight:700}.hljs-addition{color:#22863a;background-color:#f0fff4}.hljs-deletion{color:#b31d28;background-color:#ffeef0}";
+// Highlight.js GitHub dark theme color overrides (used in @media and VS Code dark-mode CSS)
+const HLJS_DARK_COLORS_CSS = ".hljs{color:#c9d1d9;background:transparent}.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#ff7b72}.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#d2a8ff}.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#79c0ff}.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#a5d6ff}.hljs-built_in,.hljs-symbol{color:#ffa657}.hljs-code,.hljs-comment,.hljs-formula{color:#8b949e}.hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#7ee787}.hljs-subst{color:#c9d1d9}.hljs-section{color:#1f6feb;font-weight:700}.hljs-bullet{color:#f2cc60}.hljs-emphasis{color:#c9d1d9;font-style:italic}.hljs-strong{color:#c9d1d9;font-weight:700}.hljs-addition{color:#aff5b4;background-color:#033a16}.hljs-deletion{color:#ffdcd7;background-color:#67060c}";
 
 function hasMermaidBlocks(nodes) {
   for (const node of nodes) {
@@ -2130,6 +2136,19 @@ function hasMermaidBlocks(nodes) {
     if (node.items) {
       for (const item of node.items) {
         if (item.children && hasMermaidBlocks(item.children)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasHighlightableCodeBlocks(nodes) {
+  for (const node of nodes) {
+    if (node.type === "code" && node.lang && node.lang !== "mermaid" && node.lang !== "math") return true;
+    if (node.children && hasHighlightableCodeBlocks(node.children)) return true;
+    if (node.items) {
+      for (const item of node.items) {
+        if (item.children && hasHighlightableCodeBlocks(item.children)) return true;
       }
     }
   }
@@ -2186,6 +2205,15 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const katexCssTag = body.includes('class="katex"')
     ? `\n<link rel="stylesheet" href="${KATEX_CDN_CSS}" />`
     : "";
+  const hasHljs = hasHighlightableCodeBlocks(parsed.nodes);
+  // Highlight.js CSS is inlined (not a <link>) so it is extracted by parseDocHtml in the web viewer
+  // and applied inside shadow DOM. The @media query handles dark mode in browsers.
+  const hljsCssInline = hasHljs
+    ? `\n${HLJS_LIGHT_CSS}\n.sdoc-code code.hljs{padding:0;background:transparent}\n@media (prefers-color-scheme:dark){${HLJS_DARK_COLORS_CSS}}`
+    : "";
+  const hljsScript = hasHljs
+    ? `\n<script src="${HLJS_CDN}"></script>\n<script>document.querySelectorAll('pre.sdoc-code code[class*="language-"]').forEach(function(b){hljs.highlightElement(b);});</script>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -2194,7 +2222,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${escapeHtml(title)}</title>
 <style>
-${cssBase}${cssAppend}
+${cssBase}${cssAppend}${hljsCssInline}
 </style>${katexCssTag}
 </head>
 <body>
@@ -2208,7 +2236,7 @@ ${cssBase}${cssAppend}
       </main>
     </div>
     ${footerContent ? `<footer class="sdoc-page-footer">${footerContent}</footer>` : ""}
-  </div>${scriptTag}${mermaidScript}
+  </div>${scriptTag}${mermaidScript}${hljsScript}
 </body>
 </html>`;
 }

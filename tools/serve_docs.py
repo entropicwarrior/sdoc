@@ -373,8 +373,25 @@ class SdocHandler(http.server.BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             rel_path = qs.get("path", [None])[0]
             self._serve_content(rel_path)
+        elif pathname.startswith("/vendor/"):
+            self._serve_vendor(pathname[len("/vendor/"):])
         else:
             self.send_error(404, "Not found")
+
+    def _serve_vendor(self, filename: str):
+        # Allow only safe filenames (no path traversal)
+        if "/" in filename or "\\" in filename or ".." in filename:
+            self.send_error(403, "Forbidden")
+            return
+        vendor_dir = REPO_DIR / "vendor"
+        file_path = vendor_dir / filename
+        if not file_path.exists():
+            self.send_error(404, "Not found")
+            return
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        content_types = {"js": "application/javascript", "css": "text/css"}
+        content_type = content_types.get(ext, "application/octet-stream")
+        self._serve_file(file_path, content_type)
 
     def _serve_file(self, file_path: Path, content_type: str):
         try:
