@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/entropicwarrior/sdoc"
+    "url": "git+https://github.com/entropicwarrior/sdoc.git"
   },
   "homepage": "https://github.com/entropicwarrior/sdoc",
   "bugs": {
@@ -22,7 +22,7 @@
     "ai-agent"
   ],
   "bin": {
-    "sdoc-sync-notion": "./tools/sync-notion.js"
+    "sdoc-sync-notion": "tools/sync-notion.js"
   },
   "exports": {
     ".": "./index.js",
@@ -124,23 +124,33 @@
         "textMateRules": [
           {
             "scope": "markup.quote.sdoc",
-            "settings": { "foreground": "#3b82c3" }
+            "settings": {
+              "foreground": "#3b82c3"
+            }
           },
           {
             "scope": "markup.changed.sdoc",
-            "settings": { "foreground": "#b08a1a" }
+            "settings": {
+              "foreground": "#b08a1a"
+            }
           },
           {
             "scope": "string.other.sdoc",
-            "settings": { "foreground": "#c06a00" }
+            "settings": {
+              "foreground": "#c06a00"
+            }
           },
           {
             "scope": "keyword.control.sdoc",
-            "settings": { "foreground": "#d97706" }
+            "settings": {
+              "foreground": "#d97706"
+            }
           },
           {
             "scope": "entity.name.function.sdoc",
-            "settings": { "foreground": "#a68a00" }
+            "settings": {
+              "foreground": "#a68a00"
+            }
           }
         ]
       }
@@ -148,7 +158,10 @@
     "languageModelTools": [
       {
         "name": "sdoc_reference",
-        "tags": ["sdoc", "documentation"],
+        "tags": [
+          "sdoc",
+          "documentation"
+        ],
         "toolReferenceName": "sdoc",
         "displayName": "SDOC Reference",
         "modelDescription": "Returns the SDOC format reference guide. Use this tool when you need to create, edit, or understand .sdoc files. SDOC is a plain text documentation format with explicit brace scoping, headings with #, inline formatting like Markdown, and features like braceless scopes, implicit root, lists, tables, code blocks, and meta scopes.",
