@@ -405,11 +405,22 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.workspace.onDidCloseTextDocument((document) => {
-      const key = document.uri.toString();
-      const panel = panels.get(key);
+      // VS Code fires onDidCloseTextDocument both when a user closes a tab
+      // AND when it silently unloads a document from memory to save resources.
+      // Only dispose the preview if no tab still has the document open.
+      const uriStr = document.uri.toString();
+      const stillOpen = vscode.window.tabGroups.all.some((group) =>
+        group.tabs.some((tab) => {
+          const input = tab.input;
+          return input && input instanceof vscode.TabInputText && input.uri.toString() === uriStr;
+        })
+      );
+      if (stillOpen) return;
+
+      const panel = panels.get(uriStr);
       if (panel) {
         panel.dispose();
-        panels.delete(key);
+        panels.delete(uriStr);
       }
       if (diagnosticCollection && document.languageId === "sdoc") {
         diagnosticCollection.delete(document.uri);
