@@ -389,7 +389,7 @@
                 >
                 > This is a second paragraph in the same quote.
 
-                ```txt
+                ```sdoc
 # This is raw text inside a code block
 {[.] not parsed as a list }
                 ```
