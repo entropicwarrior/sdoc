@@ -2124,6 +2124,30 @@ const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js
 const KATEX_CDN_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";
 const HLJS_CDN = "https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.11.1/highlight.min.js";
 
+// Custom highlight.js grammar for SDOC language – registered before highlightElement calls
+const HLJS_SDOC_GRAMMAR = `hljs.registerLanguage('sdoc',function(hljs){return{name:'SDOC',aliases:['sdoc'],contains:[
+hljs.COMMENT('^\\\\s*//','$'),
+{className:'section',begin:'^\\\\s*#+\\\\s+',end:'$',contains:[
+  {className:'symbol',begin:'@[A-Za-z_][A-Za-z0-9_-]*'}
+]},
+{className:'meta',begin:'^\\\\s*@[A-Za-z_][A-Za-z0-9_-]*',end:'(?=\\\\s*\\\\{|$)'},
+{className:'code',begin:'\`\`\`',end:'\`\`\`',contains:[hljs.BACKSLASH_ESCAPE]},
+{className:'code',begin:'\`[^\`]+\`'},
+{className:'string',begin:'\\\\[',end:'\\\\]\\\\([^)]*\\\\)',contains:[
+  {className:'link',begin:'\\\\(',end:'\\\\)'}
+]},
+{className:'keyword',begin:'\\\\{[!?+\\\\-=~^]',end:'[!?+\\\\-=~^]\\\\}'},
+{className:'keyword',begin:'\\\\{\\\\[(?:\\\\.|#|\\\\d+|table)\\\\]'},
+{className:'strong',begin:'\\\\*\\\\*',end:'\\\\*\\\\*'},
+{className:'emphasis',begin:'(?<!\\\\*)\\\\*(?!\\\\*)',end:'\\\\*(?!\\\\*)'},
+{className:'deletion',begin:'~~',end:'~~'},
+{className:'bullet',begin:'^\\\\s*[-]\\\\s'},
+{className:'bullet',begin:'^\\\\s*\\\\d+[.)]\\\\ '},
+{className:'quote',begin:'^\\\\s*>',end:'$'},
+{className:'symbol',begin:'(?<!\\\\\\\\\\\\\\\\)@[A-Za-z_][A-Za-z0-9_-]*'},
+{className:'attr',begin:'[A-Za-z_][A-Za-z0-9_-]*(?=\\\\s*:)',end:':',excludeEnd:true}
+]}});`;
+
 // Highlight.js GitHub light theme (inline so it works inside shadow DOM in the web viewer)
 const HLJS_LIGHT_CSS = "pre code.hljs{display:block;overflow-x:auto;padding:1em}code.hljs{padding:3px 5px}.hljs{color:#24292e;background:#fff}.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#d73a49}.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#6f42c1}.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#005cc5}.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#032f62}.hljs-built_in,.hljs-symbol{color:#e36209}.hljs-code,.hljs-comment,.hljs-formula{color:#6a737d}.hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#22863a}.hljs-subst{color:#24292e}.hljs-section{color:#005cc5;font-weight:700}.hljs-bullet{color:#735c0f}.hljs-emphasis{color:#24292e;font-style:italic}.hljs-strong{color:#24292e;font-weight:700}.hljs-addition{color:#22863a;background-color:#f0fff4}.hljs-deletion{color:#b31d28;background-color:#ffeef0}";
 // Highlight.js GitHub dark theme color overrides (used in @media and VS Code dark-mode CSS)
@@ -2212,7 +2236,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
     ? `\n${HLJS_LIGHT_CSS}\n.sdoc-code code.hljs{padding:0;background:transparent}\n@media (prefers-color-scheme:dark){${HLJS_DARK_COLORS_CSS}}`
     : "";
   const hljsScript = hasHljs
-    ? `\n<script src="${HLJS_CDN}"></script>\n<script>document.querySelectorAll('pre.sdoc-code code[class*="language-"]').forEach(function(b){hljs.highlightElement(b);});</script>`
+    ? `\n<script src="${HLJS_CDN}"></script>\n<script>${HLJS_SDOC_GRAMMAR}\ndocument.querySelectorAll('pre.sdoc-code code[class*="language-"]').forEach(function(b){hljs.highlightElement(b);});</script>`
     : "";
 
   return `<!DOCTYPE html>
