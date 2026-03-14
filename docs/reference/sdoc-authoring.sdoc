@@ -307,7 +307,7 @@ Content of Section B.
 
         # References @references
         {
-            Assign a slug with \`@slug\` on a heading, then reference it anywhere with \`@slug\`:
+            Assign a slug with \`@slug\` on a heading, then reference it elsewhere in the same document with \`@slug\`:
 
             ```
             # Setup @setup {
@@ -318,6 +318,14 @@ Content of Section B.
                 Make sure you complete @setup first.
             }
             ```
+
+            References are **document-local only** — \`@slug\` resolves within the current file. To point a reader to a section in another file, use a link with a fragment:
+
+            ```
+            See [Setup](./other-file.sdoc#setup) for details.
+            ```
+
+            Do not write \`@setup\` when the target scope is in a different file — it will be flagged as a broken reference.
         }
 
         # Code Blocks @code-blocks
@@ -670,6 +678,25 @@ Content of Section B.
                 }
             }
             ```
+        }
+
+        # Cross-Document @slug References @cross-doc-refs
+        {
+            \`@slug\` references are document-local. Using \`@slug\` to refer to a section in another file produces a broken reference error:
+
+            **Wrong** — \`@setup\` does not exist in this file:
+
+            ```
+            See `getting-started.sdoc` @setup for installation steps.
+            ```
+
+            **Right** — use a link with a fragment:
+
+            ```
+            See [Setup](./getting-started.sdoc#setup) for installation steps.
+            ```
+
+            The fragment (\`#setup\`) matches the target scope's \`@id\`. Use \`\\@\` if you need a literal \`@\` in text without triggering reference resolution.
         }
 
         # @References Inside Link Labels @refs-in-link-labels

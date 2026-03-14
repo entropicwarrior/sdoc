@@ -393,6 +393,8 @@ Content of Section B.
         {
             {[.]
                 - A reference is `@id` in text (unescaped)
+                - References are document-local: `@id` resolves to a scope within the same file only. Cross-document reference syntax may be introduced in a future version but is not part of v0.2
+                - To link to a section in another file, use a standard link with a fragment: `[Label](./other-file.sdoc#section-id)`
                 - References link to the scope with that ID
                 - ID uniqueness is strongly recommended; tooling may warn on duplicates
                 - References are parsed inside link labels — use `\@` to include a literal `@` in a link label without triggering a reference
