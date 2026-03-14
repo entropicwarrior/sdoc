@@ -2144,7 +2144,7 @@ hljs.COMMENT('^\\\\s*//','$'),
 {className:'bullet',begin:'^\\\\s*[-]\\\\s'},
 {className:'bullet',begin:'^\\\\s*\\\\d+[.)]\\\\ '},
 {className:'quote',begin:'^\\\\s*>',end:'$'},
-{className:'symbol',begin:'(?<!\\\\\\\\\\\\\\\\)@[A-Za-z_][A-Za-z0-9_-]*'},
+{className:'symbol',begin:'(?<!\\\\\\\\)@[A-Za-z_][A-Za-z0-9_-]*'},
 {className:'attr',begin:'[A-Za-z_][A-Za-z0-9_-]*(?=\\\\s*:)',end:':',excludeEnd:true}
 ]}});`;
 
