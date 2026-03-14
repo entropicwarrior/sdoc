@@ -59,6 +59,37 @@
   </div>
 
   <script src="sdoc-web.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
+  <script>
+    hljs.registerLanguage('sdoc', function(hljs) {
+      return {
+        name: 'SDOC',
+        aliases: ['sdoc'],
+        contains: [
+          hljs.COMMENT('^\\s*//', '$'),
+          { className: 'section', begin: '^\\s*#+\\s+', end: '$', contains: [
+            { className: 'symbol', begin: '@[A-Za-z_][A-Za-z0-9_-]*' }
+          ]},
+          { className: 'meta', begin: '^\\s*@[A-Za-z_][A-Za-z0-9_-]*', end: '(?=\\s*\\{|$)' },
+          { className: 'code', begin: '```', end: '```', contains: [hljs.BACKSLASH_ESCAPE] },
+          { className: 'code', begin: '`[^`]+`' },
+          { className: 'string', begin: '\\[', end: '\\]\\([^)]*\\)', contains: [
+            { className: 'link', begin: '\\(', end: '\\)' }
+          ]},
+          { className: 'keyword', begin: '\\{[!?+\\-=~^]', end: '[!?+\\-=~^]\\}' },
+          { className: 'keyword', begin: '\\{\\[(?:\\.|#|\\d+|table)\\]' },
+          { className: 'strong', begin: '\\*\\*', end: '\\*\\*' },
+          { className: 'emphasis', begin: '(?<!\\*)\\*(?!\\*)', end: '\\*(?!\\*)' },
+          { className: 'deletion', begin: '~~', end: '~~' },
+          { className: 'bullet', begin: '^\\s*[-]\\s' },
+          { className: 'bullet', begin: '^\\s*\\d+[.)] ' },
+          { className: 'quote', begin: '^\\s*>', end: '$' },
+          { className: 'symbol', begin: '(?<!\\\\)@[A-Za-z_][A-Za-z0-9_-]*' },
+          { className: 'attr', begin: '[A-Za-z_][A-Za-z0-9_-]*(?=\\s*:)', end: ':', excludeEnd: true }
+        ]
+      };
+    });
+  </script>
   <script>
     let docs = [];
     let cssMap = {};
@@ -350,6 +381,11 @@
         .sdoc-scope.sdoc-collapsed > .sdoc-scope-children { display: none; }
       `;
       shadow.innerHTML = `<style>${scopedCss}\n${collapseCss}</style>${parts.bodyHtml}`;
+      if (window.hljs) {
+        shadow.querySelectorAll('pre.sdoc-code code[class*="language-"]').forEach(function(block) {
+          hljs.highlightElement(block);
+        });
+      }
     }
 
     async function updateLayout(layout) {

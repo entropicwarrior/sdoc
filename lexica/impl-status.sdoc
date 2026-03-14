@@ -95,6 +95,7 @@
             - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
             - [x] Generate About command (sdoc.generateAbout) -- uses VS Code LM API to generate @about section from document content
             - [x] Dark mode: preview follows VSCode colour theme (light, dark, high contrast); exported HTML follows OS preference
+            - [x] Code block syntax highlighting: language-specific colours via highlight.js (GitHub light/dark themes, automatic dark-mode switching; light/dark/high-contrast in VS Code, @media prefers-color-scheme in browser/web viewer)
             - [x] Notion sync tool (tools/sync-notion.js) -- push SDOC files to Notion as native blocks
             - [x] Notion renderer (src/notion-renderer.js) -- converts SDOC AST to Notion API block objects
             - [x] sdoc2html CLI translator (tools/sdoc2html) -- reads stdin or file, outputs HTML fragment to stdout, follows github/markup rest2html pattern (v0.2)
