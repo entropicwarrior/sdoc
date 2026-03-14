@@ -403,27 +403,23 @@ function activate(context) {
     })
   );
 
+  // Use onDidChangeTabs to detect actual tab closures — onDidCloseTextDocument
+  // also fires when VS Code silently unloads documents from memory during idle,
+  // which would incorrectly dispose preview panels.
   context.subscriptions.push(
-    vscode.workspace.onDidCloseTextDocument((document) => {
-      // VS Code fires onDidCloseTextDocument both when a user closes a tab
-      // AND when it silently unloads a document from memory to save resources.
-      // Only dispose the preview if no tab still has the document open.
-      const uriStr = document.uri.toString();
-      const stillOpen = vscode.window.tabGroups.all.some((group) =>
-        group.tabs.some((tab) => {
-          const input = tab.input;
-          return input && input instanceof vscode.TabInputText && input.uri.toString() === uriStr;
-        })
-      );
-      if (stillOpen) return;
-
-      const panel = panels.get(uriStr);
-      if (panel) {
-        panel.dispose();
-        panels.delete(uriStr);
-      }
-      if (diagnosticCollection && document.languageId === "sdoc") {
-        diagnosticCollection.delete(document.uri);
+    vscode.window.tabGroups.onDidChangeTabs((event) => {
+      for (const tab of event.closed) {
+        if (tab.input instanceof vscode.TabInputText) {
+          const uriStr = tab.input.uri.toString();
+          const panel = panels.get(uriStr);
+          if (panel) {
+            panel.dispose();
+            panels.delete(uriStr);
+          }
+          if (diagnosticCollection) {
+            diagnosticCollection.delete(tab.input.uri);
+          }
+        }
       }
     })
   );
