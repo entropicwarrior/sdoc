@@ -1,0 +1,351 @@
+# Code Block Examples
+
+@meta {
+    sdoc-version: 0.2
+}
+
+@about {
+    Demonstrates syntax highlighting for code blocks across various programming languages.
+}
+
+# JavaScript @javascript {
+    A simple HTTP server using Node.js:
+
+    ```js
+    const http = require('http');
+
+    const server = http.createServer((req, res) => {
+      const { method, url } = req;
+      console.log(`${method} ${url}`);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', timestamp: Date.now() }));
+    });
+
+    server.listen(3000, () => console.log('Listening on :3000'));
+    ```
+}
+
+# Python @python {
+    Reading a CSV file and computing statistics:
+
+    ```python
+    import csv
+    from statistics import mean, median
+
+    def summarise(path: str) -> dict:
+        """Read a numeric CSV column and return basic stats."""
+        with open(path, newline="") as f:
+            values = [float(row["value"]) for row in csv.DictReader(f)]
+
+        return {
+            "count": len(values),
+            "mean": round(mean(values), 2),
+            "median": median(values),
+            "min": min(values),
+            "max": max(values),
+        }
+
+    if __name__ == "__main__":
+        print(summarise("data.csv"))
+    ```
+}
+
+# Rust @rust {
+    A generic binary search implementation:
+
+    ```rust
+    fn binary_search<T: Ord>(haystack: &[T], needle: &T) -> Option<usize> {
+        let (mut lo, mut hi) = (0, haystack.len());
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            match haystack[mid].cmp(needle) {
+                std::cmp::Ordering::Equal   => return Some(mid),
+                std::cmp::Ordering::Less    => lo = mid + 1,
+                std::cmp::Ordering::Greater => hi = mid,
+            }
+        }
+        None
+    }
+
+    fn main() {
+        let nums = vec![1, 3, 5, 7, 9, 11];
+        println!("{:?}", binary_search(&nums, &7)); // Some(3)
+    }
+    ```
+}
+
+# Go @go {
+    A concurrent worker pool:
+
+    ```go
+    package main
+
+    import (
+        "fmt"
+        "sync"
+    )
+
+    func worker(id int, jobs <-chan int, results chan<- int, wg *sync.WaitGroup) {
+        defer wg.Done()
+        for j := range jobs {
+            fmt.Printf("worker %d processing job %d\n", id, j)
+            results <- j * 2
+        }
+    }
+
+    func main() {
+        jobs := make(chan int, 10)
+        results := make(chan int, 10)
+        var wg sync.WaitGroup
+
+        for w := 1; w <= 3; w++ {
+            wg.Add(1)
+            go worker(w, jobs, results, &wg)
+        }
+
+        for j := 1; j <= 5; j++ {
+            jobs <- j
+        }
+        close(jobs)
+
+        wg.Wait()
+        close(results)
+        for r := range results {
+            fmt.Println("result:", r)
+        }
+    }
+    ```
+}
+
+# TypeScript @typescript {
+    A typed event emitter:
+
+    ```typescript
+    type EventMap = Record<string, unknown[]>;
+
+    class Emitter<E extends EventMap> {
+      private listeners = new Map<keyof E, Set<Function>>();
+
+      on<K extends keyof E>(event: K, fn: (...args: E[K]) => void): void {
+        if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+        this.listeners.get(event)!.add(fn);
+      }
+
+      emit<K extends keyof E>(event: K, ...args: E[K]): void {
+        this.listeners.get(event)?.forEach((fn) => fn(...args));
+      }
+    }
+
+    // Usage
+    interface AppEvents extends EventMap {
+      login:  [user: string, timestamp: number];
+      logout: [user: string];
+    }
+
+    const bus = new Emitter<AppEvents>();
+    bus.on('login', (user, ts) => console.log(`${user} at ${ts}`));
+    bus.emit('login', 'alice', Date.now());
+    ```
+}
+
+# SQL @sql {
+    Querying an orders table with aggregation:
+
+    ```sql
+    SELECT
+        c.name            AS customer,
+        COUNT(o.id)       AS total_orders,
+        SUM(o.amount)     AS revenue,
+        MAX(o.created_at) AS last_order
+    FROM customers c
+    JOIN orders o ON o.customer_id = c.id
+    WHERE o.created_at >= '2025-01-01'
+    GROUP BY c.id, c.name
+    HAVING SUM(o.amount) > 1000
+    ORDER BY revenue DESC
+    LIMIT 20;
+    ```
+}
+
+# HTML / CSS @html-css {
+    A responsive card component:
+
+    ```html
+    <div class="card">
+      <img src="photo.jpg" alt="Profile photo" />
+      <div class="card-body">
+        <h2>Jane Doe</h2>
+        <p>Software engineer building developer tools.</p>
+        <a href="/profile" class="btn">View Profile</a>
+      </div>
+    </div>
+    ```
+
+    ```css
+    .card {
+      display: flex;
+      gap: 1rem;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      transition: transform 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+    }
+
+    .card img {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 0.4rem 1rem;
+      background: #3b82f6;
+      color: white;
+      border-radius: 4px;
+      text-decoration: none;
+    }
+    ```
+}
+
+# Shell @shell {
+    A deployment script with error handling:
+
+    ```bash
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    APP="myapp"
+    ENV="${1:-staging}"
+    TAG="$(git rev-parse --short HEAD)"
+
+    echo "Deploying $APP:$TAG to $ENV..."
+
+    docker build -t "$APP:$TAG" .
+    docker tag "$APP:$TAG" "registry.example.com/$APP:$TAG"
+    docker push "registry.example.com/$APP:$TAG"
+
+    kubectl --context "$ENV" set image "deployment/$APP" "$APP=registry.example.com/$APP:$TAG"
+    kubectl --context "$ENV" rollout status "deployment/$APP" --timeout=120s
+
+    echo "Deploy complete."
+    ```
+}
+
+# C @c-lang {
+    A simple linked list:
+
+    ```c
+    #include <stdio.h>
+    #include <stdlib.h>
+
+    typedef struct Node {
+        int data;
+        struct Node *next;
+    } Node;
+
+    Node *prepend(Node *head, int value) {
+        Node *n = malloc(sizeof(Node));
+        n->data = value;
+        n->next = head;
+        return n;
+    }
+
+    void print_list(const Node *head) {
+        for (const Node *cur = head; cur; cur = cur->next)
+            printf("%d -> ", cur->data);
+        printf("NULL\n");
+    }
+
+    int main(void) {
+        Node *list = NULL;
+        for (int i = 5; i >= 1; i--)
+            list = prepend(list, i);
+
+        print_list(list); // 1 -> 2 -> 3 -> 4 -> 5 -> NULL
+        return 0;
+    }
+    ```
+}
+
+# JSON @json {
+    An API configuration file:
+
+    ```json
+    {
+      "api": {
+        "version": "2.1",
+        "base_url": "https://api.example.com",
+        "timeout_ms": 5000,
+        "retries": 3,
+        "endpoints": [
+          { "path": "/users",  "method": "GET",  "auth": true  },
+          { "path": "/health", "method": "GET",  "auth": false },
+          { "path": "/events", "method": "POST", "auth": true  }
+        ]
+      },
+      "logging": {
+        "level": "info",
+        "format": "json",
+        "output": "stdout"
+      }
+    }
+    ```
+}
+
+# SDOC @sdoc {
+    An SDOC document showcasing the format itself:
+
+    ```sdoc
+    # Project Status Report
+
+    @meta {
+        sdoc-version: 0.2
+        type: doc
+    }
+
+    @about {
+        Weekly status update for the Alpha project.
+    }
+
+    # Summary @summary {
+        The *Alpha* release is on track. Key highlights:
+
+        - Completed authentication module
+        - Fixed {!3 critical bugs!} in the API layer
+        - Performance improved by {+40%+} after caching changes
+
+        See @next-steps for upcoming work.
+    }
+
+    # Metrics @metrics {
+        # Test Coverage {[.]
+            - Unit tests: **94%**
+            - Integration tests: **78%**
+            - End-to-end tests: **62%**
+        }
+
+        # Build Times {[1]
+            1. Clean build: `3m 12s`
+            2. Incremental: `28s`
+            3. CI pipeline: `7m 45s`
+        }
+    }
+
+    # Next Steps @next-steps {
+        Priorities for next week:
+
+        - {?Migrate database schema?} — requires downtime window
+        - Add rate limiting to public endpoints
+        - Write [deployment runbook](https://wiki.example.com/runbooks)
+
+        > The schema migration should be scheduled during the maintenance window on Saturday.
+    }
+    ```
+}

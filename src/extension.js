@@ -909,12 +909,32 @@ function darkModeElementsCss(prefix) {
   }`;
 }
 
+function buildHighlightDarkCss(prefix) {
+  return `
+  ${prefix} .hljs { color: #c9d1d9; background: transparent; }
+  ${prefix} .hljs-doctag, ${prefix} .hljs-keyword, ${prefix} .hljs-meta .hljs-keyword, ${prefix} .hljs-template-tag, ${prefix} .hljs-template-variable, ${prefix} .hljs-type, ${prefix} .hljs-variable.language_ { color: #ff7b72; }
+  ${prefix} .hljs-title, ${prefix} .hljs-title.class_, ${prefix} .hljs-title.class_.inherited__, ${prefix} .hljs-title.function_ { color: #d2a8ff; }
+  ${prefix} .hljs-attr, ${prefix} .hljs-attribute, ${prefix} .hljs-literal, ${prefix} .hljs-meta, ${prefix} .hljs-number, ${prefix} .hljs-operator, ${prefix} .hljs-selector-attr, ${prefix} .hljs-selector-class, ${prefix} .hljs-selector-id, ${prefix} .hljs-variable { color: #79c0ff; }
+  ${prefix} .hljs-meta .hljs-string, ${prefix} .hljs-regexp, ${prefix} .hljs-string { color: #a5d6ff; }
+  ${prefix} .hljs-built_in, ${prefix} .hljs-symbol { color: #ffa657; }
+  ${prefix} .hljs-code, ${prefix} .hljs-comment, ${prefix} .hljs-formula { color: #8b949e; }
+  ${prefix} .hljs-name, ${prefix} .hljs-quote, ${prefix} .hljs-selector-pseudo, ${prefix} .hljs-selector-tag { color: #7ee787; }
+  ${prefix} .hljs-subst { color: #c9d1d9; }
+  ${prefix} .hljs-section { color: #1f6feb; font-weight: 700; }
+  ${prefix} .hljs-bullet { color: #f2cc60; }
+  ${prefix} .hljs-emphasis { color: #c9d1d9; font-style: italic; }
+  ${prefix} .hljs-strong { color: #c9d1d9; font-weight: 700; }
+  ${prefix} .hljs-addition { color: #aff5b4; background-color: #033a16; }
+  ${prefix} .hljs-deletion { color: #ffdcd7; background-color: #67060c; }`;
+}
+
 function buildDarkModeCss() {
   return `
   /* Dark mode overrides */
   body.vscode-dark {${darkModeVarsCss()}
   }
 ${darkModeElementsCss("body.vscode-dark")}
+${buildHighlightDarkCss("body.vscode-dark")}
 
   /* High contrast dark */
   body.vscode-high-contrast {
@@ -956,6 +976,7 @@ ${darkModeElementsCss("body.vscode-dark")}
     background: rgba(187, 112, 68, 0.25);
     border-color: rgba(187, 112, 68, 0.6);
   }
+${buildHighlightDarkCss("body.vscode-high-contrast")}
 
   /* High contrast light */
   body.vscode-high-contrast-light {
@@ -1064,6 +1085,7 @@ async function buildHtml(document, title, webview) {
     html = rewriteLocalImages(html, docDir, webview);
     html = rewriteMermaidScript(html, webview);
     html = rewriteKatexCss(html, webview);
+    html = rewriteHighlightScript(html, webview);
   }
 
   return html;
@@ -1098,6 +1120,16 @@ function rewriteKatexCss(html, webview) {
   return html.replace(
     /https:\/\/cdn\.jsdelivr\.net\/npm\/katex@0\.16\/dist\/katex\.min\.css/g,
     katexCssUri.toString()
+  );
+}
+
+function rewriteHighlightScript(html, webview) {
+  const hljsPath = path.join(__dirname, "..", "vendor", "highlight.min.js");
+  if (!fs.existsSync(hljsPath)) return html;
+  const hljsUri = webview.asWebviewUri(vscode.Uri.file(hljsPath));
+  return html.replace(
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/@highlightjs\/cdn-assets@11\.11\.1\/highlight\.min\.js/g,
+    hljsUri.toString()
   );
 }
 

@@ -1541,7 +1541,7 @@ test("mermaid blocks trigger CDN script injection", () => {
 
 test("no mermaid blocks means no mermaid script", () => {
   const html = renderHtmlDocument("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}", "Test");
-  assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+  assert(!html.includes("mermaid.min.js"), "should not include mermaid script");
 });
 
 test("regular code blocks still render normally", () => {
@@ -1603,7 +1603,46 @@ test("mermaid theme option has no effect without mermaid blocks", () => {
 });
 
 // ============================================================
-console.log("\n--- Image width syntax ---");
+console.log("\n--- Syntax highlighting ---");
+
+test("language-tagged code block injects highlight.js CDN script", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}", "Test");
+  assert(html.includes("highlight.min.js"), "should include highlight.js script");
+  assert(html.includes("highlightElement"), "should have highlightElement call");
+});
+
+test("highlight.js CSS is inlined in the style block", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```python\n    print('hi')\n    ```\n}", "Test");
+  assert(html.includes(".hljs{"), "should include highlight.js CSS");
+  assert(html.includes("prefers-color-scheme:dark"), "should include dark mode CSS");
+});
+
+test("code block without language tag does not trigger highlight.js", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```\n    plain code\n    ```\n}", "Test");
+  assert(!html.includes("highlight.min.js"), "should not include highlight.js script");
+  assert(!html.includes(".hljs{"), "should not include highlight.js CSS");
+});
+
+test("mermaid blocks do not trigger highlight.js", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}", "Test");
+  assert(!html.includes("highlight.min.js"), "should not include highlight.js for mermaid");
+});
+
+test("math blocks do not trigger highlight.js", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```math\n    x^2\n    ```\n}", "Test");
+  assert(!html.includes("highlight.min.js"), "should not include highlight.js for math");
+});
+
+test("document with no code blocks has no highlight.js", () => {
+  const html = renderHtmlDocument("# Doc {\n    Hello world.\n}", "Test");
+  assert(!html.includes("highlight.min.js"), "should not include highlight.js");
+  assert(!html.includes(".hljs{"), "should not include highlight.js CSS");
+});
+
+test("highlight.js uses sdoc-code integration CSS override", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```javascript\n    const x = 1;\n    ```\n}", "Test");
+  assert(html.includes(".sdoc-code code.hljs"), "should have sdoc-code hljs integration CSS");
+});
 
 test("image with percentage width", () => {
   const r = parseSdoc("# Doc {\n    ![photo](pic.png =50%)\n}");
