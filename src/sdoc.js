@@ -13,7 +13,7 @@ const COMMAND_LIST_NUMBER = "{[#]";
 const COMMAND_TABLE = "{[table]";
 const COMMAND_CODE_FENCE = "```";
 
-const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">", "$", "+", "=", "-", "^", "?"]);
+const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">", "$", "+", "=", "-", "^", "?", "|"]);
 
 let _katex = null;
 let _katexLoaded = false;
@@ -797,7 +797,7 @@ function parseTableBody(cursor, tableStartLine, options) {
       break;
     }
 
-    const cells = trimmed.split("|").map((cell) => cell.trim());
+    const cells = trimmed.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, "|"));
     rows.push(cells);
     cursor.next();
   }

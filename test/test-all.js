@@ -255,6 +255,28 @@ test("table cell whitespace is trimmed", () => {
   assert(r.nodes[0].rows[0][1] === "30");
 });
 
+test("escaped pipe in table cell", () => {
+  const r = parseSdoc("{[table]\n  Expression | Result\n  \\|x\\| + \\|y\\| | sum of absolutes\n}");
+  assert(r.errors.length === 0);
+  assert(r.nodes[0].headers.length === 2);
+  assert(r.nodes[0].rows[0][0] === "|x| + |y|", "escaped pipes should become literal: " + r.nodes[0].rows[0][0]);
+  assert(r.nodes[0].rows[0][1] === "sum of absolutes");
+});
+
+test("escaped pipe renders in HTML", () => {
+  const html = renderHtmlDocument("# Doc {\n    {[table]\n        Expr | Value\n        \\|x\\| | 5\n    }\n}", "Test");
+  assert(html.includes("|x|"), "escaped pipe should render as literal pipe");
+  assert(html.includes("<td"), "should have table cells");
+});
+
+test("mix of escaped and unescaped pipes in table", () => {
+  const r = parseSdoc("{[table]\n  A | B | C\n  a\\|b | c | d\n}");
+  assert(r.nodes[0].rows[0].length === 3, "should have 3 cells");
+  assert(r.nodes[0].rows[0][0] === "a|b", "escaped pipe in first cell: " + r.nodes[0].rows[0][0]);
+  assert(r.nodes[0].rows[0][1] === "c");
+  assert(r.nodes[0].rows[0][2] === "d");
+});
+
 // ============================================================
 console.log("\n--- Blockquotes ---");
 

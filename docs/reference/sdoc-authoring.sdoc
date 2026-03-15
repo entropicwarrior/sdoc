@@ -265,6 +265,15 @@ Content of Section B.
             ```
 
             Width: \`auto\` (shrink to content), \`NN%\` (percentage), or \`NNpx\` (pixels). Default is 100%. Alignment: \`left\` (default), \`center\`, or \`right\`. All flags compose freely in any order.
+
+            To include a literal \`|\` in a cell (e.g. for math), escape it with \`\\|\`:
+
+            ```
+            {[table]
+                Expression | Value
+                \|x\| + \|y\| | 8
+            }
+            ```
         }
 
         # Inline Formatting @inline-formatting
@@ -470,7 +479,7 @@ Content of Section B.
         {
             Backslash escapes special characters: \`\\\\\` \`\\{\` \`\\}\` \`\\@\`
             \`\\[\` \`\\]\` \`\\(\` \`\\)\` \`\\*\` \`\\~\` \`\\#\` \`\\!\` \`\\\<\`
-            \`\\\>\` \`\\\$\` \`\\+\` \`\\=\` \`\\-\` \`\\^\` \`\\?\`
+            \`\\\>\` \`\\\$\` \`\\+\` \`\\=\` \`\\-\` \`\\^\` \`\\?\` \`\\|\`
 
             A line starting with \`\\#\` renders as a literal \`#\` (not a heading). Use \`\\\$\` to prevent a dollar sign from starting math mode.
         }

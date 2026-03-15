@@ -510,11 +510,11 @@ Content of Section B.
 
         # Escaping @escaping
         {
-            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\^` `\?` and `` \` ``.
+            In normal text (including headings and paragraphs), a backslash escapes: `\\` `\{` `\}` `\@` `\[` `\]` `\(` `\)` `\*` `\~` `\#` `\!` `\<` `\>` `\$` `\+` `\=` `\-` `\^` `\?` `\|` and `` \` ``.
 
             Escapes are processed before reference detection.
 
-            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`). Use `\$` to prevent a dollar sign from starting math mode.
+            If a line begins with `\#`, it is treated as a normal paragraph line (rendered with a literal `#`). If a line begins with `\>`, it is treated as a normal paragraph line (rendered with a literal `>`). Use `\$` to prevent a dollar sign from starting math mode. Use `\|` to include a literal pipe character inside a table cell without it being treated as a column delimiter.
         }
 
         # Code Blocks @code-blocks
