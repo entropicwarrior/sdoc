@@ -403,6 +403,27 @@ function activate(context) {
     })
   );
 
+  // Watch the filesystem for external .sdoc changes (e.g. AI agent writes).
+  // onDidChangeTextDocument only fires for edits through VS Code's TextDocument
+  // API — direct disk writes are invisible to it. The FileSystemWatcher uses OS
+  // file notifications (FSEvents on macOS) so it is lightweight.
+  const fsWatcher = vscode.workspace.createFileSystemWatcher("**/*.sdoc");
+  const fsDebouncers = new Map();
+  fsWatcher.onDidChange((uri) => {
+    const key = uri.toString();
+    if (!panels.has(key)) return;
+    if (fsDebouncers.has(key)) clearTimeout(fsDebouncers.get(key));
+    fsDebouncers.set(key, setTimeout(() => {
+      fsDebouncers.delete(key);
+      includeCache.clear();
+      vscode.workspace.openTextDocument(uri).then((doc) => {
+        updatePreview(doc);
+        updateDiagnostics(doc, true);
+      });
+    }, 200));
+  });
+  context.subscriptions.push(fsWatcher);
+
   // Use onDidChangeTabs to detect actual tab closures — onDidCloseTextDocument
   // also fires when VS Code silently unloads documents from memory during idle,
   // which would incorrectly dispose preview panels.
