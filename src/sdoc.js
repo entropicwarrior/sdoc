@@ -1309,7 +1309,35 @@ function parseInline(text) {
       }
     }
 
-    if (ch === "@" && next && isIdentStart(next)) {
+    // Bare email autolink: local@domain.tld
+    if (ch === "@" && next && /[A-Za-z0-9]/.test(next)) {
+      const prevCh = i > 0 ? text[i - 1] : "";
+      if (/[A-Za-z0-9._+-]/.test(prevCh)) {
+        // Scan forward for domain part (letters, digits, dots, hyphens)
+        let j = i + 1;
+        while (j < text.length && /[A-Za-z0-9.-]/.test(text[j])) j++;
+        // Strip trailing dots/hyphens
+        while (j > i + 1 && /[.-]/.test(text[j - 1])) j--;
+        const domain = text.slice(i + 1, j);
+        // Must have at least one dot with content on both sides
+        if (/^[A-Za-z0-9]([A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/.test(domain)) {
+          // Extract local part from buffer
+          let k = buffer.length;
+          while (k > 0 && /[A-Za-z0-9._+\-]/.test(buffer[k - 1])) k--;
+          const local = buffer.slice(k);
+          if (local.length > 0) {
+            buffer = buffer.slice(0, k);
+            const email = local + "@" + domain;
+            flush();
+            nodes.push({ type: "link", href: "mailto:" + email, children: [{ type: "text", value: email }] });
+            i = j;
+            continue;
+          }
+        }
+      }
+    }
+
+    if (ch === "@" && next && isIdentStart(next) && !(i > 0 && /[A-Za-z0-9._+-]/.test(text[i - 1]))) {
       let j = i + 1;
       while (j < text.length && isIdentChar(text[j])) {
         j += 1;

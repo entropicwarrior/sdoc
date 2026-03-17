@@ -372,6 +372,8 @@
 
                 Autolinks: https://example.com and mailto:hello@example.com.
 
+                Bare email addresses are auto-linked: hello@example.com.
+
                 Relative file link to another SDOC: [Math Examples](./math-example.sdoc).
 
                 Relative link with section fragment: [Display Math](./math-example.sdoc#display).
