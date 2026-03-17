@@ -691,21 +691,21 @@ Content of Section B.
 
         # Cross-Document @slug References @cross-doc-refs
         {
-            \`@slug\` references are document-local. Using \`@slug\` to refer to a section in another file produces a broken reference error:
+            \`@slug\` references are document-local. Using \`@slug\` to refer to a section in another file produces a broken reference error. This is the most common reference mistake — especially in audits, reviews, and documents that discuss other documents, where writing \`file.sdoc @section\` reads naturally but is wrong.
 
-            **Wrong** — \`@setup\` does not exist in this file:
+            **Wrong** — \`@extension\` looks for a local section, not one in \`foundations.sdoc\`:
 
             ```
-            See `getting-started.sdoc` @setup for installation steps.
+            See `foundations.sdoc` @extension for the design rationale.
             ```
 
             **Right** — use a link with a fragment:
 
             ```
-            See [Setup](./getting-started.sdoc#setup) for installation steps.
+            See [Extension](./foundations.sdoc#extension) for the design rationale.
             ```
 
-            The fragment (\`#setup\`) matches the target scope's \`@id\`. Use \`\\@\` if you need a literal \`@\` in text without triggering reference resolution.
+            The fragment (\`#extension\`) matches the target scope's \`@id\`. Use \`\\@\` if you need a literal \`@\` in text without triggering reference resolution.
         }
 
         # @References Inside Link Labels @refs-in-link-labels
