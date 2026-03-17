@@ -75,6 +75,7 @@
       "patterns": [
         { "include": "#escape" },
         { "include": "#bare-url" },
+        { "include": "#email" },
         { "include": "#reference" },
         { "include": "#inline-code" },
         { "include": "#display-math" },
@@ -102,8 +103,12 @@
       "match": "(?:https?://|mailto:)[^\\s)\\]}>]+",
       "name": "markup.underline.link.sdoc"
     },
+    "email": {
+      "match": "[A-Za-z0-9._+\\-]+@[A-Za-z0-9](?:[A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}",
+      "name": "markup.underline.link.sdoc"
+    },
     "reference": {
-      "match": "(?<!\\\\)@[A-Za-z_][A-Za-z0-9_-]*",
+      "match": "(?<![A-Za-z0-9._+\\-\\\\])@[A-Za-z_][A-Za-z0-9_-]*",
       "name": "entity.name.tag.id.sdoc"
     },
     "inline-code": {
