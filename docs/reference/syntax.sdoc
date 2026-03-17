@@ -1,7 +1,7 @@
 # Syntax Reference
 {
     @meta {
-        sdoc-version: 0.1
+        sdoc-version: 0.2
     }
 
     This is a practical reference for writing SDOC files. For the formal specification (edge cases, grammar, parsing rules), see \`lexica/specification.sdoc\`.
@@ -269,6 +269,29 @@ Content of Section B.
                 - Works with K&R brace style: `# Data {[table borderless]`
             }
         }
+
+        # Table Formulas
+        {
+            Cells starting with `=` are evaluated as formulas:
+
+            ```
+{[table]
+    Item | Qty | Price
+    Widget | 10 | 5.00
+    Gadget | 5 | 12.50
+    **Total** | =SUM(B1:B2) | =SUM(C1:C2)
+}
+            ```
+
+            {[.]
+                - Cell references use A1 notation (column letter + row number); headers excluded from row numbering
+                - `=SUM(range)`, `=AVG(range)`, `=COUNT(range)` — function names are uppercase only
+                - Arithmetic: `=B1+B2`, `=B1*3`, `=(A1+A2)/2`, `=-B1`
+                - Percentage cells (e.g. `25%`) are stored as decimals; SUM/AVG of all-percent ranges displays as percent
+                - Errors: `#DIV/0!`, `#VALUE!`, `#REF!`, `#NAME!`, `#SYNTAX!`, `#CIRCULAR!`
+                - Escape with `\=` for a literal equals sign at the start of a cell
+            }
+        }
     }
 
     # Inline Formatting
@@ -313,6 +336,8 @@ Content of Section B.
             ```
 
             Only `http`, `https`, and `mailto` schemes are recognised.
+
+            Bare email addresses (e.g. `hello@example.com`) are automatically rendered as `mailto:` links.
         }
 
         # Images
@@ -489,7 +514,7 @@ Content of section A.
     author: Jane Smith
     date: 2026-02-09
     version: 1.0
-    sdoc-version: 0.1
+    sdoc-version: 0.2
 }
             ```
 

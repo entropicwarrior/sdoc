@@ -2647,5 +2647,132 @@ test("relative link with query string strips query for resolution", () => {
 });
 
 // ============================================================
+console.log("\n--- Table Formulas ---");
+
+test("SUM of a column", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | 20\nz | 30\nTotal | =SUM(B1:B3)\n}");
+  assert(html.includes(">60<"), "expected 60, got: " + html);
+  assert(html.includes("sdoc-formula-cell"), "expected formula-cell class");
+  assert(html.includes('title="=SUM(B1:B3)"'), "expected title with formula");
+});
+
+test("SUM of percentages displays as percentage", () => {
+  const html = renderHtmlBody("# T {[table]\nName | Share\nA | 25%\nB | 50%\nC | 25%\nTotal | =SUM(B1:B3)\n}");
+  assert(html.includes(">100%<"), "expected 100%, got: " + html);
+});
+
+test("AVG function", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | 20\nz | 30\nAvg | =AVG(B1:B3)\n}");
+  assert(html.includes(">20<"), "expected 20");
+});
+
+test("COUNT function", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | 20\nz | 30\nN | =COUNT(B1:B3)\n}");
+  assert(html.includes(">3<"), "expected 3");
+});
+
+test("basic arithmetic: addition", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | 20\nSum | =B1+B2\n}");
+  assert(html.includes(">30<"), "expected 30");
+});
+
+test("basic arithmetic: multiplication", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 5\ny | =B1*3\n}");
+  assert(html.includes(">15<"), "expected 15");
+});
+
+test("basic arithmetic: division", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 100\ny | =B1/4\n}");
+  assert(html.includes(">25<"), "expected 25");
+});
+
+test("division by zero gives #DIV/0!", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | =B1/0\n}");
+  assert(html.includes("#DIV/0!"), "expected #DIV/0!");
+  assert(html.includes("sdoc-formula-error"), "expected error class");
+});
+
+test("out-of-bounds reference gives #VALUE!", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | =Z99\n}");
+  assert(html.includes("sdoc-formula-error"), "expected error class");
+});
+
+test("unary minus", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | =-B1\n}");
+  assert(html.includes(">-10<"), "expected -10");
+});
+
+test("escaped equals is not a formula", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | \\=SUM(B1:B1)\n}");
+  assert(!html.includes("sdoc-formula-cell"), "should not be a formula cell");
+});
+
+test("formula referencing another formula", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | =B1*2\nz | =B1+B2\n}");
+  assert(html.includes(">20<"), "expected 20 for B1*2");
+  assert(html.includes(">30<"), "expected 30 for B1+B2");
+});
+
+test("numbers with commas parsed correctly", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 1,000,000\ny | 500,000\nTotal | =SUM(B1:B2)\n}");
+  assert(html.includes("1,500,000"), "expected 1,500,000");
+});
+
+test("headerless table formulas work", () => {
+  const html = renderHtmlBody("# T {[table headerless]\n10 | 20\n30 | =SUM(A1:A2)\n}");
+  assert(html.includes(">40<"), "expected 40");
+});
+
+test("cap table example", () => {
+  const doc = `# Cap Table {[table]
+    Investor | Shares | Ownership
+    Seed Fund | 500,000 | 25%
+    Founder A | 1,000,000 | 50%
+    Founder B | 500,000 | 25%
+    **Total** | =SUM(B1:B3) | =SUM(C1:C3)
+}`;
+  const html = renderHtmlBody(doc);
+  assert(html.includes("2,000,000"), "expected 2,000,000 total shares");
+  assert(html.includes("100%"), "expected 100% total ownership");
+});
+
+test("circular reference gives #CIRCULAR!", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\n=B1 | =A1\n}");
+  assert(html.includes("#CIRCULAR!"), "expected #CIRCULAR! for circular refs");
+  assert(html.includes("sdoc-formula-error"), "expected error class");
+});
+
+test("operator precedence: multiplication before addition", () => {
+  const html = renderHtmlBody("# T {[table]\nA\n=2+3*4\n}");
+  assert(html.includes(">14<"), "expected 14 (not 20), got: " + html);
+});
+
+test("parentheses override precedence", () => {
+  const html = renderHtmlBody("# T {[table]\nA\n=(2+3)*4\n}");
+  assert(html.includes(">20<"), "expected 20");
+});
+
+test("malformed decimal gives #SYNTAX!", () => {
+  const html = renderHtmlBody("# T {[table]\nA\n=1.2.3\n}");
+  assert(html.includes("sdoc-formula-error"), "expected error for malformed decimal");
+});
+
+test("mixed percentage and number arithmetic", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\n100 | 50%\nR | =A1*B1\n}");
+  assert(html.includes(">50<"), "expected 50 (100 * 0.5)");
+});
+
+test("lowercase function name gives error", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\nx | 10\ny | =sum(B1:B1)\n}");
+  assert(html.includes("sdoc-formula-error"), "expected error for lowercase function");
+});
+
+test("bare email auto-detection", () => {
+  const html = renderHtmlBody("# T {\n    Contact us at hello@example.com for help.\n}");
+  assert(html.includes('href="mailto:hello@example.com"'), "expected mailto link");
+  assert(html.includes(">hello@example.com<"), "expected email text");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

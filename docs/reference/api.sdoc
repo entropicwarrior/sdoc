@@ -1,7 +1,7 @@
 # JavaScript API Reference
 {
     @meta {
-        sdoc-version: 0.1
+        sdoc-version: 0.2
     }
 
     The SDOC parser and renderer are in `src/sdoc.js`. All functions are exported via CommonJS. The package is available on npm as `@entropicwarrior/sdoc`.

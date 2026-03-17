@@ -923,6 +923,15 @@ function darkModeElementsCss(prefix) {
     color: #f77;
     text-decoration-color: #f77;
     background: rgba(255, 119, 119, 0.1);
+  }
+
+  ${prefix} td.sdoc-formula-cell {
+    color: #5cc6d0 !important;
+    border-bottom-color: rgba(92, 198, 208, 0.25);
+  }
+
+  ${prefix} td.sdoc-formula-error {
+    color: #f77 !important;
   }`;
 }
 

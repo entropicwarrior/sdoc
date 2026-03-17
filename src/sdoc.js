@@ -1550,6 +1550,307 @@ function renderListItem(scope, listType, depth) {
   return `<section class="${scopeClass}">${heading}${bodyWrapper}</section>`;
 }
 
+// ── Table formula engine ──────────────────────────────────────────────
+
+function isFormulaCell(text) {
+  const t = text.trim();
+  return t.length > 1 && t[0] === "=" && t[1] !== "=" && !t.startsWith("\\=");
+}
+
+function parseCellRef(ref) {
+  const m = ref.match(/^([A-Z])(\d+)$/);
+  if (!m) return null;
+  return { col: m[1].charCodeAt(0) - 65, row: parseInt(m[2], 10) - 1 };
+}
+
+function expandRange(rangeStr) {
+  const parts = rangeStr.split(":");
+  if (parts.length !== 2) return null;
+  const start = parseCellRef(parts[0]);
+  const end = parseCellRef(parts[1]);
+  if (!start || !end) return null;
+  const refs = [];
+  for (let r = start.row; r <= end.row; r++) {
+    for (let c = start.col; c <= end.col; c++) {
+      refs.push({ col: c, row: r });
+    }
+  }
+  return refs;
+}
+
+function parseCellValue(text) {
+  const t = text.trim();
+  if (/^-?\d+(\.\d+)?%$/.test(t)) {
+    return { value: parseFloat(t) / 100, isPercent: true };
+  }
+  // Strip commas for numbers like 1,000,000
+  const stripped = t.replace(/,/g, "");
+  if (/^-?\d+(\.\d+)?$/.test(stripped)) {
+    return { value: parseFloat(stripped), isPercent: false };
+  }
+  return { value: NaN, isPercent: false };
+}
+
+function buildCellGrid(rows) {
+  return rows.map((row) => row.map((cell) => {
+    if (isFormulaCell(cell)) return { value: NaN, isPercent: false, formula: cell.trim().slice(1) };
+    return parseCellValue(cell);
+  }));
+}
+
+function resolveRef(grid, ref) {
+  if (ref.row < 0 || ref.row >= grid.length) return null;
+  if (ref.col < 0 || ref.col >= grid[ref.row].length) return null;
+  return grid[ref.row][ref.col];
+}
+
+function resolveRefs(grid, refs) {
+  const values = [];
+  for (const ref of refs) {
+    const cell = resolveRef(grid, ref);
+    if (!cell || isNaN(cell.value)) return null;
+    values.push(cell);
+  }
+  return values;
+}
+
+function tokenizeFormula(expr) {
+  const tokens = [];
+  let i = 0;
+  while (i < expr.length) {
+    if (/\s/.test(expr[i])) { i++; continue; }
+    // Function name
+    if (/[A-Z]/.test(expr[i]) && i + 1 < expr.length && /[A-Z]/.test(expr[i + 1])) {
+      let j = i;
+      while (j < expr.length && /[A-Z]/.test(expr[j])) j++;
+      tokens.push({ type: "func", value: expr.slice(i, j) });
+      i = j;
+      continue;
+    }
+    // Cell ref or range (e.g. A1, A1:B3)
+    if (/[A-Z]/.test(expr[i]) && i + 1 < expr.length && /\d/.test(expr[i + 1])) {
+      let j = i;
+      while (j < expr.length && /[A-Z0-9:]/.test(expr[j])) j++;
+      tokens.push({ type: "ref", value: expr.slice(i, j) });
+      i = j;
+      continue;
+    }
+    // Number
+    if (/[\d.]/.test(expr[i])) {
+      let j = i;
+      while (j < expr.length && /[\d.]/.test(expr[j])) j++;
+      const numStr = expr.slice(i, j);
+      if ((numStr.match(/\./g) || []).length > 1) return { error: "#SYNTAX!" };
+      if (j < expr.length && expr[j] === "%") {
+        tokens.push({ type: "num", value: parseFloat(numStr) / 100, isPercent: true });
+        j++;
+      } else {
+        tokens.push({ type: "num", value: parseFloat(numStr), isPercent: false });
+      }
+      i = j;
+      continue;
+    }
+    if ("+-*/(),".includes(expr[i])) {
+      tokens.push({ type: "op", value: expr[i] });
+      i++;
+      continue;
+    }
+    return { error: "#SYNTAX!" };
+  }
+  return { tokens };
+}
+
+function evaluateFormula(formula, grid) {
+  const { tokens, error } = tokenizeFormula(formula);
+  if (error) return { value: NaN, isPercent: false, error };
+
+  let pos = 0;
+  const peek = () => pos < tokens.length ? tokens[pos] : null;
+  const consume = () => tokens[pos++];
+
+  function resolveArg() {
+    const tok = peek();
+    if (!tok) return null;
+    if (tok.type === "ref") {
+      consume();
+      if (tok.value.includes(":")) {
+        const refs = expandRange(tok.value);
+        if (!refs) return { error: "#REF!" };
+        const cells = resolveRefs(grid, refs);
+        if (!cells) return { error: "#VALUE!" };
+        return { cells };
+      } else {
+        const ref = parseCellRef(tok.value);
+        if (!ref) return { error: "#REF!" };
+        const cell = resolveRef(grid, ref);
+        if (!cell || isNaN(cell.value)) return { error: "#VALUE!" };
+        return { cells: [cell] };
+      }
+    }
+    return null;
+  }
+
+  function parseFuncArgs() {
+    const allCells = [];
+    if (!peek() || peek().value !== "(") return { error: "#SYNTAX!" };
+    consume(); // (
+    while (peek() && peek().value !== ")") {
+      const arg = resolveArg();
+      if (!arg) return { error: "#SYNTAX!" };
+      if (arg.error) return arg;
+      allCells.push(...arg.cells);
+      if (peek() && peek().value === ",") consume();
+    }
+    if (!peek() || peek().value !== ")") return { error: "#SYNTAX!" };
+    consume(); // )
+    return { cells: allCells };
+  }
+
+  function parseAtom() {
+    const tok = peek();
+    if (!tok) return { error: "#SYNTAX!" };
+
+    if (tok.type === "func") {
+      const fname = consume().value;
+      const args = parseFuncArgs();
+      if (args.error) return args;
+      const allPercent = args.cells.every((c) => c.isPercent);
+      const vals = args.cells.map((c) => c.value);
+      if (fname === "SUM") {
+        return { value: vals.reduce((a, b) => a + b, 0), isPercent: allPercent };
+      } else if (fname === "AVG") {
+        if (vals.length === 0) return { error: "#DIV/0!" };
+        return { value: vals.reduce((a, b) => a + b, 0) / vals.length, isPercent: allPercent };
+      } else if (fname === "COUNT") {
+        return { value: vals.length, isPercent: false };
+      }
+      return { error: "#NAME!" };
+    }
+
+    if (tok.type === "num") {
+      consume();
+      return { value: tok.value, isPercent: tok.isPercent };
+    }
+
+    if (tok.type === "ref") {
+      consume();
+      const ref = parseCellRef(tok.value);
+      if (!ref) return { error: "#REF!" };
+      const cell = resolveRef(grid, ref);
+      if (!cell || isNaN(cell.value)) return { error: "#VALUE!" };
+      return { value: cell.value, isPercent: cell.isPercent };
+    }
+
+    if (tok.type === "op" && tok.value === "(") {
+      consume();
+      const result = parseExpr();
+      if (result.error) return result;
+      if (!peek() || peek().value !== ")") return { error: "#SYNTAX!" };
+      consume();
+      return result;
+    }
+
+    // Unary minus
+    if (tok.type === "op" && tok.value === "-") {
+      consume();
+      const operand = parseAtom();
+      if (operand.error) return operand;
+      return { value: -operand.value, isPercent: operand.isPercent };
+    }
+
+    return { error: "#SYNTAX!" };
+  }
+
+  function parseTerm() {
+    let left = parseAtom();
+    if (left.error) return left;
+    while (peek() && (peek().value === "*" || peek().value === "/")) {
+      const op = consume().value;
+      const right = parseAtom();
+      if (right.error) return right;
+      if (op === "/") {
+        if (right.value === 0) return { error: "#DIV/0!" };
+        left = { value: left.value / right.value, isPercent: false };
+      } else {
+        left = { value: left.value * right.value, isPercent: false };
+      }
+    }
+    return left;
+  }
+
+  function parseExpr() {
+    let left = parseTerm();
+    if (left.error) return left;
+    while (peek() && (peek().value === "+" || peek().value === "-")) {
+      const op = consume().value;
+      const right = parseTerm();
+      if (right.error) return right;
+      const bothPercent = left.isPercent && right.isPercent;
+      left = {
+        value: op === "+" ? left.value + right.value : left.value - right.value,
+        isPercent: bothPercent,
+      };
+    }
+    return left;
+  }
+
+  const result = parseExpr();
+  if (result.error) return { value: NaN, isPercent: false, error: result.error };
+  if (peek()) return { value: NaN, isPercent: false, error: "#SYNTAX!" };
+  return { value: result.value, isPercent: result.isPercent, error: null };
+}
+
+function evaluateGrid(grid) {
+  // Track which cells started as formulas for circular reference detection
+  const formulaCells = [];
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      if (grid[r][c].formula) formulaCells.push([r, c]);
+    }
+  }
+  // Topological evaluation: resolve formulas that depend on other formulas
+  const maxPasses = formulaCells.length + 1;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let pending = false;
+    for (let r = 0; r < grid.length; r++) {
+      for (let c = 0; c < grid[r].length; c++) {
+        const cell = grid[r][c];
+        if (!cell.formula) continue;
+        const result = evaluateFormula(cell.formula, grid);
+        if (result.error === "#VALUE!" && pass < maxPasses - 1) {
+          // Might resolve on a later pass when dependencies are computed
+          pending = true;
+          continue;
+        }
+        cell.value = result.value;
+        cell.isPercent = result.isPercent;
+        cell.error = result.error;
+        delete cell.formula;
+      }
+    }
+    if (!pending) break;
+  }
+  // Any formula cells still showing #VALUE! after all passes are circular
+  for (const [r, c] of formulaCells) {
+    if (grid[r][c].error === "#VALUE!") {
+      grid[r][c].error = "#CIRCULAR!";
+    }
+  }
+  return grid;
+}
+
+function formatFormulaResult(cell) {
+  if (cell.error) return cell.error;
+  if (cell.isPercent) {
+    const pct = cell.value * 100;
+    return (Number.isInteger(pct) ? pct.toString() : pct.toFixed(2).replace(/\.?0+$/, "")) + "%";
+  }
+  if (Number.isInteger(cell.value)) return cell.value.toLocaleString();
+  return cell.value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+// ── End formula engine ───────────────────────────────────────────────
+
 function renderTable(table) {
   const dl = dataLineAttrs(table);
   const opts = table.options || {};
@@ -1566,10 +1867,24 @@ function renderTable(table) {
     thead = `<thead class="sdoc-table-head"><tr>${headerCells}</tr></thead>`;
   }
 
+  // Formula evaluation
+  const grid = evaluateGrid(buildCellGrid(table.rows));
+
   const bodyRows = table.rows
-    .map((row) => {
+    .map((row, r) => {
       const cells = row
-        .map((cell) => `<td class="sdoc-table-td">${renderInline(cell)}</td>`)
+        .map((cell, c) => {
+          if (isFormulaCell(cell)) {
+            const result = grid[r][c];
+            const display = escapeHtml(formatFormulaResult(result));
+            const formula = escapeAttr(cell.trim());
+            if (result.error) {
+              return `<td class="sdoc-table-td sdoc-formula-error" title="${formula}">${display}</td>`;
+            }
+            return `<td class="sdoc-table-td sdoc-formula-cell" title="${formula}">${display}</td>`;
+          }
+          return `<td class="sdoc-table-td">${renderInline(cell)}</td>`;
+        })
         .join("");
       return `<tr>${cells}</tr>`;
     })
@@ -1897,6 +2212,19 @@ const DEFAULT_STYLE = `
 
   .sdoc-table-body tr:last-child .sdoc-table-td {
     border-bottom: none;
+  }
+
+  td.sdoc-formula-cell {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: #2a7a8a !important;
+    cursor: help;
+    border-bottom: 1px dotted #2a7a8a40;
+  }
+  td.sdoc-formula-error {
+    color: #c33 !important;
+    font-style: italic;
+    cursor: help;
   }
 
   .sdoc-table-borderless,

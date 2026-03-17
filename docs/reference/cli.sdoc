@@ -1,7 +1,7 @@
 # CLI and Tools Reference
 {
     @meta {
-        sdoc-version: 0.1
+        sdoc-version: 0.2
     }
 
     # VSCode Extension Commands
