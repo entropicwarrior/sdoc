@@ -67,6 +67,9 @@
             - [x] Data blocks (:data flag on JSON code fences, parsed into AST) (v0.2)
             - [x] Line comments (// at line start, discarded from AST) (v0.2)
             - [x] Comment scopes (:comment scope type, in AST but not rendered) (v0.2)
+            - [x] Escaped pipes in table cells (\\| for literal pipe without column split) (v0.2.4)
+            - [x] Auto-detected email addresses rendered as mailto links (v0.2.5)
+            - [x] Table formulas: =SUM, =AVG, =COUNT, arithmetic expressions, A1 cell references, percentage handling, circular reference detection (v0.2.6)
         }
 
         # Tooling
@@ -122,7 +125,7 @@
         {
             - [x] Guide docs rewritten with BLUF structure and human/AI collaboration framing (intro.sdoc, why-sdoc.sdoc)
             - [x] Example consolidation (v0.2-features.sdoc merged into example.sdoc)
-            - [x] All docs updated to sdoc-version 0.2
+            - [x] All docs updated to sdoc-version 0.2 (including examples, guides, and lexica files)
             - [x] README updated with v0.2 features (scope types, data blocks, comment scopes, table width/alignment)
         }
 

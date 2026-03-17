@@ -381,6 +381,21 @@
                 Anchor link to a section in this document: [Overview](#overview).
             }
 
+            # Table Formulas
+            {
+                Tables support simple formulas. Cell references use spreadsheet-style A1 notation (headers excluded from row numbering). Hover a computed cell in preview to see the formula.
+
+                # Cap Table {[table]
+                    Investor | Shares | Ownership
+                    Seed Fund | 500,000 | 25%
+                    Founder A | 1,000,000 | 50%
+                    Founder B | 500,000 | 25%
+                    **Total** | =SUM(B1:B3) | =SUM(C1:C3)
+                }
+
+                Supported: `=SUM(range)`, `=AVG(range)`, `=COUNT(range)`, and arithmetic (`=B1+B2`, `=B1*3`). Use `\=` for a literal equals sign.
+            }
+
             # Extras
             {
                 Inline formatting: emphasis, strong, strike, code.

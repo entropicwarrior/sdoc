@@ -1,5 +1,4 @@
 {
-  "style": "sdoc.template.css",
   "header": "SDOC Documentation (global header)",
   "footer": "Global footer text from sdoc.config.json"
 }

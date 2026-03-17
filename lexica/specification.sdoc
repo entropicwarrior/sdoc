@@ -378,6 +378,78 @@ Content of Section B.
 }
                 ```
             }
+
+            # Table Formulas @table-formulas
+            {
+                Table cells whose text begins with `=` (but not `==`) are evaluated as formulas. The result replaces the cell text in rendered output; the original formula is preserved as a tooltip.
+
+                ```
+{[table]
+    Item | Qty | Price
+    Widget | 10 | 5.00
+    Gadget | 5 | 12.50
+    **Total** | =SUM(B1:B2) | =SUM(C1:C2)
+}
+                ```
+
+                # Cell References
+                {
+                    {[.]
+                        - References use spreadsheet-style A1 notation: column letter (A-Z) followed by row number (1-based)
+                        - Row numbering starts at 1 for the first data row; headers are excluded from numbering
+                        - A range is two references separated by a colon: `A1:B3`
+                    }
+                }
+
+                # Supported Functions
+                {
+                    {[.]
+                        - `=SUM(range)` — sum of all values in the range
+                        - `=AVG(range)` — arithmetic mean of the range
+                        - `=COUNT(range)` — number of cells in the range
+                    }
+
+                    Function names are case-sensitive (uppercase only). Multiple ranges can be separated by commas: `=SUM(A1:A3,B1:B3)`.
+                }
+
+                # Arithmetic Expressions
+                {
+                    Cells may also contain arithmetic expressions using `+`, `-`, `*`, `/`, parentheses, and cell references:
+
+                    ```
+                    =B1+B2
+                    =B1*3
+                    =(A1+A2)/2
+                    =-B1
+                    ```
+
+                    Standard operator precedence applies (multiplication and division before addition and subtraction). Unary minus is supported.
+                }
+
+                # Percentage Values
+                {
+                    Cells ending in `%` are stored internally as decimals (e.g. `25%` = 0.25). When all values in a `SUM` or `AVG` are percentages, the result displays as a percentage. Arithmetic between percentages and plain numbers produces a plain number.
+                }
+
+                # Error Values
+                {
+                    {[.]
+                        - `#DIV/0!` — division by zero
+                        - `#VALUE!` — unresolvable reference (e.g. reference to a text cell or out-of-bounds)
+                        - `#REF!` — invalid cell reference syntax
+                        - `#NAME!` — unknown function name
+                        - `#SYNTAX!` — malformed formula expression
+                        - `#CIRCULAR!` — circular dependency between formula cells
+                    }
+
+                    Error cells are styled distinctly (red italic) and display the original formula as a tooltip.
+                }
+
+                # Escaping
+                {
+                    To display a literal `=` at the start of a cell, escape it: `\=SUM(...)` renders as plain text `=SUM(...)`.
+                }
+            }
         }
 
         # Paragraphs @paragraphs
@@ -431,6 +503,8 @@ Content of Section B.
             Only `http`, `https`, and `mailto` schemes are recognised.
 
             Bare URLs starting with `http://`, `https://`, or `mailto:` are also auto-linked without angle brackets.
+
+            Bare email addresses (e.g. `hello@example.com`) are automatically detected and rendered as `mailto:` links. The detection requires at least one character before and after the `@`, with a domain containing a dot. Email auto-detection does not apply inside code spans, links, or angle-bracket autolinks.
         }
 
         # Images @images

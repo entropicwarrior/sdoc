@@ -274,6 +274,34 @@ Content of Section B.
                 \|x\| + \|y\| | 8
             }
             ```
+
+            # Table Formulas @table-formulas
+            {
+                Cells starting with \`=\` are evaluated as formulas. Hover a computed cell in preview to see the original formula.
+
+                ```
+                {[table]
+                    Investor | Shares | Ownership
+                    Seed Fund | 500,000 | 25%
+                    Founder A | 1,000,000 | 50%
+                    Founder B | 500,000 | 25%
+                    **Total** | =SUM(B1:B3) | =SUM(C1:C3)
+                }
+                ```
+
+                Cell references use A1 notation (column letter + row number). Headers are excluded from row numbering, so the first data row is row 1.
+
+                {[.]
+                    - \`=SUM(range)\` — sum of values
+                    - \`=AVG(range)\` — arithmetic mean
+                    - \`=COUNT(range)\` — number of cells
+                    - Arithmetic: \`=B1+B2\`, \`=B1*3\`, \`=(A1+A2)/2\`, \`=-B1\`
+                    - Function names are uppercase only
+                    - Escape with \`\\=\` for a literal equals sign at the start of a cell
+                }
+
+                Errors display in red italic: \`#DIV/0!\` (division by zero), \`#VALUE!\` (bad reference), \`#REF!\` (invalid syntax), \`#NAME!\` (unknown function), \`#CIRCULAR!\` (circular dependency).
+            }
         }
 
         # Inline Formatting @inline-formatting
@@ -309,7 +337,7 @@ Content of Section B.
             ![A](a.png =48%) ![B](b.png =48%)
             ```
 
-            Autolinks: \`\<https://example.com\>\` — angle brackets are optional; bare URLs starting with \`http://\`, \`https://\`, or \`mailto:\` are also auto-linked.
+            Autolinks: \`\<https://example.com\>\` — angle brackets are optional; bare URLs starting with \`http://\`, \`https://\`, or \`mailto:\` are also auto-linked. Bare email addresses (e.g. \`hello@example.com\`) are automatically rendered as \`mailto:\` links.
 
             Math: Use \`\$...\$\` for inline math and \`\$\$...\$\$\` for display math. Use \`\\\`\\\`\\\`math\` code fences for multi-line equations. A plain \`\$\` followed by a digit (e.g. \`\$100\`) does not trigger math mode.
         }
