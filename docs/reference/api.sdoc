@@ -155,6 +155,89 @@ await resolveIncludes(parsed.nodes, async (src) => {
         }
     }
 
+    # Progressive Disclosure @progressive-disclosure
+    {
+        These functions enable token-efficient navigation of SDOC files. Instead of loading an entire file (\~5,000-50,000 tokens), an agent can discover what sections exist (\~50-100 tokens) and then extract only the one it needs (\~200-1,000 tokens).
+
+        # listSections(text)
+        {
+            Returns a flat list of sections with their IDs, titles, and depth.
+
+            ```javascript
+const { listSections } = require("@entropicwarrior/sdoc");
+const sections = listSections(sdocText);
+// [{ id: "tables", title: "Tables", depth: 2 },
+//  { id: "table-formulas", title: "Table Formulas", depth: 3 }, ...]
+            ```
+
+            {[.]
+                - `text` -- the SDOC source string
+                - Returns an array of `{ id, title, depth }` objects
+                - IDs are explicit (`@id`) or derived from the title via `slugify`
+                - Use this as the "table of contents" step before extracting a section
+            }
+        }
+
+        # extractSection(text, id)
+        {
+            Extracts a single section and its children by ID. This is the key function for surgical section retrieval.
+
+            ```javascript
+const { extractSection } = require("@entropicwarrior/sdoc");
+const section = extractSection(sdocText, "table-formulas");
+// Returns the raw SDOC source for just that section, including children
+            ```
+
+            {[.]
+                - `text` -- the SDOC source string
+                - `id` -- the section ID (explicit `@id` or derived slug)
+                - Returns the SDOC source for that section, or `null` if not found
+                - Includes all child scopes
+            }
+        }
+
+        # extractAbout(text)
+        {
+            Extracts the `@about` scope text -- a one-paragraph summary of the document.
+
+            ```javascript
+const { extractAbout } = require("@entropicwarrior/sdoc");
+const about = extractAbout(sdocText);
+// "Implementation status for the SDOC project. Tracks what is..."
+            ```
+
+            {[.]
+                - `text` -- the SDOC source string
+                - Returns the plain text content of the `@about` scope, or `null`
+                - Use this for file discovery: list files with their `@about` summaries
+            }
+        }
+
+        # slugify(title)
+        {
+            Converts a scope title to a URL-safe slug, matching the IDs derived by `listSections`.
+
+            ```javascript
+const { slugify } = require("@entropicwarrior/sdoc");
+slugify("Table Formulas"); // "table-formulas"
+            ```
+        }
+
+        # Typical agent workflow
+        {
+            ```javascript
+            // 1. Discovery: list files with summaries (~200 tokens for 50 files)
+            const about = extractAbout(fileText);
+
+            // 2. Orientation: list sections of one file (~50-100 tokens)
+            const sections = listSections(fileText);
+
+            // 3. Detail: extract just the section needed (~200-1000 tokens)
+            const content = extractSection(fileText, "table-formulas");
+            ```
+        }
+    }
+
     # AST Node Types
     {
         The parser produces these node types:
