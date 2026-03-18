@@ -74,7 +74,17 @@ Key resources for agents:
 | [`docs/reference/sdoc-authoring.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/reference/sdoc-authoring.sdoc) | Skill document — drop into context to read/write SDOC immediately |
 | [`lexica/specification.sdoc`](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/specification.sdoc) | Formal spec with EBNF grammar |
 
-All `.sdoc` files are designed for progressive disclosure — read the `@about` scope first (~50 tokens), then scan headings, then load only the section you need.
+All `.sdoc` files are designed for progressive disclosure. The JavaScript API provides three functions that let agents navigate without loading entire files:
+
+```javascript
+const { extractAbout, listSections, extractSection } = require("@entropicwarrior/sdoc");
+
+extractAbout(text);              // ~50 tokens — what is this file about?
+listSections(text);              // ~50-100 tokens — what sections does it have?
+extractSection(text, "error-handling"); // ~200-1000 tokens — give me just this section
+```
+
+Total cost for a precise answer: ~750 tokens. The same lookup in Markdown requires loading the full file (5,000-50,000 tokens).
 
 ## Format at a Glance
 
@@ -159,7 +169,7 @@ Markdown-style images with optional width and alignment:
 
 ### Tables
 
-Pipe-delimited tables with optional flags for appearance (`borderless`, `headerless`), width (`auto`, `60%`, `400px`), and alignment (`left`, `center`, `right`). All flags compose freely.
+Pipe-delimited tables with optional flags for appearance (`borderless`, `headerless`), width (`auto`, `60%`, `400px`), and alignment (`left`, `center`, `right`). All flags compose freely. Cells starting with `=` are evaluated as formulas (`=SUM`, `=AVG`, `=COUNT`, arithmetic with A1 cell references).
 
 ### Lists
 
