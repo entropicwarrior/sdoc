@@ -2781,8 +2781,31 @@ function firstParagraphPreview(nodes, maxLen) {
   return "";
 }
 
+/**
+ * Recursively collect all tagged (has @id) scope nodes from the content tree.
+ * Skips @meta and @about. Used for deep section discovery — lets MCP clients
+ * find sections nested inside top-level scopes (e.g. @pass-terminology inside
+ * @pedantic-review inside @writing).
+ */
+function getAllTaggedScopes(nodes) {
+  const result = [];
+  function walk(nodeList) {
+    for (const node of nodeList) {
+      if (node.type === "scope") {
+        if (node.id && node.id.toLowerCase() !== "meta" && node.id.toLowerCase() !== "about") {
+          result.push(node);
+        }
+        if (node.children) walk(node.children);
+      }
+    }
+  }
+  const doc = getDocumentScope(nodes);
+  walk(doc ? doc.children : nodes);
+  return result;
+}
+
 function listSections(nodes) {
-  return getContentScopes(nodes).map((node) => ({
+  return getAllTaggedScopes(nodes).map((node) => ({
     id: node.id || null,
     derivedId: slugify(node.title),
     title: node.title,
@@ -2802,7 +2825,7 @@ function collectDataBlocks(children) {
 }
 
 function extractSection(nodes, sectionId) {
-  const scopes = getContentScopes(nodes);
+  const scopes = getAllTaggedScopes(nodes);
 
   function buildResult(node) {
     const data = collectDataBlocks(node.children || []);
