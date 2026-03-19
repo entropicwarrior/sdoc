@@ -1,5 +1,5 @@
 {
-  "name": "sdoc",
+  "name": "vscode-sdoc",
   "displayName": "SDOC",
   "description": "A plain-text documentation format with explicit brace scoping — deterministic parsing, AI-agent efficiency, and 10-50x token savings vs Markdown.",
   "version": "0.2.7",
