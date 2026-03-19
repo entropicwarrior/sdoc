@@ -1,4 +1,4 @@
-name: Build VSIX and publish to npm
+name: Build VSIX, publish to Marketplace and npm
 
 on:
   release:
@@ -26,6 +26,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.event.release.tag_name }}" dist/*.vsix --clobber
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --pat "$VSCE_PAT"
 
       - name: Publish to npm as @entropicwarrior/sdoc
         env:
