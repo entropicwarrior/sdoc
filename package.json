@@ -3,7 +3,7 @@
   "displayName": "SDOC - Docs for Human/Agent Teams",
   "description": "A plain-text documentation format with explicit brace scoping — deterministic parsing, AI-agent efficiency, and 10-50x token savings vs Markdown.",
   "version": "0.2.7",
-  "publisher": "entropicwarrior",
+  "publisher": "entropicwarrior-msenfin",
   "license": "MIT",
   "repository": {
     "type": "git",
