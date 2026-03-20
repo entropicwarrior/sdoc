@@ -2416,6 +2416,54 @@ const DEFAULT_STYLE = `
     pointer-events: none;
   }
 
+  /* Collapsible scope toggles */
+  .sdoc-heading:has(.sdoc-toggle) {
+    position: relative;
+  }
+
+  .sdoc-toggle {
+    position: absolute;
+    left: -1.4em;
+    top: 0;
+    bottom: 0;
+    width: 1.2em;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .sdoc-toggle::before {
+    content: '';
+    display: block;
+    width: 0.45em;
+    height: 0.45em;
+    border-right: 2px solid var(--sdoc-muted);
+    border-bottom: 2px solid var(--sdoc-muted);
+    transition: transform 0.15s;
+    transform: rotate(45deg);
+    position: absolute;
+    top: 0.18em;
+    left: 50%;
+    margin-left: -0.3em;
+  }
+
+  .sdoc-scope:hover > .sdoc-heading > .sdoc-toggle {
+    opacity: 1;
+  }
+
+  .sdoc-scope.sdoc-collapsed > .sdoc-heading > .sdoc-toggle {
+    opacity: 0.6;
+  }
+
+  .sdoc-scope.sdoc-collapsed > .sdoc-heading > .sdoc-toggle::before {
+    transform: rotate(-45deg);
+    margin-left: -0.15em;
+  }
+
+  .sdoc-scope.sdoc-collapsed > .sdoc-scope-children {
+    display: none;
+  }
+
 `;
 
 const PRINT_STYLE = `
@@ -2447,8 +2495,11 @@ const PRINT_STYLE = `
     html {
       font-size: 80%;
     }
-    .sdoc-copy-btn {
+    .sdoc-copy-btn, .sdoc-toggle {
       display: none;
+    }
+    .sdoc-scope.sdoc-collapsed > .sdoc-scope-children {
+      display: block;
     }
     body {
       height: auto;
@@ -2475,6 +2526,10 @@ const PRINT_STYLE = `
     .sdoc-blockquote { break-inside: avoid; }
   }
 `;
+
+const COLLAPSE_SCRIPT = `document.addEventListener("click",function(e){if(!e.target.classList.contains("sdoc-toggle"))return;e.stopPropagation();var s=e.target.closest(".sdoc-scope");if(s)s.classList.toggle("sdoc-collapsed")});`;
+
+const COPY_SCRIPT = `document.addEventListener("click",function(e){if(!e.target.classList.contains("sdoc-copy-btn"))return;e.stopPropagation();e.preventDefault();var w=e.target.closest(".sdoc-code-wrap");if(!w)return;var c=w.querySelector("code");if(!c)return;var t=c.textContent;var b=e.target;if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){b.textContent="\\u2713";setTimeout(function(){b.textContent="\\u29C9"},1500)})}else{var a=document.createElement("textarea");a.value=t;a.style.position="fixed";a.style.opacity="0";document.body.appendChild(a);a.select();document.execCommand("copy");document.body.removeChild(a);b.textContent="\\u2713";setTimeout(function(){b.textContent="\\u29C9"},1500)}});`;
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
 const KATEX_CDN_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";
@@ -2574,7 +2629,8 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}\n${PRINT_STYLE}` : `\n${PRINT_STYLE}`;
-  const scriptTag = options.script ? `\n<script>${options.script}</script>` : "";
+  const builtinScript = COLLAPSE_SCRIPT + COPY_SCRIPT;
+  const scriptTag = options.script ? `\n<script>${options.script}</script>` : `\n<script>${builtinScript}</script>`;
   const mermaidTheme = options.mermaidTheme ?? "neutral";
   const mermaidInit = mermaidTheme === "auto"
     ? `var isDark=window.matchMedia("(prefers-color-scheme:dark)").matches;mermaid.initialize({startOnLoad:true,theme:isDark?"dark":"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`
