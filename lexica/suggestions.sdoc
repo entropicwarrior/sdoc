@@ -16,7 +16,7 @@
 
     # Context @context
     {
-        This document suggests additions to the SDOC spec based on gaps identified in v0.1. Each suggestion references the requirements it serves (see requirements.sdoc). Suggestions are ordered by priority.
+        This document suggests additions to the SDOC spec based on gaps identified in v0.1. Each suggestion references the requirements it serves (see [requirements.sdoc](requirements.sdoc)). Suggestions are ordered by priority.
 
         When a suggestion is accepted and implemented, it is retained here for historical context. The specification.sdoc carries the normative definition.
     }
@@ -24,7 +24,7 @@
     # S2: Document Metadata Beyond Styling @s2
     {
         Priority: High (partially addressed)
-        Serves: R5, R6, R7 (requirements.sdoc)
+        Serves: R5, R6, R7 ([requirements.sdoc](requirements.sdoc))
 
         The \@meta scope currently handles style, header, and footer. Richer metadata (author, date, version, status, tags) is now supported via key:value syntax inside the \@meta scope. Both sub-scope and key:value styles work:
 
@@ -46,7 +46,7 @@
     # S3: Comments @s3
     {
         Priority: High
-        Serves: R5, R8 (requirements.sdoc)
+        Serves: R5, R8 ([requirements.sdoc](requirements.sdoc))
 
         {+Implemented in v0.2.+} Both approaches were adopted:
 
@@ -61,7 +61,7 @@
     # S4: Semantic Scope Types @s4
     {
         Priority: High
-        Serves: R5, R7 (requirements.sdoc)
+        Serves: R5, R7 ([requirements.sdoc](requirements.sdoc))
 
         {+Implemented in v0.2.+} Scope types use `:typename` after the optional `@id` on headings:
 
@@ -95,7 +95,7 @@
     # S5: Cross-File References @s5
     {
         Priority: Medium
-        Serves: R9 (requirements.sdoc)
+        Serves: R9 ([requirements.sdoc](requirements.sdoc))
 
         The \@id reference system is per-file. For multi-file projects, you need to reference scopes in other files.
 
@@ -111,7 +111,7 @@
     # S6: Include/Transclusion @s6
     {
         Priority: Medium
-        Serves: R9, R7 (requirements.sdoc)
+        Serves: R9, R7 ([requirements.sdoc](requirements.sdoc))
 
         The ability to include one SDOC file (or a specific scope from it) inside another. Essential for large documents assembled from modular parts.
 
@@ -131,7 +131,7 @@
     # S7: Definition Lists @s7
     {
         Priority: Medium
-        Serves: R7 (requirements.sdoc)
+        Serves: R7 ([requirements.sdoc](requirements.sdoc))
 
         Technical specs, glossaries, and legal documents frequently use definition lists (term + definition pairs). Currently these would be modelled as scopes where the heading is the term and the body is the definition, which works but loses the semantic distinction.
 
@@ -152,7 +152,7 @@
     # S8: Admonitions/Callouts @s8
     {
         Priority: Low
-        Serves: R7 (requirements.sdoc)
+        Serves: R7 ([requirements.sdoc](requirements.sdoc))
 
         Warning, note, tip, and caution boxes are common in technical documentation. This is handled by scope type annotations (see @s4), making a dedicated syntax unnecessary:
 
@@ -169,7 +169,7 @@
     # S10: Extended Meta Properties for Agent Navigation @s10
     {
         Priority: Medium
-        Serves: R5, R9 (requirements.sdoc)
+        Serves: R5, R9 ([requirements.sdoc](requirements.sdoc))
 
         The \`\@about\` scope provides a prose discovery summary that works well for both humans and agents (~50-80 tokens). The \`\@meta\` scope carries structured metadata like \`type\`, \`tags\`, and \`status\`. Currently the set of well-known meta keys is small and focused on presentation (style, header, footer) or basic classification (type, tags, status).
 
@@ -212,7 +212,7 @@
     # S9: Reserved Syntax Space @s9
     {
         Priority: Low
-        Serves: R10 (requirements.sdoc)
+        Serves: R10 ([requirements.sdoc](requirements.sdoc))
 
         The spec should explicitly document which character sequences are reserved for future use, even if they don't currently have meaning. This prevents existing documents from accidentally using syntax that later becomes meaningful.
 

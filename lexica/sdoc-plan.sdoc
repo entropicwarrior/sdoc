@@ -23,7 +23,7 @@
 
             The grammar says \`document = scope\` but the parser currently allows
             multiple top-level scopes without warning. Should warn on violation.
-            See \@c1 in requirements.sdoc.
+            See [C1](requirements.sdoc#c1).
         }
 
         # Decouple Rendering from AST @renderer-separation
@@ -32,14 +32,14 @@
 
             Current renderer functions are HTML-centric. Need format-neutral AST
             consumption with separate renderer modules (HTML, DOCX, PDF, Google
-            Docs). See \@c2 in requirements.sdoc.
+            Docs). See [C2](requirements.sdoc#c2).
         }
     }
 
     # Spec Additions @spec-additions
     {
         These are the highest-priority additions to the SDOC spec. See
-        suggestions.sdoc for full details on each.
+        [suggestions.sdoc](suggestions.sdoc) for full details on each.
 
         # Document Metadata (\@s2) @metadata
         {

@@ -18,7 +18,7 @@
     {
         SDOC v0.2.8 is the current release. The parser, HTML renderer, slide renderer, and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
-        The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable (R10 in requirements.sdoc).
+        The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
 
     # Completed @completed
@@ -55,8 +55,8 @@
 
         # Parser Improvements
         {
-            - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See C1 in requirements.sdoc.
-            - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See C2 in requirements.sdoc.
+            - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See [C1](requirements.sdoc#c1).
+            - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See [C2](requirements.sdoc#c2).
         }
 
         # Extension Improvements
@@ -66,7 +66,7 @@
 
         # Spec Additions
         {
-            - [ ] Document metadata (S2 in suggestions.sdoc) -- key:value meta is implemented; remaining work is defining canonical well-known keys and exposing `meta.properties` to downstream consumers
+            - [ ] Document metadata ([S2](suggestions.sdoc#s2)) -- key:value meta is implemented; remaining work is defining canonical well-known keys and exposing `meta.properties` to downstream consumers
         }
 
         # Export Pipeline
