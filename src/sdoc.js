@@ -2791,8 +2791,9 @@ function getAllTaggedScopes(nodes) {
   const result = [];
   function walk(nodeList) {
     for (const node of nodeList) {
-      if (node.type === "scope") {
-        if (node.id && node.id.toLowerCase() !== "meta" && node.id.toLowerCase() !== "about") {
+      if (node.type === "scope" && node.hasHeading) {
+        const id = (node.id || "").toLowerCase();
+        if (id !== "meta" && id !== "about") {
           result.push(node);
         }
         if (node.children) walk(node.children);

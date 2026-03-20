@@ -31,7 +31,7 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 ### Install from the VS Code Marketplace
 
-Search for **"SDOC"** in the VS Code Extensions panel, or install from the command line:
+Search for **"SDOC - Docs for Human/Agent Teams"** by **Entropic Warrior MS Enfin** in the VS Code Extensions panel, or install from the command line:
 
 ```bash
 code --install-extension entropicwarrior-msenfin.vscode-sdoc
