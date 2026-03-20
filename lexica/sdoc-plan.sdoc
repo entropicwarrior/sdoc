@@ -52,19 +52,17 @@
 
         # Comments (\@s3) @comments
         {
-            Priority: High
-
-            Currently an open question in the spec. Line comments (\`//\`) and/or
-            comment scopes (\`@comment\`) for annotations, TODOs, and AI agent
-            instructions that should not render.
+            {+Completed in v0.2.+} Line comments (\`//\`) and comment scopes
+            (\`:comment\`) are implemented. Line comments are discarded from the AST;
+            comment scopes remain in the AST but are not rendered.
         }
 
         # Semantic Scope Types (\@s4) @scope-types
         {
-            Priority: High
-
-            Type annotations on scopes (e.g., \`:requirement\`, \`:test\`,
-            \`:warning\`) so agents can filter and navigate by semantic meaning.
+            {+Completed in v0.2.+} Type annotations on scopes using \`:typename\`
+            syntax. Well-known types include \`schema\`, \`example\`, \`requirement\`,
+            \`warning\`, \`comment\`, and more. Both \`\@id :type\` and \`:type \@id\`
+            orderings supported.
         }
 
         # Cross-File References (\@s5) @cross-refs
@@ -72,7 +70,7 @@
             Priority: Medium
 
             Syntax for referencing scopes in other files, e.g.,
-            \`@guide/intro#overview\`. Currently \@id is per-file only.
+            \`\@guide/intro#overview\`. Currently \@id is per-file only.
         }
 
         # Definition Lists (\@s7) @def-lists

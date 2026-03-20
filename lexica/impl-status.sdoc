@@ -16,117 +16,22 @@
 
     # Current State @current-state
     {
-        SDOC v0.2.0 is released. The parser, HTML renderer, slide renderer, and VS Code extension are stable and published. The format supports scope types, data blocks, comment scopes, table width/alignment, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.2.8 is the current release. The parser, HTML renderer, slide renderer, and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
-        The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable (@r10).
+        The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable (R10 in requirements.sdoc).
     }
 
     # Completed @completed
     {
-        # Spec and Documentation
-        {
-            - [x] v0.1 spec drafted (specification.sdoc)
-            - [x] Abstract requirements defined (requirements.sdoc, R1-R10)
-            - [x] Concrete requirements defined (requirements.sdoc, C1-C5)
-            - [x] Feature suggestions documented (suggestions.sdoc, S2-S9)
-            - [x] Project folder separated from user docs
-            - [x] Lexica knowledge system designed (see lexica-common repo for design docs)
-            - [x] AGENTS.md with project structure and Lexica conventions
-        }
+        The parser, renderer, and tooling are feature-complete for v0.2. See `specification.sdoc` for the full feature set. Key milestones:
 
-        # Parser and Renderer
-        {
-            - [x] Line-based parser (src/sdoc.js) with LineCursor pattern and error collection
-            - [x] Parsed AST output (parseSdoc, extractMeta)
-            - [x] HTML renderer (renderHtmlDocument, renderHtmlDocumentFromParsed)
-            - [x] HTML body fragment renderer (renderHtmlBody -- no DOCTYPE/html/body wrapper, for embedding and github/markup integration) (v0.2)
-            - [x] Parser extensions for Lexica: slugify, listSections, extractSection, extractAbout
-            - [x] Enhanced extractMeta with uuid, type, tags promotion
-            - [x] Inline formatting: emphasis, strong, strikethrough, code, links, images, references
-            - [x] Explicit lists ({[.]} and {[#]})
-            - [x] Implicit lists (shorthand "- " lines inside normal scopes)
-            - [x] Task lists (checkboxes)
-            - [x] Tables ({[table]} with pipe-delimited columns)
-            - [x] Blockquotes
-            - [x] Code blocks with language tags
-            - [x] Horizontal rules
-            - [x] Escaping
-            - [x] Headingless scopes (bare { } blocks for grouping without a title)
-            - [x] K&R brace style (opening brace on same line as heading or list item)
-            - [x] Braceless leaf scopes (heading without braces, terminated by next heading or EOF)
-            - [x] Implicit root scope (first braceless heading wraps entire document)
-            - [x] Key:value meta syntax (lightweight alternative to sub-scopes in @meta)
-            - [x] Multi-line list item shorthand (continuation lines in explicit list blocks)
-            - [x] Scope indentation (visual nesting via CSS padding)
-            - [x] Print support (@media print CSS overrides, break-inside:avoid for tables/code/blockquotes)
-            - [x] Image width and alignment (=50%, =50% center/left/right)
-            - [x] Table options (borderless, headerless flags on {[table]})
-            - [x] Table width and alignment ({[table 60% center]}, auto/NN%/NNpx width, left/center/right alignment, table-layout:fixed for explicit widths) (v0.2)
-            - [x] Include by link (src: and lines: metadata on code fences)
-            - [x] Scope types (:type annotation on headings, well-known types, both @id/:type orderings) (v0.2)
-            - [x] Data blocks (:data flag on JSON code fences, parsed into AST) (v0.2)
-            - [x] Line comments (// at line start, discarded from AST) (v0.2)
-            - [x] Comment scopes (:comment scope type, in AST but not rendered) (v0.2)
-            - [x] Escaped pipes in table cells (\\| for literal pipe without column split) (v0.2.4)
-            - [x] Auto-detected email addresses rendered as mailto links (v0.2.5)
-            - [x] Table formulas: =SUM, =AVG, =COUNT, arithmetic expressions, A1 cell references, percentage handling, circular reference detection (v0.2.6)
-        }
-
-        # Tooling
-        {
-            - [x] VSCode extension with live preview (sdoc.preview, sdoc.previewToSide)
-            - [x] Hierarchical config system (sdoc.config.json merging)
-            - [x] Per-file meta scope overrides (@meta for style, header, footer)
-            - [x] TextMate syntax highlighting grammar (syntaxes/sdoc.tmLanguage.json)
-            - [x] Local and remote image rendering in webview preview
-            - [x] Document server: Python CLI (tools/serve_docs.py) with argparse
-            - [x] Document server: VSCode command (sdoc.browseDocs) with folder picker and status bar
-            - [x] Web viewer with sidebar, search, split-pane comparison, collapsible scopes
-            - [x] Site template deduplication (src/site-template/ shared by both servers)
-            - [x] VSIX packaging for extension distribution
-            - [x] Language registration (.sdoc file type recognition in VSCode)
-            - [x] Interactive preview: click-to-navigate (click element to jump to source line)
-            - [x] Interactive preview: collapsible scopes (toggle triangles on headings, persistent state)
-            - [x] Interactive preview: hyperlinks open in default browser
-            - [x] Parser line tracking (lineStart/lineEnd on all AST nodes)
-            - [x] Export HTML (sdoc.exportHtml) -- standalone HTML with collapsible toggles
-            - [x] Export PDF (sdoc.exportPdf) -- A4 PDF via headless Chrome
-            - [x] Open in Browser (sdoc.openInBrowser) -- preview in system browser
-            - [x] Document export CLI (tools/build-doc.js) -- HTML and PDF export from command line
-            - [x] Document formatter (Format Document / Shift+Option+F) -- auto-indent based on brace depth
-            - [x] AI skill reference tool (sdoc_reference) -- returns SDOC format guide to language models with reading guidance preamble
-            - [x] New Knowledge File command (sdoc.newKnowledgeFile) -- creates skeleton .sdoc knowledge file from explorer context menu or command palette
-            - [x] Generate About command (sdoc.generateAbout) -- uses VS Code LM API to generate @about section from document content
-            - [x] Dark mode: preview follows VSCode colour theme (light, dark, high contrast); exported HTML follows OS preference
-            - [x] Code block syntax highlighting: language-specific colours via highlight.js (GitHub light/dark themes, automatic dark-mode switching; light/dark/high-contrast in VS Code, @media prefers-color-scheme in browser/web viewer)
-            - [x] Notion sync tool (tools/sync-notion.js) -- push SDOC files to Notion as native blocks
-            - [x] Notion renderer (src/notion-renderer.js) -- converts SDOC AST to Notion API block objects
-            - [x] sdoc2html CLI translator (tools/sdoc2html) -- reads stdin or file, outputs HTML fragment to stdout, follows github/markup rest2html pattern (v0.2)
-        }
-
-        # Repository
-        {
-            - [x] .gitignore covers node_modules/, dist/, _sdoc_site/, .DS_Store
-            - [x] @vscode/vsce moved from dependencies to devDependencies
-            - [x] All knowledge files in lexica/ folder
-            - [x] User docs in docs/ folder (guide, reference, tutorials)
-            - [x] Project knowledge in lexica/ folder (Lexica convention)
-            - [x] Build artifacts (VSIX) output to dist/
-            - [x] Example files in examples/, test files in test/
-            - [x] Generated _sdoc_site/ directory gitignored
-            - [x] GitHub Actions workflow for VSIX build and npm publish on release (.github/workflows/release.yml)
-            - [x] Published to npm as @entropicwarrior/sdoc
-            - [x] Subpath exports for renderers (./slides, ./slide-pdf, ./notion, ./knowledge)
-            - [x] Knowledge files shipped in npm package via ./knowledge export
-            - [x] .npmignore for selective npm publishing (parser, renderers, knowledge files only)
-        }
-
-        # Documentation
-        {
-            - [x] Guide docs rewritten with BLUF structure and human/AI collaboration framing (intro.sdoc, why-sdoc.sdoc)
-            - [x] Example consolidation (v0.2-features.sdoc merged into example.sdoc)
-            - [x] All docs updated to sdoc-version 0.2 (including examples, guides, and lexica files)
-            - [x] README updated with v0.2 features (scope types, data blocks, comment scopes, table width/alignment)
+        {[.]
+            - v0.2.0 — scope types, data blocks, comment scopes, table width/alignment, key:value meta, line comments, K&R brace style, braceless scopes, implicit root scope
+            - v0.2.4 — escaped pipes in table cells
+            - v0.2.5 — auto-detected email addresses, file watcher for external preview writes
+            - v0.2.6 — table formulas (=SUM, =AVG, =COUNT, arithmetic, A1 references, circular reference detection)
+            - v0.2.7 — VS Code Marketplace publishing (entropicwarrior-msenfin.vscode-sdoc), progressive disclosure API documented
+            - v0.2.8 — collapsible scopes and copy-to-clipboard in all standalone HTML output
         }
 
         # GitHub Adoption
@@ -150,8 +55,8 @@
 
         # Parser Improvements
         {
-            - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See @c1.
-            - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See @c2.
+            - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See C1 in requirements.sdoc.
+            - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See C2 in requirements.sdoc.
         }
 
         # Extension Improvements
@@ -159,13 +64,9 @@
             - [ ] Preview should auto-update when switching active editor tabs (currently requires re-running the preview command)
         }
 
-        # High-Priority Spec Additions
+        # Spec Additions
         {
-            These are the suggestions most needed to make SDOC viable across all three use cases. See suggestions.sdoc for full details.
-
-            - [ ] Document metadata (@s2) -- key:value meta is implemented; remaining work is defining canonical well-known keys and exposing `meta.properties` to downstream consumers
-            - [x] Comments (@s3) -- line comments (//) and comment scopes (:comment) implemented in v0.2
-            - [x] Semantic scope types (@s4) -- :type annotations on headings implemented in v0.2
+            - [ ] Document metadata (S2 in suggestions.sdoc) -- key:value meta is implemented; remaining work is defining canonical well-known keys and exposing `meta.properties` to downstream consumers
         }
 
         # Export Pipeline

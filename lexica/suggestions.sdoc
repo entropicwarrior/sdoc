@@ -24,9 +24,9 @@
     # S2: Document Metadata Beyond Styling @s2
     {
         Priority: High (partially addressed)
-        Serves: @r5, @r6, @r7
+        Serves: R5, R6, R7 (requirements.sdoc)
 
-        The @meta scope currently handles style, header, and footer. Richer metadata (author, date, version, status, tags) is now supported via key:value syntax inside the @meta scope. Both sub-scope and key:value styles work:
+        The \@meta scope currently handles style, header, and footer. Richer metadata (author, date, version, status, tags) is now supported via key:value syntax inside the \@meta scope. Both sub-scope and key:value styles work:
 
         ```
         # Meta @meta
@@ -46,7 +46,7 @@
     # S3: Comments @s3
     {
         Priority: High
-        Serves: @r5, @r8
+        Serves: R5, R8 (requirements.sdoc)
 
         {+Implemented in v0.2.+} Both approaches were adopted:
 
@@ -61,7 +61,7 @@
     # S4: Semantic Scope Types @s4
     {
         Priority: High
-        Serves: @r5, @r7
+        Serves: R5, R7 (requirements.sdoc)
 
         {+Implemented in v0.2.+} Scope types use `:typename` after the optional `@id` on headings:
 
@@ -95,9 +95,9 @@
     # S5: Cross-File References @s5
     {
         Priority: Medium
-        Serves: @r9
+        Serves: R9 (requirements.sdoc)
 
-        The @id reference system is per-file. For multi-file projects, you need to reference scopes in other files.
+        The \@id reference system is per-file. For multi-file projects, you need to reference scopes in other files.
 
         Suggested approach:
 
@@ -105,13 +105,13 @@
         See @guide/intro#overview for the introduction.
         ```
 
-        Where the path before # is the file (relative to project root), and after # is the scope ID within that file. The short form @id should continue to resolve within the current file first, then optionally search the project.
+        Where the path before # is the file (relative to project root), and after # is the scope ID within that file. The short form \@id should continue to resolve within the current file first, then optionally search the project.
     }
 
     # S6: Include/Transclusion @s6
     {
         Priority: Medium
-        Serves: @r9, @r7
+        Serves: R9, R7 (requirements.sdoc)
 
         The ability to include one SDOC file (or a specific scope from it) inside another. Essential for large documents assembled from modular parts.
 
@@ -131,7 +131,7 @@
     # S7: Definition Lists @s7
     {
         Priority: Medium
-        Serves: @r7
+        Serves: R7 (requirements.sdoc)
 
         Technical specs, glossaries, and legal documents frequently use definition lists (term + definition pairs). Currently these would be modelled as scopes where the heading is the term and the body is the definition, which works but loses the semantic distinction.
 
@@ -152,7 +152,7 @@
     # S8: Admonitions/Callouts @s8
     {
         Priority: Low
-        Serves: @r7
+        Serves: R7 (requirements.sdoc)
 
         Warning, note, tip, and caution boxes are common in technical documentation. This is handled by scope type annotations (see @s4), making a dedicated syntax unnecessary:
 
@@ -169,11 +169,11 @@
     # S10: Extended Meta Properties for Agent Navigation @s10
     {
         Priority: Medium
-        Serves: @r5, @r9
+        Serves: R5, R9 (requirements.sdoc)
 
-        The `@about` scope provides a prose discovery summary that works well for both humans and agents (~50-80 tokens). The `@meta` scope carries structured metadata like `type`, `tags`, and `status`. Currently the set of well-known meta keys is small and focused on presentation (style, header, footer) or basic classification (type, tags, status).
+        The \`\@about\` scope provides a prose discovery summary that works well for both humans and agents (~50-80 tokens). The \`\@meta\` scope carries structured metadata like \`type\`, \`tags\`, and \`status\`. Currently the set of well-known meta keys is small and focused on presentation (style, header, footer) or basic classification (type, tags, status).
 
-        Extending `@meta` with richer structured fields would help AI agents make faster navigation decisions without reading `@about` or section headings. The key insight: `@about` should remain prose (it serves both audiences well and is already cheap to consume), but `@meta` should carry the structured data that enables programmatic filtering and relationship discovery.
+        Extending \`\@meta\` with richer structured fields would help AI agents make faster navigation decisions without reading \`\@about\` or section headings. The key insight: \`\@about\` should remain prose (it serves both audiences well and is already cheap to consume), but \`\@meta\` should carry the structured data that enables programmatic filtering and relationship discovery.
 
         Suggested additional well-known keys:
 
@@ -198,7 +198,7 @@
             - `read-when` — task descriptions that indicate when this document is useful, enabling agents to match documents to their current intent without parsing prose
         }
 
-        These fields complement rather than replace `@about`. The prose summary carries nuance and intent for both humans and agents. The structured fields enable fast programmatic filtering — an agent with a task list could match `read-when` values against its current task without language comprehension, then read `@about` only for the matches.
+        These fields complement rather than replace \`\@about\`. The prose summary carries nuance and intent for both humans and agents. The structured fields enable fast programmatic filtering — an agent with a task list could match \`read-when\` values against its current task without language comprehension, then read \`\@about\` only for the matches.
 
         Design constraints:
         {[.]
@@ -212,14 +212,14 @@
     # S9: Reserved Syntax Space @s9
     {
         Priority: Low
-        Serves: @r10
+        Serves: R10 (requirements.sdoc)
 
         The spec should explicitly document which character sequences are reserved for future use, even if they don't currently have meaning. This prevents existing documents from accidentally using syntax that later becomes meaningful.
 
         Candidates for reservation:
         {[.]
             - {[...]} patterns (for future list/scope types)
-            - @keyword patterns at line start (for directives like @include)
+            - \@keyword patterns at line start (for directives like \@include)
             - `:word` is now used for scope types (v0.2, see @s4). `::` remains reserved for potential future use.
         }
     }

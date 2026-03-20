@@ -10,8 +10,9 @@
     # About @about
     {
         The formal SDOC v0.2 specification. Defines syntax for scopes,
-        lists, tables, code blocks, inline formatting, references,
-        the meta scope, scope types, data blocks, and comments.
+        lists, tables (with formulas), code blocks, inline formatting,
+        references, autolinks (including bare email detection), the meta
+        scope, scope types, data blocks, comments, and collapsible scopes.
         Includes the formal EBNF grammar. Read for edge cases and
         parser behaviour questions. For a friendlier user-facing
         reference, see \`docs/reference/syntax.sdoc\`.
@@ -607,6 +608,8 @@ Content of Section B.
                 - Optional language tag after the opening fence
                 - The special language tag `math` renders the block as a display equation via KaTeX (no copy button)
                 - The special language tag `mermaid` renders the block as an SVG diagram via the Mermaid library
+                - Fences may use more than three backticks (e.g. four or five) to nest code blocks that themselves contain triple backticks. The closing fence must match the opening fence length.
+                - Code blocks display a copy-to-clipboard button (visible on hover) in all rendered HTML output
             }
 
             # Include by Link @code-includes
@@ -819,9 +822,14 @@ Content of Section B.
                 {[.]
                     - Key matching is case-insensitive
                     - The pattern requires at least one space after the colon (`key: value`, not `key:value`)
-                    - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`, `sdoc-version`
+                    - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`, `sdoc-version`, `type`, `tags`, `uuid`, `company`, `confidential`
                     - `sdoc-version` identifies the SDOC format version the document targets (current: `0.2`). A parser warning is emitted when this key is missing.
-                    - All other keys are stored as custom properties (e.g., `author`, `date`, `version`, `status`, `tags`)
+                    - `type` classifies the document (e.g. `doc`, `skill`). Promoted to `meta.type`.
+                    - `tags` is a comma-separated list of keywords. Promoted to `meta.tags` (array).
+                    - `uuid` provides a stable unique identifier. Promoted to `meta.uuid`.
+                    - `company` sets the company name for footer display. Promoted to `meta.company`.
+                    - `confidential` marks the document as confidential. When set (any truthy value), a confidential notice banner is displayed at the top of the rendered output. Promoted to `meta.confidential`.
+                    - All other keys are stored as custom properties in `meta.properties` (e.g., `author`, `date`, `version`, `status`)
                     - Sub-scope syntax takes precedence: if both `# Style { path }` and `style: path` exist, the sub-scope value wins
                     - Key:value and sub-scope syntax can be mixed freely in the same meta scope
                     - Each key:value pair must be on its own paragraph line (separated by blank lines from other pairs)
@@ -832,7 +840,7 @@ Content of Section B.
 
     # Interactive Preview @interactive-preview
     {
-        The VSCode extension provides an interactive preview with the following features. These are preview-only behaviours and do not affect the SDOC format or static HTML export.
+        The VSCode extension provides an interactive preview. Some features (collapsible scopes, copy-to-clipboard) also work in all rendered HTML output. Click-to-navigate is preview-only.
 
         # Theme Support @theme-support
         {
@@ -843,8 +851,8 @@ Content of Section B.
                 - Dark mode overrides the \`--sdoc-*\` CSS custom properties and hardcoded \`rgba()\` colours (table headers, code blocks, confidential notices, error blocks)
                 - Mermaid diagrams use the \`dark\` theme when in a dark colour theme and \`neutral\` otherwise
                 - Theme changes take effect immediately (CSS-driven) and trigger a full preview rebuild (for Mermaid re-initialisation)
-                - Exported HTML follows the user's OS colour preference via \`@media (prefers-color-scheme: dark)\`. Print output always uses light theme colours
-                - Custom stylesheets (\`sdoc.config.json\` or \`@meta style\`) that use \`--sdoc-*\` variables inherit dark values automatically. Hardcoded colours in custom styles are not overridden
+                - Exported HTML follows the user's OS colour preference via `\@media (prefers-color-scheme: dark)`. Print output always uses light theme colours
+                - Custom stylesheets (`sdoc.config.json` or `\@meta style`) that use `--sdoc-*` variables inherit dark values automatically. Hardcoded colours in custom styles are not overridden
             }
         }
 
@@ -852,11 +860,14 @@ Content of Section B.
         {
             Scope headings that have children display a toggle triangle, visible on hover. Clicking the triangle collapses the scope's children (hides the content below the heading). Clicking again expands them.
 
+            Collapsible scopes work in all HTML output: the VS Code preview, exported HTML, Open in Browser, and the document server viewer. The toggle CSS and click handler are included in the default stylesheet and rendered HTML.
+
             {[.]
                 - The triangle points right when collapsed, down when expanded
-                - Collapse state is preserved across preview refreshes using webview state
+                - In the VS Code preview, collapse state is preserved across refreshes using webview state
                 - Scopes are identified by their `@id` if present, otherwise by source line number
                 - Only scopes with children show the toggle
+                - Toggles are hidden in print output and all sections are expanded
             }
         }
 
@@ -1011,9 +1022,10 @@ Content of Section A.
 
         code_block    = fence_open raw_text fence_close ;
         data_block    = data_fence_open raw_text fence_close ;
-        fence_open    = "```" [lang] [ws "src:" path] [ws "lines:" range] newline ;
-        data_fence_open = "```" lang ws ":data" newline ;
-        fence_close   = "```" newline ;
+        fence_open    = backticks [lang] [ws "src:" path] [ws "lines:" range] newline ;
+        data_fence_open = backticks lang ws ":data" newline ;
+        fence_close   = backticks newline ;  (* must match opening fence length *)
+        backticks     = "```" { "`" } ;      (* 3 or more backticks *)
 
         line_comment  = "//" { any_char } newline ;  (* discarded, not in AST *)
 
