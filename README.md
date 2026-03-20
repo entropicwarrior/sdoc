@@ -29,8 +29,19 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 ## Quick Start
 
+### Install from the VS Code Marketplace
+
+Search for **"SDOC"** in the VS Code Extensions panel, or install from the command line:
+
 ```bash
-# Build and install the VS Code extension
+code --install-extension entropicwarrior-msenfin.vscode-sdoc
+```
+
+This gives you automatic updates. If you previously installed from a `.vsix` file, uninstall that version first to avoid conflicts.
+
+### Build from source
+
+```bash
 npm install
 npm run package
 code --install-extension dist/sdoc-*.vsix

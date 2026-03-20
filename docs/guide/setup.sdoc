@@ -8,26 +8,34 @@
     {
         {[.]
             - [Visual Studio Code](https://code.visualstudio.com/) (v1.95 or later)
-            - The SDOC extension (`.vsix` file)
         }
     }
 
     # Installing the Extension
     {
-        Build the extension from source:
+        # From the Marketplace (recommended)
+        {
+            Search for **"SDOC"** in the VS Code Extensions panel and click Install. This gives you automatic updates.
 
-        ```bash
+            Or install from the command line:
+
+            ```bash
+code --install-extension entropicwarrior-msenfin.vscode-sdoc
+            ```
+
+            If you previously installed from a `.vsix` file, uninstall that version first (Extensions panel → right-click → Uninstall) to avoid conflicts. Marketplace and VSIX installs are separate extension IDs.
+        }
+
+        # From source
+        {
+            ```bash
 npm install
 npm run package
-        ```
-
-        This produces a `.vsix` file in the `dist/` folder. Install it:
-
-        ```bash
 code --install-extension dist/sdoc-*.vsix
-        ```
+            ```
 
-        Or install from within VS Code: open the Command Palette, run "Extensions: Install from VSIX...", and select the `.vsix` file.
+            Building from source does not receive automatic updates.
+        }
     }
 
     # Previewing Documents
