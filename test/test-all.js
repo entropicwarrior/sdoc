@@ -18,7 +18,8 @@ const {
   parseInline,
   renderKatex,
   collectAllIds,
-  validateRefs
+  validateRefs,
+  sanitizeSvg
 } = require("../src/sdoc.js");
 const fs = require("fs");
 const path = require("path");
@@ -1622,6 +1623,66 @@ test("mermaid theme option has no effect without mermaid blocks", () => {
   );
   assert(!html.includes("mermaid.initialize"), "should not have mermaid init without mermaid blocks");
   assert(!html.includes("cdn.jsdelivr.net"), "should not include CDN URL");
+});
+
+// ============================================================
+console.log("\n--- SVG diagrams ---");
+
+test("svg code block renders as sdoc-svg-block", () => {
+  const { nodes } = parseSdoc('# Doc {\n    ```svg\n    <svg viewBox="0 0 100 50"><rect width="100" height="50" fill="blue"/></svg>\n    ```\n}');
+  const html = renderFragment(nodes, 2);
+  assert(html.includes('class="sdoc-svg-block"'), "should have sdoc-svg-block wrapper");
+  assert(html.includes('<svg viewBox="0 0 100 50">'), "should contain raw SVG");
+  assert(!html.includes('language-svg'), "should not have language-svg code block");
+  assert(!html.includes('sdoc-copy-btn'), "should not have copy button");
+});
+
+test("svg block strips script tags", () => {
+  const { nodes } = parseSdoc('# Doc {\n    ```svg\n    <svg><script>alert("xss")</script><rect width="10" height="10"/></svg>\n    ```\n}');
+  const html = renderFragment(nodes, 2);
+  assert(!html.includes("<script"), "should strip script tags");
+  assert(html.includes("<rect"), "should keep safe elements");
+});
+
+test("svg block strips foreignObject tags", () => {
+  const html = renderHtmlDocument('# Doc {\n    ```svg\n    <svg><foreignObject><div>hack</div></foreignObject><circle r="5"/></svg>\n    ```\n}', "Test");
+  assert(!html.includes("foreignObject"), "should strip foreignObject tags");
+  assert(!html.includes("hack"), "should strip foreignObject content");
+  assert(html.includes("<circle"), "should keep safe elements");
+});
+
+test("svg block does not trigger highlight.js", () => {
+  const html = renderHtmlDocument('# Doc {\n    ```svg\n    <svg><rect width="10" height="10"/></svg>\n    ```\n}', "Test");
+  assert(!html.includes("highlight.min.js"), "should not include highlight.js for svg");
+});
+
+test("sanitizeSvg strips multiline script", () => {
+  const input = '<svg><script type="text/javascript">\nalert("xss");\n</script><rect/></svg>';
+  const result = sanitizeSvg(input);
+  assert(!result.includes("script"), "should strip multiline script");
+  assert(result.includes("<rect/>"), "should keep safe elements");
+});
+
+test("sanitizeSvg strips self-closing script", () => {
+  const result = sanitizeSvg('<svg><script /><rect/></svg>');
+  assert(!result.includes("script"), "should strip self-closing script");
+});
+
+test("sanitizeSvg strips self-closing foreignObject", () => {
+  const result = sanitizeSvg('<svg><foreignObject /><rect/></svg>');
+  assert(!result.includes("foreignObject"), "should strip self-closing foreignObject");
+});
+
+test("sanitizeSvg is case-insensitive", () => {
+  const result = sanitizeSvg('<svg><SCRIPT>alert(1)</SCRIPT><ForeignObject><div/></ForeignObject><rect/></svg>');
+  assert(!result.includes("SCRIPT"), "should strip uppercase SCRIPT");
+  assert(!result.includes("ForeignObject"), "should strip mixed-case foreignObject");
+});
+
+test("sanitizeSvg preserves safe SVG content", () => {
+  const input = '<svg viewBox="0 0 200 100"><rect x="10" y="10" width="80" height="40" fill="#4a90d9" rx="5"/><text x="50" y="35" text-anchor="middle" fill="white">Hello</text><line x1="90" y1="30" x2="120" y2="30" stroke="#333"/></svg>';
+  const result = sanitizeSvg(input);
+  assert(result === input, "safe SVG should pass through unchanged");
 });
 
 // ============================================================

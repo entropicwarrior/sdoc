@@ -608,6 +608,7 @@ Content of Section B.
                 - Optional language tag after the opening fence
                 - The special language tag `math` renders the block as a display equation via KaTeX (no copy button)
                 - The special language tag `mermaid` renders the block as an SVG diagram via the Mermaid library
+                - The special language tag `svg` renders the block as an inline SVG graphic. Script and foreignObject tags are stripped for security.
                 - Fences may use more than three backticks (e.g. four or five) to nest code blocks that themselves contain triple backticks. The closing fence must match the opening fence length.
                 - Code blocks display a copy-to-clipboard button (visible on hover) in all rendered HTML output
             }
