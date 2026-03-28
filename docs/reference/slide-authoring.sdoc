@@ -165,6 +165,7 @@
                 \`{[table]}\` | \`<table>\`
                 Code fence | \`<pre><code>\`
                 Mermaid code fence | \`<pre class="mermaid">\` (rendered as SVG)
+                SVG code fence | \`<div class="sdoc-svg-block">\` (inline SVG)
                 \`**bold**\` | \`<strong>\`
                 \`*italic*\` | \`<em>\`
                 \`\\\`code\\\`\` | \`<code>\`

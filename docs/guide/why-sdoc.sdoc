@@ -24,7 +24,7 @@
             - **10-50x token savings** — AI agents load a table of contents (~50 tokens) and extract only the section they need, instead of loading entire files (5,000-50,000 tokens)
             - **Deterministic parsing as a security property** — one valid parse tree per document eliminates the interpretation gap that creates injection surfaces in automated pipelines
             - **Surgical extraction and editing** — agents read and modify exact sections without risk of silently restructuring the document
-            - **Rich rendering from plain text** — collapsible headings, tables with width and alignment control, images with layout, KaTeX math, mermaid diagrams, semantic markers, and code blocks with syntax highlighting
+            - **Rich rendering from plain text** — collapsible headings, tables with width and alignment control, images with layout, KaTeX math, mermaid and SVG diagrams, semantic markers, and code blocks with syntax highlighting
             - **Familiar syntax** — `#` headings, `*emphasis*`, `**strong**`, backtick code fences, `- ` lists, `|` table columns. The braces are the only new concept
             - **Indentation is cosmetic** — braces carry the structure, so whitespace never changes meaning. The IDE can auto-reindent the entire document safely. In Markdown, indentation is structural (4-space indent creates code blocks, list nesting depends on indentation), making auto-formatting dangerous
         }

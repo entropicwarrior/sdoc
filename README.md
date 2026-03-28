@@ -25,7 +25,7 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 **PDF and HTML export** — export any document to A4 PDF via headless Chrome, or to standalone HTML. Available as both a CLI tool and a VS Code command.
 
-**A VS Code extension** — live preview, sticky scroll, code folding, document symbols, mermaid rendering, and commands for all the above.
+**A VS Code extension** — live preview, sticky scroll, code folding, document symbols, mermaid/SVG rendering, and commands for all the above.
 
 ## Quick Start
 
@@ -169,6 +169,10 @@ Fenced with triple backticks, optional language tag for syntax highlighting. The
 ### Mermaid Diagrams
 
 Code blocks tagged `mermaid` render as SVG diagrams — flowcharts, sequence diagrams, class diagrams, state diagrams, and more.
+
+### SVG Diagrams
+
+Code blocks tagged `svg` render as inline SVG graphics, giving full control over shapes, layout, and styling. `<script>` and `<foreignObject>` tags are stripped for security.
 
 ### Images
 

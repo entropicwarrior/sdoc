@@ -408,6 +408,22 @@ Content of Section B.
             Mermaid supports flowcharts (\`graph\`), sequence diagrams (\`sequenceDiagram\`), class diagrams (\`classDiagram\`), state diagrams (\`stateDiagram-v2\`), and more. The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
         }
 
+        # SVG Diagrams @svg
+        {
+            Code blocks with the \`svg\` language tag render as inline SVG graphics. This gives full control over shapes, layout, and styling for diagrams that need more precision than Mermaid offers:
+
+            ````
+            ```svg
+            <svg viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg">
+              <rect x="10" y="10" width="80" height="40" rx="5" fill="#4a90d9" />
+              <text x="50" y="35" text-anchor="middle" fill="white" font-family="sans-serif" font-size="13">Hello</text>
+            </svg>
+            ```
+            ````
+
+            For security, \`<script>\` and \`<foreignObject>\` tags are stripped from the SVG content before rendering. All other SVG elements pass through as-is.
+        }
+
         # Math Blocks @math-blocks
         {
             Code blocks with the \`math\` language tag are rendered as display equations via KaTeX:

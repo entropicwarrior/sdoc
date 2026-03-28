@@ -410,6 +410,7 @@ Content of Section B.
             - Braces, `#`, `@`, and all other special characters are treated as literal text inside code blocks
             - The special language tag `math` renders the block as a display equation via KaTeX (no copy button)
             - The special language tag `mermaid` renders the block as an SVG diagram
+            - The special language tag `svg` renders the block as an inline SVG graphic (script and foreignObject tags are stripped)
         }
 
         # Include by Link

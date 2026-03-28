@@ -8,7 +8,7 @@ The authoring guide (`docs/reference/sdoc-authoring.sdoc`) is written as an AI a
 
 ## Docs
 
-- [SDOC Authoring Guide](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/reference/sdoc-authoring.sdoc): Skill document — how to write correct SDOC files. Covers document structure, inline formatting, block types (lists, tables, code, blockquotes), mermaid diagrams, and common mistakes. Start here to learn the format.
+- [SDOC Authoring Guide](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/reference/sdoc-authoring.sdoc): Skill document — how to write correct SDOC files. Covers document structure, inline formatting, block types (lists, tables, code, blockquotes), mermaid/SVG diagrams, and common mistakes. Start here to learn the format.
 - [SDOC Specification](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/lexica/specification.sdoc): Formal v0.1 specification with EBNF grammar. Defines syntax for scopes, lists, tables, code blocks, inline formatting, references, and the meta scope.
 - [Why SDOC Over Markdown](https://raw.githubusercontent.com/entropicwarrior/sdoc/main/docs/guide/why-sdoc.sdoc): The case for SDOC — structural problems with Markdown, why explicit scoping solves them, parsing safety as a security property, and the adoption path forward.
 

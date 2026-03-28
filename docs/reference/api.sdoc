@@ -248,7 +248,7 @@ slugify("Table Formulas"); // "table-formulas"
             - `list` -- a list with `listType` (`"bullet"` or `"number"`) and `items`
             - `blockquote` -- a quote with `paragraphs` (array of strings)
             - `table` -- a table with `headers` (array of strings), `rows` (array of string arrays), and optional `options` (`{ borderless, headerless }`)
-            - `code` -- a code block with `lang`, `text`, and optional `src` (file path/URL) and `lines` (`{ start, end }`)
+            - `code` -- a code block with `lang`, `text`, and optional `src` (file path/URL) and `lines` (`{ start, end }`). Special `lang` values: `mermaid` (rendered as diagram via Mermaid), `svg` (rendered as inline SVG with script/foreignObject stripping), `math` (rendered as display equation via KaTeX)
             - `hr` -- a horizontal rule
         }
 

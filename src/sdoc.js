@@ -1390,6 +1390,14 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function sanitizeSvg(svg) {
+  return svg
+    .replace(/<script[\s>][\s\S]*?<\/script\s*>/gi, "")
+    .replace(/<script\s*\/>/gi, "")
+    .replace(/<foreignObject[\s>][\s\S]*?<\/foreignObject\s*>/gi, "")
+    .replace(/<foreignObject\s*\/>/gi, "");
+}
+
 function escapeAttr(value) {
   return escapeHtml(value).replace(/'/g, "&#39;");
 }
@@ -1928,6 +1936,9 @@ function renderNode(node, depth) {
       if (node.lang === "mermaid") {
         return `<pre class="mermaid"${dl}>${escapeHtml(node.text)}</pre>`;
       }
+      if (node.lang === "svg") {
+        return `<div class="sdoc-svg-block"${dl}>${sanitizeSvg(node.text)}</div>`;
+      }
       if (node.lang === "math") {
         return `<div class="sdoc-math sdoc-math-block"${dl}>${renderKatex(node.text, true)}</div>`;
       }
@@ -2371,6 +2382,16 @@ const DEFAULT_STYLE = `
     margin-left: 0.5%;
   }
 
+  .sdoc-svg-block {
+    margin: 0.6rem 0;
+    text-align: center;
+  }
+
+  .sdoc-svg-block svg {
+    max-width: 100%;
+    height: auto;
+  }
+
   .sdoc-code {
     background: rgba(22, 21, 19, 0.06);
     border: 1px solid var(--sdoc-border);
@@ -2579,7 +2600,7 @@ function hasMermaidBlocks(nodes) {
 
 function hasHighlightableCodeBlocks(nodes) {
   for (const node of nodes) {
-    if (node.type === "code" && node.lang && node.lang !== "mermaid" && node.lang !== "math") return true;
+    if (node.type === "code" && node.lang && node.lang !== "mermaid" && node.lang !== "math" && node.lang !== "svg") return true;
     if (node.children && hasHighlightableCodeBlocks(node.children)) return true;
     if (node.items) {
       for (const item of node.items) {
@@ -3128,5 +3149,6 @@ module.exports = {
   parseInline,
   renderKatex,
   escapeHtml,
-  escapeAttr
+  escapeAttr,
+  sanitizeSvg
 };
