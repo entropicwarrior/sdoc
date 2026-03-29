@@ -672,6 +672,38 @@ test("mermaid uses neutral theme when darkMode is false", () => {
 });
 
 // ============================================================
+console.log("\n--- SVG diagrams in slides ---");
+
+test("svg code block in slide renders as sdoc-svg-block", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Diagram {
+        \`\`\`svg
+        <svg viewBox="0 0 100 50"><rect width="100" height="50" fill="blue"/></svg>
+        \`\`\`
+    }
+}
+`);
+  assert(html.includes('class="sdoc-svg-block"'), "should have sdoc-svg-block wrapper");
+  assert(html.includes("<rect"), "should have SVG content");
+  assert(!html.includes('language-svg'), "should not use language-svg");
+});
+
+test("svg block in slide strips script tags", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Diagram {
+        \`\`\`svg
+        <svg><script>alert(1)</script><rect/></svg>
+        \`\`\`
+    }
+}
+`);
+  assert(!html.includes("<script"), "should strip script from slide SVG");
+  assert(html.includes("<rect/>"), "should keep safe elements");
+});
+
+// ============================================================
 // Summary — wait for async tests before reporting
 Promise.all(asyncTests).then(() => {
   console.log("\n" + "=".repeat(40));
