@@ -1685,6 +1685,53 @@ test("sanitizeSvg preserves safe SVG content", () => {
   assert(result === input, "safe SVG should pass through unchanged");
 });
 
+test("sanitizeSvg strips onload attribute", () => {
+  const result = sanitizeSvg('<svg onload="alert(1)"><rect/></svg>');
+  assert(!result.includes("onload"), "should strip onload");
+  assert(!result.includes("alert"), "should strip handler value");
+  assert(result.includes("<rect/>"), "should keep safe elements");
+});
+
+test("sanitizeSvg strips onclick attribute", () => {
+  const result = sanitizeSvg('<svg><rect onclick="alert(1)"/></svg>');
+  assert(!result.includes("onclick"), "should strip onclick");
+});
+
+test("sanitizeSvg strips event handlers with single quotes", () => {
+  const result = sanitizeSvg("<svg><rect onmouseover='alert(1)'/></svg>");
+  assert(!result.includes("onmouseover"), "should strip single-quoted handler");
+});
+
+test("sanitizeSvg neutralizes javascript: href", () => {
+  const result = sanitizeSvg('<svg><a href="javascript:alert(1)"><text>click</text></a></svg>');
+  assert(!result.includes("javascript:"), "should neutralize javascript: URL");
+  assert(result.includes("<text>click</text>"), "should keep child content");
+});
+
+test("sanitizeSvg neutralizes javascript: xlink:href", () => {
+  const result = sanitizeSvg('<svg><a xlink:href="javascript:alert(1)"><text>click</text></a></svg>');
+  assert(!result.includes("javascript:"), "should neutralize javascript: in xlink:href");
+});
+
+test("sanitizeSvg preserves safe href values", () => {
+  const result = sanitizeSvg('<svg><a href="https://example.com"><text>link</text></a></svg>');
+  assert(result.includes('href="https://example.com"'), "should preserve safe href");
+});
+
+test("sanitizeSvg enforces svg root", () => {
+  const result = sanitizeSvg('<div>before</div><svg><rect/></svg><div>after</div>');
+  assert(result.startsWith("<svg>"), "should start with svg");
+  assert(result.endsWith("</svg>"), "should end with svg");
+  assert(!result.includes("before"), "should discard content before svg");
+  assert(!result.includes("after"), "should discard content after svg");
+});
+
+test("sanitizeSvg returns empty string for non-svg input", () => {
+  assert(sanitizeSvg("<div>not svg</div>") === "", "should return empty for non-svg");
+  assert(sanitizeSvg("") === "", "should return empty for empty string");
+  assert(sanitizeSvg(null) === "", "should return empty for null");
+});
+
 // ============================================================
 console.log("\n--- Syntax highlighting ---");
 

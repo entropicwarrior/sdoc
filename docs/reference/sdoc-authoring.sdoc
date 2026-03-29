@@ -421,7 +421,7 @@ Content of Section B.
             ```
             ````
 
-            For security, \`<script>\` and \`<foreignObject>\` tags are stripped from the SVG content before rendering. All other SVG elements pass through as-is.
+            For security, the following are stripped before rendering: \`<script>\` tags, \`<foreignObject>\` tags, event-handler attributes (\`onload\`, \`onclick\`, etc.), and \`javascript:\` URLs. Content outside the \`<svg>\` root element is discarded. All other SVG elements and attributes pass through as-is.
         }
 
         # Math Blocks @math-blocks

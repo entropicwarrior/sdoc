@@ -7,7 +7,7 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
-const { parseInline, renderKatex, escapeHtml, escapeAttr } = require("./sdoc");
+const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg } = require("./sdoc");
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -70,6 +70,9 @@ function renderNode(node) {
     case "code": {
       if (node.lang === "mermaid") {
         return `<pre class="mermaid">${escapeHtml(node.text)}</pre>`;
+      }
+      if (node.lang === "svg") {
+        return `<div class="sdoc-svg-block">${sanitizeSvg(node.text)}</div>`;
       }
       if (node.lang === "math") {
         return `<div class="sdoc-math sdoc-math-block">${renderKatex(node.text, true)}</div>`;

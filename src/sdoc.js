@@ -1391,11 +1391,32 @@ function escapeHtml(value) {
 }
 
 function sanitizeSvg(svg) {
-  return svg
-    .replace(/<script[\s>][\s\S]*?<\/script\s*>/gi, "")
-    .replace(/<script\s*\/>/gi, "")
-    .replace(/<foreignObject[\s>][\s\S]*?<\/foreignObject\s*>/gi, "")
-    .replace(/<foreignObject\s*\/>/gi, "");
+  if (typeof svg !== "string") return "";
+
+  // Enforce a single <svg> root — discard anything outside it.
+  const openMatch = svg.match(/<svg[\s>]/i);
+  const closeMatch = svg.match(/<\/svg\s*>/i);
+  if (!openMatch || !closeMatch) return "";
+  const start = svg.indexOf(openMatch[0]);
+  const end = svg.indexOf(closeMatch[0], start) + closeMatch[0].length;
+  let s = svg.slice(start, end);
+
+  // Strip <script> and <foreignObject> elements (including self-closing).
+  s = s.replace(/<script[\s>][\s\S]*?<\/script\s*>/gi, "");
+  s = s.replace(/<script\b[^>]*\/\s*>/gi, "");
+  s = s.replace(/<foreignObject[\s>][\s\S]*?<\/foreignObject\s*>/gi, "");
+  s = s.replace(/<foreignObject\b[^>]*\/\s*>/gi, "");
+
+  // Strip event-handler attributes (onload, onclick, etc.).
+  s = s.replace(/\s+on[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, "");
+
+  // Neutralize javascript: URLs in href and xlink:href.
+  s = s.replace(
+    /(\s+(?:xlink:)?href\s*=\s*)(["'])(\s*javascript:)/gi,
+    function (_match, prefix, quote) { return prefix + quote + "#"; }
+  );
+
+  return s;
 }
 
 function escapeAttr(value) {
