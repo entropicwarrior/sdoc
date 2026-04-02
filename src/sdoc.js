@@ -1495,6 +1495,8 @@ function renderInlineNodes(nodes) {
 function renderScope(scope, depth, isTitleScope = false) {
   // :comment scopes are not rendered
   if (scope.scopeType === "comment") return "";
+  // @about is document metadata, not rendered in output
+  if (scope.id && scope.id.toLowerCase() === "about") return "";
 
   const level = Math.min(6, Math.max(1, depth));
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
