@@ -396,6 +396,18 @@
                 Supported: `=SUM(range)`, `=AVG(range)`, `=COUNT(range)`, and arithmetic (`=B1+B2`, `=B1*3`). Use `\=` for a literal equals sign.
             }
 
+            # Citations
+            {
+                Cite sources with `[@key]` in text. The renderer assigns numbers by order of first appearance.
+
+                According to recent analysis, the edge AI market is growing rapidly [@mm-edge-ai]. The chip segment is expected to double by 2031 [@mordor-chips]. Both reports highlight automotive as a key driver [@mm-edge-ai, @mordor-chips].
+
+                {[citations]
+                    - @mm-edge-ai MarketsandMarkets, *Edge AI Hardware Market — Global Forecast to 2030,* Report SE 7017, June 2025. [marketsandmarkets.com](https://www.marketsandmarkets.com)
+                    - @mordor-chips Mordor Intelligence, *Edge AI Chips Market Size & Share Analysis — Growth Trends and Forecast (2026–2031),* 2026. [mordorintelligence.com](https://www.mordorintelligence.com)
+                }
+            }
+
             # Extras
             {
                 Inline formatting: emphasis, strong, strike, code.

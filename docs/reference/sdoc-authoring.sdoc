@@ -365,6 +365,39 @@ Content of Section B.
             Do not write \`@setup\` when the target scope is in a different file — it will be flagged as a broken reference.
         }
 
+        # Citations @citations
+        {
+            Use \`[@key]\` in text to cite a source. Define citations in a \`{[citations]\` block. The renderer assigns numbers by order of first appearance and links everything together.
+
+            ```
+            # Findings {
+                Edge AI is growing rapidly [@mm-edge-ai]. The chip market
+                is expected to double by 2031 [@mordor-chips].
+
+                {[citations]
+                    - @mm-edge-ai MarketsandMarkets, "Edge AI Hardware
+                      Market," Report SE 7017, June 2025.
+                    - @mordor-chips Mordor Intelligence, "Edge AI Chips
+                      Market Size & Share Analysis," 2026.
+                }
+            }
+            ```
+
+            {[.]
+                - \`[@key]\` renders as a clickable superscript number (e.g. \`[1]\`) linking to the citation entry
+                - \`[@key1, @key2]\` renders as \`[1, 3]\` with each number individually linked
+                - The same \`[@key]\` used multiple times always renders the same number
+                - Keys follow \`@slug\` conventions: lowercase kebab-case
+                - Citation text is free-form SDOC inline content — links, bold, italics all work
+                - Each citation entry includes a back-link (\`\u21A9\`) to the first place it was cited
+                - Numbering is by order of first \`[@key]\` appearance, not by definition order
+                - Multiple \`{[citations]\` blocks are allowed — numbering is unified across all blocks
+                - A \`[@key]\` with no matching definition is flagged as a broken citation
+                - A defined citation that is never referenced produces a warning
+                - Citation keys are document-local, like \`@slug\` references
+            }
+        }
+
         # Code Blocks @code-blocks
         {
             Fenced with triple backticks. Content inside is raw (no parsing):
@@ -765,6 +798,20 @@ Content of Section B.
             Or simply omit the \`@\` from the label — the URL fragment already carries the target:
 
             **Also right:** \`[See domain-model.sdoc § my-section](./domain-model.sdoc#my-section)\`
+        }
+
+        # [@key] vs @key @citation-vs-ref
+        {
+            \`[@key]\` is a **citation reference** — it renders as a numbered superscript linking to a citation entry. \`@key\` is a **section reference** — it renders as a clickable link to a heading with that ID.
+
+            Confusing them will produce errors:
+
+            {[.]
+                - Writing \`@smith2020\` when you mean \`[@smith2020]\` creates a broken section reference (there is no heading with ID \`smith2020\`)
+                - Writing \`[@setup]\` when you mean \`@setup\` creates a broken citation (there is no citation definition for \`setup\`)
+            }
+
+            Rule of thumb: square brackets mean citation, bare \`@\` means section.
         }
     }
 }

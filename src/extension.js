@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const url = require("url");
 const vscode = require("vscode");
-const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, validateRefs } = require("./sdoc");
+const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, validateRefs, validateCitations } = require("./sdoc");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -467,10 +467,15 @@ function updateDiagnostics(document, fullValidation) {
   }
 
   const warnings = validateRefs(metaResult.nodes, options);
+  const citationWarnings = validateCitations(metaResult.nodes);
+  const allWarnings = warnings.concat(citationWarnings);
   const lines = document.getText().split("\n");
-  const diagnostics = warnings.map((warning) => {
+  const diagnostics = allWarnings.map((warning) => {
+    const severity = warning.type === "unused-citation"
+      ? vscode.DiagnosticSeverity.Warning
+      : vscode.DiagnosticSeverity.Error;
     const range = findWarningRange(document, lines, warning);
-    const diagnostic = new vscode.Diagnostic(range, warning.message, vscode.DiagnosticSeverity.Error);
+    const diagnostic = new vscode.Diagnostic(range, warning.message, severity);
     diagnostic.source = "sdoc";
     return diagnostic;
   });
@@ -497,6 +502,24 @@ function findWarningRange(document, lines, warning) {
       if (col !== -1) {
         // Highlight just the href portion (skip the "](" prefix)
         return new vscode.Range(i, col + 2, i, col + 2 + warning.href.length);
+      }
+    } else if (warning.type === "broken-citation") {
+      const token = "[@" + warning.key + "]";
+      const col = line.indexOf(token);
+      if (col !== -1) {
+        return new vscode.Range(i, col, i, col + token.length);
+      }
+      // Also check within multi-key citations like [@key1, @key2]
+      const inlineToken = "@" + warning.key;
+      const inlineCol = line.indexOf(inlineToken);
+      if (inlineCol !== -1) {
+        return new vscode.Range(i, inlineCol, i, inlineCol + inlineToken.length);
+      }
+    } else if (warning.type === "unused-citation") {
+      const token = "- @" + warning.key;
+      const col = line.indexOf(token);
+      if (col !== -1) {
+        return new vscode.Range(i, col + 2, i, col + 2 + warning.key.length + 1);
       }
     }
   }
