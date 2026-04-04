@@ -18,7 +18,9 @@ const {
   parseInline,
   renderKatex,
   collectAllIds,
+  collectCitationDefinitions,
   validateRefs,
+  validateCitations,
   sanitizeSvg
 } = require("../src/sdoc.js");
 const fs = require("fs");
@@ -2879,6 +2881,222 @@ test("bare email auto-detection", () => {
   const html = renderHtmlBody("# T {\n    Contact us at hello@example.com for help.\n}");
   assert(html.includes('href="mailto:hello@example.com"'), "expected mailto link");
   assert(html.includes(">hello@example.com<"), "expected email text");
+});
+
+// ============================================================
+console.log("\n--- Citations: Parsing ---");
+
+test("citations block parses entries", () => {
+  const r = parseSdoc("# T {\n    {[citations]\n        - @smith Smith, 2020.\n        - @jones Jones, 2021.\n    }\n}");
+  assert(r.errors.length === 0, "no errors");
+  const cite = r.nodes[0].children[0];
+  assert(cite.type === "citations", "type is citations");
+  assert(cite.entries.length === 2, "two entries");
+  assert(cite.entries[0].key === "smith", "first key");
+  assert(cite.entries[0].text === "Smith, 2020.", "first text");
+  assert(cite.entries[1].key === "jones", "second key");
+});
+
+test("citations block with multi-line entry text", () => {
+  const r = parseSdoc("# T {\n    {[citations]\n        - @report Author, \"A Very Long Title\n          That Continues on the Next Line,\" 2025.\n    }\n}");
+  assert(r.errors.length === 0, "no errors");
+  const cite = r.nodes[0].children[0];
+  assert(cite.entries.length === 1, "one entry");
+  assert(cite.entries[0].text.includes("That Continues"), "multi-line text joined");
+});
+
+test("citations block invalid entry produces error", () => {
+  const r = parseSdoc("# T {\n    {[citations]\n        Not a valid citation.\n    }\n}");
+  assert(r.errors.length === 1, "one error");
+  assert(r.errors[0].message.includes("Invalid citation entry"), "error message");
+});
+
+test("citations block empty is valid", () => {
+  const r = parseSdoc("# T {\n    {[citations]\n    }\n}");
+  assert(r.errors.length === 0, "no errors");
+  const cite = r.nodes[0].children[0];
+  assert(cite.type === "citations", "type is citations");
+  assert(cite.entries.length === 0, "empty");
+});
+
+console.log("\n--- Citations: Inline References ---");
+
+test("[@key] parsed as citation_ref", () => {
+  const nodes = parseInline("See [@smith2020] for details.");
+  assert(nodes.length === 3, "three nodes");
+  assert(nodes[1].type === "citation_ref", "citation ref type");
+  assert(nodes[1].keys[0] === "smith2020", "key");
+});
+
+test("[@key1, @key2] parsed as multi-key citation_ref", () => {
+  const nodes = parseInline("See [@a, @b, @c].");
+  assert(nodes[1].type === "citation_ref", "citation ref type");
+  assert(nodes[1].keys.length === 3, "three keys");
+  assert(nodes[1].keys[0] === "a", "first key");
+  assert(nodes[1].keys[2] === "c", "third key");
+});
+
+test("[@key1,@key2] without spaces also works", () => {
+  const nodes = parseInline("[@a,@b]");
+  assert(nodes[0].type === "citation_ref", "citation ref type");
+  assert(nodes[0].keys.length === 2, "two keys");
+});
+
+test("[text](url) is still a link, not a citation", () => {
+  const nodes = parseInline("[click](http://example.com)");
+  assert(nodes[0].type === "link", "link type");
+});
+
+test("[@bad key] is not a valid citation (space in key)", () => {
+  const nodes = parseInline("[@bad key]");
+  // Should not parse as citation_ref since "bad key" is not a valid key
+  assert(nodes[0].type !== "citation_ref", "not a citation ref");
+});
+
+test("escaped \\[@key] is not a citation ref", () => {
+  const nodes = parseInline("\\[@smith]");
+  // The \[ produces a literal [, so [@smith] is not matched
+  assert(!nodes.some(n => n.type === "citation_ref"), "no citation ref");
+});
+
+console.log("\n--- Citations: Rendering ---");
+
+test("citation ref renders as numbered superscript link", () => {
+  const html = renderHtmlBody("# T {\n    See [@smith].\n    {[citations]\n        - @smith Smith, 2020.\n    }\n}");
+  assert(html.includes('class="sdoc-citation-group"'), "has citation group");
+  assert(html.includes('href="#cite-smith"'), "links to citation");
+  assert(html.includes(">1<"), "number 1");
+});
+
+test("same citation key renders same number", () => {
+  const html = renderHtmlBody("# T {\n    First [@smith]. Second [@smith].\n    {[citations]\n        - @smith Smith, 2020.\n    }\n}");
+  // Both should show number 1
+  const matches = html.match(/href="#cite-smith">1<\/a>/g);
+  assert(matches && matches.length === 2, "two references both numbered 1");
+});
+
+test("numbering follows order of first appearance", () => {
+  const html = renderHtmlBody("# T {\n    First [@b]. Then [@a]. Then [@c].\n    {[citations]\n        - @a A, 2020.\n        - @b B, 2020.\n        - @c C, 2020.\n    }\n}");
+  // @b first mentioned → 1, @a second → 2, @c third → 3
+  assert(html.includes('href="#cite-b">1</a>'), "b is 1");
+  assert(html.includes('href="#cite-a">2</a>'), "a is 2");
+  assert(html.includes('href="#cite-c">3</a>'), "c is 3");
+});
+
+test("multiple citations in one bracket render individually linked", () => {
+  const html = renderHtmlBody("# T {\n    Studies [@a, @b] show.\n    {[citations]\n        - @a A, 2020.\n        - @b B, 2020.\n    }\n}");
+  assert(html.includes('href="#cite-a">1</a>'), "a linked");
+  assert(html.includes('href="#cite-b">2</a>'), "b linked");
+  assert(html.includes("["), "bracket open");
+});
+
+test("citation list renders with back-links", () => {
+  const html = renderHtmlBody("# T {\n    See [@smith].\n    {[citations]\n        - @smith Smith, 2020.\n    }\n}");
+  assert(html.includes('class="sdoc-citation-backlink"'), "has backlink");
+  assert(html.includes('href="#citeref-smith"'), "backlink points to ref");
+  assert(html.includes("\u21A9"), "has return arrow");
+});
+
+test("first citation ref gets id attribute, second does not", () => {
+  const html = renderHtmlBody("# T {\n    First [@smith]. Second [@smith].\n    {[citations]\n        - @smith Smith, 2020.\n    }\n}");
+  const idMatches = html.match(/id="citeref-smith"/g);
+  assert(idMatches && idMatches.length === 1, "exactly one id attribute");
+});
+
+test("citation entries sorted by citation number in rendered output", () => {
+  const html = renderHtmlBody("# T {\n    Text [@b] then [@a].\n    {[citations]\n        - @a A, 2020.\n        - @b B, 2020.\n    }\n}");
+  // @b is cited first → number 1, @a is cited second → number 2
+  // In rendered list, @b entry (value=1) should come before @a entry (value=2)
+  const bPos = html.indexOf('id="cite-b"');
+  const aPos = html.indexOf('id="cite-a"');
+  assert(bPos < aPos, "b appears before a in citation list");
+});
+
+test("citation text supports inline formatting", () => {
+  const html = renderHtmlBody("# T {\n    See [@s].\n    {[citations]\n        - @s Smith, *Title*, **Bold**, 2020.\n    }\n}");
+  assert(html.includes("<em>Title</em>"), "italic in citation text");
+  assert(html.includes("<strong>Bold</strong>"), "bold in citation text");
+});
+
+test("citation text supports links", () => {
+  const html = renderHtmlBody("# T {\n    See [@s].\n    {[citations]\n        - @s Smith, 2020. [example.com](https://example.com)\n    }\n}");
+  assert(html.includes('href="https://example.com"'), "link in citation text");
+});
+
+test("undefined citation renders with broken style", () => {
+  const html = renderHtmlBody("# T {\n    See [@missing].\n}");
+  assert(html.includes("sdoc-broken-ref"), "broken ref class");
+  assert(html.includes("\u26A0"), "warning icon");
+});
+
+test("unreferenced citation definition renders with reduced opacity class", () => {
+  const html = renderHtmlBody("# T {\n    {[citations]\n        - @unused Smith, 2020.\n    }\n}");
+  assert(html.includes("sdoc-citation-unreferenced"), "unreferenced class");
+});
+
+test("K&R style citations block", () => {
+  const html = renderHtmlBody("# T {\n    See [@s].\n    # References {[citations]\n        - @s Smith, 2020.\n    }\n}");
+  assert(html.includes('href="#cite-s"'), "citation link");
+  assert(html.includes("sdoc-citations"), "citations list rendered");
+});
+
+test("multiple citations blocks unified numbering", () => {
+  const html = renderHtmlBody("# T {\n    See [@a].\n    {[citations]\n        - @a A, 2020.\n    }\n    See [@b].\n    {[citations]\n        - @b B, 2020.\n    }\n}");
+  assert(html.includes('href="#cite-a">1</a>'), "a is 1");
+  assert(html.includes('href="#cite-b">2</a>'), "b is 2");
+});
+
+console.log("\n--- Citations: Validation ---");
+
+test("broken citation reference produces warning", () => {
+  const r = parseSdoc("# T {\n    See [@missing].\n}");
+  const warnings = validateCitations(r.nodes);
+  assert(warnings.length === 1, "one warning");
+  assert(warnings[0].type === "broken-citation", "broken-citation type");
+  assert(warnings[0].key === "missing", "key is missing");
+});
+
+test("unused citation definition produces warning", () => {
+  const r = parseSdoc("# T {\n    {[citations]\n        - @unused Unused, 2020.\n    }\n}");
+  const warnings = validateCitations(r.nodes);
+  assert(warnings.length === 1, "one warning");
+  assert(warnings[0].type === "unused-citation", "unused-citation type");
+  assert(warnings[0].key === "unused", "key is unused");
+});
+
+test("all citations matched produces no warnings", () => {
+  const r = parseSdoc("# T {\n    See [@a] and [@b].\n    {[citations]\n        - @a A, 2020.\n        - @b B, 2020.\n    }\n}");
+  const warnings = validateCitations(r.nodes);
+  assert(warnings.length === 0, "no warnings");
+});
+
+test("duplicate citation definitions not flagged twice", () => {
+  const r = parseSdoc("# T {\n    {[citations]\n        - @a A, 2020.\n        - @a A, 2021.\n    }\n}");
+  const warnings = validateCitations(r.nodes);
+  // Both are unused, but only unique keys should produce one warning
+  assert(warnings.some(w => w.type === "unused-citation" && w.key === "a"), "unused warning");
+});
+
+test("collectCitationDefinitions finds entries in nested scopes", () => {
+  const r = parseSdoc("# T {\n    # Inner {\n        {[citations]\n            - @deep Deep, 2020.\n        }\n    }\n}");
+  const defs = collectCitationDefinitions(r.nodes);
+  assert(defs.length === 1, "one definition");
+  assert(defs[0].key === "deep", "key is deep");
+});
+
+console.log("\n--- Citations: Formatter ---");
+
+test("formatter handles {[citations] block", () => {
+  const input = "{[citations]\n- @smith Smith, 2020.\n- @jones Jones, 2021.\n}";
+  const formatted = formatSdoc(input);
+  assert(formatted.includes("    - @smith"), "citation item indented");
+  assert(formatted.startsWith("{[citations]"), "opener at depth 0");
+});
+
+test("formatter handles K&R citations", () => {
+  const input = "# Refs {[citations]\n- @smith Smith, 2020.\n}";
+  const formatted = formatSdoc(input);
+  assert(formatted.includes("    - @smith"), "citation item indented under K&R");
 });
 
 // ============================================================

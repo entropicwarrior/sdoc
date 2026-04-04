@@ -474,6 +474,84 @@ Content of Section B.
             }
         }
 
+        # Citations @citations
+        {
+            Citations provide stable, auto-numbered source references. An inline citation reference uses `[@key]`; citation definitions go in a `{[citations]` block.
+
+            # Inline Citation References @citation-refs
+            {
+                ```
+                The market is growing rapidly [@mm-report].
+                Multiple sources agree [@mm-report, @mordor-analysis].
+                ```
+
+                {[.]
+                    - `[@key]` inserts a citation reference that renders as a clickable superscript number (e.g. `[1]`) linking to the corresponding entry in the `{[citations]` block
+                    - `[@key1, @key2]` renders as `[1, 3]` (or whatever the assigned numbers are), with each number individually linked
+                    - Whitespace around commas is optional and ignored
+                    - Keys follow the existing `@slug` convention: lowercase kebab-case
+                    - `[@key]` is visually and semantically distinct from `@slug` — the former is a citation, the latter is a section reference
+                    - The same `[@key]` used multiple times always renders the same number
+                    - Citation keys are document-local, like section references
+                }
+            }
+
+            # Citation Definition Block @citation-block
+            {
+                ```
+{[citations]
+    - @mm-report MarketsandMarkets, "Edge AI Hardware Market,"
+      Report SE 7017, June 2025.
+    - @mordor-analysis Mordor Intelligence, "Edge AI Chips Market
+      Size & Share Analysis," 2026.
+}
+                ```
+
+                {[.]
+                    - `{[citations]` opens a citation definition block (no closing brace on the same line)
+                    - Each citation is a list item with a `- @key` prefix followed by free-form inline content
+                    - Citation text supports full SDOC inline formatting: links, bold, italics, inline code
+                    - There are no structured bibliographic fields — the author formats the citation however they want
+                    - Item text can span multiple continuation lines (same rules as list item continuation)
+                    - The closing `}` must be on its own line
+                    - Works with K&R brace style: `# References {[citations]`
+                }
+            }
+
+            # Numbering @citation-numbering
+            {
+                {[.]
+                    - Numbers are assigned by order of first appearance of `[@key]` in the document text, starting at 1
+                    - The `{[citations]` block renders entries sorted by assigned number, regardless of definition order
+                    - Numbers always increase monotonically as the reader moves through the document
+                    - Defined but unreferenced citations are appended after all referenced entries
+                }
+            }
+
+            # Multiple Blocks @citation-multiple-blocks
+            {
+                Multiple `{[citations]` blocks are allowed in a single document. All blocks share a unified numbering sequence. Each block renders at its own position in the document. This lets authors place citation definitions near the content that references them.
+            }
+
+            # Rendering @citation-rendering
+            {
+                {[.]
+                    - In-text: `[@key]` renders as a superscript bracketed number linking to the entry (e.g. `[1]`)
+                    - Citation list: each entry renders with its assigned number, the citation text, and a back-link (`\u21A9`) to the first location where it was cited
+                    - Only the first occurrence of each `[@key]` in the text receives an anchor ID for the back-link
+                }
+            }
+
+            # Errors and Warnings @citation-errors
+            {
+                {[.]
+                    - `[@key]` with no matching definition in any `{[citations]` block: **warning** (renders with a broken-reference indicator, same as a broken `@slug`)
+                    - Citation defined but never referenced: **warning** (entry is still rendered, but the author is told it is unused)
+                    - Invalid entry inside `{[citations]` (not matching `- @key text`): **parse error**
+                }
+            }
+        }
+
         # Links @links
         {
             Markdown-style links with absolute URLs or relative file paths:
@@ -578,9 +656,13 @@ Content of Section B.
                 - Warning marker: `{!text!}` (orange highlight)
                 - Negative marker: `{-text-}` (red highlight)
                 - Highlight: `{~text~}` (yellow highlight)
+                - Citation reference: `[@key]` (numbered superscript link to citation entry)
+                - Multiple citation references: `[@key1, @key2]` (each individually linked)
             }
 
             Inline math requires non-whitespace immediately after the opening `$` and before the closing `$`. A plain `$` followed by a digit (e.g. `$100`) does not trigger math mode because there is no closing `$`.
+
+            Citation references (`[@key]`) are parsed before link syntax. `[@key]` is always a citation reference even if followed by `(url)`. Use `\[@key]` for a literal `[@key]` in text.
         }
 
         # Escaping @escaping
@@ -949,6 +1031,7 @@ Content of Section A.
             - `}` scope close
             - `{[.]` / `{[#]` list open
             - `{[table]` / `{[table <flags>]` table open
+            - `{[citations]` citations block open
             - `>` blockquote line
             - `---` / `***` / `___` horizontal rule
             - `` ``` `` code fence
@@ -977,18 +1060,19 @@ Content of Section A.
                           ((ws id)? (ws scope_type)? | (ws scope_type)? (ws id)?) ws block_opener ;
         id            = "@" ident ;
         scope_type    = ":" ident ;   (* id and scope_type may appear in either order *)
-        block_opener  = "{" | "{[.]" | "{[#]" | table_open ;
+        block_opener  = "{" | "{[.]" | "{[#]" | table_open | citations_open ;
         block         = "{" ws? block_body "}" ;
         braceless_body = { paragraph | code_block | data_block | blockquote
                          | implicit_list | horizontal_rule | headingless_scope
-                         | list_scope | table_scope | bare_directive
-                         | line_comment | blank } ;
+                         | list_scope | table_scope | citations_scope
+                         | bare_directive | line_comment | blank } ;
 
         bare_directive = "@" ("meta" | "about") (ws block | braceless_body) ;
         block_body    = { blank | line_comment | paragraph | scope
                         | headingless_scope | list_scope | table_scope
-                        | implicit_list | blockquote | horizontal_rule
-                        | code_block | data_block | bare_directive | comma_sep } ;
+                        | citations_scope | implicit_list | blockquote
+                        | horizontal_rule | code_block | data_block
+                        | bare_directive | comma_sep } ;
         headingless_scope = "{" ws? block_body "}" ;
         list_scope    = list_open ws? list_body "}" ;
         list_open     = "{[.]" | "{[#]" ;
@@ -1001,6 +1085,10 @@ Content of Section A.
         pixels        = digit { digit } "px" ;
         table_body    = table_row { table_row } ;
         table_row     = cell { "|" cell } ;
+        citations_scope = citations_open ws? citations_body "}" ;
+        citations_open  = "{[citations]" ;
+        citations_body  = { blank | citation_entry } ;
+        citation_entry  = "-" ws "@" ident ws text_line { continuation_line } ;
         list_body     = { blank | comma_sep | scope | list_item_shorthand
                         | anonymous_item } ;
         implicit_list = list_item_shorthand { list_item_shorthand } ;

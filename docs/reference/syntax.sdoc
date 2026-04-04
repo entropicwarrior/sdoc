@@ -387,6 +387,35 @@ Content of Section B.
         References render as clickable links to the target scope. Note: `@references` are parsed inside link labels too — use `\@` if you need a literal `@` in a label.
     }
 
+    # Citations
+    {
+        Cite sources with `[@key]` in text and define them in a `{[citations]` block:
+
+        ```
+# Report
+{
+    The market is growing [@report2025].
+    Multiple factors contribute [@report2025, @analysis2026].
+
+    {[citations]
+        - @report2025 Industry Report, *Market Outlook*, 2025.
+        - @analysis2026 Analyst Team, "Sector Analysis," 2026.
+    }
+}
+        ```
+
+        {[.]
+            - `[@key]` renders as a superscript number linking to the citation entry
+            - `[@key1, @key2]` renders multiple numbers, each individually linked
+            - Numbers are assigned by order of first `[@key]` appearance (not definition order)
+            - The same key always renders the same number
+            - Each citation entry shows a back-link to its first in-text reference
+            - Multiple `{[citations]` blocks can appear in a document — numbering is unified
+            - Undefined `[@key]` and unused definitions produce warnings
+            - Citation text supports full inline formatting (links, bold, italic, code)
+        }
+    }
+
     # Blockquotes
     {
         Lines starting with `>` form a blockquote:

@@ -11,6 +11,7 @@ const COMMAND_SCOPE_CLOSE = "}";
 const COMMAND_LIST_BULLET = "{[.]";
 const COMMAND_LIST_NUMBER = "{[#]";
 const COMMAND_TABLE = "{[table]";
+const COMMAND_CITATIONS = "{[citations]";
 const COMMAND_CODE_FENCE = "```";
 
 const ESCAPABLE = new Set(["\\", "{", "}", "@", "[", "]", "(", ")", "*", "`", "#", "!", "~", "<", ">", "$", "+", "=", "-", "^", "?", "|"]);
@@ -39,6 +40,10 @@ function renderKatex(latex, displayMode) {
 
 function isTableCommand(text) {
   return /^\{\[table(?:\s+[^\]]*?)?\]$/.test(text);
+}
+
+function isCitationsCommand(text) {
+  return text === COMMAND_CITATIONS;
 }
 
 function parseTableOptions(text) {
@@ -299,6 +304,12 @@ function parseBlock(cursor, kind) {
       continue;
     }
 
+    if (isCitationsCommand(trimmed)) {
+      flushParagraph();
+      nodes.push(parseCitationsBlock(cursor));
+      continue;
+    }
+
     if (trimmed === COMMAND_SCOPE_OPEN) {
       flushParagraph();
       const scopeStartLine = cursor.index + 1;
@@ -338,6 +349,13 @@ function extractTrailingOpener(text) {
     const pos = tableMatch.index;
     if (!(pos > 0 && trimmed[pos - 1] === "\\")) {
       return { text: trimmed.slice(0, pos).trimEnd(), opener: tableMatch[0] };
+    }
+  }
+  // Check for citations command: {[citations]
+  if (trimmed.endsWith(COMMAND_CITATIONS)) {
+    const pos = trimmed.length - COMMAND_CITATIONS.length;
+    if (!(pos > 0 && trimmed[pos - 1] === "\\")) {
+      return { text: trimmed.slice(0, pos).trimEnd(), opener: COMMAND_CITATIONS };
     }
   }
   // Check other openers
@@ -388,6 +406,8 @@ function parseScope(cursor) {
     } else if (isTableCommand(trailing.opener)) {
       const tableOpts = parseTableOptions(trailing.opener);
       children = [parseTableBody(cursor, scopeStartLine, tableOpts)];
+    } else if (isCitationsCommand(trailing.opener)) {
+      children = [parseCitationsBody(cursor, scopeStartLine)];
     } else {
       children = parseBlock(cursor, "normal");
     }
@@ -545,6 +565,12 @@ function parseBracelessBlock(cursor) {
       continue;
     }
 
+    if (isCitationsCommand(trimmed)) {
+      flushParagraph();
+      nodes.push(parseCitationsBlock(cursor));
+      continue;
+    }
+
     if (!paragraphLines.length) {
       paragraphStartLine = cursor.index + 1;
     }
@@ -592,6 +618,10 @@ function parseScopeBlock(cursor) {
 
     if (isTableCommand(trimmed)) {
       return { blockType: "normal", children: [parseTableBlock(cursor)] };
+    }
+
+    if (isCitationsCommand(trimmed)) {
+      return { blockType: "normal", children: [parseCitationsBlock(cursor)] };
     }
 
     // No block opener found — braceless scope
@@ -689,6 +719,7 @@ function isListContinuationLine(trimmedLeft) {
   if (trimmed === COMMAND_LIST_BULLET) return false;
   if (trimmed === COMMAND_LIST_NUMBER) return false;
   if (isTableCommand(trimmed)) return false;
+  if (isCitationsCommand(trimmed)) return false;
   if (trimmed === ",") return false;
   if (isHeadingLine(trimmedLeft)) return false;
   if (isBlockquoteLine(trimmedLeft)) return false;
@@ -720,6 +751,8 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
     } else if (isTableCommand(trailing.opener)) {
       const tableOpts = parseTableOptions(trailing.opener);
       children = [parseTableBody(cursor, itemStartLine, tableOpts)];
+    } else if (isCitationsCommand(trailing.opener)) {
+      children = [parseCitationsBody(cursor, itemStartLine)];
     } else {
       children = parseBlock(cursor, "normal");
     }
@@ -815,6 +848,63 @@ function parseTableBody(cursor, tableStartLine, options) {
   const tableNode = { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
   if (hasOptions) tableNode.options = options;
   return tableNode;
+}
+
+function parseCitationsBlock(cursor) {
+  const startLine = cursor.index + 1;
+  cursor.next();
+  return parseCitationsBody(cursor, startLine);
+}
+
+function parseCitationsBody(cursor, startLine) {
+  const entries = [];
+
+  while (!cursor.eof()) {
+    const line = cursor.current();
+    const trimmedLeft = line.replace(/^\s+/, "");
+    const trimmed = trimmedLeft.trim();
+
+    if (trimmed === "") {
+      cursor.next();
+      continue;
+    }
+
+    if (trimmed === COMMAND_SCOPE_CLOSE) {
+      cursor.next();
+      break;
+    }
+
+    // Citation items: - @key free-form text
+    const citationMatch = trimmed.match(/^-\s+@([A-Za-z_][A-Za-z0-9_-]*)\s+([\s\S]*)$/);
+    if (citationMatch) {
+      const entryStartLine = cursor.index + 1;
+      const key = citationMatch[1];
+      let text = citationMatch[2].trim();
+      cursor.next();
+
+      // Collect continuation lines (indented text not starting with - @key or })
+      while (!cursor.eof()) {
+        const nextLine = cursor.current();
+        const nextTrimmedLeft = nextLine.replace(/^\s+/, "");
+        const nextTrimmed = nextTrimmedLeft.trim();
+
+        if (nextTrimmed === "") break;
+        if (nextTrimmed === COMMAND_SCOPE_CLOSE) break;
+        if (/^-\s+@[A-Za-z_]/.test(nextTrimmed)) break;
+
+        text += " " + nextTrimmed;
+        cursor.next();
+      }
+
+      entries.push({ key, text, lineStart: entryStartLine, lineEnd: cursor.index });
+      continue;
+    }
+
+    cursor.error("Invalid citation entry (expected '- @key text').");
+    cursor.next();
+  }
+
+  return { type: "citations", entries, lineStart: startLine, lineEnd: cursor.index };
 }
 
 function parseOptionalBlock(cursor) {
@@ -1123,6 +1213,18 @@ function parseImageWidth(raw) {
   return { src: raw };
 }
 
+function parseCitationKeys(inner) {
+  // Parse "@key1, @key2, ..." — returns array of keys or null if invalid
+  const parts = inner.split(",");
+  const keys = [];
+  for (const part of parts) {
+    const match = part.trim().match(/^@([A-Za-z_][A-Za-z0-9_-]*)$/);
+    if (!match) return null;
+    keys.push(match[1]);
+  }
+  return keys.length > 0 ? keys : null;
+}
+
 function parseInline(text) {
   const nodes = [];
   let buffer = "";
@@ -1252,6 +1354,21 @@ function parseInline(text) {
       }
     }
 
+    // Citation references: [@key] or [@key1, @key2]
+    if (ch === "[" && text[i + 1] === "@") {
+      const endBracket = findUnescaped(text, i + 1, "]");
+      if (endBracket !== -1) {
+        const inner = text.slice(i + 1, endBracket).trim();
+        const keys = parseCitationKeys(inner);
+        if (keys) {
+          flush();
+          nodes.push({ type: "citation_ref", keys });
+          i = endBracket + 1;
+          continue;
+        }
+      }
+    }
+
     if (ch === "[") {
       const endLabel = findUnescaped(text, i + 1, "]");
       if (endLabel !== -1 && text[endLabel + 1] === "(") {
@@ -1371,6 +1488,81 @@ function findUnescaped(text, start, token) {
 
 let _renderOptions = {};
 
+// --- Citation numbering ---
+// Built before rendering; maps citation key → { number, anchorId }
+// anchorId is the id of the first inline citation_ref for back-linking
+let _citationNumbering = new Map();
+let _citationDefinitions = new Map(); // key → { text, lineStart, lineEnd }
+
+function buildCitationNumbering(nodes) {
+  const numbering = new Map();
+  const definitions = new Map();
+  let counter = 0;
+
+  // First pass: collect all citation_ref keys in document order to assign numbers
+  function walkInlineNodes(inlineNodes) {
+    for (const node of inlineNodes) {
+      if (node.type === "citation_ref") {
+        for (const key of node.keys) {
+          if (!numbering.has(key)) {
+            counter += 1;
+            numbering.set(key, { number: counter, anchorId: `citeref-${key}` });
+          }
+        }
+      }
+      if (node.children) walkInlineNodes(node.children);
+    }
+  }
+
+  function walkInlineText(text) {
+    walkInlineNodes(parseInline(text));
+  }
+
+  function walk(nodeList) {
+    for (const node of nodeList) {
+      if (node.type === "paragraph" && node.text) {
+        walkInlineText(node.text);
+      } else if (node.type === "blockquote" && node.paragraphs) {
+        for (const para of node.paragraphs) {
+          walkInlineText(para);
+        }
+      } else if (node.type === "scope") {
+        if (node.title) walkInlineText(node.title);
+        if (node.children) walk(node.children);
+      } else if (node.type === "list" && node.items) {
+        walk(node.items);
+      } else if (node.type === "table") {
+        if (node.headers) {
+          for (const cell of node.headers) walkInlineText(cell);
+        }
+        if (node.rows) {
+          for (const row of node.rows) {
+            for (const cell of row) walkInlineText(cell);
+          }
+        }
+      } else if (node.type === "citations") {
+        // Collect definitions
+        for (const entry of node.entries) {
+          if (!definitions.has(entry.key)) {
+            definitions.set(entry.key, { text: entry.text, lineStart: entry.lineStart, lineEnd: entry.lineEnd });
+          }
+        }
+      }
+    }
+  }
+  walk(nodes);
+
+  // Assign numbers to defined-but-unreferenced citations (appended after referenced ones)
+  for (const [key, def] of definitions) {
+    if (!numbering.has(key)) {
+      counter += 1;
+      numbering.set(key, { number: counter, anchorId: null });
+    }
+  }
+
+  return { numbering, definitions };
+}
+
 function dataLineAttrs(node) {
   if (node.lineStart == null) {
     return "";
@@ -1440,6 +1632,24 @@ function renderInlineNodes(nodes) {
             return `<a class="sdoc-ref sdoc-broken-ref" href="${href}"><span class="sdoc-broken-icon">\u26A0</span>@${escapeHtml(node.id)}</a>`;
           }
           return `<a class="sdoc-ref" href="${href}">@${escapeHtml(node.id)}</a>`;
+        }
+        case "citation_ref": {
+          if (!_renderOptions._citationRefSeen) _renderOptions._citationRefSeen = new Set();
+          const parts = node.keys.map((key) => {
+            const info = _citationNumbering.get(key);
+            const isBroken = !_citationDefinitions.has(key);
+            if (isBroken) {
+              // Undefined citation — render with warning
+              const num = info ? info.number : escapeHtml(key);
+              return `<a class="sdoc-citation-ref sdoc-broken-ref" href="#cite-${escapeAttr(key)}"><span class="sdoc-broken-icon">\u26A0</span>${num}</a>`;
+            }
+            // Only the first occurrence of each key gets the back-link anchor id
+            const isFirst = !_renderOptions._citationRefSeen.has(key);
+            if (isFirst) _renderOptions._citationRefSeen.add(key);
+            const idAttr = isFirst ? ` id="citeref-${escapeAttr(key)}"` : "";
+            return `<a class="sdoc-citation-ref"${idAttr} href="#cite-${escapeAttr(key)}">${info.number}</a>`;
+          });
+          return `<sup class="sdoc-citation-group">[${parts.join(", ")}]</sup>`;
         }
         case "code":
           return `<code class="sdoc-inline-code">${escapeHtml(node.value)}</code>`;
@@ -1515,6 +1725,33 @@ function renderScope(scope, depth, isTitleScope = false) {
   const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}"${dl}>${toggle}${renderInline(scope.title)}</h${level}>`;
   const childrenHtml = children ? `\n<div class="sdoc-scope-children">${children}</div>` : "";
   return `<section class="sdoc-scope${rootClass}${typeClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
+}
+
+function renderCitations(node) {
+  const dl = dataLineAttrs(node);
+
+  // Build entries sorted by assigned citation number
+  const sorted = [];
+  for (const entry of node.entries) {
+    const info = _citationNumbering.get(entry.key);
+    if (info) {
+      sorted.push({ key: entry.key, text: entry.text, number: info.number, anchorId: info.anchorId });
+    } else {
+      // Defined but no number (shouldn't happen if buildCitationNumbering ran, but be safe)
+      sorted.push({ key: entry.key, text: entry.text, number: Infinity, anchorId: null });
+    }
+  }
+  sorted.sort((a, b) => a.number - b.number);
+
+  const items = sorted.map((entry) => {
+    const backLink = entry.anchorId
+      ? ` <a class="sdoc-citation-backlink" href="#${escapeAttr(entry.anchorId)}" title="Back to text">\u21A9</a>`
+      : "";
+    const unreferenced = entry.anchorId === null ? " sdoc-citation-unreferenced" : "";
+    return `<li id="cite-${escapeAttr(entry.key)}" class="sdoc-citation-entry${unreferenced}" value="${entry.number}"><span class="sdoc-citation-text">${renderInline(entry.text)}</span>${backLink}</li>`;
+  }).join("\n");
+
+  return `<ol class="sdoc-citations"${dl}>${items}</ol>`;
 }
 
 function renderList(list, depth) {
@@ -1955,6 +2192,8 @@ function renderNode(node, depth) {
       const editable = _renderOptions.editable ? ` contenteditable="true"` : "";
       return `<p class="sdoc-paragraph"${dl}${editable}>${renderInline(node.text)}</p>`;
     }
+    case "citations":
+      return renderCitations(node);
     case "code": {
       if (node.lang === "mermaid") {
         return `<pre class="mermaid"${dl}>${escapeHtml(node.text)}</pre>`;
@@ -2392,6 +2631,62 @@ const DEFAULT_STYLE = `
     margin-right: 0.15em;
   }
 
+  .sdoc-citation-group {
+    font-size: 0.8em;
+    line-height: 1;
+    vertical-align: super;
+  }
+
+  .sdoc-citation-ref {
+    color: var(--sdoc-accent);
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .sdoc-citation-ref:hover {
+    text-decoration: underline;
+  }
+
+  .sdoc-citations {
+    margin: 1.5rem 0;
+    padding: 1rem 0 0.5rem 0;
+    border-top: 1px solid var(--sdoc-border);
+    list-style: none;
+    counter-reset: none;
+  }
+
+  .sdoc-citation-entry {
+    margin: 0.4rem 0;
+    padding-left: 2.5rem;
+    position: relative;
+    line-height: 1.6;
+    font-size: 0.92em;
+  }
+
+  .sdoc-citation-entry::before {
+    content: "[" attr(value) "]";
+    position: absolute;
+    left: 0;
+    color: var(--sdoc-muted);
+    font-weight: 600;
+    font-size: 0.9em;
+  }
+
+  .sdoc-citation-unreferenced {
+    opacity: 0.6;
+  }
+
+  .sdoc-citation-backlink {
+    color: var(--sdoc-accent);
+    text-decoration: none;
+    margin-left: 0.3em;
+    font-size: 0.85em;
+  }
+
+  .sdoc-citation-backlink:hover {
+    text-decoration: underline;
+  }
+
   .sdoc-image {
     display: inline-block;
     max-width: 100%;
@@ -2592,7 +2887,7 @@ hljs.COMMENT('^\\\\s*//','$'),
   {className:'link',begin:'\\\\(',end:'\\\\)'}
 ]},
 {className:'keyword',begin:'\\\\{[!?+\\\\-=~^]',end:'[!?+\\\\-=~^]\\\\}'},
-{className:'keyword',begin:'\\\\{\\\\[(?:\\\\.|#|\\\\d+|table)\\\\]'},
+{className:'keyword',begin:'\\\\{\\\\[(?:\\\\.|#|\\\\d+|table|citations)\\\\]'},
 {className:'strong',begin:'\\\\*\\\\*',end:'\\\\*\\\\*'},
 {className:'emphasis',begin:'(?<!\\\\*)\\\\*(?!\\\\*)',end:'\\\\*(?!\\\\*)'},
 {className:'deletion',begin:'~~',end:'~~'},
@@ -2648,12 +2943,26 @@ function renderBodyNodes(nodes) {
 function renderHtmlBody(text) {
   const parsed = parseSdoc(text);
   const metaResult = extractMeta(parsed.nodes);
-  return renderBodyNodes(metaResult.nodes);
+  const savedOptions = _renderOptions;
+  _renderOptions = {};
+  const citationData = buildCitationNumbering(metaResult.nodes);
+  _citationNumbering = citationData.numbering;
+  _citationDefinitions = citationData.definitions;
+  const result = renderBodyNodes(metaResult.nodes);
+  _citationNumbering = new Map();
+  _citationDefinitions = new Map();
+  _renderOptions = savedOptions;
+  return result;
 }
 
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   _renderOptions = options.renderOptions ?? {};
+  const citationData = buildCitationNumbering(parsed.nodes);
+  _citationNumbering = citationData.numbering;
+  _citationDefinitions = citationData.definitions;
   const body = renderBodyNodes(parsed.nodes);
+  _citationNumbering = new Map();
+  _citationDefinitions = new Map();
   _renderOptions = {};
   const errorHtml = renderErrors(parsed.errors);
 
@@ -2782,11 +3091,12 @@ function formatSdoc(text, indentStr = "    ") {
       continue;
     }
 
-    // Standalone opener: {, {[.], {[#], {[table]
+    // Standalone opener: {, {[.], {[#], {[table], {[citations]
     if (trimmed === COMMAND_SCOPE_OPEN ||
         trimmed === COMMAND_LIST_BULLET ||
         trimmed === COMMAND_LIST_NUMBER ||
-        isTableCommand(trimmed)) {
+        isTableCommand(trimmed) ||
+        isCitationsCommand(trimmed)) {
       result.push(indentStr.repeat(depth) + trimmed);
       depth++;
       continue;
@@ -3017,6 +3327,7 @@ function collectAllIds(nodes) {
 function collectInlineRefs(nodes) {
   const refs = [];
   const links = [];
+  const citationRefs = [];
 
   function walkInlineNodes(inlineNodes, lineStart, lineEnd) {
     for (const node of inlineNodes) {
@@ -3024,6 +3335,10 @@ function collectInlineRefs(nodes) {
         refs.push({ id: node.id, lineStart, lineEnd });
       } else if (node.type === "link") {
         links.push({ href: node.href, lineStart, lineEnd });
+      } else if (node.type === "citation_ref") {
+        for (const key of node.keys) {
+          citationRefs.push({ key, lineStart, lineEnd });
+        }
       }
       if (node.children) {
         walkInlineNodes(node.children, lineStart, lineEnd);
@@ -3073,7 +3388,24 @@ function collectInlineRefs(nodes) {
     }
   }
   walk(nodes);
-  return { refs, links };
+  return { refs, links, citationRefs };
+}
+
+function collectCitationDefinitions(nodes) {
+  const defs = [];
+  function walk(nodeList) {
+    for (const node of nodeList) {
+      if (node.type === "citations") {
+        for (const entry of node.entries) {
+          defs.push({ key: entry.key, lineStart: entry.lineStart, lineEnd: entry.lineEnd });
+        }
+      }
+      if (node.children) walk(node.children);
+      if (node.type === "list" && node.items) walk(node.items);
+    }
+  }
+  walk(nodes);
+  return defs;
 }
 
 function validateRefs(nodes, options = {}) {
@@ -3111,6 +3443,43 @@ function validateRefs(nodes, options = {}) {
           lineEnd: link.lineEnd
         });
       }
+    }
+  }
+
+  return warnings;
+}
+
+function validateCitations(nodes) {
+  const { citationRefs } = collectInlineRefs(nodes);
+  const defs = collectCitationDefinitions(nodes);
+  const warnings = [];
+
+  const definedKeys = new Set(defs.map((d) => d.key));
+  const referencedKeys = new Set(citationRefs.map((r) => r.key));
+
+  // Citation referenced but not defined
+  for (const ref of citationRefs) {
+    if (!definedKeys.has(ref.key)) {
+      warnings.push({
+        type: "broken-citation",
+        key: ref.key,
+        message: `Broken citation: [@${ref.key}] is not defined in any {[citations] block`,
+        lineStart: ref.lineStart,
+        lineEnd: ref.lineEnd
+      });
+    }
+  }
+
+  // Citation defined but never referenced
+  for (const def of defs) {
+    if (!referencedKeys.has(def.key)) {
+      warnings.push({
+        type: "unused-citation",
+        key: def.key,
+        message: `Unused citation: @${def.key} is defined but never referenced with [@${def.key}]`,
+        lineStart: def.lineStart,
+        lineEnd: def.lineEnd
+      });
     }
   }
 
@@ -3167,7 +3536,9 @@ module.exports = {
   // Validation
   collectAllIds,
   collectInlineRefs,
+  collectCitationDefinitions,
   validateRefs,
+  validateCitations,
   // Low-level helpers for custom renderers (e.g. slide-renderer)
   parseInline,
   renderKatex,
