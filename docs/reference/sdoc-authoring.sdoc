@@ -275,6 +275,66 @@ Content of Section B.
             }
             ```
 
+            # Column Directives @column-directives
+            {
+                An optional directive row after the header controls per-column alignment and number formatting. It is consumed by the parser and not rendered as data.
+
+                # Column Alignment
+                {
+                    Use \`<\` (left), \`>\` (right), or \`=\` (center):
+
+                    ```
+                    {[table]
+                        Programme | Amount | Status
+                        < | > | =
+                        Alpha | $1,000,000 | Active
+                        Beta | $2,500,000 | Pending
+                    }
+                    ```
+
+                    If absent, all columns default to left. Empty cells in the directive row keep the default. Alignment applies to both header and data cells.
+
+                    For headerless tables, the directive row is the first row — it is consumed but no header is rendered:
+
+                    ```
+                    {[table headerless]
+                        < | >
+                        Alice | 100
+                        Bob | 200
+                    }
+                    ```
+                }
+
+                # Column Formatting
+                {
+                    A format token in the directive row formats numeric cells and formula results in that column. Text cells (like bold labels) pass through unchanged. The format is display-only — formulas always use raw numeric values.
+
+                    {[.]
+                        - \`$\` — currency, no decimals: \`$1,000,000\`
+                        - \`$.N\` — currency with N decimals: \`$.2\` → \`$1,234.50\`
+                        - \`,\` — thousands separator: \`1,000,000\`
+                        - \`,.N\` — thousands with N decimals: \`,.2\` → \`1,234,567.89\`
+                        - \`.N\` — fixed N decimals: \`.2\` → \`3.14\`
+                        - \`%\` — percentage (value × 100): \`0.452\` → \`45.2%\`
+                        - \`%.N\` — percentage with N decimals: \`%.1\` → \`45.7%\`
+                    }
+
+                    Alignment and format combine in a single directive cell:
+
+                    ```
+                    {[table]
+                        Item | Amount
+                        < | > $
+                        Widget | 1000000
+                        Gadget | 2500000
+                        **Total** | =SUM(B1:B2)
+                    }
+                    ```
+
+                    The \`Amount\` column is right-aligned and formatted as currency. The formula result and data cells all display as \`$1,000,000\` style. The \`**Total**\` label renders as bold text.
+                }
+            }
+
             # Table Formulas @table-formulas
             {
                 Cells starting with \`=\` are evaluated as formulas. Hover a computed cell in preview to see the original formula.
@@ -282,9 +342,10 @@ Content of Section B.
                 ```
                 {[table]
                     Investor | Shares | Ownership
-                    Seed Fund | 500,000 | 25%
-                    Founder A | 1,000,000 | 50%
-                    Founder B | 500,000 | 25%
+                    < | > , | > %
+                    Seed Fund | 500000 | 0.25
+                    Founder A | 1000000 | 0.50
+                    Founder B | 500000 | 0.25
                     **Total** | =SUM(B1:B3) | =SUM(C1:C3)
                 }
                 ```
@@ -301,6 +362,8 @@ Content of Section B.
                 }
 
                 Errors display in red italic: \`#DIV/0!\` (division by zero), \`#VALUE!\` (bad reference), \`#REF!\` (invalid syntax), \`#NAME!\` (unknown function), \`#CIRCULAR!\` (circular dependency).
+
+                **Tip:** Use numeric values with a column format directive (e.g. \`> $\`) instead of pre-formatted strings like \`$1,000,000\`. Formatted strings are text — formulas cannot reference them.
             }
         }
 

@@ -186,6 +186,62 @@
                 }
             }
 
+            # Column Alignment
+            {
+                A directive row after the header controls per-column alignment using `<` (left), `>` (right), and `=` (center):
+
+                {[table]
+                    Programme | Budget | Status
+                    < | > | =
+                    Alpha | $1,000,000 | Active
+                    Beta | $2,500,000 | Pending
+                    Gamma | $750,000 | Complete
+                }
+
+                Headerless tables can also have a directive row (consumed but no header rendered):
+
+                {[table headerless]
+                    > | =
+                    42 | Active
+                    17 | Pending
+                }
+            }
+
+            # Column Formatting
+            {
+                The directive row can also specify a number format for a column. Numeric cells and formula results are formatted automatically; text cells (like bold labels) pass through unchanged.
+
+                Currency (`$`):
+
+                {[table]
+                    Programme | Funding
+                    < | > $
+                    Alpha | 1000000
+                    Beta | 2500000
+                    Gamma | 175000
+                    **Total** | =SUM(B1:B3)
+                }
+
+                Currency with decimals (`$.2`):
+
+                {[table auto]
+                    Item | Price
+                    < | > $.2
+                    Widget | 19.9
+                    Gadget | 149.99
+                    Service | 1250
+                }
+
+                Thousands separator (`,`), fixed decimals (`.3`), and percentage (`%`):
+
+                {[table]
+                    Metric | Count | Precision | Rate
+                    < | , | .3 | %.1
+                    Alpha | 1234567 | 3.14159 | 0.4567
+                    Beta | 890 | 2.71828 | 0.123
+                }
+            }
+
             # Include by Link
             {
                 A code block can reference an external file with `src:` — the content stays in sync:
@@ -387,13 +443,14 @@
 
                 # Cap Table {[table]
                     Investor | Shares | Ownership
-                    Seed Fund | 500,000 | 25%
-                    Founder A | 1,000,000 | 50%
-                    Founder B | 500,000 | 25%
+                    < | > , | > %
+                    Seed Fund | 500000 | 0.25
+                    Founder A | 1000000 | 0.50
+                    Founder B | 500000 | 0.25
                     **Total** | =SUM(B1:B3) | =SUM(C1:C3)
                 }
 
-                Supported: `=SUM(range)`, `=AVG(range)`, `=COUNT(range)`, and arithmetic (`=B1+B2`, `=B1*3`). Use `\=` for a literal equals sign.
+                Supported: `=SUM(range)`, `=AVG(range)`, `=COUNT(range)`, and arithmetic (`=B1+B2`, `=B1*3`). Use `\=` for a literal equals sign. Column formatting ensures formulas and data cells display consistently — use numeric values (not `$1,000,000` strings) with a format directive so formulas can reference them.
             }
 
             # Citations

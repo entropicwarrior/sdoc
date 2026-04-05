@@ -380,6 +380,69 @@ Content of Section B.
                 ```
             }
 
+            # Column Directives @column-directives
+            {
+                An optional directive row immediately after the header row (or as the first row in a headerless table) controls per-column alignment and number formatting. The directive row is consumed by the parser and never rendered as data.
+
+                # Column Alignment @column-alignment
+                {
+                    Alignment characters in the directive row set the text-align for all cells in that column, including the header:
+
+                    {[.]
+                        - `<` — left (default)
+                        - `>` — right (most useful for numbers and currency)
+                        - `=` — center
+                    }
+
+                    ```
+{[table]
+    Programme | Amount | Status
+    < | > | =
+    Alpha | $1,000,000 | Active
+    Beta | $2,500,000 | Pending
+}
+                    ```
+
+                    If the directive row is absent, all columns default to left alignment. Empty cells in the directive row inherit the default (left).
+                }
+
+                # Column Formatting @column-formatting
+                {
+                    A format token in the directive row causes numeric cells and formula results in that column to be formatted for display. Text cells are unaffected. The format is display-only — formulas always operate on raw numeric values.
+
+                    {[.]
+                        - `$` — currency, no decimals: `1000000` → `$1,000,000`
+                        - `$.N` — currency with N decimals: `$.2` → `$1,234.50`
+                        - `,` — thousands separator, no decimals: `1000000` → `1,000,000`
+                        - `,.N` — thousands with N decimals: `,.2` → `1,234,567.89`
+                        - `.N` — fixed N decimals: `.2` → `3.14`
+                        - `%` — percentage (value × 100, auto decimals): `0.452` → `45.2%`
+                        - `%.N` — percentage with N decimals: `%.1` → `45.7%`
+                    }
+
+                    A directive cell may combine alignment and format, separated by whitespace:
+
+                    ```
+{[table]
+    Item | Amount
+    < | > $
+    Widget | 1000000
+    Gadget | 2500000
+    **Total** | =SUM(B1:B2)
+}
+                    ```
+
+                    All numeric values and formula results in the `Amount` column display as currency (`$3,500,000`). The `**Total**` label renders normally as bold text.
+                }
+
+                # Directive Row Detection @directive-detection
+                {
+                    A row is identified as a directive row when every non-empty cell contains only an alignment character (`<`, `>`, `=`), a format token, or both. It must be the first row after the header (or the first row in a headerless table), and at least one cell must contain a directive.
+
+                    For headerless tables, the directive row functions as a virtual header — it is consumed for its directives but no `<thead>` is rendered.
+                }
+            }
+
             # Table Formulas @table-formulas
             {
                 Table cells whose text begins with `=` (but not `==`) are evaluated as formulas. The result replaces the cell text in rendered output; the original formula is preserved as a tooltip.
@@ -1083,7 +1146,14 @@ Content of Section A.
                       | "left" | "center" | "right" ;
         percentage    = digit { digit } [ "." digit { digit } ] "%" ;
         pixels        = digit { digit } "px" ;
-        table_body    = table_row { table_row } ;
+        table_body    = [ directive_row ] table_row { table_row } ;
+        directive_row = directive_cell { "|" directive_cell } ;
+        directive_cell = [ align_char ] [ ws format_spec ] ;
+        align_char    = "<" | ">" | "=" ;
+        format_spec   = "$" [ "." digits ]
+                      | "," [ "." digits ]
+                      | "." digits
+                      | "%" [ "." digits ] ;
         table_row     = cell { "|" cell } ;
         citations_scope = citations_open ws? citations_body "}" ;
         citations_open  = "{[citations]" ;

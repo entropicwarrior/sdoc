@@ -2877,6 +2877,177 @@ test("lowercase function name gives error", () => {
   assert(html.includes("sdoc-formula-error"), "expected error for lowercase function");
 });
 
+// ============================================================
+console.log("\n--- Column Directives: Alignment ---");
+
+test("alignment row parsed for normal table", () => {
+  const r = parseSdoc("{[table]\n  Name | Amount\n  < | >\n  Alice | 100\n}");
+  assert(r.errors.length === 0, "no errors");
+  const t = r.nodes[0];
+  assert(t.type === "table");
+  assert(t.headers.length === 2, "two headers");
+  assert(t.rows.length === 1, "directive row consumed, one data row");
+  assert(t.columnAlign[0] === "left", "first col left");
+  assert(t.columnAlign[1] === "right", "second col right");
+});
+
+test("center alignment with =", () => {
+  const r = parseSdoc("{[table]\n  A | B | C\n  < | = | >\n  x | y | z\n}");
+  const t = r.nodes[0];
+  assert(t.columnAlign[1] === "center", "center col");
+  assert(t.rows.length === 1, "one data row");
+});
+
+test("alignment row renders text-align styles", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\n< | >\nx | 10\n}");
+  assert(html.includes('style="text-align:right"'), "expected right align style");
+  assert(!html.includes('style="text-align:left"'), "left is default, no explicit style");
+});
+
+test("alignment applies to header cells too", () => {
+  const html = renderHtmlBody("# T {[table]\nName | Amount\n< | >\nAlice | 100\n}");
+  assert(html.includes('<th class="sdoc-table-th" style="text-align:right"'), "header gets right align");
+});
+
+test("no directive row means no columnAlign", () => {
+  const r = parseSdoc("{[table]\n  A | B\n  x | y\n}");
+  const t = r.nodes[0];
+  assert(!t.columnAlign, "no columnAlign");
+  assert(!t.columnFormat, "no columnFormat");
+});
+
+test("headerless table with directive row", () => {
+  const r = parseSdoc("{[table headerless]\n  < | >\n  Alice | 100\n  Bob | 200\n}");
+  const t = r.nodes[0];
+  assert(t.headers.length === 0, "no headers");
+  assert(t.rows.length === 2, "two data rows, directive consumed");
+  assert(t.columnAlign[0] === "left");
+  assert(t.columnAlign[1] === "right");
+});
+
+test("headerless alignment renders correctly", () => {
+  const html = renderHtmlBody("# T {[table headerless]\n< | >\nAlice | 100\nBob | 200\n}");
+  assert(html.includes('style="text-align:right"'), "right align in headerless");
+  assert(!html.includes("<thead"), "no thead for headerless");
+});
+
+test("data row that looks like directives is NOT consumed", () => {
+  // A row with content beyond alignment chars should not be treated as directives
+  const r = parseSdoc("{[table]\n  A | B\n  left | right\n  x | y\n}");
+  const t = r.nodes[0];
+  assert(!t.columnAlign, "no columnAlign for text data");
+  assert(t.rows.length === 2, "both data rows preserved");
+});
+
+test("partial directive row — empty cells fill with null", () => {
+  const r = parseSdoc("{[table]\n  A | B | C\n  > | | =\n  x | y | z\n}");
+  const t = r.nodes[0];
+  assert(t.columnAlign[0] === "right");
+  assert(t.columnAlign[1] === null, "empty cell → null");
+  assert(t.columnAlign[2] === "center");
+});
+
+// ============================================================
+console.log("\n--- Column Directives: Formatting ---");
+
+test("currency format on column", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Amount\n< | > $\nWidget | 1000000\n}");
+  assert(html.includes("$1,000,000"), "expected formatted currency");
+});
+
+test("currency format with decimals", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Price\n< | $.2\nWidget | 1234.5\n}");
+  assert(html.includes("$1,234.50"), "expected $1,234.50");
+});
+
+test("thousands separator format", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Count\n< | ,\nWidget | 1234567\n}");
+  assert(html.includes("1,234,567"), "expected thousands separated");
+});
+
+test("thousands with decimals", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Value\n< | ,.2\nWidget | 1234567.891\n}");
+  assert(html.includes("1,234,567.89"), "expected ,.2 format");
+});
+
+test("fixed decimals format", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Score\n< | .3\nA | 3.14159\n}");
+  assert(html.includes("3.142"), "expected 3 decimal places");
+});
+
+test("percentage format", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Rate\n< | %\nA | 0.452\n}");
+  assert(html.includes("45.2%"), "expected 45.2%");
+});
+
+test("percentage format with fixed decimals", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Rate\n< | %.1\nA | 0.4567\n}");
+  assert(html.includes("45.7%"), "expected 45.7% (1 decimal)");
+});
+
+test("format applies to formula results", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Amount\n< | > $\nA | 1000000\nB | 2000000\nTotal | =SUM(B1:B2)\n}");
+  assert(html.includes("$3,000,000"), "expected formatted formula result");
+  assert(html.includes("$1,000,000"), "expected formatted data cell");
+});
+
+test("format does not affect text cells", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Amount\n< | $\n**Total** | 1000\n}");
+  assert(html.includes("<strong>Total</strong>"), "text cell still renders inline");
+  assert(html.includes("$1,000"), "numeric cell gets formatted");
+});
+
+test("format does not affect formula errors", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\n< | $\nx | =Z99\n}");
+  assert(html.includes("sdoc-formula-error"), "error still shown");
+});
+
+test("format on headerless table", () => {
+  const html = renderHtmlBody("# T {[table headerless]\n> $\n1000000\n2000000\n}");
+  assert(html.includes("$1,000,000"), "formatted in headerless");
+  assert(html.includes("$2,000,000"), "both rows formatted");
+});
+
+test("alignment + format combined in directive cell", () => {
+  const r = parseSdoc("{[table]\n  A | B\n  < | > $\n  x | 100\n}");
+  const t = r.nodes[0];
+  assert(t.columnAlign[1] === "right", "right aligned");
+  assert(t.columnFormat[1].prefix === "$", "currency format");
+  assert(t.columnFormat[1].thousands === true, "thousands separator");
+});
+
+test("formula with format preserves tooltip", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\n< | $\nx | 1000\nTotal | =SUM(B1:B1)\n}");
+  assert(html.includes('title="=SUM(B1:B1)"'), "tooltip preserved");
+  assert(html.includes("$1,000"), "formatted result");
+});
+
+test("K&R table with directives", () => {
+  const r = parseSdoc("# Data {[table]\nA | B\n< | >\nx | 10\n}");
+  const t = r.nodes[0].children[0];
+  assert(t.columnAlign[0] === "left");
+  assert(t.columnAlign[1] === "right");
+  assert(t.rows.length === 1);
+});
+
+test("directive row with only format, no alignment", () => {
+  const r = parseSdoc("{[table]\n  A | B\n  | $\n  x | 1000\n}");
+  const t = r.nodes[0];
+  assert(!t.columnAlign, "no alignment directives");
+  assert(t.columnFormat[1].prefix === "$", "format parsed");
+});
+
+test("numbers with commas still parsed for formatting", () => {
+  const html = renderHtmlBody("# T {[table]\nItem | Amount\n< | $.2\nA | 1,000,000\n}");
+  assert(html.includes("$1,000,000.00"), "comma-number reformatted with spec");
+});
+
+test("negative numbers formatted correctly", () => {
+  const html = renderHtmlBody("# T {[table]\nA | B\n< | $\nx | 1000\ny | -500\n}");
+  assert(html.includes("$1,000"), "positive formatted");
+  assert(html.includes("-$500"), "negative with prefix");
+});
+
 test("bare email auto-detection", () => {
   const html = renderHtmlBody("# T {\n    Contact us at hello@example.com for help.\n}");
   assert(html.includes('href="mailto:hello@example.com"'), "expected mailto link");
