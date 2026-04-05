@@ -1146,9 +1146,12 @@ Content of Section A.
                       | "left" | "center" | "right" ;
         percentage    = digit { digit } [ "." digit { digit } ] "%" ;
         pixels        = digit { digit } "px" ;
-        table_body    = [ directive_row ] table_row { table_row } ;
+        table_body    = table_row [ directive_row ] { table_row }
+                      | directive_row { table_row } ;
+                      (* normal tables: header row then optional directive row;
+                         headerless tables: optional directive row first *)
         directive_row = directive_cell { "|" directive_cell } ;
-        directive_cell = [ align_char ] [ ws format_spec ] ;
+        directive_cell = [ align_char ] [ format_spec ] ;
         align_char    = "<" | ">" | "=" ;
         format_spec   = "$" [ "." digits ]
                       | "," [ "." digits ]
