@@ -888,6 +888,13 @@ test("implicit root heading followed by nothing", () => {
   assert(r.nodes[0].children.length === 0);
 });
 
+test("heading followed by {[citations] is explicit, not implicit root", () => {
+  const r = parseSdoc("# Doc\n{[citations]\n    - @a Source A.\n}\n# Other\n{\n    Content.\n}");
+  assert(r.errors.length === 0);
+  // If implicit root were triggered, Other would be nested under Doc
+  assert(r.nodes.length === 2, "expected 2 top-level nodes, got " + r.nodes.length);
+});
+
 // ============================================================
 console.log("\n--- Key:Value Meta Syntax ---");
 

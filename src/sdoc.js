@@ -243,7 +243,8 @@ function detectImplicitRoot(cursor) {
     if (nextTrimmed === COMMAND_SCOPE_OPEN ||
         nextTrimmed === COMMAND_LIST_BULLET ||
         nextTrimmed === COMMAND_LIST_NUMBER ||
-        isTableCommand(nextTrimmed)) {
+        isTableCommand(nextTrimmed) ||
+        isCitationsCommand(nextTrimmed)) {
       isImplicit = false;
     } else if (tryParseInlineBlock(nextTrimmed) !== null) {
       isImplicit = false;
