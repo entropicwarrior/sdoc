@@ -63,6 +63,105 @@ function parseTableOptions(text) {
   return options;
 }
 
+// ── Column directive row (alignment + format) ──────────────────────────
+
+function isDirectiveRow(cells) {
+  if (cells.length === 0) return false;
+  const pattern = /^([<>=])?\s*(\$(?:\.\d+)?|,(?:\.\d+)?|\.\d+|%(?:\.\d+)?)?$/;
+  let hasDirective = false;
+  for (const cell of cells) {
+    const trimmed = cell.trim();
+    if (trimmed === "") continue;
+    if (!pattern.test(trimmed)) return false;
+    hasDirective = true;
+  }
+  return hasDirective;
+}
+
+function parseFormatSpec(spec) {
+  if (!spec) return null;
+  if (spec.startsWith("$")) {
+    const decimals = spec.includes(".") ? parseInt(spec.slice(spec.indexOf(".") + 1), 10) : 0;
+    return { prefix: "$", thousands: true, decimals, percent: false };
+  }
+  if (spec.startsWith("%")) {
+    const decimals = spec.includes(".") ? parseInt(spec.slice(spec.indexOf(".") + 1), 10) : -1;
+    return { prefix: "", thousands: false, decimals, percent: true };
+  }
+  if (spec.startsWith(",")) {
+    const decimals = spec.includes(".") ? parseInt(spec.slice(spec.indexOf(".") + 1), 10) : 0;
+    return { prefix: "", thousands: true, decimals, percent: false };
+  }
+  if (spec.startsWith(".")) {
+    const decimals = parseInt(spec.slice(1), 10);
+    return { prefix: "", thousands: false, decimals, percent: false };
+  }
+  return null;
+}
+
+function parseDirectiveRow(cells) {
+  const align = [];
+  const format = [];
+  let hasAlign = false;
+  let hasFormat = false;
+  const fmtPattern = /(\$(?:\.\d+)?|,(?:\.\d+)?|\.\d+|%(?:\.\d+)?)$/;
+
+  for (const cell of cells) {
+    const trimmed = cell.trim();
+    const alignMatch = trimmed.match(/^([<>=])/);
+    const fmtMatch = trimmed.match(fmtPattern);
+
+    let a = null;
+    if (alignMatch) {
+      a = alignMatch[1] === "<" ? "left" : alignMatch[1] === ">" ? "right" : "center";
+      hasAlign = true;
+    }
+    align.push(a);
+
+    let f = null;
+    if (fmtMatch) {
+      f = parseFormatSpec(fmtMatch[1]);
+      hasFormat = true;
+    }
+    format.push(f);
+  }
+
+  return {
+    align: hasAlign ? align : null,
+    format: hasFormat ? format : null,
+  };
+}
+
+function formatNumber(value, spec) {
+  if (spec.percent) {
+    const pct = value * 100;
+    if (spec.decimals < 0) {
+      return (Number.isInteger(pct) ? pct.toString() : pct.toFixed(2).replace(/\.?0+$/, "")) + "%";
+    }
+    return pct.toFixed(spec.decimals) + "%";
+  }
+
+  const negative = value < 0;
+  const absVal = Math.abs(value);
+  let result;
+
+  if (spec.decimals > 0) {
+    result = absVal.toFixed(spec.decimals);
+  } else {
+    result = Math.round(absVal).toString();
+  }
+
+  if (spec.thousands) {
+    const parts = result.split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    result = parts.join(".");
+  }
+
+  return (negative ? "-" : "") + spec.prefix + result;
+}
+
+// ── End column directive row ────────────────────────────────────────────
+
 class LineCursor {
   constructor(lines) {
     this.lines = lines;
@@ -835,18 +934,31 @@ function parseTableBody(cursor, tableStartLine, options) {
     cursor.next();
   }
 
-  const hasOptions = options.borderless || options.headerless || options.width || options.align;
-
-  if (options.headerless) {
-    const tableNode = { type: "table", headers: [], rows, lineStart: tableStartLine, lineEnd: cursor.index };
-    if (hasOptions) tableNode.options = options;
-    return tableNode;
+  // Detect column directive row (alignment / formatting)
+  // For headerless tables: check rows[0]; for normal tables: check rows[1] (after header)
+  const directiveIndex = options.headerless ? 0 : 1;
+  let columnAlign = null;
+  let columnFormat = null;
+  if (rows.length > directiveIndex && isDirectiveRow(rows[directiveIndex])) {
+    const directives = parseDirectiveRow(rows[directiveIndex]);
+    columnAlign = directives.align;
+    columnFormat = directives.format;
+    rows.splice(directiveIndex, 1);
   }
 
-  const headers = rows.length > 0 ? rows[0] : [];
-  const body = rows.slice(1);
-  const tableNode = { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
+  const hasOptions = options.borderless || options.headerless || options.width || options.align;
+
+  let tableNode;
+  if (options.headerless) {
+    tableNode = { type: "table", headers: [], rows, lineStart: tableStartLine, lineEnd: cursor.index };
+  } else {
+    const headers = rows.length > 0 ? rows[0] : [];
+    const body = rows.slice(1);
+    tableNode = { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
+  }
   if (hasOptions) tableNode.options = options;
+  if (columnAlign) tableNode.columnAlign = columnAlign;
+  if (columnFormat) tableNode.columnFormat = columnFormat;
   return tableNode;
 }
 
@@ -2122,15 +2234,23 @@ function formatFormulaResult(cell) {
 function renderTable(table) {
   const dl = dataLineAttrs(table);
   const opts = table.options || {};
+  const colAlign = table.columnAlign || [];
+  const colFormat = table.columnFormat || [];
   const classes = ["sdoc-table"];
   if (opts.borderless) classes.push("sdoc-table-borderless");
   if (opts.headerless) classes.push("sdoc-table-headerless");
   const classAttr = classes.join(" ");
 
+  function cellStyle(colIndex) {
+    const align = colAlign[colIndex];
+    if (!align || align === "left") return "";
+    return ` style="text-align:${align}"`;
+  }
+
   let thead = "";
   if (table.headers.length > 0) {
     const headerCells = table.headers
-      .map((cell) => `<th class="sdoc-table-th">${renderInline(cell)}</th>`)
+      .map((cell, c) => `<th class="sdoc-table-th"${cellStyle(c)}>${renderInline(cell)}</th>`)
       .join("");
     thead = `<thead class="sdoc-table-head"><tr>${headerCells}</tr></thead>`;
   }
@@ -2142,16 +2262,33 @@ function renderTable(table) {
     .map((row, r) => {
       const cells = row
         .map((cell, c) => {
+          const style = cellStyle(c);
+          const fmt = colFormat[c] || null;
+
           if (isFormulaCell(cell)) {
             const result = grid[r][c];
-            const display = escapeHtml(formatFormulaResult(result));
+            let display;
+            if (!result.error && fmt) {
+              display = escapeHtml(formatNumber(result.value, fmt));
+            } else {
+              display = escapeHtml(formatFormulaResult(result));
+            }
             const formula = escapeAttr(cell.trim());
             if (result.error) {
-              return `<td class="sdoc-table-td sdoc-formula-error" title="${formula}">${display}</td>`;
+              return `<td class="sdoc-table-td sdoc-formula-error"${style} title="${formula}">${display}</td>`;
             }
-            return `<td class="sdoc-table-td sdoc-formula-cell" title="${formula}">${display}</td>`;
+            return `<td class="sdoc-table-td sdoc-formula-cell"${style} title="${formula}">${display}</td>`;
           }
-          return `<td class="sdoc-table-td">${renderInline(cell)}</td>`;
+
+          // Apply column format to numeric data cells
+          if (fmt) {
+            const parsed = parseCellValue(cell);
+            if (!isNaN(parsed.value)) {
+              return `<td class="sdoc-table-td"${style}>${escapeHtml(formatNumber(parsed.value, fmt))}</td>`;
+            }
+          }
+
+          return `<td class="sdoc-table-td"${style}>${renderInline(cell)}</td>`;
         })
         .join("");
       return `<tr>${cells}</tr>`;

@@ -33,6 +33,7 @@
             - v0.2.7 — VS Code Marketplace publishing (entropicwarrior-msenfin.vscode-sdoc), progressive disclosure API documented
             - v0.2.8 — collapsible scopes and copy-to-clipboard in all standalone HTML output
             - v0.2.12 — citations (\`[@key]\` inline references, \`{[citations]\` definition blocks, auto-numbering by order of first appearance, back-links, validation)
+            - v0.2.13 — column directives: per-column alignment (\`< > =\`) and number formatting (\`$\`, \`,.N\`, \`.N\`, \`%\`) in table directive rows
         }
 
         # GitHub Adoption
