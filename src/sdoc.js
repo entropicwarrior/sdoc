@@ -1827,7 +1827,7 @@ function renderScope(scope, depth, isTitleScope = false) {
   const dl = dataLineAttrs(scope);
   const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
   const typeClass = scope.scopeType ? ` sdoc-scope-type-${scope.scopeType}` : "";
-  const metaClass = isAbout ? " sdoc-meta-section sdoc-meta-section-about" : "";
+  const metaClass = isAbout ? " sdoc-meta-section" : "";
 
   if (scope.hasHeading === false) {
     return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}${metaClass}"${typeAttr}${dl}>${children}</section>`;
@@ -2946,7 +2946,7 @@ const DEFAULT_STYLE = `
      so readers can tell at a glance this is document metadata, not body content. */
   .sdoc-scope.sdoc-meta-section {
     position: relative;
-    margin: 1.2rem 0 1.6rem 3rem;
+    margin: 1.2rem 3rem 1.6rem 3rem;
     padding: 0.7rem 1rem 0.7rem 1rem;
     background: rgba(127, 120, 112, 0.06);
     border: 1px dashed var(--sdoc-border);
