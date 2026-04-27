@@ -604,7 +604,7 @@ Content of Section B.
 
         # About Scope @about-scope
         {
-            The reserved \`@about\` scope provides a discovery summary for the document. It is used by \`list_knowledge\` to describe the file and is also rendered in the document with a distinct meta-section style so readers can tell it apart from regular body content. Use the bare \`@about\` form (preferred) or the heading form:
+            The reserved \`@about\` scope provides a discovery summary for the document. It is used by \`list_knowledge\` to describe the file and is also rendered in the live preview with a distinct meta-section style so readers can tell it apart from regular body content. Use the bare \`@about\` form (preferred) or the heading form:
 
             ```
             @about {

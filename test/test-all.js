@@ -14,6 +14,7 @@ const {
   extractSection,
   extractAbout,
   isAboutEmpty,
+  stripAboutScopes,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   parseInline,
@@ -614,24 +615,53 @@ test("scope heading toggle is present", () => {
 // ============================================================
 console.log("\n--- @about HTML rendering ---");
 
-test("bare @about renders with sdoc-meta-section class and content", () => {
-  const html = renderHtmlDocument("# Doc\n{\n  @about\n  {\n    A short summary.\n  }\n  # Body\n  {\n    Content.\n  }\n}", "Test");
+test("bare @about renders with sdoc-meta-section class and content (preview-style)", () => {
+  // Renderer hides @about by default, so opt in to verify the meta-section emission.
+  const html = renderHtmlDocument("# Doc\n{\n  @about\n  {\n    A short summary.\n  }\n  # Body\n  {\n    Content.\n  }\n}", "Test", { includeAbout: true });
   assert(html.includes("sdoc-meta-section"), "should include sdoc-meta-section class");
-  assert(html.includes("A short summary."), "about content should be rendered, not filtered");
-  assert(html.includes("sdoc-scope-noheading"), "bare @about should render as headingless scope");
+  assert(html.includes("A short summary."), "about content should be rendered when includeAbout: true");
+  // Bare @about now gets a synthetic "About" heading instead of rendering headingless.
+  // Check the element itself, not just the class string (which also appears in inlined CSS).
+  assert(!/<section [^>]*sdoc-scope-noheading[^>]*>/.test(html), "bare @about should no longer render as a noheading section");
 });
 
-test("heading-form @about renders with sdoc-meta-section class and content", () => {
-  const html = renderHtmlDocument("# Doc\n{\n  # About @about\n  {\n    Description here.\n  }\n  # Body\n  {\n    Content.\n  }\n}", "Test");
+test("heading-form @about renders with sdoc-meta-section class and content (preview-style)", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  # About @about\n  {\n    Description here.\n  }\n  # Body\n  {\n    Content.\n  }\n}", "Test", { includeAbout: true });
   assert(html.includes("sdoc-meta-section"), "should include sdoc-meta-section class");
-  assert(html.includes("Description here."), "about content should be rendered, not filtered");
+  assert(html.includes("Description here."), "about content should be rendered when includeAbout: true");
   assert(/<h\d[^>]*>(?:<span class="sdoc-toggle"[^>]*><\/span>)?About<\/h\d>/.test(html), "About heading should be emitted");
 });
 
-test("@About heading-form with mixed-case id still gets meta-section class", () => {
-  const html = renderHtmlDocument("# Doc\n{\n  # About @About\n  {\n    Mixed case id.\n  }\n}", "Test");
+test("@About heading-form with mixed-case id still gets meta-section class (preview-style)", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  # About @About\n  {\n    Mixed case id.\n  }\n}", "Test", { includeAbout: true });
   assert(html.includes("sdoc-meta-section"), "case-insensitive @About should get meta-section class");
   assert(html.includes("Mixed case id."));
+});
+
+// --- @about default heading title ---
+
+const ABOUT_TITLE_HEADING = /<h\d[^>]*\bid="about"[^>]*>(?:<span class="sdoc-toggle"[^>]*><\/span>)?([^<]+)<\/h\d>/;
+
+test("@about with no title defaults to \"About\" heading", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  @about\n  {\n    Summary.\n  }\n}", "Test", { includeAbout: true });
+  const m = html.match(ABOUT_TITLE_HEADING);
+  assert(m, "@about should produce a heading element with id=\"about\"");
+  assert(m[1] === "About", "default title should be \"About\", got: " + m[1]);
+  assert(html.includes("Summary."), "content should still render");
+});
+
+test("@about with explicit \"About\" title renders \"About\" heading", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  # About @about\n  {\n    Summary.\n  }\n}", "Test", { includeAbout: true });
+  const m = html.match(ABOUT_TITLE_HEADING);
+  assert(m, "@about should produce a heading element with id=\"about\"");
+  assert(m[1] === "About", "explicit title should render as \"About\", got: " + m[1]);
+});
+
+test("@about with custom title preserves the custom title", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  # Document Discovery @about\n  {\n    Summary.\n  }\n}", "Test", { includeAbout: true });
+  const m = html.match(ABOUT_TITLE_HEADING);
+  assert(m, "@about should produce a heading element with id=\"about\"");
+  assert(m[1] === "Document Discovery", "custom title should NOT be replaced with default, got: " + m[1]);
 });
 
 test("empty bare @about renders nothing (no meta-section)", () => {
@@ -653,8 +683,8 @@ test("whitespace-only @about renders nothing", () => {
   assert(html.includes("Body"));
 });
 
-test("@about with non-blank content still renders meta-section", () => {
-  const html = renderHtmlBody("# Doc\n{\n  @about\n  {\n    Has content.\n  }\n  # Body\n  {\n    More.\n  }\n}");
+test("@about with non-blank content renders meta-section when includeAbout: true", () => {
+  const html = renderHtmlBody("# Doc\n{\n  @about\n  {\n    Has content.\n  }\n  # Body\n  {\n    More.\n  }\n}", { includeAbout: true });
   assert(html.includes("sdoc-meta-section"));
   assert(html.includes("Has content."));
 });
@@ -685,6 +715,86 @@ test("isAboutEmpty: mix of whitespace paragraphs → empty", () => {
 
 test("isAboutEmpty: non-paragraph child (list) → not empty", () => {
   assert(isAboutEmpty({ children: [{ type: "list", items: [] }] }) === false);
+});
+
+// ============================================================
+console.log("\n--- includeAbout option (export hides @about) ---");
+
+const ABOUT_SRC = "# Doc\n{\n  @about\n  {\n    Discovery summary text.\n  }\n  # Body\n  {\n    Real content.\n  }\n}";
+
+function hasAboutElement(html) {
+  // Match the actual <section> element — the class string also appears in the
+  // inlined CSS, so a substring check would give false positives.
+  return /<section [^>]*sdoc-meta-section[^>]*>/.test(html);
+}
+
+test("renderHtmlDocument default hides @about (export-shape output)", () => {
+  const html = renderHtmlDocument(ABOUT_SRC, "Test");
+  assert(!hasAboutElement(html), "default should NOT render the meta-section element");
+  assert(!html.includes("Discovery summary text."), "@about content should be stripped by default");
+  assert(html.includes("Real content."), "rest of the document still renders");
+});
+
+test("renderHtmlDocument with explicit includeAbout: false matches default", () => {
+  const html = renderHtmlDocument(ABOUT_SRC, "Test", { includeAbout: false });
+  assert(!hasAboutElement(html), "no meta-section element should be emitted");
+  assert(!html.includes("Discovery summary text."));
+  assert(html.includes("Real content."));
+});
+
+test("renderHtmlDocument with includeAbout: true keeps @about (preview path)", () => {
+  const html = renderHtmlDocument(ABOUT_SRC, "Test", { includeAbout: true });
+  assert(hasAboutElement(html));
+  assert(html.includes("Discovery summary text."));
+});
+
+test("renderHtmlBody respects includeAbout option", () => {
+  const bodyDefault = renderHtmlBody(ABOUT_SRC);
+  const bodyOptIn = renderHtmlBody(ABOUT_SRC, { includeAbout: true });
+  assert(!bodyDefault.includes("sdoc-meta-section"), "default hides about");
+  assert(bodyOptIn.includes("sdoc-meta-section"), "opt-in keeps about");
+  assert(bodyDefault.includes("Real content."), "rest of doc still renders even when about is hidden");
+});
+
+test("stripAboutScopes removes top-level @about", () => {
+  const r = parseSdoc(ABOUT_SRC);
+  const stripped = stripAboutScopes(r.nodes);
+  function hasAbout(nodes) {
+    return nodes.some((n) =>
+      (n.type === "scope" && n.id && n.id.toLowerCase() === "about")
+      || (n.children && hasAbout(n.children))
+    );
+  }
+  assert(!hasAbout(stripped), "no @about scope should remain after stripping");
+});
+
+test("stripAboutScopes is recursive (removes nested @about too)", () => {
+  const r = parseSdoc("# Doc\n{\n  @about\n  {\n    Top.\n  }\n  # Inner\n  {\n    # About @about\n    {\n      Nested.\n    }\n    Body.\n  }\n}");
+  const stripped = stripAboutScopes(r.nodes);
+  function findAboutDeep(nodes) {
+    return nodes.some((n) =>
+      (n.type === "scope" && n.id && n.id.toLowerCase() === "about")
+      || (n.children && findAboutDeep(n.children))
+    );
+  }
+  assert(!findAboutDeep(stripped), "nested @about should also be removed");
+});
+
+test("stripAboutScopes preserves non-about siblings unchanged", () => {
+  const r = parseSdoc(ABOUT_SRC);
+  const stripped = stripAboutScopes(r.nodes);
+  // Top-level Doc scope should still have its non-about child (Body).
+  const doc = stripped.find((n) => n.type === "scope" && n.title === "Doc");
+  assert(doc, "Doc scope should still be present");
+  const body = doc.children.find((n) => n.type === "scope" && n.title === "Body");
+  assert(body, "Body scope should still be present after stripping @about");
+});
+
+test("stripAboutScopes does not mutate input nodes", () => {
+  const r = parseSdoc(ABOUT_SRC);
+  const before = JSON.stringify(r.nodes);
+  stripAboutScopes(r.nodes);
+  assert(JSON.stringify(r.nodes) === before, "input AST should be unchanged");
 });
 
 // ============================================================

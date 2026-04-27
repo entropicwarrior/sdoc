@@ -1823,6 +1823,13 @@ function renderScope(scope, depth, isTitleScope = false) {
   // Skip empty/whitespace-only @about — no point rendering an empty meta box.
   if (isAbout && isAboutEmpty(scope)) return "";
 
+  // Bare `@about { ... }` (no heading) and heading-form with empty title both
+  // get a default heading of "About" so the meta-section is always labelled.
+  // A custom title (e.g. `# Document Discovery @about`) is preserved.
+  if (isAbout && (!scope.hasHeading || !scope.title || !scope.title.trim())) {
+    scope = { ...scope, hasHeading: true, title: "About" };
+  }
+
   const level = Math.min(6, Math.max(1, depth));
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
   const rootClass = isTitleScope ? " sdoc-root" : "";
@@ -3118,15 +3125,21 @@ function renderBodyNodes(nodes) {
     .join("\n");
 }
 
-function renderHtmlBody(text) {
+function renderHtmlBody(text, options = {}) {
   const parsed = parseSdoc(text);
   const metaResult = extractMeta(parsed.nodes);
   const savedOptions = _renderOptions;
   _renderOptions = {};
-  const citationData = buildCitationNumbering(metaResult.nodes);
+  // includeAbout defaults to false: HTML output is treated as "export-shape"
+  // by default, hiding the discovery summary. The preview path in
+  // extension.js opts in with `includeAbout: true` to keep the meta-section
+  // visible during authoring.
+  const includeAbout = options.includeAbout === true;
+  const renderNodes = includeAbout ? metaResult.nodes : stripAboutScopes(metaResult.nodes);
+  const citationData = buildCitationNumbering(renderNodes);
   _citationNumbering = citationData.numbering;
   _citationDefinitions = citationData.definitions;
-  const result = renderBodyNodes(metaResult.nodes);
+  const result = renderBodyNodes(renderNodes);
   _citationNumbering = new Map();
   _citationDefinitions = new Map();
   _renderOptions = savedOptions;
@@ -3135,10 +3148,16 @@ function renderHtmlBody(text) {
 
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   _renderOptions = options.renderOptions ?? {};
-  const citationData = buildCitationNumbering(parsed.nodes);
+  // includeAbout defaults to false: HTML/PDF output is hidden-by-default
+  // because exported files are normally sent to a specific recipient who has
+  // already been asked to read the doc, so the "should I read this?" framing
+  // in @about adds noise. The live preview opts in with `includeAbout: true`.
+  const includeAbout = options.includeAbout === true;
+  const renderNodes = includeAbout ? parsed.nodes : stripAboutScopes(parsed.nodes);
+  const citationData = buildCitationNumbering(renderNodes);
   _citationNumbering = citationData.numbering;
   _citationDefinitions = citationData.definitions;
-  const body = renderBodyNodes(parsed.nodes);
+  const body = renderBodyNodes(renderNodes);
   _citationNumbering = new Map();
   _citationDefinitions = new Map();
   _renderOptions = {};
@@ -3166,13 +3185,13 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const mermaidInit = mermaidTheme === "auto"
     ? `var isDark=window.matchMedia("(prefers-color-scheme:dark)").matches;mermaid.initialize({startOnLoad:true,theme:isDark?"dark":"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`
     : `mermaid.initialize({startOnLoad:true,theme:"${mermaidTheme}",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`;
-  const mermaidScript = hasMermaidBlocks(parsed.nodes)
+  const mermaidScript = hasMermaidBlocks(renderNodes)
     ? `\n<script src="${MERMAID_CDN}"></script>\n<script>${mermaidInit}</script>`
     : "";
   const katexCssTag = body.includes('class="katex"')
     ? `\n<link rel="stylesheet" href="${KATEX_CDN_CSS}" />`
     : "";
-  const hasHljs = hasHighlightableCodeBlocks(parsed.nodes);
+  const hasHljs = hasHighlightableCodeBlocks(renderNodes);
   // Highlight.js CSS is inlined (not a <link>) so it is extracted by parseDocHtml in the web viewer
   // and applied inside shadow DOM. The @media query handles dark mode in browsers.
   const hljsCssInline = hasHljs
@@ -3494,6 +3513,26 @@ function isAboutEmpty(scope) {
   );
 }
 
+// Recursively remove @about scopes from an AST. Used by the HTML/PDF export
+// paths, which hide @about by default: when a doc is exported and sent to a
+// specific recipient, the "should I read this?" framing is moot — the sender
+// already decided the answer is yes. Pass-through for nodes without children.
+function stripAboutScopes(nodes) {
+  if (!Array.isArray(nodes)) return nodes;
+  const result = [];
+  for (const node of nodes) {
+    if (node && node.type === "scope" && node.id && node.id.toLowerCase() === "about") {
+      continue;
+    }
+    if (node && node.type === "scope" && Array.isArray(node.children)) {
+      result.push({ ...node, children: stripAboutScopes(node.children) });
+    } else {
+      result.push(node);
+    }
+  }
+  return result;
+}
+
 function collectAllIds(nodes) {
   const ids = new Set();
   function walk(nodeList) {
@@ -3720,6 +3759,7 @@ module.exports = {
   extractSection,
   extractAbout,
   isAboutEmpty,
+  stripAboutScopes,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   // Validation

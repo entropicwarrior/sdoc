@@ -75,6 +75,7 @@ const html = renderHtmlDocument(sdocText, "Page Title", {
             - `options.config` -- object with `header` and `footer` strings
             - `options.cssOverride` -- replaces the default stylesheet
             - `options.cssAppend` -- appended after the base stylesheet
+            - `options.includeAbout` -- whether to render the `@about` scope (default `false`). Set to `true` for preview-style rendering where the discovery summary should remain visible. See **Hiding @about in exports** below.
             - Automatically extracts and applies `@meta` scope settings
         }
     }
@@ -93,6 +94,33 @@ const html = renderHtmlDocumentFromParsed(
     { meta: metaResult.meta }
 );
         ```
+
+        Accepts the same `options.includeAbout` flag as `renderHtmlDocument` (default `false`).
+    }
+
+    # Hiding `@about` in exports @hiding-about-in-exports
+    {
+        The `@about` scope is a discovery summary — it answers "should I read this document?" for an audience that hasn't decided yet (e.g. an agent doing `list_knowledge`, or a reader browsing a doc index). When a document is exported to HTML or PDF and sent to a specific recipient, that audience has already been told to read it, so the discovery framing adds noise rather than signal.
+
+        For that reason, **all HTML and PDF rendering paths hide `@about` by default**. This applies uniformly to `renderHtmlDocument`, `renderHtmlDocumentFromParsed`, `renderHtmlBody`, the `tools/build-doc.js` CLI, and the VS Code `sdoc.exportHtml` / `sdoc.exportPdf` commands. The live preview in the VS Code extension is the only path that explicitly opts in by passing `includeAbout: true`, so authors still see the meta-section while editing.
+
+        ```javascript
+// Default — @about is hidden (export-shape output)
+const html = renderHtmlDocument(sdocText, "Title");
+const html = renderHtmlDocument(sdocText, "Title", { includeAbout: false });
+
+// Opt in to keep @about (preview-style rendering)
+const html = renderHtmlDocument(sdocText, "Title", { includeAbout: true });
+        ```
+
+        Empty or whitespace-only `@about` scopes are never rendered, regardless of the flag.
+
+        **Helpers.** Two small helpers back this feature, both exported for custom renderers:
+
+        {[.]
+            - `isAboutEmpty(scope)` -- returns `true` when an `@about` scope has no children, or only whitespace-only paragraphs
+            - `stripAboutScopes(nodes)` -- returns a new node array with all `@about` scopes recursively removed; the input is not mutated
+        }
     }
 
     # renderFragment(nodes, depth)
