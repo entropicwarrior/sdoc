@@ -982,6 +982,29 @@ Content of Section B.
                 }
             }
         }
+
+        # About Scope @about-scope
+        {
+            A reserved \`@about\` scope holds a short discovery summary for the document — what it covers, who it is for, and when to reach for it. The bare form is preferred:
+
+            ```sdoc
+            @about {
+                How to write correct SDOC files. Covers document structure,
+                inline formatting, block types, and common mistakes.
+            }
+            ```
+
+            The heading form `# Title @about { }` is also accepted; the title given there overrides the default `About` label when the section is rendered.
+
+            {[.]
+                - The `@about` id is reserved and must not be used for normal references
+                - The scope is consumed by discovery tooling (e.g. `list_knowledge` and related agent-facing helpers) to describe a document without loading the full body
+                - In the VS Code live preview, `@about` renders as a meta-section — distinct background, dashed border, subdued typography — so readers can tell it apart from regular body content
+                - **HTML and PDF export hide `@about` by default**, on the principle that an exported file is normally sent to a recipient who has already been asked to read it, so the "should I read this?" framing is redundant. Renderers expose an `includeAbout` opt-in (`--include-about` for the CLI; `{ includeAbout: true }` for the VS Code export commands)
+                - When rendered, a bare `@about { ... }` (no heading line) is given a synthesized `About` heading so the meta-section is always labelled. The heading form preserves any custom title the author wrote
+                - An empty or whitespace-only `@about` scope is never rendered, regardless of the `includeAbout` setting — the meta-section box is suppressed entirely
+            }
+        }
     }
 
     # Interactive Preview @interactive-preview

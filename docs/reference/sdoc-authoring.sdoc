@@ -554,7 +554,7 @@ Content of Section B.
         {
             The reserved \`@meta\` scope configures per-file settings and is not rendered in the document body. Use the bare \`@meta\` form (preferred) or the heading form:
 
-            ```
+            ```sdoc
             @meta {
                 type: doc
 
@@ -606,13 +606,18 @@ Content of Section B.
         {
             The reserved \`@about\` scope provides a discovery summary for the document. It is used by \`list_knowledge\` to describe the file and is also rendered in the live preview with a distinct meta-section style so readers can tell it apart from regular body content. Use the bare \`@about\` form (preferred) or the heading form:
 
-            ```
+            ```sdoc
             @about {
-                How to write correct SDOC files. Covers document structure, inline formatting, block types, and common mistakes.
+                How to write correct SDOC files.
+                Covers document structure, inline formatting, block types, and common mistakes.
             }
             ```
 
-            The heading form \`# About @about { }\` also works but the bare form is preferred.
+            The heading form \`# About @about { }\` also works but the bare form is preferred. With the bare form, the renderer synthesizes an \`About\` heading so the meta-section is always labelled. The heading form lets you override that label — \`# Document Discovery @about { }\` renders with `Document Discovery` as the title.
+
+            **Hidden by default in HTML / PDF exports.** Exported files are usually sent to a recipient who has already decided to read the document, so the \`@about\` discovery summary is redundant in that context. To keep it in an export, pass the opt-in flag — \`--include-about\` (see [CLI and Tools Reference](./cli.sdoc)).
+
+            An empty or whitespace-only \`@about\` scope is never rendered, regardless of the include flag.
         }
 
         # Escaping @escaping
