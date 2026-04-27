@@ -1818,8 +1818,8 @@ function renderInlineNodes(nodes) {
 function renderScope(scope, depth, isTitleScope = false) {
   // :comment scopes are not rendered
   if (scope.scopeType === "comment") return "";
-  // @about is document metadata, not rendered in output
-  if (scope.id && scope.id.toLowerCase() === "about") return "";
+
+  const isAbout = scope.id && scope.id.toLowerCase() === "about";
 
   const level = Math.min(6, Math.max(1, depth));
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
@@ -1827,9 +1827,10 @@ function renderScope(scope, depth, isTitleScope = false) {
   const dl = dataLineAttrs(scope);
   const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
   const typeClass = scope.scopeType ? ` sdoc-scope-type-${scope.scopeType}` : "";
+  const metaClass = isAbout ? " sdoc-meta-section sdoc-meta-section-about" : "";
 
   if (scope.hasHeading === false) {
-    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}"${typeAttr}${dl}>${children}</section>`;
+    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}${metaClass}"${typeAttr}${dl}>${children}</section>`;
   }
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
@@ -1837,7 +1838,7 @@ function renderScope(scope, depth, isTitleScope = false) {
   const toggle = hasChildren ? `<span class="sdoc-toggle"></span>` : "";
   const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}"${dl}>${toggle}${renderInline(scope.title)}</h${level}>`;
   const childrenHtml = children ? `\n<div class="sdoc-scope-children">${children}</div>` : "";
-  return `<section class="sdoc-scope${rootClass}${typeClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
+  return `<section class="sdoc-scope${rootClass}${typeClass}${metaClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
 }
 
 function renderCitations(node) {
@@ -2939,6 +2940,43 @@ const DEFAULT_STYLE = `
 
   .sdoc-scope.sdoc-collapsed > .sdoc-scope-children {
     display: none;
+  }
+
+  /* Meta sections (@about) — rendered with a distinct, subdued style
+     so readers can tell at a glance this is document metadata, not body content. */
+  .sdoc-scope.sdoc-meta-section {
+    position: relative;
+    margin: 1.2rem 0 1.6rem 3rem;
+    padding: 0.7rem 1rem 0.7rem 1rem;
+    background: rgba(127, 120, 112, 0.06);
+    border: 1px dashed var(--sdoc-border);
+    border-left: 3px solid var(--sdoc-muted);
+    border-radius: 6px;
+    color: var(--sdoc-muted);
+    font-size: 0.95em;
+  }
+
+  .sdoc-meta-section .sdoc-heading {
+    margin-top: 0.2rem;
+    color: var(--sdoc-muted);
+    font-weight: 600;
+    border-bottom: none;
+  }
+
+  .sdoc-meta-section .sdoc-paragraph {
+    margin: 0.3rem 0;
+    font-style: italic;
+  }
+
+  .sdoc-meta-section .sdoc-scope-children > .sdoc-scope {
+    padding-left: 0;
+  }
+
+  /* Place the collapse toggle in the gutter to the LEFT of the meta
+     box (in the space created by margin-left), not on the colored
+     left border. Default is left: -1.4em which lands on the border. */
+  .sdoc-meta-section > .sdoc-heading > .sdoc-toggle {
+    left: -2.6em;
   }
 
 `;
