@@ -13,6 +13,7 @@ const {
   listSections,
   extractSection,
   extractAbout,
+  isAboutEmpty,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   parseInline,
@@ -608,6 +609,82 @@ test("task list renders checkboxes", () => {
 test("scope heading toggle is present", () => {
   const html = renderHtmlDocument("# Doc\n{\n  # Child\n  {\n    Nested.\n  }\n}", "Test");
   assert(html.includes("sdoc-toggle"));
+});
+
+// ============================================================
+console.log("\n--- @about HTML rendering ---");
+
+test("bare @about renders with sdoc-meta-section class and content", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  @about\n  {\n    A short summary.\n  }\n  # Body\n  {\n    Content.\n  }\n}", "Test");
+  assert(html.includes("sdoc-meta-section"), "should include sdoc-meta-section class");
+  assert(html.includes("A short summary."), "about content should be rendered, not filtered");
+  assert(html.includes("sdoc-scope-noheading"), "bare @about should render as headingless scope");
+});
+
+test("heading-form @about renders with sdoc-meta-section class and content", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  # About @about\n  {\n    Description here.\n  }\n  # Body\n  {\n    Content.\n  }\n}", "Test");
+  assert(html.includes("sdoc-meta-section"), "should include sdoc-meta-section class");
+  assert(html.includes("Description here."), "about content should be rendered, not filtered");
+  assert(/<h\d[^>]*>(?:<span class="sdoc-toggle"[^>]*><\/span>)?About<\/h\d>/.test(html), "About heading should be emitted");
+});
+
+test("@About heading-form with mixed-case id still gets meta-section class", () => {
+  const html = renderHtmlDocument("# Doc\n{\n  # About @About\n  {\n    Mixed case id.\n  }\n}", "Test");
+  assert(html.includes("sdoc-meta-section"), "case-insensitive @About should get meta-section class");
+  assert(html.includes("Mixed case id."));
+});
+
+test("empty bare @about renders nothing (no meta-section)", () => {
+  const html = renderHtmlBody("# Doc\n{\n  @about\n  {\n  }\n  # Body\n  {\n    Content.\n  }\n}");
+  assert(!html.includes("sdoc-meta-section"), "empty @about should not emit meta-section wrapper");
+  assert(html.includes("Body"), "rest of document should still render");
+});
+
+test("empty heading-form @about renders nothing", () => {
+  const html = renderHtmlBody("# Doc\n{\n  # About @about\n  {\n  }\n  # Body\n  {\n    Content.\n  }\n}");
+  assert(!html.includes("sdoc-meta-section"), "empty @about should not emit meta-section wrapper");
+  assert(!/<h\d[^>]*>(?:<span class="sdoc-toggle"[^>]*><\/span>)?About<\/h\d>/.test(html), "About heading should not be emitted for empty scope");
+  assert(html.includes("Body"));
+});
+
+test("whitespace-only @about renders nothing", () => {
+  const html = renderHtmlBody("# Doc\n{\n  @about\n  {\n     \n  \t  \n  }\n  # Body\n  {\n    Content.\n  }\n}");
+  assert(!html.includes("sdoc-meta-section"), "whitespace-only @about should be treated as empty");
+  assert(html.includes("Body"));
+});
+
+test("@about with non-blank content still renders meta-section", () => {
+  const html = renderHtmlBody("# Doc\n{\n  @about\n  {\n    Has content.\n  }\n  # Body\n  {\n    More.\n  }\n}");
+  assert(html.includes("sdoc-meta-section"));
+  assert(html.includes("Has content."));
+});
+
+test("isAboutEmpty: no children → empty", () => {
+  assert(isAboutEmpty({ children: [] }) === true);
+});
+
+test("isAboutEmpty: missing children → empty", () => {
+  assert(isAboutEmpty({}) === true);
+  assert(isAboutEmpty(null) === true);
+});
+
+test("isAboutEmpty: paragraph with content → not empty", () => {
+  assert(isAboutEmpty({ children: [{ type: "paragraph", text: "Hi." }] }) === false);
+});
+
+test("isAboutEmpty: whitespace-only paragraph → empty", () => {
+  assert(isAboutEmpty({ children: [{ type: "paragraph", text: "   \t  " }] }) === true);
+});
+
+test("isAboutEmpty: mix of whitespace paragraphs → empty", () => {
+  assert(isAboutEmpty({ children: [
+    { type: "paragraph", text: " " },
+    { type: "paragraph", text: "" }
+  ] }) === true);
+});
+
+test("isAboutEmpty: non-paragraph child (list) → not empty", () => {
+  assert(isAboutEmpty({ children: [{ type: "list", items: [] }] }) === false);
 });
 
 // ============================================================

@@ -7,7 +7,7 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const blocks = renderNotionBlocks(nodes);
 
-const { parseInline } = require("./sdoc");
+const { parseInline, isAboutEmpty } = require("./sdoc");
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -294,7 +294,8 @@ function renderScope(scope, depth, nestLevel) {
   if (scope.scopeType === "comment") return [];
 
   if (scope.id && scope.id.toLowerCase() === "about") {
-    return renderAboutCallout(scope);
+    if (isAboutEmpty(scope)) return [];
+    return renderAboutCallout(scope, depth, nestLevel);
   }
 
   const level = Math.min(3, Math.max(1, depth));
@@ -317,7 +318,12 @@ function renderScope(scope, depth, nestLevel) {
 // Render @about as a Notion callout so readers can tell it apart from body
 // content. Paragraph children fold into the callout's rich_text (separated by
 // newlines); anything else becomes a child block.
-function renderAboutCallout(scope) {
+function renderAboutCallout(scope, depth, nestLevel) {
+  // Callout children sit one level deeper in the Notion block tree than the
+  // callout itself. Clamp to MAX_NEST so we never produce blocks past Notion's
+  // nesting limit.
+  const childDepth = depth + 1;
+  const childNestLevel = Math.min(nestLevel + 1, MAX_NEST);
   const richTexts = [];
   const childBlocks = [];
 
@@ -330,7 +336,7 @@ function renderAboutCallout(scope) {
       richTexts.push(...rt);
       childBlocks.push(...imageBlocks);
     } else {
-      childBlocks.push(...renderNode(child, 2, 1));
+      childBlocks.push(...renderNode(child, childDepth, childNestLevel));
     }
   }
 

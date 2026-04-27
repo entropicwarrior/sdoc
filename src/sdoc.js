@@ -1820,6 +1820,8 @@ function renderScope(scope, depth, isTitleScope = false) {
   if (scope.scopeType === "comment") return "";
 
   const isAbout = scope.id && scope.id.toLowerCase() === "about";
+  // Skip empty/whitespace-only @about — no point rendering an empty meta box.
+  if (isAbout && isAboutEmpty(scope)) return "";
 
   const level = Math.min(6, Math.max(1, depth));
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
@@ -3482,6 +3484,16 @@ function extractAbout(nodes) {
   return null;
 }
 
+// True when an @about scope has no meaningful content. Renderers use this to
+// skip emitting an empty meta-section / callout. Whitespace-only paragraphs
+// count as empty.
+function isAboutEmpty(scope) {
+  if (!scope || !scope.children || scope.children.length === 0) return true;
+  return scope.children.every(
+    (child) => child.type === "paragraph" && (!child.text || child.text.trim() === "")
+  );
+}
+
 function collectAllIds(nodes) {
   const ids = new Set();
   function walk(nodeList) {
@@ -3707,6 +3719,7 @@ module.exports = {
   listSections,
   extractSection,
   extractAbout,
+  isAboutEmpty,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   // Validation
