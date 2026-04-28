@@ -29,11 +29,23 @@
         # Export HTML
         {
             Exports the current SDOC document as a self-contained `.html` file. Works from the editor or the preview panel. The exported file includes all styles and supports collapsible scope toggles in the browser.
+
+            **`@about` is hidden by default in exports.** The reasoning: an exported file is normally sent to a specific recipient who has already decided to read it, so the "should I read this?" framing of `@about` is redundant in that context. To keep `@about` in the output, invoke the command programmatically with `{ includeAbout: true }`:
+
+            ```javascript
+vscode.commands.executeCommand("sdoc.exportHtml", { includeAbout: true });
+            ```
         }
 
         # Export PDF
         {
             Exports the current SDOC document as an A4 PDF. Works from the editor or the preview panel. Requires Google Chrome or Chromium installed on the system (or set the `CHROME_PATH` environment variable). The PDF uses print-optimized styles with correct font sizes and preserved marker colors.
+
+            Like Export HTML, `@about` is hidden by default. Pass `{ includeAbout: true }` to keep it:
+
+            ```javascript
+vscode.commands.executeCommand("sdoc.exportPdf", { includeAbout: true });
+            ```
         }
 
         # Open in Browser
@@ -51,6 +63,7 @@ node tools/build-doc.js input.sdoc                   # PDF output (default)
 node tools/build-doc.js input.sdoc -o output.pdf      # PDF with custom path
 node tools/build-doc.js input.sdoc --html             # HTML output
 node tools/build-doc.js input.sdoc --html -o out.html  # HTML with custom path
+node tools/build-doc.js input.sdoc --include-about    # keep @about in the export
         ```
 
         # Options
@@ -58,6 +71,7 @@ node tools/build-doc.js input.sdoc --html -o out.html  # HTML with custom path
             {[.]
                 - `-o <path>` -- output file path (default: input name with `.pdf` or `.html` extension)
                 - `--html` -- export as HTML instead of PDF
+                - `--include-about` -- keep the `@about` scope in the export. By default it is hidden because exported files are normally sent to a specific recipient who has already been asked to read the document, so the discovery summary in `@about` is redundant.
                 - `--help` / `-h` -- show usage information and exit
             }
         }

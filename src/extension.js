@@ -50,12 +50,15 @@ function activate(context) {
     showPreview(document, vscode.ViewColumn.Active);
   });
 
-  const exportHtmlCommand = vscode.commands.registerCommand("sdoc.exportHtml", () => {
-    exportHtml();
+  // Export commands accept an optional { includeAbout } arg when invoked
+  // programmatically (e.g. via `vscode.commands.executeCommand`). Default is
+  // false — the @about scope is hidden in exports.
+  const exportHtmlCommand = vscode.commands.registerCommand("sdoc.exportHtml", (args) => {
+    exportHtml(args || {});
   });
 
-  const exportPdfCommand = vscode.commands.registerCommand("sdoc.exportPdf", () => {
-    exportPdfDoc();
+  const exportPdfCommand = vscode.commands.registerCommand("sdoc.exportPdf", (args) => {
+    exportPdfDoc(args || {});
   });
 
   const openInBrowserCommand = vscode.commands.registerCommand("sdoc.openInBrowser", () => {
@@ -1126,6 +1129,9 @@ async function buildHtml(document, title, webview) {
       cssAppend: cssAppendParts.join("\n"),
       script: buildWebviewScript(),
       mermaidTheme: isDark ? "dark" : "neutral",
+      // Live preview keeps @about visible — the renderer defaults to hiding
+      // it for export-style output.
+      includeAbout: true,
       renderOptions: { editable: false, brokenRefIds, brokenLinkHrefs }
     }
   );
@@ -1356,7 +1362,12 @@ function buildCollapseScript() {
 `;
 }
 
-async function buildCleanHtml(document) {
+// HTML/PDF export path. By default the @about scope is hidden because the
+// recipient of an exported file has already been asked to read it — the
+// "should I read this?" framing in @about is for discovery, not for someone
+// who already has the doc in hand. Pass { includeAbout: true } to keep it.
+async function buildCleanHtml(document, exportOptions = {}) {
+  const includeAbout = exportOptions.includeAbout === true;
   const parsed = parseSdoc(document.getText());
   const metaResult = extractMeta(parsed.nodes);
   const config = loadConfigForDocument(document);
@@ -1393,12 +1404,13 @@ async function buildCleanHtml(document) {
       cssOverride: cssOverride || undefined,
       cssAppend: cssAppendParts.join("\n"),
       script: buildCollapseScript(),
-      mermaidTheme: "auto"
+      mermaidTheme: "auto",
+      includeAbout
     }
   );
 }
 
-async function exportHtml() {
+async function exportHtml(exportOptions = {}) {
   const docPromise = getActivePreviewDocument();
   if (!docPromise) {
     vscode.window.showInformationMessage("No SDOC document is open.");
@@ -1418,12 +1430,12 @@ async function exportHtml() {
     return;
   }
 
-  const html = await buildCleanHtml(document);
+  const html = await buildCleanHtml(document, exportOptions);
   fs.writeFileSync(target.fsPath, html, "utf8");
   vscode.window.showInformationMessage(`Exported: ${path.basename(target.fsPath)}`);
 }
 
-async function exportPdfDoc() {
+async function exportPdfDoc(exportOptions = {}) {
   const docPromise = getActivePreviewDocument();
   if (!docPromise) {
     vscode.window.showInformationMessage("No SDOC document is open.");
@@ -1441,7 +1453,7 @@ async function exportPdfDoc() {
 
   if (!target) return;
 
-  const html = await buildCleanHtml(document);
+  const html = await buildCleanHtml(document, exportOptions);
   const tmpHtml = path.join(os.tmpdir(), "sdoc-pdf-" + Date.now() + ".html");
   fs.writeFileSync(tmpHtml, html, "utf8");
 

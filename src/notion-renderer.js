@@ -7,7 +7,7 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const blocks = renderNotionBlocks(nodes);
 
-const { parseInline } = require("./sdoc");
+const { parseInline, isAboutEmpty } = require("./sdoc");
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -293,6 +293,11 @@ function renderNode(node, depth, nestLevel) {
 function renderScope(scope, depth, nestLevel) {
   if (scope.scopeType === "comment") return [];
 
+  if (scope.id && scope.id.toLowerCase() === "about") {
+    if (isAboutEmpty(scope)) return [];
+    return renderAboutCallout(scope, depth, nestLevel);
+  }
+
   const level = Math.min(3, Math.max(1, depth));
 
   if (scope.hasHeading === false) {
@@ -308,6 +313,49 @@ function renderScope(scope, depth, nestLevel) {
   // At the nest limit: emit flat heading, children as siblings at same level
   const childBlocks = renderChildren(scope.children, depth + 1, nestLevel);
   return [headingBlock(level, scope.title, null), ...childBlocks];
+}
+
+// Render @about as a Notion callout so readers can tell it apart from body
+// content. Paragraph children fold into the callout's rich_text (separated by
+// newlines); anything else becomes a child block.
+function renderAboutCallout(scope, depth, nestLevel) {
+  // Callout children sit one level deeper in the Notion block tree than the
+  // callout itself. Clamp to MAX_NEST so we never produce blocks past Notion's
+  // nesting limit.
+  const childDepth = depth + 1;
+  const childNestLevel = Math.min(nestLevel + 1, MAX_NEST);
+  const richTexts = [];
+  const childBlocks = [];
+
+  for (const child of scope.children || []) {
+    if (child.type === "paragraph") {
+      if (richTexts.length > 0) {
+        richTexts.push(richText("\n", null, defaultAnnotations()));
+      }
+      const { richText: rt, imageBlocks } = extractImagesFromInline(child.text);
+      richTexts.push(...rt);
+      childBlocks.push(...imageBlocks);
+    } else {
+      childBlocks.push(...renderNode(child, childDepth, childNestLevel));
+    }
+  }
+
+  if (richTexts.length === 0) {
+    richTexts.push(richText("", null, defaultAnnotations()));
+  }
+
+  const callout = {
+    type: "callout",
+    callout: {
+      rich_text: enforceContentLimit(richTexts, RICH_TEXT_LIMIT),
+      icon: { type: "emoji", emoji: "ℹ️" },
+      color: "gray_background"
+    }
+  };
+  if (childBlocks.length > 0) {
+    callout.callout.children = childBlocks;
+  }
+  return [callout];
 }
 
 function renderParagraph(node) {

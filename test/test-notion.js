@@ -518,5 +518,102 @@ test("deeply nested scopes all flatten under heading_1", () => {
 });
 
 // ============================================================
+console.log("\n--- @about callout rendering ---");
+
+test("bare @about renders as a callout block", () => {
+  const sdoc = "# Doc {\n  @about {\n    A short summary.\n  }\n  # Body {\n    Content.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const docChildren = blocks[0].heading_1.children;
+  const callout = docChildren.find(b => b.type === "callout");
+  assert(callout, "should produce a callout block for @about");
+  assert(callout.callout.icon.emoji === "ℹ️", "callout uses info icon");
+  assert(callout.callout.color === "gray_background", "callout uses gray background");
+  const text = callout.callout.rich_text.map(rt => rt.text.content).join("");
+  assert(text.includes("A short summary."), "callout rich_text should include the about prose");
+});
+
+test("heading-form @about renders as callout without an extra heading block", () => {
+  const sdoc = "# Doc {\n  # About @about {\n    Description here.\n  }\n  # Body {\n    Body content.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const docChildren = blocks[0].heading_1.children;
+  const aboutBlocks = docChildren.filter(b => b.type === "callout" || (b.type === "heading_2" && b.heading_2.rich_text.some(rt => rt.text.content === "About")));
+  assert(aboutBlocks.length === 1, "should not emit an extra About heading; got " + aboutBlocks.length);
+  assert(aboutBlocks[0].type === "callout", "About scope should render as callout, not a heading");
+  const text = aboutBlocks[0].callout.rich_text.map(rt => rt.text.content).join("");
+  assert(text.includes("Description here."));
+});
+
+test("@about with multiple paragraphs joins them with newlines in callout rich_text", () => {
+  const sdoc = "# Doc {\n  @about {\n    First paragraph.\n\n    Second paragraph.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout, "should produce a callout");
+  const text = callout.callout.rich_text.map(rt => rt.text.content).join("");
+  assert(text.includes("First paragraph."));
+  assert(text.includes("Second paragraph."));
+  assert(text.includes("\n"), "paragraphs should be separated by a newline");
+});
+
+test("@about with a list emits the list as a callout child", () => {
+  const sdoc = "# Doc {\n  @about {\n    Intro line.\n    {[.]\n      - First\n      - Second\n    }\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout, "should produce a callout");
+  assert(Array.isArray(callout.callout.children), "callout should have children array when list is present");
+  const listBlocks = callout.callout.children.filter(b => b.type === "bulleted_list_item");
+  assert(listBlocks.length === 2, "list items should be rendered as callout children, got " + listBlocks.length);
+});
+
+test("@about with a table emits the table as a callout child", () => {
+  const sdoc = "# Doc {\n  @about {\n    Summary.\n    {[table]\n      Key | Value\n      a | 1\n    }\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout, "should produce a callout");
+  assert(Array.isArray(callout.callout.children), "callout should have children array when table is present");
+  const tableBlock = callout.callout.children.find(b => b.type === "table");
+  assert(tableBlock, "table should be rendered as a callout child");
+});
+
+test("@About heading-form with mixed-case id still renders as callout", () => {
+  const sdoc = "# Doc {\n  # About @About {\n    Case insensitive.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout, "case-insensitive @About should still render as callout");
+});
+
+test("empty bare @about emits no callout", () => {
+  const sdoc = "# Doc {\n  @about {\n  }\n  # Body {\n    Content.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const docChildren = blocks[0].heading_1.children;
+  assert(!docChildren.some(b => b.type === "callout"), "empty @about should not emit a callout block");
+  assert(docChildren.some(b => b.type === "heading_2"), "rest of document should still render");
+});
+
+test("empty heading-form @about emits no callout and no heading", () => {
+  const sdoc = "# Doc {\n  # About @about {\n  }\n  # Body {\n    Content.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const docChildren = blocks[0].heading_1.children;
+  assert(!docChildren.some(b => b.type === "callout"), "empty @about should not emit a callout");
+  const aboutHeading = docChildren.find(b =>
+    b.type === "heading_2" && b.heading_2.rich_text.some(rt => rt.text.content === "About")
+  );
+  assert(!aboutHeading, "empty @about should not emit an About heading either");
+});
+
+test("whitespace-only @about emits no callout", () => {
+  const sdoc = "# Doc {\n  @about {\n      \n   \n  }\n  # Body {\n    Content.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const docChildren = blocks[0].heading_1.children;
+  assert(!docChildren.some(b => b.type === "callout"), "whitespace-only @about should be treated as empty");
+});
+
+test("@about with content still emits callout (regression guard for empty-skip)", () => {
+  const sdoc = "# Doc {\n  @about {\n    Has content.\n  }\n}";
+  const blocks = parseAndRender(sdoc);
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout, "non-empty @about should still emit a callout");
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

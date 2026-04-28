@@ -2,11 +2,12 @@
 // SDOC Document — CLI tool for HTML and PDF export
 //
 // Usage:
-//   node tools/build-doc.js input.sdoc [-o output] [--html]
+//   node tools/build-doc.js input.sdoc [-o output] [--html] [--include-about]
 //
 // Default output is PDF (requires Chrome/Chromium).
 // Use --html for HTML-only output (no Chrome needed).
 // If -o is omitted, writes to input.pdf (or input.html with --html).
+// The @about scope is hidden by default; pass --include-about to keep it.
 
 const fs = require("fs");
 const path = require("path");
@@ -16,7 +17,7 @@ const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed } 
 const CONFIG_FILENAME = "sdoc.config.json";
 
 function usage() {
-  console.error("Usage: build-doc <input.sdoc> [-o output] [--html]");
+  console.error("Usage: build-doc <input.sdoc> [-o output] [--html] [--include-about]");
   process.exit(1);
 }
 
@@ -98,7 +99,8 @@ function resolveMetaStyles(meta, documentPath) {
   return result;
 }
 
-async function buildHtml(filePath) {
+async function buildHtml(filePath, options = {}) {
+  const includeAbout = options.includeAbout === true;
   const resolvedPath = path.resolve(filePath);
   const text = fs.readFileSync(resolvedPath, "utf8");
   const parsed = parseSdoc(text);
@@ -141,6 +143,7 @@ async function buildHtml(filePath) {
       config,
       cssOverride: cssOverride || undefined,
       cssAppend: cssAppendParts.join("\n") || undefined,
+      includeAbout,
     }
   );
 }
@@ -150,12 +153,15 @@ async function main() {
   let inputPath = null;
   let outputPath = null;
   let htmlMode = false;
+  let includeAbout = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-o" && i + 1 < args.length) {
       outputPath = args[++i];
     } else if (args[i] === "--html") {
       htmlMode = true;
+    } else if (args[i] === "--include-about") {
+      includeAbout = true;
     } else if (args[i] === "--help" || args[i] === "-h") {
       usage();
     } else if (!inputPath) {
@@ -174,7 +180,7 @@ async function main() {
     process.exit(1);
   }
 
-  const html = await buildHtml(resolvedInput);
+  const html = await buildHtml(resolvedInput, { includeAbout });
 
   if (htmlMode) {
     if (!outputPath) {

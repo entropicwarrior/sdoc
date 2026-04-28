@@ -1818,8 +1818,17 @@ function renderInlineNodes(nodes) {
 function renderScope(scope, depth, isTitleScope = false) {
   // :comment scopes are not rendered
   if (scope.scopeType === "comment") return "";
-  // @about is document metadata, not rendered in output
-  if (scope.id && scope.id.toLowerCase() === "about") return "";
+
+  const isAbout = scope.id && scope.id.toLowerCase() === "about";
+  // Skip empty/whitespace-only @about — no point rendering an empty meta box.
+  if (isAbout && isAboutEmpty(scope)) return "";
+
+  // Bare `@about { ... }` (no heading) and heading-form with empty title both
+  // get a default heading of "About" so the meta-section is always labelled.
+  // A custom title (e.g. `# Document Discovery @about`) is preserved.
+  if (isAbout && (!scope.hasHeading || !scope.title || !scope.title.trim())) {
+    scope = { ...scope, hasHeading: true, title: "About" };
+  }
 
   const level = Math.min(6, Math.max(1, depth));
   const children = scope.children.map((child) => renderNode(child, depth + 1)).join("\n");
@@ -1827,9 +1836,10 @@ function renderScope(scope, depth, isTitleScope = false) {
   const dl = dataLineAttrs(scope);
   const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
   const typeClass = scope.scopeType ? ` sdoc-scope-type-${scope.scopeType}` : "";
+  const metaClass = isAbout ? " sdoc-meta-section" : "";
 
   if (scope.hasHeading === false) {
-    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}"${typeAttr}${dl}>${children}</section>`;
+    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}${metaClass}"${typeAttr}${dl}>${children}</section>`;
   }
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
@@ -1837,7 +1847,7 @@ function renderScope(scope, depth, isTitleScope = false) {
   const toggle = hasChildren ? `<span class="sdoc-toggle"></span>` : "";
   const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}"${dl}>${toggle}${renderInline(scope.title)}</h${level}>`;
   const childrenHtml = children ? `\n<div class="sdoc-scope-children">${children}</div>` : "";
-  return `<section class="sdoc-scope${rootClass}${typeClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
+  return `<section class="sdoc-scope${rootClass}${typeClass}${metaClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
 }
 
 function renderCitations(node) {
@@ -2941,6 +2951,43 @@ const DEFAULT_STYLE = `
     display: none;
   }
 
+  /* Meta sections (@about) — rendered with a distinct, subdued style
+     so readers can tell at a glance this is document metadata, not body content. */
+  .sdoc-scope.sdoc-meta-section {
+    position: relative;
+    margin: 1.2rem 3rem 1.6rem 3rem;
+    padding: 0.7rem 1rem 0.7rem 1rem;
+    background: rgba(127, 120, 112, 0.06);
+    border: 1px dashed var(--sdoc-border);
+    border-left: 3px solid var(--sdoc-muted);
+    border-radius: 6px;
+    color: var(--sdoc-muted);
+    font-size: 0.95em;
+  }
+
+  .sdoc-meta-section .sdoc-heading {
+    margin-top: 0.2rem;
+    color: var(--sdoc-muted);
+    font-weight: 600;
+    border-bottom: none;
+  }
+
+  .sdoc-meta-section .sdoc-paragraph {
+    margin: 0.3rem 0;
+    font-style: italic;
+  }
+
+  .sdoc-meta-section .sdoc-scope-children > .sdoc-scope {
+    padding-left: 0;
+  }
+
+  /* Place the collapse toggle in the gutter to the LEFT of the meta
+     box (in the space created by margin-left), not on the colored
+     left border. Default is left: -1.4em which lands on the border. */
+  .sdoc-meta-section > .sdoc-heading > .sdoc-toggle {
+    left: -2.6em;
+  }
+
 `;
 
 const PRINT_STYLE = `
@@ -3078,15 +3125,21 @@ function renderBodyNodes(nodes) {
     .join("\n");
 }
 
-function renderHtmlBody(text) {
+function renderHtmlBody(text, options = {}) {
   const parsed = parseSdoc(text);
   const metaResult = extractMeta(parsed.nodes);
   const savedOptions = _renderOptions;
   _renderOptions = {};
-  const citationData = buildCitationNumbering(metaResult.nodes);
+  // includeAbout defaults to false: HTML output is treated as "export-shape"
+  // by default, hiding the discovery summary. The preview path in
+  // extension.js opts in with `includeAbout: true` to keep the meta-section
+  // visible during authoring.
+  const includeAbout = options.includeAbout === true;
+  const renderNodes = includeAbout ? metaResult.nodes : stripAboutScopes(metaResult.nodes);
+  const citationData = buildCitationNumbering(renderNodes);
   _citationNumbering = citationData.numbering;
   _citationDefinitions = citationData.definitions;
-  const result = renderBodyNodes(metaResult.nodes);
+  const result = renderBodyNodes(renderNodes);
   _citationNumbering = new Map();
   _citationDefinitions = new Map();
   _renderOptions = savedOptions;
@@ -3095,10 +3148,16 @@ function renderHtmlBody(text) {
 
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   _renderOptions = options.renderOptions ?? {};
-  const citationData = buildCitationNumbering(parsed.nodes);
+  // includeAbout defaults to false: HTML/PDF output is hidden-by-default
+  // because exported files are normally sent to a specific recipient who has
+  // already been asked to read the doc, so the "should I read this?" framing
+  // in @about adds noise. The live preview opts in with `includeAbout: true`.
+  const includeAbout = options.includeAbout === true;
+  const renderNodes = includeAbout ? parsed.nodes : stripAboutScopes(parsed.nodes);
+  const citationData = buildCitationNumbering(renderNodes);
   _citationNumbering = citationData.numbering;
   _citationDefinitions = citationData.definitions;
-  const body = renderBodyNodes(parsed.nodes);
+  const body = renderBodyNodes(renderNodes);
   _citationNumbering = new Map();
   _citationDefinitions = new Map();
   _renderOptions = {};
@@ -3126,13 +3185,13 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const mermaidInit = mermaidTheme === "auto"
     ? `var isDark=window.matchMedia("(prefers-color-scheme:dark)").matches;mermaid.initialize({startOnLoad:true,theme:isDark?"dark":"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`
     : `mermaid.initialize({startOnLoad:true,theme:"${mermaidTheme}",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`;
-  const mermaidScript = hasMermaidBlocks(parsed.nodes)
+  const mermaidScript = hasMermaidBlocks(renderNodes)
     ? `\n<script src="${MERMAID_CDN}"></script>\n<script>${mermaidInit}</script>`
     : "";
   const katexCssTag = body.includes('class="katex"')
     ? `\n<link rel="stylesheet" href="${KATEX_CDN_CSS}" />`
     : "";
-  const hasHljs = hasHighlightableCodeBlocks(parsed.nodes);
+  const hasHljs = hasHighlightableCodeBlocks(renderNodes);
   // Highlight.js CSS is inlined (not a <link>) so it is extracted by parseDocHtml in the web viewer
   // and applied inside shadow DOM. The @media query handles dark mode in browsers.
   const hljsCssInline = hasHljs
@@ -3444,6 +3503,36 @@ function extractAbout(nodes) {
   return null;
 }
 
+// True when an @about scope has no meaningful content. Renderers use this to
+// skip emitting an empty meta-section / callout. Whitespace-only paragraphs
+// count as empty.
+function isAboutEmpty(scope) {
+  if (!scope || !scope.children || scope.children.length === 0) return true;
+  return scope.children.every(
+    (child) => child.type === "paragraph" && (!child.text || child.text.trim() === "")
+  );
+}
+
+// Recursively remove @about scopes from an AST. Used by the HTML/PDF export
+// paths, which hide @about by default: when a doc is exported and sent to a
+// specific recipient, the "should I read this?" framing is moot — the sender
+// already decided the answer is yes. Pass-through for nodes without children.
+function stripAboutScopes(nodes) {
+  if (!Array.isArray(nodes)) return nodes;
+  const result = [];
+  for (const node of nodes) {
+    if (node && node.type === "scope" && node.id && node.id.toLowerCase() === "about") {
+      continue;
+    }
+    if (node && node.type === "scope" && Array.isArray(node.children)) {
+      result.push({ ...node, children: stripAboutScopes(node.children) });
+    } else {
+      result.push(node);
+    }
+  }
+  return result;
+}
+
 function collectAllIds(nodes) {
   const ids = new Set();
   function walk(nodeList) {
@@ -3669,6 +3758,8 @@ module.exports = {
   listSections,
   extractSection,
   extractAbout,
+  isAboutEmpty,
+  stripAboutScopes,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   // Validation
