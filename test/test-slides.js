@@ -47,7 +47,7 @@ test("single slide", () => {
     }
 }
 `);
-  assert(html.includes('<div class="slide">'), "should have slide div");
+  assert(html.includes('<div class="slide"'), "should have slide div");
   assert(html.includes("<h2>Hello World</h2>"), "should have slide title");
   assert(html.includes("<p>This is a slide.</p>"), "should have paragraph");
 });
@@ -63,7 +63,7 @@ test("multiple slides", () => {
     }
 }
 `);
-  const slideCount = (html.match(/<div class="slide">/g) || []).length;
+  const slideCount = (html.match(/<div class="slide"/g) || []).length;
   assert(slideCount === 2, "should have 2 slides, got " + slideCount);
   assert(html.includes("<h2>Slide One</h2>"), "should have first title");
   assert(html.includes("<h2>Slide Two</h2>"), "should have second title");
@@ -110,7 +110,7 @@ test("meta scope is excluded from slides", () => {
     }
 }
 `);
-  const slideCount = (html.match(/<div class="slide">/g) || []).length;
+  const slideCount = (html.match(/<div class="slide"/g) || []).length;
   assert(slideCount === 1, "meta should not become a slide, got " + slideCount);
 });
 
@@ -212,7 +212,7 @@ test("notes are separated from content", () => {
 }
 `);
   // Notes should not appear inside the main slide content flow
-  const slideDiv = html.match(/<div class="slide">([\s\S]*?)<\/div>/);
+  const slideDiv = html.match(/<div class="slide"[^>]*>([\s\S]*?)<\/div>/);
   assert(slideDiv, "should have slide div");
   assert(slideDiv[1].includes("Content."), "content in slide");
   assert(slideDiv[1].includes('<aside class="notes">'), "notes in slide as aside");
@@ -418,7 +418,7 @@ test("empty slide", () => {
     }
 }
 `);
-  assert(html.includes('<div class="slide">'), "should still render slide");
+  assert(html.includes('<div class="slide"'), "should still render slide");
   assert(html.includes("<h2>Empty Slide</h2>"), "should still have title");
 });
 
@@ -701,6 +701,173 @@ test("svg block in slide strips script tags", () => {
 `);
   assert(!html.includes("<script"), "should strip script from slide SVG");
   assert(html.includes("<rect/>"), "should keep safe elements");
+});
+
+// ============================================================
+console.log("\n--- Drilldown (vertical) slides ---");
+
+test("plain 1D deck still gets spine/detail metadata but no detail slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide One { First. }
+    # Slide Two { Second. }
+}
+`);
+  const slideCount = (html.match(/<div class="slide"/g) || []).length;
+  assert(slideCount === 2, "1D deck still has 2 slides, got " + slideCount);
+  assert(html.includes('data-spine="1"'), "spine 1 attr present");
+  assert(html.includes('data-spine="2"'), "spine 2 attr present");
+  assert(html.includes('data-detail="0"'), "detail=0 attr on spine slides");
+  assert(!html.includes('data-detail="1"'), "no detail slides emitted");
+  assert(!html.includes("slide-has-details"), "no has-details class for 1D deck");
+});
+
+test("slide-indicator shows spine count denominator", () => {
+  const html = parseAndRender(`
+# Deck {
+    # A { aaa }
+    # B { bbb }
+    # C { ccc }
+}
+`);
+  assert(html.includes('class="slide-indicator">1 / 3'), "first slide indicator");
+  assert(html.includes('class="slide-indicator">2 / 3'), "second slide indicator");
+  assert(html.includes('class="slide-indicator">3 / 3'), "third slide indicator");
+});
+
+test(":detail children become sibling slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Spine @spine1 {
+        Main content here.
+
+        # Detail one @det1 :detail {
+            First drilldown.
+        }
+
+        # Detail two @det2 :detail {
+            Second drilldown.
+        }
+    }
+    # Next @spine2 {
+        Plain.
+    }
+}
+`);
+  // Three slides total: spine1, det1, det2... plus spine2 = 4
+  const slideCount = (html.match(/<div class="slide[^"]*"[^>]*data-spine=/g) || []).length;
+  assert(slideCount === 4, "expected 4 emitted slides (2 spines + 2 details), got " + slideCount);
+  assert(html.includes('data-spine="1" data-detail="0"'), "spine 1 attrs");
+  assert(html.includes('data-spine="1" data-detail="1"'), "detail 1 attrs");
+  assert(html.includes('data-spine="1" data-detail="2"'), "detail 2 attrs");
+  assert(html.includes('data-spine="2" data-detail="0"'), "spine 2 attrs");
+});
+
+test("emission order is spine then its details then next spine (PDF flattening)", () => {
+  const html = parseAndRender(`
+# Deck {
+    # First @first {
+        # D1 @d1 :detail {
+            d1 body
+        }
+        # D2 @d2 :detail {
+            d2 body
+        }
+    }
+    # Second @second {
+        Second body.
+    }
+}
+`);
+  const iFirst = html.indexOf('id="first"');
+  const iD1 = html.indexOf('id="d1"');
+  const iD2 = html.indexOf('id="d2"');
+  const iSecond = html.indexOf('id="second"');
+  assert(iFirst >= 0 && iD1 >= 0 && iD2 >= 0 && iSecond >= 0,
+    "all anchor ids found (first=" + iFirst + " d1=" + iD1 + " d2=" + iD2 + " second=" + iSecond + ")");
+  assert(iFirst < iD1 && iD1 < iD2 && iD2 < iSecond, "order should be first, d1, d2, second");
+});
+
+test("spine with details gets slide-has-details class; details do not", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Spine {
+        # Detail @det :detail {
+            Detail body.
+        }
+    }
+}
+`);
+  // Spine has class slide-has-details; the detail itself does not.
+  const spineMatch = html.match(/<div class="([^"]*)"[^>]*data-spine="1" data-detail="0"/);
+  assert(spineMatch, "spine slide div found");
+  assert(spineMatch[1].split(/\s+/).includes("slide-has-details"), "spine has slide-has-details");
+  const detailMatch = html.match(/<div class="([^"]*)"[^>]*data-spine="1" data-detail="1"/);
+  assert(detailMatch, "detail slide div found");
+  assert(!detailMatch[1].split(/\s+/).includes("slide-has-details"), "detail does not have slide-has-details");
+  assert(detailMatch[1].split(/\s+/).includes("slide-detail"), "detail has slide-detail class");
+});
+
+test("detail slide indicator uses N.K notation", () => {
+  const html = parseAndRender(`
+# Deck {
+    # A {
+        # D :detail {
+            d1
+        }
+        # E :detail {
+            d2
+        }
+    }
+    # B {
+        plain
+    }
+}
+`);
+  assert(html.includes('class="slide-indicator">1 / 2'), "spine indicator");
+  assert(html.includes('class="slide-indicator">1.1 / 2'), "first detail indicator");
+  assert(html.includes('class="slide-indicator">1.2 / 2'), "second detail indicator");
+  assert(html.includes('class="slide-indicator">2 / 2'), "second spine indicator");
+});
+
+test(":detail children are pulled out of spine slide content", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Spine {
+        Main paragraph.
+
+        # Drill @det :detail {
+            Drilled content.
+        }
+    }
+}
+`);
+  // The spine slide's body should NOT contain the detail's h2; only its own.
+  // Easiest check: detail content must appear in a separate slide element,
+  // and the spine's <section> nested rendering of the detail must not exist.
+  const spineMatch = html.match(/<div class="[^"]*"[^>]*data-spine="1" data-detail="0"[^>]*>([\s\S]*?)<\/div>(?=\s*<div class="slide)/);
+  assert(spineMatch, "spine slide HTML extracted");
+  assert(spineMatch[1].includes("Main paragraph."), "spine still contains its own paragraph");
+  assert(!spineMatch[1].includes("Drilled content."), "spine slide body should NOT contain detail body");
+  assert(html.includes("Drilled content."), "detail body present elsewhere in document");
+});
+
+test("detail slide can use config: center", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Spine {
+        # Drill :detail {
+            config: center
+
+            Centered drilldown.
+        }
+    }
+}
+`);
+  // The detail slide should carry the "center" layout class.
+  const m = html.match(/<div class="([^"]*)"[^>]*data-spine="1" data-detail="1"/);
+  assert(m, "detail slide found");
+  assert(m[1].split(/\s+/).includes("center"), "detail has center class");
 });
 
 // ============================================================

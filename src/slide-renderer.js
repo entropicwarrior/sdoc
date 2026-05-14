@@ -206,17 +206,44 @@ function extractNotes(children) {
   return { notes, contentNodes: rest };
 }
 
+// Separates :detail child scopes (drilldown / vertical slides) from other
+// children. Detail scopes are NOT removed from rendering; they are emitted as
+// sibling slides positioned vertically under the spine slide.
+function extractDetails(children) {
+  const details = [];
+  const rest = [];
+  for (const child of children) {
+    if (child.type === "scope" && child.scopeType === "detail") {
+      details.push(child);
+    } else {
+      rest.push(child);
+    }
+  }
+  return { details, contentNodes: rest };
+}
+
 // ---------------------------------------------------------------------------
 // Slide rendering
 // ---------------------------------------------------------------------------
 
-function renderSlide(scope, slideIndex, overlayHtml) {
-  const { config, contentNodes: afterConfig } = extractSlideConfig(scope.children);
+// position: { spine: 1-based spine index, detail: 0 for spine, 1..N for details,
+//             totalSpines: total number of spine slides, hasDetails: bool (spine only) }
+function renderSlide(scope, slideIndex, overlayHtml, position) {
+  // Pull :detail children out first so they don't appear inline in the spine
+  // slide's content; they're rendered as sibling vertical slides instead.
+  const { contentNodes: afterDetails } = extractDetails(scope.children);
+  const { config, contentNodes: afterConfig } = extractSlideConfig(afterDetails);
   const { notes, contentNodes } = extractNotes(afterConfig);
 
   const classes = ["slide"];
   if (config.layout) {
     classes.push(config.layout);
+  }
+  if (position && position.detail === 0 && position.hasDetails) {
+    classes.push("slide-has-details");
+  }
+  if (position && position.detail > 0) {
+    classes.push("slide-detail");
   }
 
   const title = scope.hasHeading !== false && scope.title
@@ -250,7 +277,19 @@ function renderSlide(scope, slideIndex, overlayHtml) {
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
   const overlay = overlayHtml || "";
 
-  return `<div class="${classes.join(" ")}"${idAttr}>\n${title}\n${bodyHtml}${notesHtml}${overlay}\n</div>`;
+  // Drilldown metadata + indicator
+  let dataAttrs = "";
+  let indicatorHtml = "";
+  if (position) {
+    dataAttrs = ` data-spine="${position.spine}" data-detail="${position.detail}"`;
+    const denom = position.totalSpines;
+    const label = position.detail === 0
+      ? `${position.spine} / ${denom}`
+      : `${position.spine}.${position.detail} / ${denom}`;
+    indicatorHtml = `\n<div class="slide-indicator">${escapeHtml(label)}</div>`;
+  }
+
+  return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n${title}\n${bodyHtml}${notesHtml}${overlay}${indicatorHtml}\n</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,8 +334,38 @@ function renderSlides(nodes, options = {}) {
   footerParts.push(`<span class="nav-next">&rsaquo;</span>`);
   const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>`;
 
-  const slidesHtml = slides
-    .map((scope, index) => renderSlide(scope, index, overlayHtml))
+  // Build a flat emission order: each spine slide, followed immediately by its
+  // :detail children in source order. The flat order matches what we want for
+  // PDF export, so PDF needs no special case.
+  const totalSpines = slides.length;
+  const emitted = [];
+  slides.forEach((scope, i) => {
+    const spineIndex = i + 1; // 1-based
+    const { details } = extractDetails(scope.children);
+    emitted.push({
+      scope,
+      position: {
+        spine: spineIndex,
+        detail: 0,
+        totalSpines,
+        hasDetails: details.length > 0
+      }
+    });
+    details.forEach((detail, j) => {
+      emitted.push({
+        scope: detail,
+        position: {
+          spine: spineIndex,
+          detail: j + 1,
+          totalSpines,
+          hasDetails: false
+        }
+      });
+    });
+  });
+
+  const slidesHtml = emitted
+    .map(({ scope, position }, index) => renderSlide(scope, index, overlayHtml, position))
     .join("\n\n");
 
   const title = meta.properties?.title
@@ -326,6 +395,14 @@ function renderSlides(nodes, options = {}) {
   letter-spacing: 0.12em; text-transform: uppercase;
   color: rgba(160, 40, 40, 0.6);
   margin-left: 0.8em;
+}
+.slide-indicator {
+  position: absolute; bottom: 20px; right: 32px;
+  font-size: 0.7em; color: rgba(0,0,0,0.35);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
 }
 @media print {
   @page { size: 13.333in 7.5in; margin: 0; }
@@ -359,6 +436,7 @@ blockquote p { color: #9d9d9d; }
 .nav-prev, .nav-next { color: rgba(255, 255, 255, 0.7); }
 .sdoc-company-footer { color: rgba(255, 255, 255, 0.35); }
 .sdoc-confidential-notice { color: rgba(235, 120, 120, 0.7); }
+.slide-indicator { color: rgba(255, 255, 255, 0.35); }
 ` : "";
 
   const cssTag = `<style>\n${structuralCss}\n${themeCss}\n${darkCss}</style>`;

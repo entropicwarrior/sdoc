@@ -158,6 +158,32 @@ img {
   display: none;
 }
 
+/* --- Drilldown affordance ---
+   Spine slides that have :detail children get .slide-has-details. The default
+   theme renders a small downward chevron in the bottom-centre to hint that
+   pressing Down (or swiping up) drills in. Custom themes (e.g. ETHyR) can
+   replace this rule with their own animation. */
+
+.slide-has-details::after {
+  content: "\2304"; /* ⌄ — DOWN ARROWHEAD */
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.2em;
+  color: rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  animation: slide-has-details-bounce 1.8s ease-in-out infinite;
+}
+
+@keyframes slide-has-details-bounce {
+  0%, 100% { transform: translate(-50%, 0); opacity: 0.4; }
+  50%      { transform: translate(-50%, 4px); opacity: 0.8; }
+}
+
+/* Slide indicator base style is injected structurally by the renderer.
+   Themes may override .slide-indicator to restyle it. */
+
 
 /* Print / PDF styles are injected by the renderer (slide-renderer.js)
    so they work with every theme, not just this one. */
