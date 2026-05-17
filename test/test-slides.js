@@ -211,11 +211,14 @@ test("notes are separated from content", () => {
     }
 }
 `);
-  // Notes should not appear inside the main slide content flow
-  const slideDiv = html.match(/<div class="slide"[^>]*>([\s\S]*?)<\/div>/);
-  assert(slideDiv, "should have slide div");
-  assert(slideDiv[1].includes("Content."), "content in slide");
-  assert(slideDiv[1].includes('<aside class="notes">'), "notes in slide as aside");
+  assert(html.includes("Content."), "content present");
+  assert(html.includes('<aside class="notes">'), "notes rendered as aside");
+  // Notes live outside the .slide-content-scale wrapper (sibling, not child),
+  // confirming they are separate from the main slide content flow.
+  const scaleOpen = html.indexOf('class="slide-content-scale"');
+  const scaleClose = html.indexOf('</div>', scaleOpen);
+  const notesStart = html.indexOf('<aside class="notes">');
+  assert(notesStart > scaleClose, "notes appear after the content-scale wrapper, not inside it");
 });
 
 // ============================================================
@@ -446,7 +449,7 @@ test("rendered slides include print styles", () => {
 `);
   assert(html.includes("@media print"), "should have @media print block");
   assert(html.includes("page-break-after"), "should have page-break rules");
-  assert(html.includes("display: flex !important"), "should force slides visible in print");
+  assert(html.includes("display: block !important"), "should force slides visible in print");
 });
 
 test("findChrome returns a string or null", () => {

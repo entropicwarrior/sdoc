@@ -174,4 +174,66 @@
     var p = parseHash(window.location.hash);
     if (p) show(p.s, p.d);
   });
+
+  // ---------------------------------------------------------------------
+  // PDF / print rendering: measure each slide's natural content size and
+  // apply transform: scale() so the content fits the page exactly.  In
+  // screen mode .slide-content-scale is display:contents (invisible to
+  // layout); in print mode it becomes display:block, at which point we
+  // can measure its scrollWidth / scrollHeight and shrink to fit.
+  // ---------------------------------------------------------------------
+  function fitSlidesForPrint() {
+    var allSlides = document.querySelectorAll(".slide");
+    for (var i = 0; i < allSlides.length; i++) {
+      var slide = allSlides[i];
+      var wrap = slide.querySelector(".slide-content-scale");
+      if (!wrap) continue;
+      // Reset any prior transform so the natural size can be measured.
+      wrap.style.transform = "";
+      // Use the slide's box as the target — print CSS sets it to the
+      // page size (100vw x 100vh, which in print is 13.333in x 7.5in).
+      var rect = slide.getBoundingClientRect();
+      var pageW = rect.width;
+      var pageH = rect.height;
+      var contentW = wrap.scrollWidth;
+      var contentH = wrap.scrollHeight;
+      if (contentW <= 0 || contentH <= 0 || pageW <= 0 || pageH <= 0) continue;
+      var s = Math.min(pageW / contentW, pageH / contentH, 1);
+      if (s < 0.999) {
+        wrap.style.transform = "scale(" + s + ")";
+      }
+    }
+  }
+  function unfitSlidesAfterPrint() {
+    var wraps = document.querySelectorAll(".slide-content-scale");
+    for (var i = 0; i < wraps.length; i++) wraps[i].style.transform = "";
+  }
+  window.addEventListener("beforeprint", fitSlidesForPrint);
+  window.addEventListener("afterprint", unfitSlidesAfterPrint);
+  // Headless Chrome --print-to-pdf typically renders the whole page with
+  // print CSS active from the start; neither beforeprint nor matchMedia
+  // "change" fires (there is no change — print is the initial state).
+  // Run fitSlidesForPrint as soon as layout is stable so scaling applies
+  // before Chrome captures the page.  In screen mode the wrapper is
+  // display:contents so scrollWidth/scrollHeight return 0 and the guard
+  // inside fitSlidesForPrint makes this a no-op.
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(function () { requestAnimationFrame(fitSlidesForPrint); });
+  } else {
+    fitSlidesForPrint();
+  }
+  if (document.readyState === "complete") {
+    fitSlidesForPrint();
+  } else {
+    window.addEventListener("load", fitSlidesForPrint);
+  }
+  // Also fit when the print media query toggles (interactive Cmd+P).
+  if (window.matchMedia) {
+    var mq = window.matchMedia("print");
+    if (mq.addEventListener) {
+      mq.addEventListener("change", function (ev) {
+        if (ev.matches) fitSlidesForPrint(); else unfitSlidesAfterPrint();
+      });
+    }
+  }
 })();

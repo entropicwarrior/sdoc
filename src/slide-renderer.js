@@ -275,21 +275,25 @@ function renderSlide(scope, slideIndex, overlayHtml, position) {
     : "";
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
-  const overlay = overlayHtml || "";
 
-  // Drilldown metadata + indicator
+  // Drilldown metadata + slide indicator label (substituted into the footer)
   let dataAttrs = "";
-  let indicatorHtml = "";
+  let indicatorLabel = "";
   if (position) {
     dataAttrs = ` data-spine="${position.spine}" data-detail="${position.detail}"`;
     const denom = position.totalSpines;
-    const label = position.detail === 0
+    indicatorLabel = position.detail === 0
       ? `${position.spine} / ${denom}`
       : `${position.spine}.${position.detail} / ${denom}`;
-    indicatorHtml = `\n<div class="slide-indicator">${escapeHtml(label)}</div>`;
   }
+  const overlay = (overlayHtml || "").replace("__SLIDE_INDICATOR__", escapeHtml(indicatorLabel));
 
-  return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n${title}\n${bodyHtml}${notesHtml}${overlay}${indicatorHtml}\n</div>`;
+  // Wrap title + body in a scale container so PDF export can apply
+  // transform: scale() to fit the content onto a fixed page size.  In
+  // screen mode the wrapper is display:contents (invisible to layout); in
+  // print mode it becomes a real block that the beforeprint handler can
+  // measure and scale.
+  return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n<div class="slide-content-scale">\n${title}\n${bodyHtml}\n</div>${notesHtml}${overlay}\n</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +320,11 @@ function renderSlides(nodes, options = {}) {
   // Filter to scope nodes only (skip stray paragraphs and :comment scopes)
   const slides = slideScopes.filter((n) => n.type === "scope" && n.scopeType !== "comment");
 
-  // Build per-slide footer: <  CONFIDENTIAL  ---gap---  Company  >
+  // Build per-slide footer:
+  //   <  CONFIDENTIAL  ---gap---  Company  N/Total  >
+  // The indicator slot is rendered as a literal token here and substituted
+  // per-slide inside renderSlide() so all the right-edge elements share one
+  // flexbox row (avoids the page number stacking on top of the company name).
   const footerParts = [];
   footerParts.push(`<span class="nav-prev">&lsaquo;</span>`);
   if (meta.confidential) {
@@ -331,6 +339,7 @@ function renderSlides(nodes, options = {}) {
   if (meta.company) {
     footerParts.push(`<span class="sdoc-company-footer">${escapeHtml(meta.company)}</span>`);
   }
+  footerParts.push(`<span class="slide-indicator">__SLIDE_INDICATOR__</span>`);
   footerParts.push(`<span class="nav-next">&rsaquo;</span>`);
   const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>`;
 
@@ -397,26 +406,38 @@ function renderSlides(nodes, options = {}) {
   margin-left: 0.8em;
 }
 .slide-indicator {
-  position: absolute; bottom: 20px; right: 32px;
   font-size: 0.7em; color: rgba(0,0,0,0.35);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   pointer-events: none;
   user-select: none;
+  margin-right: 0.6em;
 }
+/* Scale wrapper: invisible to layout in screen mode so existing slide
+   styles (flex centering, two-column grid, etc.) work as-is.  In print
+   mode it becomes a real block element whose transform is set by the
+   beforeprint handler to shrink overflowing content to fit the page. */
+.slide-content-scale { display: contents; }
+
 @media print {
   @page { size: 13.333in 7.5in; margin: 0; }
   body { overflow: visible; height: auto; }
   .slide {
-    display: flex !important;
+    display: block !important;
     position: relative !important;
     opacity: 1 !important;
     pointer-events: auto !important;
     page-break-after: always; break-after: page;
     width: 100vw; height: 100vh; max-width: none;
+    overflow: hidden;
     page-break-inside: avoid; break-inside: avoid;
   }
   .slide:last-child { page-break-after: auto; break-after: auto; }
+  .slide-content-scale {
+    display: block;
+    width: 100%;
+    transform-origin: top left;
+  }
   .nav-prev, .nav-next { display: none !important; }
   .notes { display: none; }
 }`;

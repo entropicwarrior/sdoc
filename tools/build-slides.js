@@ -108,8 +108,13 @@ async function main() {
       pdfOutput = resolvedInput.replace(/\.sdoc$/i, "") + ".pdf";
     }
 
-    // Write HTML to temp file for Chrome to consume
-    const tmpHtml = path.join(os.tmpdir(), "sdoc-slides-" + Date.now() + ".html");
+    // Write HTML to a temp file for Chrome to consume.
+    //
+    // The tmp file must sit in the same directory as the input .sdoc so
+    // that relative asset references in the HTML (e.g. <img src="./diagrams/foo.svg">)
+    // resolve correctly when Chrome prints the page.  Writing to os.tmpdir()
+    // breaks the diagrams in the resulting PDF.
+    const tmpHtml = path.join(path.dirname(resolvedInput), ".sdoc-slides-pdf-" + Date.now() + ".html");
     fs.writeFileSync(tmpHtml, html, "utf-8");
 
     try {
