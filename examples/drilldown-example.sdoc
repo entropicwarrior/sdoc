@@ -1,0 +1,98 @@
+# Drilldown Demo {
+    # Meta @meta
+    {
+        type: slides
+
+        title: SDOC Drilldown Demo
+    }
+
+    # SDOC Drilldown
+    {
+        config: center
+
+        Vertical slides under any spine slide.
+
+        Press Right to advance the spine. Press Down to drill in.
+    }
+
+    # Why Drilldown? @why
+    {
+        Sometimes a single slide is a summary and you want a back-pocket of
+        supporting detail you can pull up on demand — without cluttering the
+        main flow.
+
+        # Details — Examples @why-examples :detail
+        {
+            Classic use cases:
+
+            {[.]
+                - Reference figures and source data
+                - Architecture detail behind a high-level diagram
+                - Q&A material for likely questions
+                - Pre-built rebuttals for tough audiences
+            }
+        }
+
+        # Details — Trade-offs @why-tradeoffs :detail
+        {
+            What you give up:
+
+            {[.]
+                - Linear PDF export still flattens everything
+                - Audiences in a 1D viewer never see the details
+                - Authoring discipline: don't hide the punch line below the fold
+            }
+        }
+    }
+
+    # Spine Slide With No Details
+    {
+        Not every spine slide needs detail children. This one is just a
+        regular slide — Right and Left move you along the spine as usual.
+    }
+
+    # ETHyR Mechanism @ethyr-mechanism
+    {
+        ETHyR turns DNA into a measurable hybridisation signal you can read
+        with a phone-sized device.
+
+        # PCR primer @pcr-detail :detail
+        {
+            PCR amplifies target DNA exponentially using thermal cycling:
+
+            {[#]
+                - Denature: heat to ~95 °C to split the double helix
+                - Anneal: cool to ~55 °C so primers bind their targets
+                - Extend: polymerase synthesises the complementary strand
+            }
+
+            Doubles the target every cycle for ~30 cycles.
+        }
+
+        # HCR primer @hcr-detail :detail
+        {
+            Hybridisation Chain Reaction is isothermal: no thermal cycler
+            needed.
+
+            {[.]
+                - Two metastable hairpin species sit in solution
+                - A target sequence opens the first hairpin
+                - A chain reaction extends a long fluorescent polymer
+            }
+
+            Output scales linearly with target concentration.
+        }
+
+        # Notes @notes
+        {
+            If asked about thermal control, drill into the PCR primer slide.
+        }
+    }
+
+    # Thank You
+    {
+        config: center
+
+        Questions?
+    }
+}

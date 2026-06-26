@@ -239,6 +239,84 @@
         }
     }
 
+    # Drilldown Slides @drilldown
+    {
+        A slide deck is normally a 1D spine: Right and Left move along it. A
+        spine slide can also have *vertical detail slides* — extra material
+        you can pull up on demand without cluttering the main flow. Mark a
+        child scope with the `:detail` annotation and it becomes a vertical
+        slide under its parent.
+
+        # Syntax @drilldown-syntax
+        {
+            ```
+            # ETHyR Mechanism @ethyr {
+                Main spine content.
+
+                # PCR primer @pcr :detail {
+                    Detail slide one.
+                }
+
+                # HCR primer @hcr :detail {
+                    Detail slide two.
+                }
+
+                # Notes @notes {
+                    Speaker notes still work alongside details.
+                }
+            }
+            ```
+
+            A detail slide is a regular slide. It can have its own `config:
+            center`, two-column layout, speaker `@notes`, and any other slide
+            content. Drilldowns do not nest further: a `:detail` inside a
+            `:detail` is treated as a plain nested scope.
+        }
+
+        # Navigation @drilldown-navigation
+        {
+            Right — advance one step. From a spine slide, move to the next
+            spine. From a detail slide, advance to the next detail in the
+            same column; at the last detail, return to the parent spine and
+            advance to the next spine (reveal.js convention).
+
+            Left — mirror of Right. From a detail, previous detail or back
+            to parent spine; from spine, previous spine.
+
+            Down — drill into the first detail of the current spine; from
+            within a column, advance to the next detail.
+
+            Up — return from a detail to its parent spine. No-op on a spine.
+
+            Swipe — horizontal swipes mirror Left / Right; vertical swipes
+            mirror Up / Down.
+
+            URL hash — spine slides use `#N`; detail K of spine N uses
+            `#N.K`.
+        }
+
+        # Visual Affordances @drilldown-visual
+        {
+            Spine slides that have detail children get the
+            `slide-has-details` class — the default theme shows a small
+            animated chevron at the bottom of the slide. Themes can replace
+            this rule to fit their own visual language.
+
+            Every slide also gets a `.slide-indicator` element in the
+            bottom-right corner: `5 / 14` on a spine, `5.2 / 14` on detail 2
+            of slide 5. The denominator is always the spine count, so the
+            indicator stays stable as you drill in.
+        }
+
+        # PDF Export @drilldown-pdf
+        {
+            PDF export flattens the deck: spine 1, its details in order,
+            spine 2, its details in order, and so on. This is the same order
+            slides appear in the HTML, so PDF export needs no special case —
+            every slide is just one page.
+        }
+    }
+
     # Theme System @themes
     {
         Themes control the visual appearance of slides. A theme is a directory
@@ -269,17 +347,23 @@
         {
             All themes include these controls by default:
 
-            Arrow right or Space — next slide.
+            Arrow right or Space — next slide (or next detail).
 
-            Arrow left — previous slide.
+            Arrow left — previous slide (or previous detail).
+
+            Arrow down — drill into details (if any).
+
+            Arrow up — return from details to the spine slide.
 
             Home — first slide.
 
-            End — last slide.
+            End — last spine slide.
 
-            Touch swipe left/right on mobile devices.
+            Touch swipe horizontal / vertical on mobile devices.
 
-            Slide counter shown in the bottom-right corner.
+            Slide counter (`.slide-indicator`) shown in the bottom-right
+            corner — `N / TOTAL` on spine slides, `N.K / TOTAL` on detail K
+            of spine N. See [Drilldown Slides](#drilldown) for details.
         }
     }
 
