@@ -135,7 +135,7 @@ async function buildHtml(filePath, options = {}) {
 
   const title = path.basename(resolvedPath, ".sdoc");
 
-  return renderHtmlDocumentFromParsed(
+  const html = renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
     title,
     {
@@ -146,6 +146,41 @@ async function buildHtml(filePath, options = {}) {
       includeAbout,
     }
   );
+
+  // Inline local images as data URIs so output is self-contained. PDF export
+  // renders from a temp directory, where relative image paths (e.g.
+  // diagrams/foo.svg) no longer resolve; inlining also makes HTML portable.
+  return inlineLocalImages(html, docDir);
+}
+
+const IMAGE_MIME = {
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+function inlineLocalImages(html, docDir) {
+  return html.replace(/(<img\b[^>]*?\bsrc=")([^"]*)(")/gi, (match, pre, src, post) => {
+    // Leave remote URLs and already-inlined data URIs untouched.
+    if (/^(https?:|data:|file:)/i.test(src)) return match;
+    const decoded = src.replace(/&amp;/g, "&");
+    const ext = path.extname(decoded).toLowerCase();
+    const mime = IMAGE_MIME[ext];
+    if (!mime) return match;
+    const abs = path.isAbsolute(decoded) ? decoded : path.join(docDir, decoded);
+    let data;
+    try {
+      data = fs.readFileSync(abs);
+    } catch {
+      console.error(`Warning: could not inline image (not found): ${decoded}`);
+      return match;
+    }
+    const uri = `data:${mime};base64,${data.toString("base64")}`;
+    return `${pre}${uri}${post}`;
+  });
 }
 
 async function main() {
@@ -197,6 +232,7 @@ async function main() {
       outputPath = resolvedInput.replace(/\.sdoc$/i, "") + ".pdf";
     }
     const resolvedOutput = path.resolve(outputPath);
+    fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
 
     // Write HTML to temp file for Chrome
     const tmpHtml = path.join(os.tmpdir(), "sdoc-doc-" + Date.now() + ".html");

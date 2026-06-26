@@ -206,17 +206,44 @@ function extractNotes(children) {
   return { notes, contentNodes: rest };
 }
 
+// Separates :detail child scopes (drilldown / vertical slides) from other
+// children. Detail scopes are NOT removed from rendering; they are emitted as
+// sibling slides positioned vertically under the spine slide.
+function extractDetails(children) {
+  const details = [];
+  const rest = [];
+  for (const child of children) {
+    if (child.type === "scope" && child.scopeType === "detail") {
+      details.push(child);
+    } else {
+      rest.push(child);
+    }
+  }
+  return { details, contentNodes: rest };
+}
+
 // ---------------------------------------------------------------------------
 // Slide rendering
 // ---------------------------------------------------------------------------
 
-function renderSlide(scope, slideIndex, overlayHtml) {
-  const { config, contentNodes: afterConfig } = extractSlideConfig(scope.children);
+// position: { spine: 1-based spine index, detail: 0 for spine, 1..N for details,
+//             totalSpines: total number of spine slides, hasDetails: bool (spine only) }
+function renderSlide(scope, slideIndex, overlayHtml, position) {
+  // Pull :detail children out first so they don't appear inline in the spine
+  // slide's content; they're rendered as sibling vertical slides instead.
+  const { contentNodes: afterDetails } = extractDetails(scope.children);
+  const { config, contentNodes: afterConfig } = extractSlideConfig(afterDetails);
   const { notes, contentNodes } = extractNotes(afterConfig);
 
   const classes = ["slide"];
   if (config.layout) {
     classes.push(config.layout);
+  }
+  if (position && position.detail === 0 && position.hasDetails) {
+    classes.push("slide-has-details");
+  }
+  if (position && position.detail > 0) {
+    classes.push("slide-detail");
   }
 
   const title = scope.hasHeading !== false && scope.title
@@ -248,9 +275,25 @@ function renderSlide(scope, slideIndex, overlayHtml) {
     : "";
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
-  const overlay = overlayHtml || "";
 
-  return `<div class="${classes.join(" ")}"${idAttr}>\n${title}\n${bodyHtml}${notesHtml}${overlay}\n</div>`;
+  // Drilldown metadata + slide indicator label (substituted into the footer)
+  let dataAttrs = "";
+  let indicatorLabel = "";
+  if (position) {
+    dataAttrs = ` data-spine="${position.spine}" data-detail="${position.detail}"`;
+    const denom = position.totalSpines;
+    indicatorLabel = position.detail === 0
+      ? `${position.spine} / ${denom}`
+      : `${position.spine}.${position.detail} / ${denom}`;
+  }
+  const overlay = (overlayHtml || "").replace("__SLIDE_INDICATOR__", escapeHtml(indicatorLabel));
+
+  // Wrap title + body in a scale container so PDF export can apply
+  // transform: scale() to fit the content onto a fixed page size.  In
+  // screen mode the wrapper is display:contents (invisible to layout); in
+  // print mode it becomes a real block that the beforeprint handler can
+  // measure and scale.
+  return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n<div class="slide-content-scale">\n${title}\n${bodyHtml}\n</div>${notesHtml}${overlay}\n</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +320,11 @@ function renderSlides(nodes, options = {}) {
   // Filter to scope nodes only (skip stray paragraphs and :comment scopes)
   const slides = slideScopes.filter((n) => n.type === "scope" && n.scopeType !== "comment");
 
-  // Build per-slide footer: <  CONFIDENTIAL  ---gap---  Company  >
+  // Build per-slide footer:
+  //   <  CONFIDENTIAL  ---gap---  Company  N/Total  >
+  // The indicator slot is rendered as a literal token here and substituted
+  // per-slide inside renderSlide() so all the right-edge elements share one
+  // flexbox row (avoids the page number stacking on top of the company name).
   const footerParts = [];
   footerParts.push(`<span class="nav-prev">&lsaquo;</span>`);
   if (meta.confidential) {
@@ -292,11 +339,42 @@ function renderSlides(nodes, options = {}) {
   if (meta.company) {
     footerParts.push(`<span class="sdoc-company-footer">${escapeHtml(meta.company)}</span>`);
   }
+  footerParts.push(`<span class="slide-indicator">__SLIDE_INDICATOR__</span>`);
   footerParts.push(`<span class="nav-next">&rsaquo;</span>`);
   const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>`;
 
-  const slidesHtml = slides
-    .map((scope, index) => renderSlide(scope, index, overlayHtml))
+  // Build a flat emission order: each spine slide, followed immediately by its
+  // :detail children in source order. The flat order matches what we want for
+  // PDF export, so PDF needs no special case.
+  const totalSpines = slides.length;
+  const emitted = [];
+  slides.forEach((scope, i) => {
+    const spineIndex = i + 1; // 1-based
+    const { details } = extractDetails(scope.children);
+    emitted.push({
+      scope,
+      position: {
+        spine: spineIndex,
+        detail: 0,
+        totalSpines,
+        hasDetails: details.length > 0
+      }
+    });
+    details.forEach((detail, j) => {
+      emitted.push({
+        scope: detail,
+        position: {
+          spine: spineIndex,
+          detail: j + 1,
+          totalSpines,
+          hasDetails: false
+        }
+      });
+    });
+  });
+
+  const slidesHtml = emitted
+    .map(({ scope, position }, index) => renderSlide(scope, index, overlayHtml, position))
     .join("\n\n");
 
   const title = meta.properties?.title
@@ -327,19 +405,39 @@ function renderSlides(nodes, options = {}) {
   color: rgba(160, 40, 40, 0.6);
   margin-left: 0.8em;
 }
+.slide-indicator {
+  font-size: 0.7em; color: rgba(0,0,0,0.35);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
+  margin-right: 0.6em;
+}
+/* Scale wrapper: invisible to layout in screen mode so existing slide
+   styles (flex centering, two-column grid, etc.) work as-is.  In print
+   mode it becomes a real block element whose transform is set by the
+   beforeprint handler to shrink overflowing content to fit the page. */
+.slide-content-scale { display: contents; }
+
 @media print {
   @page { size: 13.333in 7.5in; margin: 0; }
   body { overflow: visible; height: auto; }
   .slide {
-    display: flex !important;
+    display: block !important;
     position: relative !important;
     opacity: 1 !important;
     pointer-events: auto !important;
     page-break-after: always; break-after: page;
     width: 100vw; height: 100vh; max-width: none;
+    overflow: hidden;
     page-break-inside: avoid; break-inside: avoid;
   }
   .slide:last-child { page-break-after: auto; break-after: auto; }
+  .slide-content-scale {
+    display: block;
+    width: 100%;
+    transform-origin: top left;
+  }
   .nav-prev, .nav-next { display: none !important; }
   .notes { display: none; }
 }`;
@@ -359,6 +457,7 @@ blockquote p { color: #9d9d9d; }
 .nav-prev, .nav-next { color: rgba(255, 255, 255, 0.7); }
 .sdoc-company-footer { color: rgba(255, 255, 255, 0.35); }
 .sdoc-confidential-notice { color: rgba(235, 120, 120, 0.7); }
+.slide-indicator { color: rgba(255, 255, 255, 0.35); }
 ` : "";
 
   const cssTag = `<style>\n${structuralCss}\n${themeCss}\n${darkCss}</style>`;
