@@ -1395,7 +1395,7 @@ async function buildCleanHtml(document, exportOptions = {}) {
   cssAppendParts.push(buildCollapseCss());
   cssAppendParts.push(buildExportDarkModeCss());
 
-  return renderHtmlDocumentFromParsed(
+  const html = renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
     title,
     {
@@ -1408,6 +1408,39 @@ async function buildCleanHtml(document, exportOptions = {}) {
       includeAbout
     }
   );
+
+  // Inline local images as data URIs so exports are self-contained. PDF export
+  // and Open in Browser render from a temp directory, where relative image
+  // paths (e.g. diagrams/foo.svg) no longer resolve; inlining also makes the
+  // exported HTML portable.
+  return inlineLocalImages(html, docDir);
+}
+
+const EXPORT_IMAGE_MIME = {
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+function inlineLocalImages(html, docDir) {
+  return html.replace(/(<img\b[^>]*?\bsrc=")([^"]*)(")/gi, (match, pre, src, post) => {
+    if (/^(https?:|data:|file:|vscode-)/i.test(src)) return match;
+    const decoded = src.replace(/&amp;/g, "&");
+    const ext = path.extname(decoded).toLowerCase();
+    const mime = EXPORT_IMAGE_MIME[ext];
+    if (!mime) return match;
+    const abs = path.isAbsolute(decoded) ? decoded : path.join(docDir, decoded);
+    let data;
+    try {
+      data = fs.readFileSync(abs);
+    } catch {
+      return match;
+    }
+    return `${pre}data:${mime};base64,${data.toString("base64")}${post}`;
+  });
 }
 
 async function exportHtml(exportOptions = {}) {
