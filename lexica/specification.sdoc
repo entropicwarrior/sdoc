@@ -719,11 +719,14 @@ Content of Section B.
                 - Warning marker: `{!text!}` (orange highlight)
                 - Negative marker: `{-text-}` (red highlight)
                 - Highlight: `{~text~}` (yellow highlight)
+                - Hex color swatch: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` (e.g. `#9aa0a8`) renders as a filled inline box labelled with the code
                 - Citation reference: `[@key]` (numbered superscript link to citation entry)
                 - Multiple citation references: `[@key1, @key2]` (each individually linked)
             }
 
             Inline math requires non-whitespace immediately after the opening `$` and before the closing `$`. A plain `$` followed by a digit (e.g. `$100`) does not trigger math mode because there is no closing `$`.
+
+            Hex color swatches are detected only when the `#` is at the start of the inline text or preceded by a non-alphanumeric character, the digit run is exactly 3, 4, 6, or 8 hexadecimal digits, and it is not immediately followed by another letter, digit, or underscore. The background is the literal color and the text color (black or white) is chosen by perceptual brightness (YIQ); for `#rgba`/`#rrggbbaa` the alpha channel is ignored when choosing the text color. Hex inside `` `inline code` `` stays literal, and a `#` at the start of a line is parsed as a heading (escape with `\#`).
 
             Citation references (`[@key]`) are parsed before link syntax. `[@key]` is always a citation reference even if followed by `(url)`. Use `\[@key]` for a literal `[@key]` in text.
         }

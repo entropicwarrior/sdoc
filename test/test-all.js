@@ -23,7 +23,8 @@ const {
   collectCitationDefinitions,
   validateRefs,
   validateCitations,
-  sanitizeSvg
+  sanitizeSvg,
+  readableTextColor
 } = require("../src/sdoc.js");
 const fs = require("fs");
 const path = require("path");
@@ -3462,6 +3463,106 @@ test("formatter handles K&R citations", () => {
   const input = "# Refs {[citations]\n- @smith Smith, 2020.\n}";
   const formatted = formatSdoc(input);
   assert(formatted.includes("    - @smith"), "citation item indented under K&R");
+});
+
+console.log("\n--- Hex Color Swatches ---");
+
+test("6-digit hex renders as swatch with background color", () => {
+  const html = renderHtmlBody("The color is #9aa0a8 here.");
+  assert(html.includes('class="sdoc-color-swatch"'), "has swatch class");
+  assert(html.includes("background-color:#9aa0a8"), "has background color");
+  assert(html.includes(">#9aa0a8</span>"), "labels with hex code");
+});
+
+test("3-digit hex renders as swatch", () => {
+  const html = renderHtmlBody("Use #fff for white.");
+  assert(html.includes("background-color:#fff"), "has 3-digit background");
+  assert(html.includes(">#fff</span>"), "labels with 3-digit hex");
+});
+
+test("4-digit (rgba) and 8-digit (rrggbbaa) hex render as swatches", () => {
+  const html4 = renderHtmlBody("alpha #f00a done");
+  assert(html4.includes("background-color:#f00a"), "4-digit swatch");
+  const html8 = renderHtmlBody("alpha #9aa0a880 done");
+  assert(html8.includes("background-color:#9aa0a880"), "8-digit swatch");
+});
+
+test("dark background gets white text, light gets black", () => {
+  const dark = renderHtmlBody("bg #000000 here");
+  assert(dark.includes("color:#ffffff"), "black bg -> white text");
+  const light = renderHtmlBody("bg #ffffff here");
+  assert(light.includes("color:#000000"), "white bg -> black text");
+});
+
+test("readableTextColor picks legible foreground", () => {
+  assert(readableTextColor("#000000") === "#ffffff", "black -> white");
+  assert(readableTextColor("#ffffff") === "#000000", "white -> black");
+  assert(readableTextColor("#9aa0a8") === "#000000", "mid-light grey -> black");
+  assert(readableTextColor("#1a1a2e") === "#ffffff", "dark navy -> white");
+  // alpha is ignored when choosing contrast
+  assert(readableTextColor("#000000ff") === "#ffffff", "8-digit ignores alpha");
+  assert(readableTextColor("#000f") === "#ffffff", "4-digit ignores alpha");
+});
+
+test("invalid hex lengths are left as plain text", () => {
+  const html5 = renderHtmlBody("not a color #12345 ok");
+  assert(!html5.includes("sdoc-color-swatch"), "5 digits -> no swatch");
+  assert(html5.includes("#12345"), "5-digit text preserved");
+  const html7 = renderHtmlBody("not a color #1234567 ok");
+  assert(!html7.includes("sdoc-color-swatch"), "7 digits -> no swatch");
+});
+
+test("hex inside a word is not a swatch", () => {
+  const html = renderHtmlBody("issue123#fff reference");
+  assert(!html.includes("sdoc-color-swatch"), "no swatch when preceded by word char");
+});
+
+test("hex followed by letters is not a swatch", () => {
+  const html = renderHtmlBody("the tag #fffghi is not a color");
+  assert(!html.includes("sdoc-color-swatch"), "trailing letters block the match");
+});
+
+test("escaped \\# is not a swatch", () => {
+  const html = renderHtmlBody("literal \\#fff stays");
+  assert(!html.includes("sdoc-color-swatch"), "escaped hash -> no swatch");
+  assert(html.includes("#fff"), "literal hash text preserved");
+});
+
+test("hex inside inline code stays literal", () => {
+  const html = renderHtmlBody("the value `#9aa0a8` literal");
+  assert(html.includes("<code"), "renders as code");
+  assert(!html.includes("sdoc-color-swatch"), "code span not turned into swatch");
+});
+
+test("swatch detected at start of inline context (list item)", () => {
+  const html = renderHtmlBody("- #9aa0a8\n- #ffffff");
+  const count = (html.match(/sdoc-color-swatch/g) || []).length;
+  assert(count === 2, "both list items become swatches, got " + count);
+});
+
+test("bare #hex at line start is a heading, not a swatch (SDOC rule)", () => {
+  const html = renderHtmlBody("#9aa0a8 leads the line");
+  assert(!html.includes("sdoc-color-swatch"), "line-start hash is a heading");
+  assert(/<h1[^>]*>/.test(html), "renders as a heading");
+});
+
+test("swatch print color is preserved", () => {
+  const html = renderHtmlBody("swatch #9aa0a8 here");
+  assert(html.includes("print-color-adjust:exact"), "print color retained");
+});
+
+test("all swatches share the same soft neutral outline (consistent, visible on any bg)", () => {
+  const border = "border:1px solid rgba(128,128,128,0.5)";
+  ["bg #ffffff x", "bg #000000 x", "bg #9aa0a8 x", "bg #1a73e8 x"].forEach((src) => {
+    assert(renderHtmlBody(src).includes(border), "neutral outline present for: " + src);
+  });
+});
+
+test("swatch style attribute is well-formed (no double quotes inside)", () => {
+  const html = renderHtmlBody("swatch #9aa0a8 here");
+  const m = html.match(/<span class="sdoc-color-swatch" style="([^"]*)"/);
+  assert(m, "style attribute parses without an embedded double quote");
+  assert(m[1].includes("font-family:'JetBrains Mono'"), "font names use single quotes");
 });
 
 // ============================================================

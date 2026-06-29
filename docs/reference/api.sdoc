@@ -281,7 +281,7 @@ slugify("Table Formulas"); // "table-formulas"
             - `hr` -- a horizontal rule
         }
 
-        Inline image nodes (`type: "image"`) within paragraphs include `src`, `alt`, and optional `width` (e.g. `"50%"`) and `align` (`"center"`, `"left"`, or `"right"`). Inline citation reference nodes (`type: "citation_ref"`) include `keys` (array of citation key strings).
+        Inline image nodes (`type: "image"`) within paragraphs include `src`, `alt`, and optional `width` (e.g. `"50%"`) and `align` (`"center"`, `"left"`, or `"right"`). Inline citation reference nodes (`type: "citation_ref"`) include `keys` (array of citation key strings). Inline hex color nodes (`type: "color_swatch"`) include `value` (the matched hex string, e.g. `"#9aa0a8"`) and render as a self-contained swatch.
     }
 
     # exportSlidePdf(htmlPath, pdfPath)
