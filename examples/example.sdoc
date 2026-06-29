@@ -25,6 +25,7 @@
 
         You can use *emphasis*, **strong**, and `inline code`.
         Semantic markers: {+positive+}, {=neutral=}, {^note^}, {?caution?}, {!warning!}, {-negative-}. Highlight: {~important note~}. Nesting works: {+**all checks** passed+}.
+        Hex color codes render as swatches: primary #1a73e8, surface #9aa0a8, accent #fbbc04, ink #202124, paper #fff. Short and alpha forms work too: #f00, #00ff0080.
         External links look like [SDOC](https://example.com).
     }
     # Examples

@@ -1414,6 +1414,21 @@ function parseInline(text) {
       }
     }
 
+    // Hex color codes (#rgb, #rgba, #rrggbb, #rrggbbaa) render as swatches.
+    // Require a non-word char before the # so we don't match inside identifiers,
+    // and a non-word char after the digits so partial/over-long runs are ignored.
+    if (ch === "#" && (i === 0 || !/[0-9A-Za-z]/.test(text[i - 1]))) {
+      const m = /^#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9A-Za-z_])/.exec(
+        text.slice(i)
+      );
+      if (m) {
+        flush();
+        nodes.push({ type: "color_swatch", value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+    }
+
     if (ch === "{") {
       const mc = next;
       let mt = null;
@@ -1728,6 +1743,46 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/'/g, "&#39;");
 }
 
+// Expand a #rgb/#rgba/#rrggbb/#rrggbbaa hex string to [r, g, b] (alpha ignored).
+function hexToRgb(hex) {
+  let h = hex.replace(/^#/, "");
+  if (h.length === 3 || h.length === 4) {
+    h = h.slice(0, 3).split("").map((c) => c + c).join("");
+  } else {
+    h = h.slice(0, 6);
+  }
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+// Pick black or white text for legibility over the given background color
+// using the perceptual YIQ brightness threshold.
+function readableTextColor(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 128 ? "#000000" : "#ffffff";
+}
+
+// Render a hex color as a self-contained inline swatch: a rounded box filled
+// with the color, labelled with the hex code in a legible text color. Styling
+// is inline so it survives in slides, exports, and other CSS-free contexts.
+function colorSwatchHtml(value) {
+  const fg = readableTextColor(value);
+  // A soft neutral-grey outline on every swatch (the same for all of them) so
+  // the box edge stays visible even when the fill matches the page background.
+  // Semi-transparent grey reads on both light and dark backgrounds without the
+  // harsh contrast of a black/white border.
+  const style =
+    `background-color:${value};color:${fg};` +
+    "border:1px solid rgba(128,128,128,0.5);border-radius:4px;padding:0.15em 0.9em;" +
+    "font-family:'JetBrains Mono','Fira Code','Source Code Pro',monospace;font-size:0.95em;" +
+    "-webkit-print-color-adjust:exact;print-color-adjust:exact";
+  return `<span class="sdoc-color-swatch" style="${style}">${escapeHtml(value)}</span>`;
+}
+
 function renderInline(text) {
   const nodes = parseInline(text);
   return renderInlineNodes(nodes);
@@ -1766,6 +1821,8 @@ function renderInlineNodes(nodes) {
         }
         case "code":
           return `<code class="sdoc-inline-code">${escapeHtml(node.value)}</code>`;
+        case "color_swatch":
+          return colorSwatchHtml(node.value);
         case "em":
           return `<em>${renderInlineNodes(node.children)}</em>`;
         case "strong":
@@ -3773,5 +3830,7 @@ module.exports = {
   renderKatex,
   escapeHtml,
   escapeAttr,
-  sanitizeSvg
+  sanitizeSvg,
+  colorSwatchHtml,
+  readableTextColor
 };

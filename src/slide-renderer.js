@@ -7,7 +7,7 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
-const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg } = require("./sdoc");
+const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, colorSwatchHtml } = require("./sdoc");
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -21,6 +21,8 @@ function renderInlineNodes(nodes) {
           return escapeHtml(node.value);
         case "code":
           return `<code>${escapeHtml(node.value)}</code>`;
+        case "color_swatch":
+          return colorSwatchHtml(node.value);
         case "em":
           return `<em>${renderInlineNodes(node.children)}</em>`;
         case "strong":
