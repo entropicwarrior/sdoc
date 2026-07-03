@@ -26,6 +26,7 @@
         You can use *emphasis*, **strong**, and `inline code`.
         Semantic markers: {+positive+}, {=neutral=}, {^note^}, {?caution?}, {!warning!}, {-negative-}. Highlight: {~important note~}. Nesting works: {+**all checks** passed+}.
         Hex color codes render as swatches: primary #1a73e8, surface #9aa0a8, accent #fbbc04, ink #202124, paper #fff. Short and alpha forms work too: #f00, #00ff0080.
+        Copyable text gets a click-to-copy icon: sequence {copy}ACGTACGTGGCA{/copy}, token {copy}sk-8f3a1c9e{/copy}.
         External links look like [SDOC](https://example.com).
     }
     # Examples
@@ -240,6 +241,28 @@
                     < | , | .3 | %.1
                     Alpha | 1234567 | 3.14159 | 0.4567
                     Beta | 890 | 2.71828 | 0.123
+                }
+            }
+
+            # Copyable Columns
+            {
+                A `copy` token in the directive row adds a click-to-copy icon to every cell in that column. Handy for sequences, IDs, or commands you want to grab without selecting text.
+
+                {[table]
+                    Gene | Sequence
+                         | copy
+                    BRCA1 | ACGTACGTGGCATTAC
+                    TP53 | GGCATTACGATTCCGA
+                    EGFR | TTACGGCAATGCCATT
+                }
+
+                `copy` combines with other column directives:
+
+                {[table]
+                    Sample | Reads | Barcode
+                           | , | copy
+                    S1 | 1200000 | AGTCAGTC
+                    S2 | 980000 | TCGATCGA
                 }
             }
 

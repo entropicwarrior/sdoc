@@ -435,9 +435,25 @@ Content of Section B.
                     All numeric values and formula results in the `Amount` column display as currency (`$3,500,000`). The `**Total**` label renders normally as bold text.
                 }
 
+                # Copyable Columns @column-copy
+                {
+                    A `copy` token (case-insensitive) in the directive row marks a column copyable: every body cell in that column is rendered with a click-to-copy icon whose target is the cell's raw text. Useful for sequences, identifiers, hashes, and commands.
+
+                    ```
+{[table]
+    Gene | Sequence
+         | copy
+    BRCA1 | ACGTACGTGGCA
+    TP53 | GGCATTACGATT
+}
+                    ```
+
+                    The `copy` token occupies a directive cell of its own and may coexist with alignment/format directives on other columns in the same row. The literal (unformatted) cell text is copied. Copy icons are interactive HTML only — they appear in preview, exported HTML, and the web viewer, and are hidden in printed/PDF output.
+                }
+
                 # Directive Row Detection @directive-detection
                 {
-                    A row is identified as a directive row when every non-empty cell contains only an alignment character (`<`, `>`, `=`), a format token, or both. It must be the first row after the header (or the first row in a headerless table), and at least one cell must contain a directive.
+                    A row is identified as a directive row when every non-empty cell contains only an alignment character (`<`, `>`, `=`), a format token, the `copy` keyword, or a combination of alignment and format. It must be the first row after the header (or the first row in a headerless table), and at least one cell must contain a directive.
 
                     For headerless tables, the directive row functions as a virtual header — it is consumed for its directives but no `<thead>` is rendered.
                 }
@@ -720,6 +736,7 @@ Content of Section B.
                 - Negative marker: `{-text-}` (red highlight)
                 - Highlight: `{~text~}` (yellow highlight)
                 - Hex color swatch: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` (e.g. `#9aa0a8`) renders as a filled inline box labelled with the code
+                - Copyable text: `{copy}...{/copy}` renders the inner text verbatim (monospace) with a click-to-copy icon
                 - Citation reference: `[@key]` (numbered superscript link to citation entry)
                 - Multiple citation references: `[@key1, @key2]` (each individually linked)
             }
@@ -727,6 +744,8 @@ Content of Section B.
             Inline math requires non-whitespace immediately after the opening `$` and before the closing `$`. A plain `$` followed by a digit (e.g. `$100`) does not trigger math mode because there is no closing `$`.
 
             Hex color swatches are detected only when the `#` is at the start of the inline text or preceded by a non-alphanumeric character, the digit run is exactly 3, 4, 6, or 8 hexadecimal digits, and it is not immediately followed by another letter, digit, or underscore. The background is the literal color and the text color (black or white) is chosen by perceptual brightness (YIQ); for `#rgba`/`#rrggbbaa` the alpha channel is ignored when choosing the text color. Hex inside `` `inline code` `` stays literal, and a `#` at the start of a line is parsed as a heading (escape with `\#`).
+
+            Copyable text spans from `{copy}` to the next unescaped `{/copy}`. The inner text is captured verbatim — no nested inline formatting is applied — and is both displayed (monospace) and used as the copy target. An unterminated `{copy}` (no closing `{/copy}`) falls through as literal text. Escape with `\{copy}` to write a literal. As with other `{`-delimited constructs, a `{copy}` at the very start of a line is subject to block-level parsing; use it mid-line or within a cell.
 
             Citation references (`[@key]`) are parsed before link syntax. `[@key]` is always a citation reference even if followed by `(url)`. Use `\[@key]` for a literal `[@key]` in text.
         }

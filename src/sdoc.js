@@ -72,6 +72,7 @@ function isDirectiveRow(cells) {
   for (const cell of cells) {
     const trimmed = cell.trim();
     if (trimmed === "") continue;
+    if (trimmed.toLowerCase() === "copy") { hasDirective = true; continue; }
     if (!pattern.test(trimmed)) return false;
     hasDirective = true;
   }
@@ -102,12 +103,23 @@ function parseFormatSpec(spec) {
 function parseDirectiveRow(cells) {
   const align = [];
   const format = [];
+  const copy = [];
   let hasAlign = false;
   let hasFormat = false;
+  let hasCopy = false;
   const fmtPattern = /(\$(?:\.\d+)?|,(?:\.\d+)?|\.\d+|%(?:\.\d+)?)$/;
 
   for (const cell of cells) {
     const trimmed = cell.trim();
+
+    if (trimmed.toLowerCase() === "copy") {
+      align.push(null);
+      format.push(null);
+      copy.push(true);
+      hasCopy = true;
+      continue;
+    }
+
     const alignMatch = trimmed.match(/^([<>=])/);
     const fmtMatch = trimmed.match(fmtPattern);
 
@@ -124,11 +136,13 @@ function parseDirectiveRow(cells) {
       hasFormat = true;
     }
     format.push(f);
+    copy.push(false);
   }
 
   return {
     align: hasAlign ? align : null,
     format: hasFormat ? format : null,
+    copy: hasCopy ? copy : null,
   };
 }
 
@@ -940,10 +954,12 @@ function parseTableBody(cursor, tableStartLine, options) {
   const directiveIndex = options.headerless ? 0 : 1;
   let columnAlign = null;
   let columnFormat = null;
+  let columnCopy = null;
   if (rows.length > directiveIndex && isDirectiveRow(rows[directiveIndex])) {
     const directives = parseDirectiveRow(rows[directiveIndex]);
     columnAlign = directives.align;
     columnFormat = directives.format;
+    columnCopy = directives.copy;
     rows.splice(directiveIndex, 1);
   }
 
@@ -960,6 +976,7 @@ function parseTableBody(cursor, tableStartLine, options) {
   if (hasOptions) tableNode.options = options;
   if (columnAlign) tableNode.columnAlign = columnAlign;
   if (columnFormat) tableNode.columnFormat = columnFormat;
+  if (columnCopy) tableNode.columnCopy = columnCopy;
   return tableNode;
 }
 
@@ -1429,6 +1446,18 @@ function parseInline(text) {
       }
     }
 
+    // Copyable inline text: {copy}literal text{/copy}. The inner text is copied
+    // verbatim (no nested formatting), rendered monospace with a copy icon.
+    if (text.startsWith("{copy}", i)) {
+      const end = findUnescaped(text, i + 6, "{/copy}");
+      if (end !== -1) {
+        flush();
+        nodes.push({ type: "copyable", value: text.slice(i + 6, end) });
+        i = end + 7; // length of "{/copy}"
+        continue;
+      }
+    }
+
     if (ch === "{") {
       const mc = next;
       let mt = null;
@@ -1821,6 +1850,8 @@ function renderInlineNodes(nodes) {
         }
         case "code":
           return `<code class="sdoc-inline-code">${escapeHtml(node.value)}</code>`;
+        case "copyable":
+          return `<span class="sdoc-copyable"><code class="sdoc-inline-code">${escapeHtml(node.value)}</code><button class="sdoc-copy-btn sdoc-copy-inline" data-copy="${escapeAttr(node.value)}" title="Copy">⧉</button></span>`;
         case "color_swatch":
           return colorSwatchHtml(node.value);
         case "em":
@@ -2304,6 +2335,14 @@ function renderTable(table) {
   const opts = table.options || {};
   const colAlign = table.columnAlign || [];
   const colFormat = table.columnFormat || [];
+  const colCopy = table.columnCopy || [];
+
+  // Copy icon appended to body cells in a `copy` directive column. data-copy
+  // carries the raw cell text so the shared copy handler copies it verbatim.
+  function copyBtn(cell, c) {
+    if (!colCopy[c]) return "";
+    return ` <button class="sdoc-copy-btn sdoc-copy-inline" data-copy="${escapeAttr(cell.trim())}" title="Copy">⧉</button>`;
+  }
   const classes = ["sdoc-table"];
   if (opts.borderless) classes.push("sdoc-table-borderless");
   if (opts.headerless) classes.push("sdoc-table-headerless");
@@ -2343,20 +2382,20 @@ function renderTable(table) {
             }
             const formula = escapeAttr(cell.trim());
             if (result.error) {
-              return `<td class="sdoc-table-td sdoc-formula-error"${style} title="${formula}">${display}</td>`;
+              return `<td class="sdoc-table-td sdoc-formula-error"${style} title="${formula}">${display}${copyBtn(cell, c)}</td>`;
             }
-            return `<td class="sdoc-table-td sdoc-formula-cell"${style} title="${formula}">${display}</td>`;
+            return `<td class="sdoc-table-td sdoc-formula-cell"${style} title="${formula}">${display}${copyBtn(cell, c)}</td>`;
           }
 
           // Apply column format to numeric data cells
           if (fmt) {
             const parsed = parseCellValue(cell);
             if (!isNaN(parsed.value)) {
-              return `<td class="sdoc-table-td"${style}>${escapeHtml(formatNumber(parsed.value, fmt))}</td>`;
+              return `<td class="sdoc-table-td"${style}>${escapeHtml(formatNumber(parsed.value, fmt))}${copyBtn(cell, c)}</td>`;
             }
           }
 
-          return `<td class="sdoc-table-td"${style}>${renderInline(cell)}</td>`;
+          return `<td class="sdoc-table-td"${style}>${renderInline(cell)}${copyBtn(cell, c)}</td>`;
         })
         .join("");
       return `<tr>${cells}</tr>`;
@@ -3052,10 +3091,6 @@ const PRINT_STYLE = `
     position: relative;
   }
   .sdoc-copy-btn {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 1;
     background: transparent;
     border: none;
     border-radius: 4px;
@@ -3063,14 +3098,34 @@ const PRINT_STYLE = `
     font-size: 0.85rem;
     line-height: 1;
     padding: 2px 6px;
+    color: inherit;
+  }
+  .sdoc-code-wrap .sdoc-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
     opacity: 0;
     transition: opacity 0.15s;
   }
   .sdoc-code-wrap:hover .sdoc-copy-btn {
     opacity: 0.75;
   }
-  .sdoc-copy-btn:hover {
+  .sdoc-code-wrap .sdoc-copy-btn:hover {
     opacity: 1 !important;
+  }
+  .sdoc-copyable {
+    white-space: nowrap;
+  }
+  .sdoc-copy-inline {
+    font-size: 0.8em;
+    padding: 0 0.15em;
+    opacity: 0.45;
+    vertical-align: baseline;
+    transition: opacity 0.15s;
+  }
+  .sdoc-copy-inline:hover {
+    opacity: 1;
   }
   @media print {
     html {
@@ -3110,7 +3165,7 @@ const PRINT_STYLE = `
 
 const COLLAPSE_SCRIPT = `document.addEventListener("click",function(e){if(!e.target.classList.contains("sdoc-toggle"))return;e.stopPropagation();var s=e.target.closest(".sdoc-scope");if(s)s.classList.toggle("sdoc-collapsed")});`;
 
-const COPY_SCRIPT = `document.addEventListener("click",function(e){if(!e.target.classList.contains("sdoc-copy-btn"))return;e.stopPropagation();e.preventDefault();var w=e.target.closest(".sdoc-code-wrap");if(!w)return;var c=w.querySelector("code");if(!c)return;var t=c.textContent;var b=e.target;if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){b.textContent="\\u2713";setTimeout(function(){b.textContent="\\u29C9"},1500)})}else{var a=document.createElement("textarea");a.value=t;a.style.position="fixed";a.style.opacity="0";document.body.appendChild(a);a.select();document.execCommand("copy");document.body.removeChild(a);b.textContent="\\u2713";setTimeout(function(){b.textContent="\\u29C9"},1500)}});`;
+const COPY_SCRIPT = `document.addEventListener("click",function(e){var b=e.target.closest(".sdoc-copy-btn");if(!b)return;e.stopPropagation();e.preventDefault();var t=b.getAttribute("data-copy");if(t===null){var w=b.closest(".sdoc-code-wrap");if(!w)return;var c=w.querySelector("code");if(!c)return;t=c.textContent}if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){b.textContent="\\u2713";setTimeout(function(){b.textContent="\\u29C9"},1500)})}else{var a=document.createElement("textarea");a.value=t;a.style.position="fixed";a.style.opacity="0";document.body.appendChild(a);a.select();document.execCommand("copy");document.body.removeChild(a);b.textContent="\\u2713";setTimeout(function(){b.textContent="\\u29C9"},1500)}});`;
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
 const KATEX_CDN_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css";

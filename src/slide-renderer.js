@@ -21,6 +21,9 @@ function renderInlineNodes(nodes) {
           return escapeHtml(node.value);
         case "code":
           return `<code>${escapeHtml(node.value)}</code>`;
+        case "copyable":
+          // Slides have no copy handler; render the literal text as monospace.
+          return `<code>${escapeHtml(node.value)}</code>`;
         case "color_swatch":
           return colorSwatchHtml(node.value);
         case "em":

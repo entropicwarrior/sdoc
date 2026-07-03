@@ -689,17 +689,20 @@ function buildWebviewScript() {
 (function() {
   const vscodeApi = acquireVsCodeApi();
 
-  // Copy code button
+  // Copy button (code blocks, table cells, inline {copy})
   document.addEventListener('click', function(e) {
-    if (!e.target.classList.contains('sdoc-copy-btn')) return;
+    var btn = e.target.closest('.sdoc-copy-btn');
+    if (!btn) return;
     e.stopPropagation();
     e.preventDefault();
-    var wrap = e.target.closest('.sdoc-code-wrap');
-    if (!wrap) return;
-    var code = wrap.querySelector('code');
-    if (!code) return;
-    var text = code.textContent;
-    var btn = e.target;
+    var text = btn.getAttribute('data-copy');
+    if (text === null) {
+      var wrap = btn.closest('.sdoc-code-wrap');
+      if (!wrap) return;
+      var code = wrap.querySelector('code');
+      if (!code) return;
+      text = code.textContent;
+    }
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(function() {
         btn.textContent = '\u2713';
@@ -1331,15 +1334,18 @@ function buildCollapseScript() {
     if (scope) scope.classList.toggle('sdoc-collapsed');
   });
   document.addEventListener('click', function(e) {
-    if (!e.target.classList.contains('sdoc-copy-btn')) return;
+    var btn = e.target.closest('.sdoc-copy-btn');
+    if (!btn) return;
     e.stopPropagation();
     e.preventDefault();
-    var wrap = e.target.closest('.sdoc-code-wrap');
-    if (!wrap) return;
-    var code = wrap.querySelector('code');
-    if (!code) return;
-    var text = code.textContent;
-    var btn = e.target;
+    var text = btn.getAttribute('data-copy');
+    if (text === null) {
+      var wrap = btn.closest('.sdoc-code-wrap');
+      if (!wrap) return;
+      var code = wrap.querySelector('code');
+      if (!code) return;
+      text = code.textContent;
+    }
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(function() {
         btn.textContent = '\\u2713';

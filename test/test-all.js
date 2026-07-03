@@ -3565,6 +3565,70 @@ test("swatch style attribute is well-formed (no double quotes inside)", () => {
   assert(m[1].includes("font-family:'JetBrains Mono'"), "font names use single quotes");
 });
 
+console.log("\n--- Copyable Text ({copy}...{/copy}) ---");
+
+test("inline {copy} parses as a copyable node", () => {
+  const nodes = parseInline("seq {copy}ACGT{/copy} end");
+  const cp = nodes.find((n) => n.type === "copyable");
+  assert(cp, "copyable node produced");
+  assert(cp.value === "ACGT", "value is the literal inner text");
+});
+
+test("inline {copy} renders with data-copy and a copy button", () => {
+  const html = renderHtmlBody("seq {copy}ACGTGGCA{/copy} end");
+  assert(html.includes('class="sdoc-copyable"'), "wrapper class present");
+  assert(html.includes('data-copy="ACGTGGCA"'), "data-copy carries the text");
+  assert(html.includes('class="sdoc-copy-btn sdoc-copy-inline"'), "copy button present");
+  assert(html.includes(">ACGTGGCA</code>"), "text shown in monospace");
+});
+
+test("inner {copy} text is verbatim (no nested formatting)", () => {
+  const html = renderHtmlBody("val {copy}a*b*c{/copy} end");
+  assert(html.includes('data-copy="a*b*c"'), "asterisks copied literally");
+  assert(!html.includes("<em>"), "no emphasis parsed inside copyable");
+});
+
+test("data-copy escapes quotes so the attribute stays well-formed", () => {
+  const html = renderHtmlBody('x {copy}a"b{/copy} y');
+  assert(html.includes('data-copy="a&quot;b"'), "double quote escaped in attribute");
+});
+
+test("escaped \\{copy} is not a copyable", () => {
+  const html = renderHtmlBody("literal \\{copy}x{/copy} stays");
+  assert(!html.includes("sdoc-copyable"), "escaped brace -> no copyable");
+});
+
+test("unclosed {copy} falls through as literal text", () => {
+  const html = renderHtmlBody("oops {copy}ACGT with no close");
+  assert(!html.includes("sdoc-copyable"), "no copyable node without {/copy}");
+  assert(html.includes("{copy}ACGT"), "literal text preserved");
+});
+
+test("table copy column adds copy buttons only to that column", () => {
+  const html = renderHtmlBody("{[table]\n  Gene | Sequence\n       | copy\n  BRCA1 | ACGTGGCA\n}");
+  assert(html.includes('data-copy="ACGTGGCA"'), "sequence cell is copyable");
+  const geneCell = html.match(/<td class="sdoc-table-td">BRCA1<\/td>/);
+  assert(geneCell, "gene cell has no copy button");
+});
+
+test("copy directive row is consumed (not rendered as a data row)", () => {
+  const html = renderHtmlBody("{[table]\n  Gene | Sequence\n       | copy\n  BRCA1 | ACGTGGCA\n}");
+  assert(!html.includes(">copy</td>"), "directive row not rendered as data");
+  const bodyRows = (html.match(/<tr>/g) || []).length;
+  assert(bodyRows === 2, "one header row + one body row, got " + bodyRows);
+});
+
+test("copy directive combines with alignment/format in the same row", () => {
+  const html = renderHtmlBody("{[table]\n  Item | Price | Sequence\n       | $ | copy\n  A | 1000 | ACGT\n}");
+  assert(html.includes("$1,000"), "format still applied");
+  assert(html.includes('data-copy="ACGT"'), "copy still applied");
+});
+
+test("headerless table supports a copy directive row", () => {
+  const html = renderHtmlBody("{[table headerless]\n   | copy\n  Gene | ACGTGGCA\n}");
+  assert(html.includes('data-copy="ACGTGGCA"'), "copy applied in headerless table");
+});
+
 // ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

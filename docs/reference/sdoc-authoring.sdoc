@@ -333,6 +333,22 @@ Content of Section B.
 
                     The \`Amount\` column is right-aligned and formatted as currency. The formula result and data cells all display as \`$1,000,000\` style. The \`**Total**\` label renders as bold text.
                 }
+
+                # Copyable Columns
+                {
+                    A \`copy\` token in the directive row gives every body cell in that column a click-to-copy icon (copying the cell's raw text). Ideal for columns of sequences, IDs, or commands.
+
+                    ```
+                    {[table]
+                        Gene | Sequence
+                             | copy
+                        BRCA1 | ACGTACGTGGCA
+                        TP53 | GGCATTACGATT
+                    }
+                    ```
+
+                    \`copy\` can share a directive row with alignment/format directives on other columns.
+                }
             }
 
             # Table Formulas @table-formulas
@@ -385,9 +401,12 @@ Content of Section B.
                 \`\{-text-\}\` | Negative marker (red)
                 \`\{~text~\}\` | Highlight (yellow)
                 \`#1a73e8\` | Hex color swatch (auto-readable text)
+                \`\{copy\}text\{/copy\}\` | Copyable text with click-to-copy icon
             }
 
             Hex color codes (\`#rgb\`, \`#rgba\`, \`#rrggbb\`, \`#rrggbbaa\`) render as inline swatches — a rounded box filled with the color and labelled with the code, with the text color chosen automatically (black or white) for legibility. They are detected in normal text, list items, table cells, and headings, but not inside \`\\\`inline code\\\`\` (which stays literal). A bare \`#\` at the start of a line is a heading; escape with \`\\#\` to keep a literal hash.
+
+            Copyable text: \`\{copy\}ACGTACGTGGCA\{/copy\}\` renders the inner text verbatim in monospace with a copy icon; clicking it copies the text. Great for DNA/protein sequences, IDs, hashes, and commands. Escape with \`\\\{copy\}\` for a literal. Copy icons show in HTML output (preview, exported HTML, web viewer) and are hidden when printed/exported to PDF.
 
             Links: \`[Link text](https://example.com)\` or \`[Other doc](./other-file.sdoc)\`. Relative paths resolve from the document's directory.
 

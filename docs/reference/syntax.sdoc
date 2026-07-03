@@ -270,6 +270,22 @@ Content of Section B.
             }
         }
 
+        # Copyable Columns
+        {
+            A `copy` token in the directive row (the row after the header, or the first row of a headerless table) gives every body cell in that column a click-to-copy icon. The directive row is consumed and not rendered.
+
+            ```
+{[table]
+    Gene | Sequence
+         | copy
+    BRCA1 | ACGTACGTGGCA
+    TP53 | GGCATTACGATT
+}
+            ```
+
+            The raw cell text is copied. `copy` can share a directive row with alignment/format directives on other columns.
+        }
+
         # Table Formulas
         {
             Cells starting with `=` are evaluated as formulas:
@@ -311,11 +327,14 @@ Content of Section B.
             - `{-text-}` renders as {-negative (red) marker-}
             - `{~text~}` renders as {~highlighted text~}
             - `#9aa0a8` renders as a color swatch #9aa0a8 (text color auto-chosen for contrast)
+            - `{copy}text{/copy}` renders as {copy}copyable text{/copy} with a click-to-copy icon
         }
 
         A plain `$` followed by a digit (e.g. `$100`) does not trigger math. Use `\$` to escape dollar signs adjacent to math.
 
         Hex color codes (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`) render as inline swatches: #1a73e8 #fbbc04 #202124 #fff. They are recognized in text, list items, table cells, and headings, but not inside `` `inline code` ``. A `#` at the very start of a line is a heading — escape with `\#` for a literal hash.
+
+        `{copy}...{/copy}` renders its inner text verbatim (no nested formatting) in monospace with a copy icon; clicking the icon copies the text to the clipboard. Useful for sequences, IDs, tokens, and commands. Escape with `\{copy}` for a literal. Copy icons appear in HTML output (preview, exported HTML, web viewer) and are hidden in printed/PDF output.
     }
 
     # Links and Images

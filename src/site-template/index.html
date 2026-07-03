@@ -271,15 +271,18 @@
       if (pane.shadowRoot) return pane.shadowRoot;
       const shadow = pane.attachShadow({ mode: "open" });
       shadow.addEventListener("click", function(e) {
-        if (e.target.classList.contains("sdoc-copy-btn")) {
+        var btn = e.target.closest(".sdoc-copy-btn");
+        if (btn) {
           e.stopPropagation();
           e.preventDefault();
-          var wrap = e.target.closest(".sdoc-code-wrap");
-          if (!wrap) return;
-          var code = wrap.querySelector("code");
-          if (!code) return;
-          var text = code.textContent;
-          var btn = e.target;
+          var text = btn.getAttribute("data-copy");
+          if (text === null) {
+            var wrap = btn.closest(".sdoc-code-wrap");
+            if (!wrap) return;
+            var code = wrap.querySelector("code");
+            if (!code) return;
+            text = code.textContent;
+          }
           if (navigator.clipboard) {
             navigator.clipboard.writeText(text).then(function() {
               btn.textContent = "\u2713";
