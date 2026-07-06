@@ -322,8 +322,15 @@ function renderSlides(nodes, options = {}) {
     slideScopes = nodes;
   }
 
-  // Filter to scope nodes only (skip stray paragraphs and :comment scopes)
-  const slides = slideScopes.filter((n) => n.type === "scope" && n.scopeType !== "comment");
+  // Filter to scope nodes only (skip stray paragraphs, :comment scopes, and the
+  // reserved @meta / @about metadata scopes — these are document metadata, not slides).
+  const RESERVED_SCOPE_IDS = new Set(["meta", "about"]);
+  const slides = slideScopes.filter(
+    (n) =>
+      n.type === "scope" &&
+      n.scopeType !== "comment" &&
+      !(n.id && RESERVED_SCOPE_IDS.has(n.id.toLowerCase()))
+  );
 
   // Build per-slide footer:
   //   <  CONFIDENTIAL  ---gap---  Company  N/Total  >
