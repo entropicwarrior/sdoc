@@ -3287,7 +3287,10 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const footerHtml = meta.footerNodes ? renderFragment(meta.footerNodes, 2)
     : meta.footerText ? renderTextParagraphs(meta.footerText)
     : renderTextParagraphs(config.footer);
-  const footerContent = [footerHtml, companyHtml].filter(Boolean).join("\n");
+  // A specific footer (footer: meta, or config.footer) overrides the company
+  // auto-footer so the two do not stack into a doubled footer. The company name
+  // is used only as the fallback footer when no footer text is provided.
+  const footerContent = footerHtml || companyHtml;
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}\n${PRINT_STYLE}` : `\n${PRINT_STYLE}`;
