@@ -12,14 +12,15 @@ body {
 
 /* --- Slide layout --- */
 
+/* Size, position and fit-to-window scaling of .slide come from the
+   renderer's structural CSS (the --sdoc-slide-w/h design box). Setting
+   height/max-width/margin here would override it and pin the deck back to
+   a fixed-width column, so this rule styles only the inside of the box. */
 .slide {
   display: none;
   flex-direction: column;
   justify-content: center;
   padding: 60px 100px;
-  height: 100vh;
-  max-width: 1200px;
-  margin: 0 auto;
 }
 
 .slide.active { display: flex; }

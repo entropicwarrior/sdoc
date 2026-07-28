@@ -452,6 +452,54 @@ test("rendered slides include print styles", () => {
   assert(html.includes("display: block !important"), "should force slides visible in print");
 });
 
+// ============================================================
+console.log("\n--- Fit-to-window scaling ---");
+
+test("structural CSS defines the fixed design box", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("--sdoc-slide-w: 1280px"), "design box width defined");
+  assert(html.includes("--sdoc-slide-h: 720px"), "design box height defined");
+  // Must default to 1 so a deck with no JS renders at natural size rather
+  // than collapsing to scale(0).
+  assert(html.includes("--sdoc-slide-scale: 1"), "scale defaults to 1");
+});
+
+test("slides are sized from the design box and scaled by the variable", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  assert(html.includes("width: var(--sdoc-slide-w)"), "slide width from design box");
+  assert(html.includes("height: var(--sdoc-slide-h)"), "slide height from design box");
+  assert(
+    html.includes("scale(var(--sdoc-slide-scale))"),
+    "slide transform reads the scale variable"
+  );
+});
+
+test("print neutralizes the screen transform so each slide is one page", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  const printBlock = html.slice(html.indexOf("@media print"));
+  assert(printBlock.includes("transform: none !important"), "screen scale is cleared in print");
+  assert(
+    printBlock.includes("position: relative !important"),
+    "slides return to flow so they paginate"
+  );
+  assert(
+    printBlock.includes("width: var(--sdoc-slide-w)"),
+    "print page uses the same design box as screen"
+  );
+});
+
 test("findChrome returns a string or null", () => {
   const { findChrome } = require("../src/slide-pdf");
   const result = findChrome();
