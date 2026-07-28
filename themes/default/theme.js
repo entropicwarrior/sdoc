@@ -189,7 +189,22 @@
   // ---------------------------------------------------------------------
   var docEl = document.documentElement;
 
+  // Resolve the design box in CSS pixels.
+  //
+  // Measure the laid-out slide rather than parsing --sdoc-slide-w/h.  Custom
+  // properties are not resolved to px by getComputedStyle — the raw token
+  // comes back verbatim — so a theme overriding the box in any non-px unit
+  // ("13.333in", "80rem") would parse to a meaningless number.  offsetWidth /
+  // offsetHeight report the *layout* border box in px and ignore transforms,
+  // so they give the true design size whatever unit declared it, and are not
+  // perturbed by the scale this function itself applies.
   function designBox() {
+    var el = document.querySelector(".slide.active") || document.querySelector(".slide");
+    if (el && el.offsetWidth > 0 && el.offsetHeight > 0) {
+      return { w: el.offsetWidth, h: el.offsetHeight };
+    }
+    // No laid-out slide to measure (e.g. all hidden): fall back to the
+    // declared values, which are px in the shipped structural CSS.
     var cs = getComputedStyle(docEl);
     var w = parseFloat(cs.getPropertyValue("--sdoc-slide-w"));
     var h = parseFloat(cs.getPropertyValue("--sdoc-slide-h"));
