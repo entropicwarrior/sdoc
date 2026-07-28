@@ -176,6 +176,79 @@
   });
 
   // ---------------------------------------------------------------------
+  // Screen rendering: scale the fixed design box to fill the window.
+  //
+  // Slides are laid out at a fixed design size (--sdoc-slide-w x
+  // --sdoc-slide-h, default 1280x720) and the whole slide is scaled by a
+  // single factor so it fills as much of the window as it can while
+  // keeping its aspect ratio.  Unlike fitSlidesForPrint below, this is NOT
+  // clamped at 1 — on a window larger than the design box the deck scales
+  // up, which is the entire point: a 1920x1080 window gets 1.5x, 2560x1440
+  // gets 2x.  The scale is published as a CSS variable on :root so one
+  // write restyles every slide.
+  // ---------------------------------------------------------------------
+  var docEl = document.documentElement;
+
+  // Resolve the design box in CSS pixels.
+  //
+  // Measure the laid-out slide rather than parsing --sdoc-slide-w/h.  Custom
+  // properties are not resolved to px by getComputedStyle — the raw token
+  // comes back verbatim — so a theme overriding the box in any non-px unit
+  // ("13.333in", "80rem") would parse to a meaningless number.  offsetWidth /
+  // offsetHeight report the *layout* border box in px and ignore transforms,
+  // so they give the true design size whatever unit declared it, and are not
+  // perturbed by the scale this function itself applies.
+  function designBox() {
+    var el = document.querySelector(".slide.active") || document.querySelector(".slide");
+    if (el && el.offsetWidth > 0 && el.offsetHeight > 0) {
+      return { w: el.offsetWidth, h: el.offsetHeight };
+    }
+    // No laid-out slide to measure (e.g. all hidden): fall back to the
+    // declared values, which are px in the shipped structural CSS.
+    var cs = getComputedStyle(docEl);
+    var w = parseFloat(cs.getPropertyValue("--sdoc-slide-w"));
+    var h = parseFloat(cs.getPropertyValue("--sdoc-slide-h"));
+    return {
+      w: w > 0 ? w : 1280,
+      h: h > 0 ? h : 720
+    };
+  }
+
+  function fitSlidesToWindow() {
+    // Print has its own geometry (the design box is the page, unscaled);
+    // the print stylesheet forces transform:none, so skip the work.
+    if (window.matchMedia && window.matchMedia("print").matches) return;
+    var box = designBox();
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    if (!vw || !vh) return;
+    var k = Math.min(vw / box.w, vh / box.h);
+    if (!isFinite(k) || k <= 0) return;
+    docEl.style.setProperty("--sdoc-slide-scale", String(k));
+  }
+
+  // Coalesce resize bursts into one recompute per frame.
+  var fitQueued = false;
+  function queueFit() {
+    if (fitQueued) return;
+    fitQueued = true;
+    var run = function () {
+      fitQueued = false;
+      fitSlidesToWindow();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  }
+
+  fitSlidesToWindow();
+  window.addEventListener("resize", queueFit);
+  window.addEventListener("orientationchange", queueFit);
+  // Web fonts can change metrics after first paint; re-fit once they land.
+  if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+    document.fonts.ready.then(fitSlidesToWindow);
+  }
+
+  // ---------------------------------------------------------------------
   // PDF / print rendering: measure each slide's natural content size and
   // apply transform: scale() so the content fits the page exactly.  In
   // screen mode .slide-content-scale is display:contents (invisible to

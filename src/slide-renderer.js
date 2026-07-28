@@ -394,7 +394,37 @@ function renderSlides(nodes, options = {}) {
 
   // Structural styles — always injected regardless of theme.
   const structuralCss = `
-.slide { position: relative; }
+/* --- Fixed design box + fit-to-window scaling ---------------------------
+   Slides are laid out at a fixed design size (1280x720 CSS px, which is
+   exactly the 13.333in x 7.5in print page at 96dpi) and then scaled as a
+   whole to fill the window.  This is the standard deck technique: the
+   author's layout is preserved verbatim at every window size, and screen
+   and PDF are the same geometry by construction.
+
+   --sdoc-slide-scale is written by the theme runtime (fitSlidesToWindow in
+   themes/default/theme.js) on load and on resize.  If JS never runs the
+   scale stays 1 and the deck renders at its natural design size, which is
+   the pre-scaling behaviour rather than a broken one.
+
+   Themes must NOT set width/height/max-width/margin on .slide — those come
+   from the design-box variables below.  A theme that wants a different
+   aspect ratio should override --sdoc-slide-w / --sdoc-slide-h on :root
+   (and the @page size in the print block, if PDF output matters). */
+:root {
+  --sdoc-slide-w: 1280px;
+  --sdoc-slide-h: 720px;
+  --sdoc-slide-scale: 1;
+}
+.slide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--sdoc-slide-w);
+  height: var(--sdoc-slide-h);
+  transform: translate(-50%, -50%) scale(var(--sdoc-slide-scale));
+  transform-origin: center center;
+  overflow: hidden;
+}
 .slide-footer {
   position: absolute; bottom: 20px; left: 32px; right: 32px;
   display: flex; align-items: baseline;
@@ -440,7 +470,14 @@ function renderSlides(nodes, options = {}) {
     opacity: 1 !important;
     pointer-events: auto !important;
     page-break-after: always; break-after: page;
-    width: 100vw; height: 100vh; max-width: none;
+    /* The design box IS the page (1280x720px == 13.333in x 7.5in @96dpi),
+       so no fit-to-window scaling applies here — each slide flows as one
+       page at its natural size.  Overflowing content is still shrunk by
+       the inner .slide-content-scale wrapper (see fitSlidesForPrint). */
+    top: auto !important; left: auto !important;
+    transform: none !important;
+    margin: 0 !important;
+    width: var(--sdoc-slide-w); height: var(--sdoc-slide-h); max-width: none;
     overflow: hidden;
     page-break-inside: avoid; break-inside: avoid;
   }
