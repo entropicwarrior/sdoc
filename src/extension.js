@@ -455,6 +455,27 @@ function activate(context) {
   );
 }
 
+// A link href may percent-encode path characters (%20 for spaces, %28/%29 for
+// parentheses, ...). The file system knows nothing about percent-encoding, so
+// resolve against both the raw href and its decoded form.
+function hrefCandidates(filePath) {
+  const candidates = [filePath];
+  try {
+    const decoded = decodeURIComponent(filePath);
+    if (decoded !== filePath) candidates.push(decoded);
+  } catch (e) {
+    // Malformed percent sequence (e.g. a literal "%" in a filename) — raw only.
+  }
+  return candidates;
+}
+
+function hrefPathExists(filePath, docDir) {
+  return hrefCandidates(filePath).some((candidate) => {
+    const absPath = path.isAbsolute(candidate) ? candidate : path.join(docDir, candidate);
+    return fs.existsSync(absPath);
+  });
+}
+
 function updateDiagnostics(document, fullValidation) {
   if (!diagnosticCollection) return;
   const parsed = parseSdoc(document.getText());
@@ -463,10 +484,7 @@ function updateDiagnostics(document, fullValidation) {
 
   const options = {};
   if (fullValidation) {
-    options.resolveFilePath = (href) => {
-      const absPath = path.isAbsolute(href) ? href : path.join(docDir, href);
-      return fs.existsSync(absPath);
-    };
+    options.resolveFilePath = (href) => hrefPathExists(href, docDir);
   }
 
   const warnings = validateRefs(metaResult.nodes, options);
@@ -602,7 +620,8 @@ function openLink(href, document) {
   const fragment = href.includes("#") ? href.split("#")[1].split("?")[0] : null;
   const filePath = href.split("#")[0].split("?")[0];
   if (!filePath) return;
-  const resolved = path.resolve(dir, filePath);
+  const candidates = hrefCandidates(filePath).map((candidate) => path.resolve(dir, candidate));
+  const resolved = candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
   const fileUri = vscode.Uri.file(resolved);
   vscode.workspace.openTextDocument(fileUri).then(
     (doc) => {
@@ -1091,10 +1110,7 @@ async function buildHtml(document, title, webview) {
 
   // Validate refs and links for preview indicators
   const refWarnings = validateRefs(metaResult.nodes, {
-    resolveFilePath: (href) => {
-      const absPath = path.isAbsolute(href) ? href : path.join(docDir, href);
-      return fs.existsSync(absPath);
-    }
+    resolveFilePath: (href) => hrefPathExists(href, docDir)
   });
   const brokenRefIds = new Set();
   const brokenLinkHrefs = new Set();
