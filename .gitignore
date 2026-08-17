@@ -8,3 +8,5 @@ __pycache__/
 *.log
 *.vsix
 .vscode/settings.json
+build/
+*.egg-info/
