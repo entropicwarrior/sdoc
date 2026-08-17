@@ -1,0 +1,112 @@
+@meta {
+    title: Binding regressions
+    sdoc-version: 0.2
+}
+
+# Binding Regressions @regressions
+{
+    Every construct in this file was read wrongly by a hand-written Python
+    parser that this binding replaced. They are collected here so a regression
+    names the shape it broke rather than "a document stopped parsing".
+
+    # Short Row @short-row {
+        A row may carry fewer cells than the header. The grammar states no
+        cell-count rule, so neither does the reader. The old parser raised
+        here, and rejected three real documents for it.
+
+        {[table]
+            Property | Where | Note
+            Contiguous | spans.py | it is
+            Short row | only two cells
+        }
+    }
+
+    # Column Directive Row @directive-row {
+        The alignment row is a directive, not data. The reference removes it
+        from `rows`, so row-to-line attribution must remove the same line — a
+        half-fix puts every later citation one row out and looks right.
+
+        {[table]
+            Quantity | Value
+            < | >.3
+            0 | 0
+            0.5 | 1.303713
+        }
+    }
+
+    # Brace On The Next Line @next-line-brace
+    {
+        `# Title @anchor` then `{` is the same section as `# Title @anchor {`.
+        The old parser required the brace on the heading line and so lost whole
+        sections silently — 151 anchored sections across 6 documents, measured
+        once before it was deleted. The tables inside a lost section came back
+        attributed to no section at all.
+
+        # Nested @next-line-nested
+        {
+            {[table]
+                Field | Type
+                tensor | float
+            }
+        }
+    }
+
+    # Unanchored Scopes @transparent {
+        An unanchored scope is not an address, so it cannot own a table: the
+        table below belongs to @transparent. The heading is still visible as a
+        heading, which is how a caller tells this table from one in a sibling
+        subsection.
+
+        # Modifiable Parameters {
+            {[table]
+                Parameter | Default
+                threshold | 4
+            }
+        }
+    }
+
+    # Scope Type Annotations @typed {
+        A `:type` annotation is not part of the title.
+
+        # Overlap With Homopolymer Rule :warning {
+            The heading above is titled "Overlap With Homopolymer Rule".
+        }
+    }
+
+    # Escaped Pipes @escaped-pipes {
+        `\|` is cell content, and arrives unescaped.
+
+        {[table]
+            Sequence | Working
+            `AGTC` | \|2-2\| - 0 = 0
+        }
+    }
+
+    # Headerless Tables @headerless {
+        `{[table headerless]` has no header, so no body line is one. Getting
+        the offset wrong here shifts every cited line by one and drops the last
+        row.
+
+        {[table headerless borderless]
+            a | b
+            c | d
+        }
+    }
+
+    # Inline Markers @markers {
+        All seven sigils, not the four the old reader happened to know.
+        `{^note^}`, `{=neutral=}` and `{~highlight~}` survived into "plain
+        text" verbatim, in 32 tables across 13 documents.
+
+        {[table]
+            Sigil | Written | Status
+            positive | plus | {+good+}
+            neutral | equals | {=estimated=}
+            note | caret | {^weak^}
+            caution | question | {?Dormant: pending a ruling?}
+            warning | bang | {!fires late!}
+            negative | minus | {-bad-}
+            highlight | tilde | {~look here~}
+        }
+    }
+}

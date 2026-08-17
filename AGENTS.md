@@ -65,6 +65,12 @@ test/               Test files
   test-slides.js      Slide renderer tests (node test/test-slides.js)
   *.sdoc              Test fixture files
 
+bindings/           Bindings for other languages
+  python/             Python binding: calls src/sdoc.js, does not reimplement it
+    src/sdoc/           The package (reference.py, model.py, inline.py, bridge.js)
+    test/test_binding.py  Tests (python3 bindings/python/test/test_binding.py)
+    README.md           Install, API, and how a consumer depends on it
+
 tools/              CLI tools
   build-slides.js     Build HTML slides from SDOC (node tools/build-slides.js [--pdf])
   serve_docs.py       CLI to start a local SDOC document server
@@ -97,11 +103,22 @@ should be evaluated against.
 - Parsing and rendering are separate concerns
 - `parseSdoc()` returns `{ nodes, errors }`. Renderers consume nodes.
 
+**Python (bindings/python):**
+- The binding contains no parser. Anything about the grammar — block or inline —
+  comes from `src/sdoc.js` through the node worker. A regex over sdoc syntax in
+  Python is the defect this binding exists to remove.
+- No runtime dependencies. `node` is the only external requirement, and its
+  absence is a hard error, never a skip.
+- Standard library only in tests too; no pytest.
+
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests: `node test/test-all.js && node test/test-knr.js && node test/test-slides.js`
+- Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
+  `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
 - Run tests and verify 0 failures before committing parser changes
+- A parser change can move the binding's behaviour: run its tests too
 
 **Building the extension:**
 - `npm run package` (produces `dist/sdoc-<version>.vsix`)

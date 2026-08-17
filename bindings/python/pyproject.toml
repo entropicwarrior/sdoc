@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sdoc"
+version = "0.2.18"
+description = "Python binding for the sdoc reference parser"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+# No runtime Python dependencies, deliberately: the parser is `src/sdoc.js`,
+# run under node. The only external requirement is node itself, and it is
+# checked at call time with an error that says how to install it, because a
+# missing node must be loud rather than a skip.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/entropicwarrior/sdoc"
+Repository = "https://github.com/entropicwarrior/sdoc"
+
+[tool.setuptools]
+# The JavaScript ships inside the package. `sdoc.js` is a symlink to
+# `src/sdoc.js` at the repository root in a checkout; the build dereferences it,
+# so a wheel carries the real bytes at `sdoc/sdoc.js`. Either way the runtime
+# path is `<package dir>/sdoc.js` — the one resolution that is true of a source
+# checkout and of site-packages alike.
+package-data = { sdoc = ["sdoc.js", "bridge.js"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The version tracks the npm package's, because what this ships is that
+# package's parser. It is not published to PyPI; consume it as a path
+# dependency (see README.md).
