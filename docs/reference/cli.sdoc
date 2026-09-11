@@ -81,6 +81,48 @@ node tools/build-doc.js input.sdoc --include-about    # keep @about in the expor
         The tool respects `sdoc.config.json` files in the directory hierarchy and per-file `@meta` style overrides, just like the VS Code extension.
     }
 
+    # Build Slides Tool
+    {
+        `tools/build-slides.js` turns an SDOC file into a slide deck: HTML, PDF, or a
+        PowerPoint file that Drive imports as a native Google Slides deck. Each top-level
+        scope becomes one slide. See
+        [Slide Authoring](slide-authoring.sdoc) for the deck format and the layouts.
+
+        ```bash
+node tools/build-slides.js deck.sdoc                      # HTML output (default)
+node tools/build-slides.js deck.sdoc -o slides.html        # HTML with custom path
+node tools/build-slides.js deck.sdoc --pdf                 # PDF, one page per slide
+node tools/build-slides.js deck.sdoc --pptx                # PowerPoint / Google Slides
+node tools/build-slides.js deck.sdoc --check               # report slides that overflow
+node tools/build-slides.js deck.sdoc --theme themes/mine   # use a custom theme
+node tools/build-slides.js deck.sdoc --fit cover           # off-ratio window behaviour
+        ```
+
+        # Options
+        {
+            {[.]
+                - `-o <path>` -- output file path (default: input name with `.html`, `.pdf` or `.pptx`). With both `--pdf` and `--pptx`, `-o` names the PDF and the PPTX takes the input's name.
+                - `--pdf` -- export as PDF via headless Chrome, at the theme's page size
+                - `--pptx` (or `--slides`) -- export as PowerPoint. Also runs the layout check, because it has already measured the deck
+                - `--check` -- build the HTML, measure every slide in a browser, and report any whose content has run past the margin the theme reserved
+                - `--theme <dir>` -- a theme directory holding `theme.css`, and optionally `theme.js`, `theme.json` and assets (default: the built-in theme)
+                - `--fit contain|cover|stretch` -- what happens when the window is not the slide's shape: letterbox, crop, or distort (default: `contain`)
+                - `--dark` -- dark-mode colour overrides
+                - `--help` / `-h` -- show usage information and exit
+            }
+        }
+
+        `--pdf`, `--pptx` and `--check` all require Google Chrome or Chromium. Set the
+        `CHROME_PATH` environment variable to override auto-detection.
+
+        The PowerPoint export has no layout engine of its own: it opens the built deck in
+        headless Chrome and asks the browser where every box, rule, image and run of text
+        ended up, then turns each into one absolutely positioned shape. A new layout or a
+        restyled theme therefore exports correctly without the exporter being taught
+        anything. Web fonts are named rather than embedded, and remote images are skipped
+        and reported.
+    }
+
     # Notion Sync Tool
     {
         `tools/sync-notion.js` syncs SDOC files to Notion pages. See the [Notion Sync guide](../guide/notion-sync.sdoc) for full setup instructions.

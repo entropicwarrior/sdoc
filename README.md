@@ -19,7 +19,7 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 **A zero-dependency JavaScript parser** — `src/sdoc.js` parses SDOC into a format-neutral AST. No runtime dependencies, works anywhere Node runs. Parsing and rendering are cleanly separated — build your own renderers on top.
 
-**Slide deck generation** — turn any SDOC file into an HTML slide deck with themes, layouts (center, two-column), speaker notes, mermaid diagrams, and PDF export via headless Chrome.
+**Slide deck generation** — turn any SDOC file into a slide deck with themes, structured layouts (columns, stats, pipeline, matrix, rows, bars, split, stack), speaker notes, mermaid diagrams, and export to PDF or PowerPoint / Google Slides via headless Chrome.
 
 **A document site builder** — serve a folder of SDOC files as a browsable site with sidebar navigation, search, and split-pane comparison.
 
@@ -53,6 +53,9 @@ Open any `.sdoc` file and click the preview icon in the editor title bar, or run
 
 ```bash
 node tools/build-slides.js deck.sdoc -o slides.html
+node tools/build-slides.js deck.sdoc --pdf     # one page per slide
+node tools/build-slides.js deck.sdoc --pptx    # Drive imports it as Google Slides
+node tools/build-slides.js deck.sdoc --check   # report slides whose content overflows
 ```
 
 Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `docs/reference/slide-authoring.sdoc` for the full authoring guide.
@@ -196,7 +199,7 @@ Tag any section with `@id` and cross-reference it anywhere with `@id` — render
 
 ### Slides
 
-Turn any SDOC file into an HTML slide deck with themes, layouts (center, two-column), speaker notes, and PDF export.
+Turn any SDOC file into a slide deck with themes, structured layouts, speaker notes, and export to PDF or PowerPoint / Google Slides.
 
 ### Scope Types
 

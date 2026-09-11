@@ -179,15 +179,32 @@
   // Screen rendering: scale the fixed design box to fill the window.
   //
   // Slides are laid out at a fixed design size (--sdoc-slide-w x
-  // --sdoc-slide-h, default 1280x720) and the whole slide is scaled by a
-  // single factor so it fills as much of the window as it can while
-  // keeping its aspect ratio.  Unlike fitSlidesForPrint below, this is NOT
-  // clamped at 1 — on a window larger than the design box the deck scales
-  // up, which is the entire point: a 1920x1080 window gets 1.5x, 2560x1440
-  // gets 2x.  The scale is published as a CSS variable on :root so one
-  // write restyles every slide.
+  // --sdoc-slide-h, default 1280x720) and the whole slide is then scaled to
+  // meet the window.  Unlike fitSlidesForPrint below, this is NOT clamped at
+  // 1 — on a window larger than the design box the deck scales up, which is
+  // the entire point: a 1920x1080 window gets 1.5x, 2560x1440 gets 2x.  The
+  // scale is published as CSS variables on :root so one write restyles every
+  // slide.
+  //
+  // How a window of a different shape is handled comes from the deck's fit
+  // mode, written by the renderer onto <html data-sdoc-fit>:
+  //
+  //   contain — the default.  Scale to fit and letterbox the remainder, so
+  //             the slide always keeps its designed proportions.  Whether
+  //             the letterbox is visible is the theme's business: it is the
+  //             area painted with --sdoc-letterbox, and a theme that leaves
+  //             that equal to its slide background gets a slide with no
+  //             visible edge.
+  //   cover   — scale to fill and crop the overflow.  Nothing is letterboxed
+  //             and nothing is distorted, but content near an edge is lost,
+  //             including anything pinned to the slide's bottom.
+  //   stretch — scale each axis to the window independently.  Nothing is
+  //             cropped or letterboxed and the slide is distorted.
   // ---------------------------------------------------------------------
   var docEl = document.documentElement;
+  var FIT_MODES = { contain: 1, cover: 1, stretch: 1 };
+  var fitMode = docEl.getAttribute("data-sdoc-fit") || "contain";
+  if (!FIT_MODES[fitMode]) fitMode = "contain";
 
   // Resolve the design box in CSS pixels.
   //
@@ -222,9 +239,18 @@
     var vw = window.innerWidth;
     var vh = window.innerHeight;
     if (!vw || !vh) return;
-    var k = Math.min(vw / box.w, vh / box.h);
-    if (!isFinite(k) || k <= 0) return;
-    docEl.style.setProperty("--sdoc-slide-scale", String(k));
+
+    var kx = vw / box.w;
+    var ky = vh / box.h;
+    if (fitMode === "cover") {
+      kx = ky = Math.max(kx, ky);
+    } else if (fitMode !== "stretch") {
+      kx = ky = Math.min(kx, ky);
+    }
+    if (!isFinite(kx) || kx <= 0 || !isFinite(ky) || ky <= 0) return;
+
+    docEl.style.setProperty("--sdoc-slide-scale", String(kx));
+    docEl.style.setProperty("--sdoc-slide-scale-y", String(ky));
   }
 
   // Coalesce resize bursts into one recompute per frame.

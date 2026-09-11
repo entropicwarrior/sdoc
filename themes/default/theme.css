@@ -2,9 +2,15 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* The letterbox: the ground behind the slide, seen whenever the window is
+   not the slide's shape. It must differ from the slide's own background or
+   the slide has no visible edge, and anything pinned to the slide's bottom
+   looks stranded in the middle of the window. */
+:root { --sdoc-letterbox: #d8dbdf; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  background: #fff;
+  background: var(--sdoc-letterbox);
   color: #1a1a1a;
   overflow: hidden;
   height: 100vh;
@@ -21,6 +27,7 @@ body {
   flex-direction: column;
   justify-content: center;
   padding: 60px 100px;
+  background: #fff;
 }
 
 .slide.active { display: flex; }
@@ -162,8 +169,8 @@ img {
 /* --- Drilldown affordance ---
    Spine slides that have :detail children get .slide-has-details. The default
    theme renders a small downward chevron in the bottom-centre to hint that
-   pressing Down (or swiping up) drills in. Custom themes (e.g. ETHyR) can
-   replace this rule with their own animation. */
+   pressing Down (or swiping up) drills in. A custom theme can replace this
+   rule with its own animation. */
 
 .slide-has-details::after {
   content: "\2304"; /* ⌄ — DOWN ARROWHEAD */
@@ -188,3 +195,281 @@ img {
 
 /* Print / PDF styles are injected by the renderer (slide-renderer.js)
    so they work with every theme, not just this one. */
+
+/* --- Structured layouts -------------------------------------------------
+   The renderer can emit columns, stats, pipelines, matrices, rows, bars,
+   splits and stacks (see docs/reference/slide-authoring.sdoc). A theme is
+   free to restyle any of them, but a deck must never depend on one having
+   done so — these rules give every layout a plain, legible default in the
+   same idiom as the rest of this theme.
+
+   --sdoc-accent is the slide's current accent. Layouts that distinguish one
+   thing from another read it rather than naming a colour, so a theme can
+   recolour the whole system by reassigning four variables.
+
+   The accent classes below carry real specificity while the per-layout
+   defaults further down are wrapped in :where() and carry none. That
+   asymmetry is the whole mechanism: an `accent:` an author wrote is an
+   explicit choice and must beat a theme's alternation. Wrap these in
+   :where() too and both sides sit at zero, where source order decides — and
+   since the defaults come later in this file, they would quietly win. */
+
+:root {
+  --sdoc-accent-1: #2563eb;
+  --sdoc-accent-2: #0891b2;
+  --sdoc-accent-3: #b45309;
+  --sdoc-accent-muted: #6b7280;
+  --sdoc-rule: #e1e4e8;
+  --sdoc-rule-strong: #c7ccd1;
+  --sdoc-muted: #6b7280;
+  --sdoc-accent: var(--sdoc-accent-1);
+}
+
+.accent-primary { --sdoc-accent: var(--sdoc-accent-1); }
+.accent-secondary { --sdoc-accent: var(--sdoc-accent-2); }
+.accent-tertiary { --sdoc-accent: var(--sdoc-accent-3); }
+.accent-neutral { --sdoc-accent: var(--sdoc-accent-muted); }
+
+/* Deprecated colour-named aliases. An accent names a role, not a hue, so a
+   theme is free to paint `primary` any colour it likes; naming the hue in the
+   source means a restyled deck reads as a lie. Kept only so decks written
+   against the first release still build. */
+.accent-magenta { --sdoc-accent: var(--sdoc-accent-1); }
+.accent-cyan { --sdoc-accent: var(--sdoc-accent-2); }
+.accent-amber { --sdoc-accent: var(--sdoc-accent-3); }
+
+/* The head and body wrappers stay display:contents in this theme, so the
+   structured containers supply their own separation from the head. */
+.pipeline, .stats, .rows, .bars, .matrix, .split, .stack { margin-top: 1em; }
+
+/* Head furniture */
+
+.kicker {
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sdoc-accent);
+  margin-bottom: 0.5em;
+}
+
+.lede {
+  font-size: 1.4em;
+  line-height: 1.4;
+  color: #555;
+  margin-top: 0.4em;
+}
+
+.footnote {
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: var(--sdoc-muted);
+  margin-top: 1.2em;
+}
+
+.status {
+  font-size: 0.9em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sdoc-muted);
+  margin-top: 0.4em;
+}
+
+/* title and section */
+
+.layout-title { justify-content: center; }
+.layout-title h1 { font-size: 4em; margin-bottom: 0.25em; }
+.layout-title .kicker { margin-top: 1.4em; margin-bottom: 0.2em; }
+
+.layout-section { justify-content: center; }
+.layout-section h2 { font-size: 3em; }
+
+/* columns */
+
+.columns.cols-4,
+.columns.cols-5,
+.columns.cols-6 { gap: 32px; }
+
+.col-index,
+.row-index {
+  font-family: "SF Mono", "Fira Mono", Menlo, Consolas, monospace;
+  font-size: 0.95em;
+  color: var(--sdoc-accent);
+  margin-bottom: 0.4em;
+}
+
+.col-kicker {
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sdoc-accent);
+  margin-bottom: 0.4em;
+}
+
+.col-caption {
+  font-size: 0.9em;
+  color: var(--sdoc-muted);
+  margin-top: 0.5em;
+}
+
+.columns.variant-card .column img { margin-bottom: 0.6em; }
+.columns.variant-card h3 { border-bottom: 2px solid var(--sdoc-accent); padding-bottom: 0.3em; }
+
+.columns.variant-panel { gap: 1px; background: var(--sdoc-rule); align-items: stretch; }
+.columns.variant-panel .column { background: #fff; padding: 24px 20px; }
+:where(.columns.variant-panel .column:nth-child(odd)) { --sdoc-accent: var(--sdoc-accent-1); }
+:where(.columns.variant-panel .column:nth-child(even)) { --sdoc-accent: var(--sdoc-accent-2); }
+.columns.variant-panel h3 { color: var(--sdoc-accent); font-size: 1.1em; }
+.columns.variant-panel p, .columns.variant-panel li { font-size: 1em; }
+
+.columns.variant-people { flex-wrap: wrap; row-gap: 36px; }
+.columns.variant-people > .column { flex: 1 1 28%; min-width: 28%; }
+.columns.variant-people .col-caption {
+  color: var(--sdoc-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  margin: 0 0 0.4em;
+}
+
+/* stats */
+
+.stats { display: flex; gap: 48px; align-items: flex-start; }
+.stat { flex: 1 1 0; min-width: 0; }
+.stat-value { font-size: 3.4em; font-weight: 700; line-height: 1; color: #111; white-space: nowrap; }
+.stat-label { margin-top: 0.6em; }
+.stat-label, .stat-label p {
+  font-size: 0.95em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sdoc-muted);
+}
+
+/* pipeline — a marked step carries the row's accent, and that distinction is
+   the author's meaning, not decoration. Keep it however the theme is styled. */
+
+.pipeline { display: flex; flex-direction: column; gap: 20px; }
+.pipe-row { display: flex; align-items: center; gap: 18px; }
+:where(.pipe-row:nth-child(1)) { --sdoc-accent: var(--sdoc-accent-1); }
+:where(.pipe-row:nth-child(2)) { --sdoc-accent: var(--sdoc-accent-2); }
+.pipe-label {
+  flex: 0 0 170px;
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sdoc-accent);
+}
+.pipe-steps { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
+.pipe-step {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border: 1px solid var(--sdoc-rule-strong);
+  border-radius: 8px;
+  flex: 0 0 auto;
+}
+.pipe-step span {
+  font-size: 0.85em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #444;
+  white-space: nowrap;
+}
+.pipe-step.is-marked { border-color: var(--sdoc-accent); }
+.pipe-step.is-marked span { color: var(--sdoc-accent); font-weight: 600; }
+.pipe-arrow { color: #aaa; flex: 0 0 auto; }
+.pipe-note p { font-size: 0.9em; color: var(--sdoc-muted); }
+
+/* matrix */
+
+.matrix table { width: 100%; border-collapse: collapse; }
+.matrix th {
+  font-size: 0.7em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  vertical-align: bottom;
+  padding: 0 12px 8px 0;
+  border-bottom: 1px solid var(--sdoc-rule-strong);
+  color: var(--sdoc-accent);
+}
+:where(.matrix th:nth-child(odd)) { --sdoc-accent: var(--sdoc-accent-1); }
+:where(.matrix th:nth-child(even)) { --sdoc-accent: var(--sdoc-accent-2); }
+.matrix td {
+  font-size: 0.85em;
+  line-height: 1.35;
+  vertical-align: top;
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--sdoc-rule);
+  color: #444;
+}
+.matrix td strong { display: block; color: #111; margin-bottom: 1px; }
+.matrix td em { font-style: normal; color: var(--sdoc-muted); }
+.matrix tr.is-highlight td { background: color-mix(in srgb, var(--sdoc-accent-1) 6%, transparent); }
+.matrix tr.is-highlight td:first-child { box-shadow: inset 3px 0 0 var(--sdoc-accent-1); padding-left: 10px; }
+
+/* rows */
+
+.rows { display: flex; flex-direction: column; width: 100%; }
+.rows .row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 0.95fr) minmax(0, 1.05fr) auto;
+  column-gap: 24px;
+  align-items: start;
+  padding: 18px 0 20px;
+  border-top: 1px solid var(--sdoc-rule);
+}
+.rows .row:last-child { border-bottom: 1px solid var(--sdoc-rule); }
+.rows .row:not(:has(.row-index)) { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr) auto; }
+.row-index { margin-bottom: 0; }
+.row-label { font-size: 1.3em; font-weight: 600; line-height: 1.2; color: #111; }
+.row-body p, .row-body li { font-size: 1.05em; line-height: 1.45; }
+.row-value {
+  font-family: "SF Mono", "Fira Mono", Menlo, Consolas, monospace;
+  font-size: 1.1em;
+  text-align: right;
+  color: var(--sdoc-accent);
+  white-space: nowrap;
+}
+.rows.variant-mono .row { grid-template-columns: 160px minmax(0, 1fr) auto; }
+.rows.variant-mono .row-label {
+  font-family: "SF Mono", "Fira Mono", Menlo, Consolas, monospace;
+  font-size: 0.95em;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sdoc-accent);
+}
+:where(.rows.variant-mono .row) { --sdoc-accent: var(--sdoc-accent-2); }
+.rows.variant-ledger .row { grid-template-columns: minmax(0, 1fr) auto; }
+.rows.variant-ledger .row-label { font-size: 1.1em; font-weight: 400; }
+
+/* bars */
+
+.bars { display: flex; flex-direction: column; gap: 16px; }
+.bar-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+.bar-label { font-size: 1.05em; color: #111; }
+.bar-value {
+  font-family: "SF Mono", "Fira Mono", Menlo, Consolas, monospace;
+  font-size: 0.95em;
+  color: var(--sdoc-accent);
+  white-space: nowrap;
+}
+.bar-track { height: 8px; border-radius: 4px; background: #eceff2; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; background: var(--sdoc-accent); }
+.bar-note, .bar-note p { font-size: 0.85em; line-height: 1.35; color: var(--sdoc-muted); }
+.bar-note { margin-top: 6px; }
+:where(.bars .bar) { --sdoc-accent: var(--sdoc-accent-1); }
+
+/* split and stack */
+
+.split { display: flex; gap: 48px; align-items: stretch; }
+.split > .pane { min-width: 0; display: flex; flex-direction: column; }
+.stack { display: flex; flex-direction: column; gap: 28px; }
+.stack.is-ruled > .stack-block + .stack-block { border-top: 1px solid var(--sdoc-rule); padding-top: 28px; }
+.block > .kicker { margin-bottom: 0.4em; }
+.block > .lede { margin-bottom: 0.6em; }

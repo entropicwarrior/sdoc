@@ -6,8 +6,8 @@ sdoc is a specified format. This repository carries the EBNF grammar
 validator — runs on. A Python consumer that wants to read sdoc has two options:
 call the reference, or write a second implementation of the grammar.
 
-The second option has been tried and measured. ETHyR D4 carried a hand-written
-Python reader for a while. It was never validated against the specification and
+The second option has been tried and measured. A project downstream of this one
+carried a hand-written Python reader for a while. It was never validated against the specification and
 it was wrong in ways nothing local could see: it rejected 3 of the 110 sdoc
 documents in reach over a cell-count rule the grammar does not state, silently
 lost whole sections written in the brace-on-the-next-line form the grammar does

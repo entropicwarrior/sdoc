@@ -19,6 +19,9 @@ const { parseSdoc, extractMeta } = require("@entropicwarrior/sdoc");
 const { renderNotionBlocks } = require("@entropicwarrior/sdoc/notion");
 const { renderSlides } = require("@entropicwarrior/sdoc/slides");
 const { exportSlidePdf, exportDocPdf } = require("@entropicwarrior/sdoc/slide-pdf");
+const { exportSlidePptx, buildPptx } = require("@entropicwarrior/sdoc/slide-pptx");
+const { harvestGeometry, overflowReport } = require("@entropicwarrior/sdoc/slide-geometry");
+const { loadTheme } = require("@entropicwarrior/sdoc/theme");
 const { knowledgeDir } = require("@entropicwarrior/sdoc/knowledge");
         ```
     }
@@ -316,5 +319,79 @@ await exportDocPdf("/tmp/document.html", "/tmp/document.pdf");
             - Returns a Promise that resolves with the output path
             - Uses A4 paper (8.27 x 11.69 inches) with print-optimized styles
         }
+    }
+
+    # loadTheme(themeDir, fallbackDir)
+    {
+        Reads a slide theme directory: `theme.css`, optionally `theme.js`, optionally `theme.json`.
+
+        Relative `url()` references in the CSS are rewritten to `data:` URIs so a built deck is one
+        self-contained file. A path escaping the theme directory is refused and reported.
+
+        ```javascript
+const { loadTheme } = require("@entropicwarrior/sdoc/theme");
+const { themeCss, themeJs, themeConfig, warnings } = loadTheme("themes/mine", "themes/default");
+const html = renderSlides(nodes, { meta, themeCss, themeJs, themeConfig });
+        ```
+
+        {[.]
+            - `themeDir` -- the theme directory to read
+            - `fallbackDir` -- supplies `theme.js` when the theme ships none (optional)
+            - Returns `{ themeCss, themeJs, themeConfig, warnings, dir }`
+            - `themeConfig` carries the design box (`slide`), print page (`page`), default `fit` mode and PPTX `fonts`
+        }
+    }
+
+    # harvestGeometry(htmlPath, options)
+    {
+        Measures a built HTML deck in headless Chrome: every box, rule, image and run of text, with
+        its position and computed style in design-box pixels. This is what drives the PowerPoint
+        export, so the CSS stays the only source of layout truth.
+
+        ```javascript
+const { harvestGeometry, overflowReport } = require("@entropicwarrior/sdoc/slide-geometry");
+const geometry = await harvestGeometry("/tmp/deck.html");
+for (const finding of overflowReport(geometry)) {
+    console.error(finding.slide, finding.over.join(", "));
+}
+        ```
+
+        {[.]
+            - `htmlPath` -- a built deck, in a directory where its relative assets resolve
+            - `options.attempts` -- tries before giving up (default 3)
+            - `options.timeoutMs` -- base deadline per attempt, which grows with each one (default 30000)
+            - Returns a Promise for `{ box, slides }`
+            - Requires Chrome or Chromium (auto-detected, or set `CHROME_PATH`)
+        }
+
+        `overflowReport(geometry, options)` returns one finding per slide whose content has left the
+        margin the theme reserved. Pass `{ strict: false }` to report only content clipped by the
+        design box.
+    }
+
+    # exportSlidePptx(htmlPath, pptxPath, options)
+    {
+        Measures a built HTML deck and writes a PowerPoint file beside it. Drive imports the result
+        as a native Google Slides deck.
+
+        ```javascript
+const { exportSlidePptx } = require("@entropicwarrior/sdoc/slide-pptx");
+const { path, slides, skippedImages } = await exportSlidePptx("/tmp/deck.html", "/tmp/deck.pptx", {
+    title: "Q3 Review",
+    fonts: { display: "Georgia", body: "Helvetica" }
+});
+        ```
+
+        {[.]
+            - `htmlPath` -- a built deck
+            - `pptxPath` -- path for the output `.pptx`
+            - `options.title` -- deck title, for the file's document properties
+            - `options.fonts` -- `{ display, body }` typefaces used when a CSS stack resolves to a generic family
+            - Returns a Promise for `{ path, slides, skippedImages, geometry }`
+            - Requires Chrome or Chromium
+        }
+
+        `buildPptx(geometry, options)` is the same conversion without the browser step, for a geometry
+        object already in hand. It returns `{ buffer, skippedImages }`.
     }
 }

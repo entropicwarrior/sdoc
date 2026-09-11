@@ -138,7 +138,7 @@ test("center layout", () => {
     }
 }
 `);
-  assert(html.includes('class="slide center"'), "should have center class");
+  assert(html.includes('class="slide center layout-center"'), "should have center class");
   assert(!html.includes("config:"), "config line should be stripped from content");
   assert(html.includes("<p>Some centered content.</p>"), "content should still render");
 });
@@ -158,8 +158,8 @@ test("two-column layout", () => {
     }
 }
 `);
-  assert(html.includes('class="slide two-column"'), "should have two-column class");
-  assert(html.includes('class="columns"'), "should have columns container");
+  assert(html.includes('class="slide two-column layout-two-column"'), "should have two-column class");
+  assert(html.includes('class="columns cols-2"'), "should have columns container");
   assert(html.includes('class="column"'), "should have column divs");
   assert(html.includes("<h3>Left</h3>"), "should have column headings");
   assert(html.includes("<p>Left content.</p>"), "left column content");
@@ -175,8 +175,8 @@ test("default layout (no config)", () => {
 }
 `);
   assert(html.includes('class="slide"'), "should have plain slide class");
-  assert(!html.includes('class="slide center"'), "should not have center class on slide");
-  assert(!html.includes('class="slide two-column"'), "should not have two-column class on slide");
+  assert(!html.includes("layout-center"), "should not have center class on slide");
+  assert(!html.includes("layout-two-column"), "should not have two-column class on slide");
 });
 
 // ============================================================
@@ -375,7 +375,7 @@ test("produces valid HTML document", () => {
 }
 `);
   assert(html.includes("<!DOCTYPE html>"), "should have doctype");
-  assert(html.includes("<html lang=\"en\">"), "should have html tag");
+  assert(/<html lang="en"[ >]/.test(html), "should have html tag");
   assert(html.includes("<head>"), "should have head");
   assert(html.includes("<body>"), "should have body");
   assert(html.includes("</html>"), "should close html");
@@ -435,7 +435,7 @@ test("config line with extra whitespace", () => {
     }
 }
 `);
-  assert(html.includes('class="slide center"'), "should handle whitespace in config");
+  assert(html.includes('class="slide center layout-center"'), "should handle whitespace in config");
 });
 
 // ============================================================
@@ -477,8 +477,8 @@ test("slides are sized from the design box and scaled by the variable", () => {
   assert(html.includes("width: var(--sdoc-slide-w)"), "slide width from design box");
   assert(html.includes("height: var(--sdoc-slide-h)"), "slide height from design box");
   assert(
-    html.includes("scale(var(--sdoc-slide-scale))"),
-    "slide transform reads the scale variable"
+    html.includes("scale(var(--sdoc-slide-scale), var(--sdoc-slide-scale-y))"),
+    "slide transform reads the scale variables"
   );
 });
 
@@ -550,13 +550,13 @@ test("company meta renders footer on slides", () => {
     # Meta @meta {
         type: slides
 
-        company: Irreversible Inc.
+        company: Northwind Ltd
     }
     # Slide { Hello. }
 }
 `);
   assert(html.includes("sdoc-company-footer"), "should have company footer");
-  assert(html.includes("Irreversible Inc."), "should have company name");
+  assert(html.includes("Northwind Ltd"), "should have company name");
 });
 
 test("confidential: true with company renders notice", () => {
@@ -565,7 +565,7 @@ test("confidential: true with company renders notice", () => {
     # Meta @meta {
         type: slides
 
-        company: Irreversible Inc.
+        company: Northwind Ltd
 
         confidential: true
     }
@@ -574,7 +574,7 @@ test("confidential: true with company renders notice", () => {
 `);
   assert(html.includes("sdoc-confidential-notice"), "should have confidential notice");
   assert(html.includes("CONFIDENTIAL"), "should say CONFIDENTIAL");
-  assert(html.includes("Irreversible Inc."), "should include company name");
+  assert(html.includes("Northwind Ltd"), "should include company name");
 });
 
 test("confidential with explicit entity overrides company", () => {
@@ -583,7 +583,7 @@ test("confidential with explicit entity overrides company", () => {
     # Meta @meta {
         type: slides
 
-        company: Irreversible Inc.
+        company: Northwind Ltd
 
         confidential: Acme Corp
     }
@@ -591,7 +591,7 @@ test("confidential with explicit entity overrides company", () => {
 }
 `);
   assert(html.includes("Acme Corp"), "should use explicit entity");
-  assert(!html.includes("sdoc-confidential-notice\">CONFIDENTIAL \u2014 Irreversible"), "should not use company");
+  assert(!html.includes("sdoc-confidential-notice\">CONFIDENTIAL \u2014 Northwind"), "should not use company");
 });
 
 test("confidential: true without company renders plain notice", () => {
