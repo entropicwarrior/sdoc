@@ -1,0 +1,364 @@
+# SDOC Slide Layouts @layouts-example
+{
+    @meta
+    {
+        type: slides
+
+        title: SDOC Slide Layouts
+
+        company: SDOC
+    }
+
+    @about
+    {
+        Every structured slide layout, one slide each, with neutral content.
+        Build it to see what a theme does with the whole layout set:
+
+        `node tools/build-slides.js examples/layouts-example.sdoc`
+
+        Add `--theme path/to/theme` to check a theme of your own against it,
+        and `--check` to confirm nothing has overflowed its slide.
+    }
+
+    # SDOC Slides @cover
+    {
+        config: title
+
+        kicker: Layout reference
+
+        status: Build it, then build it again with your own theme
+
+        Structured layouts for decks that carry an argument.
+    }
+
+    # One statement, nothing else @divider
+    {
+        config: section
+
+        kicker: Section
+
+        A section divider states the turn the argument is about to take.
+    }
+
+    # Three figures, three captions @stats-slide
+    {
+        config: stats
+
+        kicker: Stats
+
+        lede: The stats layout sets a figure against a small caption.
+
+        # 3.2 s @stat-a
+        {
+            Median cold start, before
+        }
+
+        # 180 ms @stat-b
+        {
+            Median cold start, after
+        }
+
+        # 18× @stat-c
+        {
+            The ratio the slide is about
+        }
+    }
+
+    # Two paths, one of them shorter @pipeline-slide
+    {
+        config: pipeline
+
+        kicker: Pipeline
+
+        lede: A bold step is marked and takes the row's accent. Marking is semantic: it says this step is required, and the theme decides what that looks like.
+
+        # The long way @path-a
+        {
+            accent: primary
+
+            {[.]
+                - Request
+                - **Encode**
+                - Queue
+                - **Decode**
+                - Handler
+            }
+        }
+
+        # The short way @path-b
+        {
+            accent: secondary
+
+            {[.]
+                - Request
+                - **Dispatch**
+                - Handler
+            }
+        }
+    }
+
+    # Numbered columns @columns-slide
+    {
+        config: columns
+
+        numbered: true
+
+        kicker: Columns
+
+        # First @col-1
+        {
+            Columns take one child scope each. Adding `numbered: true` prefixes
+            them 01, 02, 03.
+        }
+
+        # Second @col-2
+        {
+            A column holds anything a slide holds: prose, a list, a table, an
+            image, a nested block.
+        }
+
+        # Third @col-3
+        {
+            Four or more columns tighten the gutter automatically.
+        }
+    }
+
+    # Panels @panel-slide
+    {
+        config: columns
+
+        variant: panel
+
+        kicker: Columns, panel variant
+
+        # Patent @panel-1
+        {
+            kicker: Patent
+
+            Hard-edged panels divided by a single-pixel seam. Accents alternate
+            unless a column sets its own.
+        }
+
+        # Software @panel-2
+        {
+            kicker: Software
+
+            Dense copy can set in a second, narrower face.
+        }
+
+        # Data @panel-3
+        {
+            kicker: Data
+
+            Five panels is the practical limit at this measure.
+        }
+
+        # Standard @panel-4
+        {
+            kicker: Standard
+
+            A column can set `accent:` to override the alternation.
+        }
+
+        # Pathway @panel-5
+        {
+            kicker: Pathway
+
+            The panel variant suits a set of parallel assets.
+        }
+    }
+
+    # A comparison matrix @matrix-slide
+    {
+        config: matrix
+
+        kicker: Matrix
+
+        highlight: last
+
+        footnote: A footnote sets small and grey under the body, for provenance and caveats.
+
+        {[table]
+            Who | Regime | Conversion | What they build | How we differ
+            **Alpha Systems** *Series C* | Watts+ | Yes | A managed service with a proprietary runtime | More capital, a longer runway
+            **Beta Compute** *shipping* | Watts | Yes | An appliance with an on-device runtime | The strongest comparable in the set
+            **Gamma Micro** *public* | Milliwatts | n/a | A general-purpose part, no specialisation | The closest public comparator
+            **This company** *raising* | Milliwatts and below | No | One path, no conversion step in it | The only row with no in the conversion column
+        }
+    }
+
+    # Numbered rows @rows-slide
+    {
+        config: rows
+
+        numbered: true
+
+        kicker: Rows
+
+        # Tools and simulator @row-1
+        {
+            value: Layer 1
+
+            A row carries an index, a label, a body and a right-hand value. Any
+            of the four may be omitted.
+        }
+
+        # Application engineering @row-2
+        {
+            value: Layer 2
+
+            Rows separate with hairlines rather than boxes, which keeps a dense
+            list legible at projection distance.
+        }
+
+        # Licensed IP @row-3
+        {
+            value: Layer 3
+
+            The `variant: mono` form turns the label into a monospace accent —
+            a date, a process node, a stage — which reads as a timeline.
+        }
+    }
+
+    # Split, with a timeline @split-slide
+    {
+        config: split
+
+        kicker: Split
+
+        weights: 48 52
+
+        # @pane-left
+        {
+            The split layout renders two child scopes as panes, each with its
+            own layout. Give it `weights: 48 52` to set the ratio.
+
+            A pane is a slide within a slide: it can be a pipeline, a set of
+            rows, a matrix, or plain prose like this one.
+        }
+
+        # @pane-right
+        {
+            config: rows
+
+            variant: mono
+
+            # Sep 2026 @t1
+            {
+                First milestone, stated as a date and an outcome.
+            }
+
+            # Mar 2027 @t2
+            {
+                Second milestone.
+            }
+
+            # Beta @t3
+            {
+                A stage name reads as well as a date does.
+            }
+        }
+    }
+
+    # Bars @bars-slide
+    {
+        config: bars
+
+        kicker: Bars
+
+        lede: Bars scale against the largest value unless a bar sets `fill:` itself.
+
+        # Documents indexed @bar-1
+        {
+            value: 4200
+
+            A note sets in monospace under the track.
+        }
+
+        # Documents reviewed @bar-2
+        {
+            value: 2150
+
+            Values are parsed for their first number, so `4,200 docs` works too.
+        }
+
+        # Awaiting review @bar-3
+        {
+            value: 1780
+
+            A bar with no `fill:` is scaled against the largest value.
+        }
+
+        # Rejected @bar-4
+        {
+            value: 270
+
+            Set `fill:` on a bar to override the automatic scale.
+        }
+    }
+
+    # Stacking two layouts @stack-slide
+    {
+        config: stack
+
+        rule: true
+
+        kicker: Stack
+
+        lede: A stack renders each child scope as a block with its own layout, which is how one slide carries a diagram above a set of columns.
+
+        # @stack-pipe
+        {
+            config: pipeline
+
+            # Signal path @stack-row
+            {
+                accent: secondary
+
+                {[.]
+                    - Sense
+                    - **Convert**
+                    - Compute
+                    - **Convert**
+                    - Act
+                }
+            }
+        }
+
+        # @stack-cols
+        {
+            config: columns
+
+            numbered: true
+
+            # The engine @sc-1
+            {
+                Blocks compose downward, separated by a hairline when the stack
+                sets `rule: true`.
+            }
+
+            # The path @sc-2
+            {
+                Each block reads its own `config:` line.
+            }
+
+            # The tooling @sc-3
+            {
+                Nesting stops here: a block inside a block is plain content.
+            }
+        }
+    }
+
+    # Everything still works @closing
+    {
+        config: center
+
+        The unstructured layouts — default, `center`, `two-column` — behave
+        exactly as they always did.
+
+        # Notes @notes
+        {
+            Speaker notes, drilldown details and PDF export are unchanged.
+        }
+    }
+}

@@ -49,7 +49,12 @@ examples/           Example and reference files
 src/                Source code
   sdoc.js             Parser and HTML renderer (~2000 lines)
   slide-renderer.js   SDOC-to-HTML slide deck renderer
+  slide-layouts.js    Structured slide layouts (columns, stats, pipeline, ...)
+  slide-geometry.js   Measures a built deck in headless Chrome
+  slide-pptx.js       PowerPoint / Google Slides export, driven by that measurement
   slide-pdf.js        PDF export via headless Chrome (used by build-slides.js --pdf)
+  theme.js            Theme loading, theme.json, CSS asset inlining
+  zip.js              Minimal ZIP writer (zlib only), for the PPTX package
   extension.js        VS Code extension with preview and document server
   site-template/      Shared viewer templates (index.html, viewer.css)
 
@@ -62,7 +67,11 @@ vendor/             Vendored dependencies
 test/               Test files
   test-all.js         Comprehensive test suite (node test/test-all.js)
   test-knr.js         K&R brace placement tests (node test/test-knr.js)
+  test-notion.js      Notion renderer tests (node test/test-notion.js)
   test-slides.js      Slide renderer tests (node test/test-slides.js)
+  test-slide-layouts.js  Structured layouts, theme loading, geometry, PPTX
+                         (node test/test-slide-layouts.js; the geometry and
+                         PPTX tests skip themselves when Chrome is absent)
   *.sdoc              Test fixture files
 
 bindings/           Bindings for other languages
@@ -72,7 +81,8 @@ bindings/           Bindings for other languages
     README.md           Install, API, and how a consumer depends on it
 
 tools/              CLI tools
-  build-slides.js     Build HTML slides from SDOC (node tools/build-slides.js [--pdf])
+  build-slides.js     Build slides from SDOC
+                      (node tools/build-slides.js [--pdf] [--pptx] [--check] [--fit MODE])
   serve_docs.py       CLI to start a local SDOC document server
 ```
 
@@ -113,7 +123,9 @@ should be evaluated against.
 
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
-- Run all tests: `node test/test-all.js && node test/test-knr.js && node test/test-slides.js`
+- Run all tests:
+  `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js`
+  (484 + 24 + 65 + 54 + 53 = 680 as of the slide-layouts work)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

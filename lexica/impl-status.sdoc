@@ -49,6 +49,22 @@
     {
         - [ ] Awaiting feedback on github/markup issue (#2030) and github-linguist issue (#7838)
         - [ ] Growing .sdoc file count on GitHub toward linguist recognition threshold (~200 unique repos)
+
+        # Slide Layouts and Export @slides-wip
+        {
+            Unreleased, on \`feat/slide-layouts\`. Structured slide layouts (\`columns\`,
+            \`stats\`, \`pipeline\`, \`matrix\`, \`rows\`, \`bars\`, \`split\`, \`stack\`),
+            theme loading with \`theme.json\` and CSS asset inlining, a geometry harvest
+            that measures a built deck in headless Chrome, and PowerPoint / Google Slides
+            export driven by that measurement. See
+            [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc).
+
+            - [ ] Gate \`--check\` consistently: it is ignored with \`--pdf\` and unconditional with \`--pptx\`, and never sets a non-zero exit code
+            - [ ] Decide whether the new modules join the package \`exports\` map or leave the npm tarball — they ship today but are unreachable
+            - [ ] Warn when a theme's \`slide\` box and \`page\` size disagree at 96 dpi, instead of silently clipping the PDF
+            - [ ] Harvest drops mixed content (text in an element that also has a block child) and \`<br>\` line breaks
+            - [ ] No CI runs the test suites; the geometry and PPTX tests skip themselves when Chrome is absent
+        }
     }
 
     # Next Up @next-up

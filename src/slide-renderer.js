@@ -8,6 +8,7 @@
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
 const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, colorSwatchHtml } = require("./sdoc");
+const { extractConfig, buildBody, accentClass, slug } = require("./slide-layouts");
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -164,34 +165,17 @@ function renderChildren(nodes) {
   return nodes.map((node) => renderNode(node)).join("\n");
 }
 
+// Callbacks handed to the layout builders so slide-layouts.js stays free of
+// parser and KaTeX dependencies.
+const LAYOUT_CONTEXT = { renderChildren, renderInline, escapeHtml };
+
+// Layouts whose bare name is also emitted as a slide class, for themes written
+// before `layout-*` existed. New layouts are not added here.
+const LEGACY_LAYOUT_CLASSES = new Set(["center", "two-column"]);
+
 // ---------------------------------------------------------------------------
 // Slide-level extraction
 // ---------------------------------------------------------------------------
-
-// Extracts config: lines from the beginning of a scope's children.
-// Returns { config: { key: value, ... }, contentNodes: [...] }
-function extractSlideConfig(children) {
-  const config = {};
-  const contentNodes = [];
-  let pastConfig = false;
-
-  for (const child of children) {
-    if (!pastConfig && child.type === "paragraph") {
-      const match = child.text.match(/^config\s*:\s*(.+)$/i);
-      if (match) {
-        const value = match[1].trim();
-        // Support multiple config lines; last one wins for the same key
-        // For now, config values are simple strings; primary use is layout
-        config.layout = value;
-        continue;
-      }
-    }
-    pastConfig = true;
-    contentNodes.push(child);
-  }
-
-  return { config, contentNodes };
-}
 
 // Separates @notes child scope from other children
 function extractNotes(children) {
@@ -237,13 +221,25 @@ function renderSlide(scope, slideIndex, overlayHtml, position) {
   // Pull :detail children out first so they don't appear inline in the spine
   // slide's content; they're rendered as sibling vertical slides instead.
   const { contentNodes: afterDetails } = extractDetails(scope.children);
-  const { config, contentNodes: afterConfig } = extractSlideConfig(afterDetails);
+  const { config, contentNodes: afterConfig } = extractConfig(afterDetails);
   const { notes, contentNodes } = extractNotes(afterConfig);
 
+  const layout = config.layout || "";
   const classes = ["slide"];
-  if (config.layout) {
-    classes.push(config.layout);
+  if (layout) {
+    // `layout-*` is the class themes target. The bare layout name is emitted
+    // only for the two layouts that predate it, because themes in the wild
+    // are written against `.center` and `.two-column`. It is not emitted for
+    // the structured layouts: those put a container class of the same name
+    // inside the slide (`.columns`, `.stats`, `.rows`…), and a slide also
+    // carrying that class would match the container's own rules.
+    if (LEGACY_LAYOUT_CLASSES.has(layout)) classes.push(layout);
+    // Slugged, so no configuration value can close the class attribute.
+    const layoutSlug = slug(layout);
+    if (layoutSlug) classes.push(`layout-${layoutSlug}`);
   }
+  const accent = accentClass(config.accent).trim();
+  if (accent) classes.push(accent);
   if (position && position.detail === 0 && position.hasDetails) {
     classes.push("slide-has-details");
   }
@@ -251,29 +247,33 @@ function renderSlide(scope, slideIndex, overlayHtml, position) {
     classes.push("slide-detail");
   }
 
-  const title = scope.hasHeading !== false && scope.title
-    ? `<h2>${renderInline(scope.title)}</h2>`
+  // On a title slide the kicker sits beneath the statement rather than above
+  // it, so the eye lands on the name first.
+  const isTitleLayout = layout === "title";
+  const kickerHtml = config.kicker
+    ? `<div class="kicker">${renderInline(config.kicker)}</div>`
     : "";
 
-  let bodyHtml;
-  if (config.layout === "two-column") {
-    // In two-column layout, child scopes become columns
-    const columns = contentNodes.filter((n) => n.type === "scope" && n.scopeType !== "comment");
-    const nonColumns = contentNodes.filter((n) => n.type !== "scope" || n.scopeType === "comment");
-    const preamble = nonColumns.length ? renderChildren(nonColumns) : "";
-    const columnsHtml = columns
-      .map((col) => {
-        const colTitle = col.hasHeading !== false && col.title
-          ? `<h3>${renderInline(col.title)}</h3>`
-          : "";
-        const colContent = renderChildren(col.children);
-        return `<div class="column">${colTitle}\n${colContent}</div>`;
-      })
-      .join("\n");
-    bodyHtml = preamble + `\n<div class="columns">\n${columnsHtml}\n</div>`;
-  } else {
-    bodyHtml = renderChildren(contentNodes);
+  const headParts = [];
+  if (kickerHtml && !isTitleLayout) headParts.push(kickerHtml);
+  if (scope.hasHeading !== false && scope.title) {
+    const tag = isTitleLayout ? "h1" : "h2";
+    headParts.push(`<${tag}>${renderInline(scope.title)}</${tag}>`);
   }
+  if (config.lede) headParts.push(`<p class="lede">${renderInline(config.lede)}</p>`);
+  const title = headParts.length
+    ? `<header class="slide-head">\n${headParts.join("\n")}\n</header>`
+    : "";
+
+  const bodyInner = buildBody(layout, { config, contentNodes }, LAYOUT_CONTEXT);
+
+  const tailParts = [];
+  if (kickerHtml && isTitleLayout) tailParts.push(kickerHtml);
+  if (config.status) tailParts.push(`<div class="status">${renderInline(config.status)}</div>`);
+  if (config.footnote) tailParts.push(`<div class="footnote">${renderInline(config.footnote)}</div>`);
+  const tailHtml = tailParts.length ? `\n${tailParts.join("\n")}` : "";
+
+  const bodyHtml = `<div class="slide-body">\n${bodyInner}\n</div>${tailHtml}`;
 
   const notesHtml = notes.length
     ? `\n<aside class="notes">${notes.map((n) => renderChildren(n.children)).join("\n")}</aside>`
@@ -310,8 +310,26 @@ function renderSlides(nodes, options = {}) {
     meta = {},
     themeCss = "",
     themeJs = "",
-    darkMode = false
+    darkMode = false,
+    themeConfig = {},
+    fit = null
   } = options;
+
+  // The design box and print page come from the theme (themes/<name>/theme.json).
+  // They must agree: the box in CSS pixels is the page in inches at 96 dpi, which
+  // is what makes screen and PDF the same geometry.
+  const slideW = (themeConfig.slide && themeConfig.slide.width) || 1280;
+  const slideH = (themeConfig.slide && themeConfig.slide.height) || 720;
+  const pageW = (themeConfig.page && themeConfig.page.width) || 13.333;
+  const pageH = (themeConfig.page && themeConfig.page.height) || 7.5;
+
+  // How the design box meets a window of a different shape.
+  //   contain — scale to fit, letterbox the remainder (the default)
+  //   cover   — scale to fill, crop the overflow
+  //   stretch — scale each axis independently, distorting the slide
+  const FIT_MODES = new Set(["contain", "cover", "stretch"]);
+  const requested = (fit || themeConfig.fit || "contain").toLowerCase();
+  const fitMode = FIT_MODES.has(requested) ? requested : "contain";
 
   // The nodes from extractMeta have @meta already stripped.
   // If there's a document scope wrapper, unwrap it to get the slides.
@@ -401,8 +419,9 @@ function renderSlides(nodes, options = {}) {
    author's layout is preserved verbatim at every window size, and screen
    and PDF are the same geometry by construction.
 
-   --sdoc-slide-scale is written by the theme runtime (fitSlidesToWindow in
-   themes/default/theme.js) on load and on resize.  If JS never runs the
+   --sdoc-slide-scale and --sdoc-slide-scale-y are written by the theme
+   runtime (fitSlidesToWindow in themes/default/theme.js) on load and on
+   resize, according to the fit mode on <html data-sdoc-fit>.  If JS never runs the
    scale stays 1 and the deck renders at its natural design size, which is
    the pre-scaling behaviour rather than a broken one.
 
@@ -411,9 +430,18 @@ function renderSlides(nodes, options = {}) {
    aspect ratio should override --sdoc-slide-w / --sdoc-slide-h on :root
    (and the @page size in the print block, if PDF output matters). */
 :root {
-  --sdoc-slide-w: 1280px;
-  --sdoc-slide-h: 720px;
+  --sdoc-slide-w: ${slideW}px;
+  --sdoc-slide-h: ${slideH}px;
   --sdoc-slide-scale: 1;
+  /* Defaults to the horizontal scale, so a theme shipping its own runtime
+     that writes only --sdoc-slide-scale still scales uniformly. Only the
+     stretch fit mode ever sets these two to different values. */
+  --sdoc-slide-scale-y: var(--sdoc-slide-scale);
+  /* The ground behind the slide, seen wherever the window is not the slide's
+     shape. A theme that leaves this equal to its slide background gets an
+     invisible letterbox: the slide has no edge and anything pinned to its
+     bottom looks stranded. */
+  --sdoc-letterbox: #000;
 }
 .slide {
   position: absolute;
@@ -421,7 +449,8 @@ function renderSlides(nodes, options = {}) {
   left: 50%;
   width: var(--sdoc-slide-w);
   height: var(--sdoc-slide-h);
-  transform: translate(-50%, -50%) scale(var(--sdoc-slide-scale));
+  transform: translate(-50%, -50%)
+             scale(var(--sdoc-slide-scale), var(--sdoc-slide-scale-y));
   transform-origin: center center;
   overflow: hidden;
 }
@@ -461,8 +490,15 @@ function renderSlides(nodes, options = {}) {
    beforeprint handler to shrink overflowing content to fit the page. */
 .slide-content-scale { display: contents; }
 
+/* Head and body wrappers are transparent to layout by default, so a theme
+   written before they existed sees exactly the box tree it saw then: the
+   heading and the content as direct children of the slide.  A theme that
+   wants a real header band or a body that fills the remaining height
+   overrides these two rules. */
+.slide-head, .slide-body { display: contents; }
+
 @media print {
-  @page { size: 13.333in 7.5in; margin: 0; }
+  @page { size: ${pageW}in ${pageH}in; margin: 0; }
   body { overflow: visible; height: auto; }
   .slide {
     display: block !important;
@@ -470,7 +506,7 @@ function renderSlides(nodes, options = {}) {
     opacity: 1 !important;
     pointer-events: auto !important;
     page-break-after: always; break-after: page;
-    /* The design box IS the page (1280x720px == 13.333in x 7.5in @96dpi),
+    /* The design box IS the page (the theme's px box at 96dpi),
        so no fit-to-window scaling applies here — each slide flows as one
        page at its natural size.  Overflowing content is still shrunk by
        the inner .slide-content-scale wrapper (see fitSlidesForPrint). */
@@ -522,7 +558,7 @@ blockquote p { color: #9d9d9d; }
     : "";
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-sdoc-fit="${fitMode}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">

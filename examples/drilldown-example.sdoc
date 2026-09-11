@@ -51,41 +51,41 @@
         regular slide — Right and Left move you along the spine as usual.
     }
 
-    # ETHyR Mechanism @ethyr-mechanism
+    # How the Cache Works @cache-mechanism
     {
-        ETHyR turns DNA into a measurable hybridisation signal you can read
-        with a phone-sized device.
+        A read is served from the edge when it can be, and from the origin
+        when it cannot. Which of those happens is the whole story.
 
-        # PCR primer @pcr-detail :detail
+        # Cache lookup @lookup-detail :detail
         {
-            PCR amplifies target DNA exponentially using thermal cycling:
+            A lookup resolves in three steps, in order:
 
             {[#]
-                - Denature: heat to ~95 °C to split the double helix
-                - Anneal: cool to ~55 °C so primers bind their targets
-                - Extend: polymerase synthesises the complementary strand
+                - Hash the request into a key, ignoring volatile headers
+                - Probe the edge store; on a hit, serve and stop here
+                - On a miss, fetch from the origin and populate the store
             }
 
-            Doubles the target every cycle for ~30 cycles.
+            A hit costs one hop. A miss costs two and a write.
         }
 
-        # HCR primer @hcr-detail :detail
+        # Eviction policy @eviction-detail :detail
         {
-            Hybridisation Chain Reaction is isothermal: no thermal cycler
-            needed.
+            Eviction is least-recently-used with a size ceiling, so nothing
+            has to be timed out by hand.
 
             {[.]
-                - Two metastable hairpin species sit in solution
-                - A target sequence opens the first hairpin
-                - A chain reaction extends a long fluorescent polymer
+                - Each entry carries a last-read stamp
+                - The store evicts the oldest entries when it hits its ceiling
+                - An explicit purge drops a key everywhere at once
             }
 
-            Output scales linearly with target concentration.
+            Steady-state hit rate settles once the working set fits.
         }
 
         # Notes @notes
         {
-            If asked about thermal control, drill into the PCR primer slide.
+            If asked about cold starts, drill into the cache lookup slide.
         }
     }
 
