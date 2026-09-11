@@ -2,7 +2,7 @@
   "name": "vscode-sdoc",
   "displayName": "SDOC - Docs for Human/Agent Teams",
   "description": "A plain-text documentation format with explicit brace scoping — deterministic parsing, AI-agent efficiency, and 10-50x token savings vs Markdown.",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "publisher": "entropicwarrior-msenfin",
   "license": "MIT",
   "repository": {
@@ -28,6 +28,9 @@
     ".": "./index.js",
     "./slides": "./src/slide-renderer.js",
     "./slide-pdf": "./src/slide-pdf.js",
+    "./slide-pptx": "./src/slide-pptx.js",
+    "./slide-geometry": "./src/slide-geometry.js",
+    "./theme": "./src/theme.js",
     "./notion": "./src/notion-renderer.js",
     "./knowledge": "./knowledge.js"
   },
