@@ -106,9 +106,15 @@ function chromePdf(htmlPath, pdfPath, options = {}) {
   });
 }
 
-// Slide PDF: 16:9 landscape (13.333 x 7.5 inches)
-function exportSlidePdf(htmlPath, pdfPath) {
-  return chromePdf(htmlPath, pdfPath, { paperWidth: 13.333, paperHeight: 7.5 });
+// Slide PDF: landscape at the theme's page size, defaulting to the 13.333 x
+// 7.5 in box that matches the default 1280 x 720 design box at 96 dpi. A theme
+// declaring a different box in theme.json must print at its own size, or the
+// slide overflows the page and Chrome clips it.
+function exportSlidePdf(htmlPath, pdfPath, page) {
+  return chromePdf(htmlPath, pdfPath, {
+    paperWidth: (page && page.width) || 13.333,
+    paperHeight: (page && page.height) || 7.5,
+  });
 }
 
 // Document PDF: A4 portrait (8.27 x 11.69 inches)

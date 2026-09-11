@@ -2,19 +2,27 @@
 // SDOC Slides — CLI tool
 //
 // Usage:
-//   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme] [--pdf] [--dark]
+//   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme]
+//                              [--pdf] [--pptx] [--check] [--fit MODE] [--dark]
 //
-// If -o is omitted, writes to input.html (or input.pdf with --pdf).
+// --fit controls what happens when the window is not the slide's shape:
+// contain (default) letterboxes, cover crops, stretch distorts.
+//
+// If -o is omitted, writes to input.html (or input.pdf / input.pptx).
+// --pptx produces a PowerPoint file that Drive imports as a Google Slides deck.
 // If --theme is omitted, uses the built-in default theme.
 
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 const { parseSdoc, extractMeta } = require("../src/sdoc");
 const { renderSlides } = require("../src/slide-renderer");
+const { loadTheme } = require("../src/theme");
 
 function usage() {
-  console.error("Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme] [--pdf] [--dark]");
+  console.error(
+    "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
+    "                    [--pdf] [--pptx] [--check] [--fit contain|cover|stretch] [--dark]"
+  );
   process.exit(1);
 }
 
@@ -24,7 +32,10 @@ async function main() {
   let outputPath = null;
   let themePath = null;
   let pdfMode = false;
+  let pptxMode = false;
+  let checkMode = false;
   let darkMode = false;
+  let fit = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-o" && i + 1 < args.length) {
@@ -33,6 +44,16 @@ async function main() {
       themePath = args[++i];
     } else if (args[i] === "--pdf") {
       pdfMode = true;
+    } else if (args[i] === "--pptx" || args[i] === "--slides") {
+      pptxMode = true;
+    } else if (args[i] === "--check") {
+      checkMode = true;
+    } else if (args[i] === "--fit" && i + 1 < args.length) {
+      fit = args[++i].toLowerCase();
+      if (!["contain", "cover", "stretch"].includes(fit)) {
+        console.error(`--fit must be contain, cover or stretch (got ${fit})`);
+        process.exit(1);
+      }
     } else if (args[i] === "--dark") {
       darkMode = true;
     } else if (args[i] === "--help" || args[i] === "-h") {
@@ -62,25 +83,13 @@ async function main() {
   }
   const resolvedTheme = path.resolve(themePath);
 
-  // Read theme files
-  let themeCss = "";
-  let themeJs = "";
-  const cssPath = path.join(resolvedTheme, "theme.css");
-  const jsPath = path.join(resolvedTheme, "theme.js");
-
-  if (fs.existsSync(cssPath)) {
-    themeCss = fs.readFileSync(cssPath, "utf-8");
-  } else {
-    console.error(`Warning: theme.css not found at ${cssPath}`);
-  }
-  if (fs.existsSync(jsPath)) {
-    themeJs = fs.readFileSync(jsPath, "utf-8");
-  } else {
-    // Fall back to default theme JS (keyboard nav, touch, slide counter)
-    const defaultJsPath = path.join(__dirname, "..", "themes", "default", "theme.js");
-    if (fs.existsSync(defaultJsPath)) {
-      themeJs = fs.readFileSync(defaultJsPath, "utf-8");
-    }
+  // Read the theme, inlining any fonts or images its CSS refers to so the
+  // built deck is one self-contained file. A theme that ships no theme.js
+  // inherits the default runtime: keyboard nav, touch, fit-to-window scaling.
+  const defaultThemeDir = path.join(__dirname, "..", "themes", "default");
+  const { themeCss, themeJs, themeConfig, warnings } = loadTheme(resolvedTheme, defaultThemeDir);
+  for (const warning of warnings) {
+    console.error(`Warning: ${warning}`);
   }
 
   // Parse SDOC
@@ -95,47 +104,92 @@ async function main() {
 
   // Extract meta and render
   const { nodes, meta } = extractMeta(parsed.nodes);
-  const html = renderSlides(nodes, { meta, themeCss, themeJs, darkMode });
+  const html = renderSlides(nodes, { meta, themeCss, themeJs, darkMode, themeConfig, fit });
 
-  if (pdfMode) {
-    const { exportSlidePdf } = require("../src/slide-pdf");
+  // --pdf and --pptx both start from the built HTML, so write it once and
+  // hand the same file to each exporter.
+  const htmlOutput = outputPath
+    ? path.resolve(outputPath)
+    : resolvedInput.replace(/\.sdoc$/i, "") + ".html";
 
-    // Determine PDF output path
-    let pdfOutput;
-    if (outputPath) {
-      pdfOutput = path.resolve(outputPath);
-    } else {
-      pdfOutput = resolvedInput.replace(/\.sdoc$/i, "") + ".pdf";
-    }
+  const emitHtml = !pdfMode && !pptxMode;
+  if (emitHtml) {
+    fs.mkdirSync(path.dirname(htmlOutput), { recursive: true });
+    fs.writeFileSync(htmlOutput, html, "utf-8");
+    console.log(`Built: ${htmlOutput}`);
+    if (checkMode) await reportOverflow(htmlOutput);
+    return;
+  }
 
-    // Write HTML to a temp file for Chrome to consume.
-    //
-    // The tmp file must sit in the same directory as the input .sdoc so
-    // that relative asset references in the HTML (e.g. <img src="./diagrams/foo.svg">)
-    // resolve correctly when Chrome prints the page.  Writing to os.tmpdir()
-    // breaks the diagrams in the resulting PDF.
-    const tmpHtml = path.join(path.dirname(resolvedInput), ".sdoc-slides-pdf-" + Date.now() + ".html");
-    fs.writeFileSync(tmpHtml, html, "utf-8");
+  // Both exporters read the page through a browser, so the temp copy must sit
+  // beside the input for relative asset references (images, diagrams) to
+  // resolve the way they do in the built deck.
+  const tmpHtml = path.join(
+    path.dirname(resolvedInput),
+    ".sdoc-slides-" + Date.now() + ".html"
+  );
+  fs.writeFileSync(tmpHtml, html, "utf-8");
 
-    try {
-      await exportSlidePdf(tmpHtml, pdfOutput);
+  try {
+    if (pdfMode) {
+      const { exportSlidePdf } = require("../src/slide-pdf");
+      const pdfOutput = outputPath
+        ? path.resolve(outputPath)
+        : resolvedInput.replace(/\.sdoc$/i, "") + ".pdf";
+      // The page must match the theme's design box, or Chrome clips the slide.
+      await exportSlidePdf(tmpHtml, pdfOutput, themeConfig.page);
       console.log(`PDF: ${pdfOutput}`);
-    } catch (err) {
-      console.error(err.message);
-      process.exit(1);
-    } finally {
-      try { fs.unlinkSync(tmpHtml); } catch {}
     }
-  } else {
-    // Resolve HTML output
-    if (!outputPath) {
-      outputPath = resolvedInput.replace(/\.sdoc$/i, "") + ".html";
-    }
-    const resolvedOutput = path.resolve(outputPath);
 
-    fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
-    fs.writeFileSync(resolvedOutput, html, "utf-8");
-    console.log(`Built: ${resolvedOutput}`);
+    if (pptxMode) {
+      const { exportSlidePptx } = require("../src/slide-pptx");
+      const pptxOutput = outputPath && !pdfMode
+        ? path.resolve(outputPath)
+        : resolvedInput.replace(/\.sdoc$/i, "") + ".pptx";
+      const result = await exportSlidePptx(tmpHtml, pptxOutput, {
+        title: meta.properties?.title || undefined,
+        fonts: themeConfig.fonts,
+      });
+      console.log(`PPTX: ${result.path} (${result.slides} slides)`);
+      // The geometry is already in hand, so the layout check is free here.
+      printOverflow(require("../src/slide-geometry").overflowReport(result.geometry));
+      for (const src of result.skippedImages) {
+        console.error(`Warning: image could not be embedded in the PPTX: ${src}`);
+      }
+      console.log(
+        "Import into Google Slides: upload to Drive, then File > Open with > Google Slides,\n" +
+        "or drag the file into slides.google.com — Drive converts it to a native deck."
+      );
+    }
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  } finally {
+    try { fs.unlinkSync(tmpHtml); } catch {}
+  }
+}
+
+// Reports slides whose content has run out of the space the theme reserved.
+// Nothing is clipped until it leaves the design box, but content in the
+// margin collides with the footer, so both are worth saying out loud.
+function printOverflow(findings) {
+  if (!findings.length) {
+    console.log("Layout check: no slide overflows its margins.");
+    return;
+  }
+  console.error(`Layout check: ${findings.length} slide(s) overflow:`);
+  for (const finding of findings) {
+    const name = finding.id ? `${finding.slide} (${finding.id})` : finding.slide;
+    console.error(`  slide ${name} [${finding.layout || "default"}] — ${finding.over.join(", ")}`);
+  }
+}
+
+async function reportOverflow(htmlPath) {
+  const { harvestGeometry, overflowReport } = require("../src/slide-geometry");
+  try {
+    printOverflow(overflowReport(await harvestGeometry(htmlPath)));
+  } catch (err) {
+    console.error(`Layout check skipped: ${err.message}`);
   }
 }
 
