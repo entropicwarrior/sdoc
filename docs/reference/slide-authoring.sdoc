@@ -9,10 +9,15 @@
 
     # About @about
     {
-        How to create HTML presentation slides from SDOC files. Covers the slide
-        deck structure, available layouts (center, two-column), speaker notes,
-        theme system, and CLI usage. Read the Quick Reference for everyday
-        authoring. Read the Full Example for a complete deck template.
+        How to create presentation slides from SDOC files, and how to get
+        them out as HTML, PDF or a Google Slides deck. Covers the deck
+        structure, the slide properties, the plain layouts (default, center,
+        two-column) and the structured ones (title, section, columns, stats,
+        pipeline, matrix, rows, bars, split, stack), speaker notes, the theme
+        system, and CLI usage. Read the Quick Reference for everyday
+        authoring, [Structured Layouts](#structured-layouts) when a slide
+        needs more than prose, and the Full Example for a complete deck
+        template.
     }
 
     # Quick Reference @quick-reference
@@ -70,9 +75,37 @@
             node tools/build-slides.js deck.sdoc --pdf
             ```
 
-            This produces \`deck.pdf\` using headless Chrome in 16:9 landscape
-            format. Each slide becomes one page. Requires Chrome or Chromium
+            This produces \`deck.pdf\` using headless Chrome, one page per
+            slide, at the theme's page size. Requires Chrome or Chromium
             installed on the system.
+
+            To export for Google Slides or PowerPoint:
+
+            ```
+            node tools/build-slides.js deck.sdoc --pptx
+            ```
+
+            This produces \`deck.pptx\`. See [PowerPoint and Google Slides
+            Export](#pptx-export) for what it contains and how to import it.
+
+            To choose what happens when the window is not the slide's shape:
+
+            ```
+            node tools/build-slides.js deck.sdoc --fit contain
+            ```
+
+            See [Aspect Ratio and Fit](#fit) for the three modes.
+
+            To check that nothing has overflowed its slide:
+
+            ```
+            node tools/build-slides.js deck.sdoc --check
+            ```
+
+            This builds the HTML, measures every slide in a browser, and
+            reports any whose content has run past the margin the theme
+            reserved. \`--pptx\` runs the same check for free, because it has
+            already measured the deck.
 
             To use a custom theme:
 
@@ -85,20 +118,48 @@
             ```
             node tools/build-slides.js deck.sdoc --pdf --theme path/to/theme -o presentation.pdf
             ```
+
+            \`--pdf\` and \`--pptx\` can run in one invocation; \`-o\` then names
+            the PDF and the PPTX takes the input's name.
         }
 
         # Slide Properties @properties
         {
-            Add \`config:\` lines at the top of a slide scope (before content)
-            to control layout:
+            A slide scope may open with a run of \`key: value\` lines. They set
+            the layout and the furniture around the content, and they must come
+            before any content — a recognised key further down is ordinary
+            text. Separate each with a blank line, as in \`@meta\`.
 
-            \`config: center\` — centres content vertically and horizontally.
-            Use for title slides, section dividers, and closing slides.
+            {[table]
+                Key | Effect
+                \`config:\` or \`layout:\` | The layout. See [Layouts](#layouts) and [Structured Layouts](#structured-layouts).
+                \`kicker:\` | The small label above the title. On a \`title\` slide it moves below the statement.
+                \`lede:\` | A standfirst line under the title.
+                \`footnote:\` | Small print pinned under the body: provenance, caveats, sources.
+                \`status:\` | A second line under the kicker on a title slide, for a distribution notice.
+                \`accent:\` | \`primary\`, \`secondary\`, \`tertiary\` or \`neutral\`. An accent names a role; the theme chooses the colour.
+                \`numbered:\` | \`columns\` and \`rows\`. \`true\` numbers the children 01, 02, 03.
+                \`variant:\` | \`columns\` and \`rows\`. A named treatment, such as \`panel\` or \`mono\`.
+                \`weights:\` | \`split\` only. The ratio between panes, as in \`48 52\`.
+                \`highlight:\` | \`matrix\` only. \`last\`, or text matching the row's first cell.
+                \`arrow:\` | \`pipeline\` only. The glyph drawn between steps. Defaults to an arrow.
+                \`rule:\` | \`stack\` only. \`true\` draws a hairline between blocks.
+                \`value:\` | On a \`rows\` or \`bars\` child: the right-hand figure.
+                \`fill:\` | On a \`bars\` child: the bar length as a percentage, overriding the automatic scale.
+                \`caption:\` | On a \`columns\` child: a line set under the column.
+            }
 
-            \`config: two-column\` — child scopes become side-by-side columns.
-            Use for comparisons, before/after, pros/cons.
+            A key is only configuration where it means something. \`config:\`,
+            \`kicker:\`, \`lede:\`, \`footnote:\`, \`accent:\` and \`status:\` are
+            understood by every scope; the rest are understood only by the
+            layout named against them above. Anywhere else they are ordinary
+            text — a slide opening "Value: the customer keeps their data."
+            renders that sentence, it does not silently swallow it. A
+            paragraph spanning more than one source line is never
+            configuration.
 
-            No config line means default layout: left-aligned, top-to-bottom.
+            No config line means the default layout: left-aligned,
+            top-to-bottom.
         }
 
         # Speaker Notes @notes
@@ -172,7 +233,12 @@
                 \`[text](url)\` | \`<a>\`
                 \`![alt](src)\` / \`![alt](src =50% center)\` | \`<img>\` (with optional width/alignment)
                 Nested scope | \`<section>\` within the slide
-                \`@notes\` child | Hidden \`<aside class="notes">\`
+                Child scope, structured layout | One cell: a column, a stat, a pipeline row, a bar, a pane
+                \`kicker:\` | \`<div class="kicker">\` above the title
+                \`lede:\` | \`<p class="lede">\` under the title
+                \`footnote:\` | \`<div class="footnote">\` under the body
+                \`accent: secondary\` | \`accent-secondary\` class on the slide or cell
+                \`@notes\` child | Hidden \`<aside class="notes">\`, exported as PowerPoint speaker notes
             }
         }
     }
@@ -212,6 +278,14 @@
             ```
         }
 
+        # Beyond These Three @more-layouts
+        {
+            \`title\`, \`section\`, \`columns\`, \`stats\`, \`pipeline\`, \`matrix\`,
+            \`rows\`, \`bars\`, \`split\` and \`stack\` consume the slide's child
+            scopes and arrange them. See
+            [Structured Layouts](#structured-layouts).
+        }
+
         # Two-Column Layout @two-column-layout
         {
             Use \`config: two-column\`. Child scopes become columns.
@@ -239,6 +313,144 @@
         }
     }
 
+    # Structured Layouts @structured-layouts
+    {
+        The plain layouts arrange whatever content a slide holds. A structured
+        layout instead consumes the slide's *child scopes* and arranges them
+        into a known shape. Each child scope becomes one cell: its heading is
+        the cell's label and its content is the cell's body, with the exact
+        reading depending on the layout.
+
+        All of them are optional. A deck that uses none of them behaves exactly
+        as it did before they existed.
+
+        {[table]
+            Layout | Children are | Use for
+            \`title\` | — | The opening slide. The heading sets as display type and the kicker moves below it.
+            \`section\` | — | A divider carrying one statement.
+            \`columns\` | Columns, side by side | Parallel points, a set of figures, a row of cards, a people grid.
+            \`stats\` | A figure and its caption | Two to four numbers that carry the slide.
+            \`pipeline\` | Rows of chained steps | A signal path, a process, a comparison of two paths.
+            \`matrix\` | — (takes a table) | A competitive comparison, with per-column accents and one row picked out.
+            \`rows\` | Label, body, value rows | A layered model, a timeline, a ledger.
+            \`bars\` | Labelled quantities | An allocation of money, effort or time.
+            \`split\` | Two panes | Prose beside a figure, an argument beside its schedule.
+            \`stack\` | Blocks, one above another | A slide carrying two layouts, such as a diagram above columns.
+        }
+
+        # Composition @layout-composition
+        {
+            \`split\` and \`stack\` render each child scope as a *block*, and a
+            block reads its own \`config:\` line. That is how one slide carries a
+            pipeline above a set of numbered columns, or prose beside a
+            timeline, without a bespoke layout for the combination.
+
+            ```
+            # How a request is served {
+                config: stack
+
+                rule: true
+
+                kicker: THE PATH
+
+                # @paths {
+                    config: pipeline
+
+                    # Cached {
+                        accent: primary
+
+                        {[.]
+                            - Request
+                            - **Edge hit**
+                            - Response
+                        }
+                    }
+                }
+
+                # @detail {
+                    config: columns
+
+                    numbered: true
+
+                    # The hot path {
+                        One hop, no origin round trip.
+                    }
+
+                    # The cold path {
+                        Two hops, and the origin does the work.
+                    }
+                }
+            }
+            ```
+
+            Nesting stops there. A block inside a block is ordinary content.
+        }
+
+        # Pipeline, and marking meaning @layout-pipeline
+        {
+            A pipeline row is a child scope: its heading is the row label and
+            its bullet list is the steps. **A step written entirely in bold is
+            marked** and takes the row's accent; every other step is neutral.
+
+            The distinction is semantic. Where a slide sets two paths against
+            each other, the marked steps are the ones a path cannot avoid and
+            the unmarked ones are the stages both paths share — so the reader
+            counts marks rather than reading a caption. The author marks what
+            is required; the theme decides what required looks like.
+            Restyling the deck must not lose that, which is why markedness
+            lives in the source rather than in a colour.
+
+            Set the row's accent with \`accent:\`. A theme may supply a default
+            — the built-in theme alternates between its first two accents —
+            but an explicit \`accent:\` always wins, so a deck that states its
+            accents is safe against a theme change.
+
+            \`arrow:\` sets the glyph drawn between steps, if the default arrow
+            is wrong for the diagram.
+        }
+
+        # Matrix @layout-matrix
+        {
+            A matrix slide holds one table. Column headings alternate between
+            two accents so a wide table stays scannable, and one row can be
+            picked out with \`highlight:\` — either \`last\`, or text the row's
+            first cell contains. A name that several rows share highlights all
+            of them, so pick something specific to the row you mean.
+
+            Within a cell, \`**bold**\` marks the name and \`*italic*\` marks the
+            trailing qualifier, which themes set smaller and dimmer. That keeps
+            a first column like **Beta Compute** *Series C, shipping* legible
+            as two pieces of information rather than one run-on line.
+        }
+
+        # Rows and bars @layout-rows
+        {
+            A \`rows\` child carries up to four parts: the automatic index when
+            the layout sets \`numbered: true\`, the heading as the label, the
+            content as the body, and \`value:\` as the right-hand figure.
+            \`variant: mono\` turns the label into a monospace accent, which is
+            what makes a timeline; \`variant: ledger\` drops the body and leaves
+            a label and a figure.
+
+            A \`bars\` child is a label, a \`value:\` and a note. Bars are scaled
+            against the largest numeric value in the set, so \`4,200 docs\` and
+            \`270 docs\` produce the right proportion without the author
+            computing percentages. Set \`fill:\` on a bar to override that.
+        }
+
+        # Images @layout-images
+        {
+            Images use the ordinary inline form, \`![alt](path)\`, inside
+            whichever cell they belong to. In a \`columns\` slide with
+            \`variant: card\`, an image at the top of each column with a heading
+            and a line of body beneath gives the standard figure row.
+
+            Paths are resolved relative to the \`.sdoc\` file. They are embedded
+            in the PPTX export; a remote URL is left out of it, and the build
+            says which.
+        }
+    }
+
     # Drilldown Slides @drilldown
     {
         A slide deck is normally a 1D spine: Right and Left move along it. A
@@ -250,14 +462,14 @@
         # Syntax @drilldown-syntax
         {
             ```
-            # ETHyR Mechanism @ethyr {
+            # How the cache works @cache {
                 Main spine content.
 
-                # PCR primer @pcr :detail {
+                # Eviction policy @eviction :detail {
                     Detail slide one.
                 }
 
-                # HCR primer @hcr :detail {
+                # Cold-start behaviour @cold-start :detail {
                     Detail slide two.
                 }
 
@@ -325,7 +537,102 @@
         \`theme.css\` — all visual styling (typography, colours, spacing, layouts).
 
         \`theme.js\` (optional) — runtime behaviour (keyboard nav, touch support,
-        slide counter). The built-in default theme includes this.
+        slide counter). A theme that ships none inherits the default runtime,
+        so most themes should omit it.
+
+        \`theme.json\` (optional) — the design box and the print page.
+
+        Assets (optional) — fonts and images the CSS refers to, in any
+        subdirectory.
+
+        # The design box @theme-box
+        {
+            Slides are laid out at a fixed size and the whole slide is then
+            scaled to fill the window, so the author's layout is preserved
+            verbatim at every window size and the screen and the PDF are the
+            same geometry by construction.
+
+            \`theme.json\` declares that size, and may declare the default fit
+            mode (see [Aspect Ratio and Fit](#fit)). The box in CSS pixels and
+            the page in inches must agree at 96 dpi, or the PDF clips:
+
+            ```
+            {
+              "name": "wide-dark",
+              "slide": { "width": 1920, "height": 1080 },
+              "page":  { "width": 20, "height": 11.25 },
+              "fit":   "contain",
+              "fonts": { "display": "Georgia", "body": "Helvetica" }
+            }
+            ```
+
+            With no \`theme.json\` a theme gets 1280 by 720, which is 13.333 by
+            7.5 inches — the same 16:9 proportion.
+
+            \`fonts\` names the typefaces the PPTX export falls back to when a
+            CSS font stack resolves to a generic family. It has no effect on
+            the HTML.
+
+            Every length in a theme's CSS is a pixel value at the design size.
+            A theme written against a 1920 by 1080 box sets a 68px heading and
+            means 68px on a 1920-wide slide, whatever the window is doing.
+        }
+
+        # Fonts and other assets @theme-assets
+        {
+            A theme may ship web fonts, background images or textures beside
+            its CSS and refer to them with ordinary relative URLs:
+
+            ```
+            @font-face {
+              font-family: "Deck Sans";
+              src: url("fonts/deck-sans-latin.woff2") format("woff2");
+            }
+            ```
+
+            The builder rewrites every relative \`url()\` in \`theme.css\` to a
+            \`data:\` URI, so the built deck is one file that carries its own
+            typefaces. Ship only fonts whose licence allows redistribution —
+            the SIL Open Font License does. It renders the same offline, on a machine without the
+            fonts installed, and inside headless Chrome during export —
+            which matters, because a PDF built against a fallback font is a
+            PDF with the wrong line breaks.
+
+            Absolute URLs, protocol-relative URLs and existing \`data:\` URIs
+            are left alone, and a path escaping the theme directory is
+            refused and reported.
+        }
+
+        # Writing against the layouts @theme-classes
+        {
+            A slide carries \`layout-<name>\` for whatever \`config:\` named, plus
+            \`accent-<name>\` if the slide set one. Target those. The bare layout
+            name is also emitted for \`center\` and \`two-column\` alone, because
+            themes written before \`layout-*\` existed rely on it; a theme that
+            styled some other layout by its bare name must move to
+            \`layout-<name>\`.
+
+            The head and body are wrapped in \`.slide-head\` and \`.slide-body\`,
+            both \`display: contents\` by default, so the *boxes* a theme sees
+            are the boxes it always saw: the heading and the content lay out
+            as direct children of the slide. A theme that wants a real header
+            band, or a body that takes the remaining height, overrides those
+            two rules.
+
+            **The DOM did change, even though the layout did not.**
+            \`display: contents\` removes a box, not an element, so a selector
+            written with a child combinator no longer matches: \`.slide > h2\`
+            and \`.slide > p\` have to become \`.slide h2\` and \`.slide p\`, or
+            name the wrapper. The same goes for \`:first-child\` and
+            \`:nth-child\` counted over a slide's children. Descendant
+            selectors are unaffected.
+
+            Structured layouts emit stable class names inside the body:
+            \`.columns > .column\`, \`.stats > .stat\`, \`.pipeline > .pipe-row\`,
+            \`.matrix\`, \`.rows > .row\`, \`.bars > .bar\`, \`.split > .pane\`,
+            \`.stack > .stack-block\`. A theme is free to style only the ones it
+            uses.
+        }
 
         # Built-in Default Theme @default-theme
         {
@@ -364,6 +671,109 @@
             Slide counter (`.slide-indicator`) shown in the bottom-right
             corner — `N / TOTAL` on spine slides, `N.K / TOTAL` on detail K
             of spine N. See [Drilldown Slides](#drilldown) for details.
+        }
+    }
+
+    # Aspect Ratio and Fit @fit
+    {
+        A deck is laid out at one fixed size — the theme's design box — and the
+        whole slide is then scaled to meet the window. A window is rarely the
+        slide's exact shape, and what happens in that case is a build-time
+        choice:
+
+        {[table]
+            \`--fit\` | What happens off-ratio | Cost
+            \`contain\` | Scale to fit; the remainder is letterboxed | Unused screen at the edges
+            \`cover\` | Scale to fill; the overflow is cropped | Content near an edge is lost, including the footer
+            \`stretch\` | Scale each axis to the window | The slide is distorted
+        }
+
+        \`contain\` is the default and is almost always the right answer: the
+        deck keeps the proportions it was designed in, and nothing is lost or
+        misshapen. A theme may set its own default with \`"fit"\` in
+        \`theme.json\`, and \`--fit\` on the command line overrides it.
+
+        # Make the letterbox visible @fit-letterbox
+        {
+            With \`contain\`, the area the slide does not cover is painted with
+            \`--sdoc-letterbox\`. **A theme must not leave that equal to its own
+            slide background.** If it does, the slide has no visible edge, and
+            on an off-ratio window anything pinned to the bottom of the slide —
+            the footer, a footnote — appears to float in the middle of the
+            window instead of sitting on the slide's edge. Nothing is
+            misplaced; there is simply no edge to see it against.
+
+            Set the two apart:
+
+            ```
+            :root { --sdoc-letterbox: #020202; }   /* behind the slide */
+            body   { background: var(--sdoc-letterbox); }
+            .slide { background: #101010; }        /* the slide itself */
+            ```
+
+            A hairline helps further on a dark theme, where the two grounds are
+            necessarily close:
+
+            ```
+            .slide { box-shadow: 0 0 0 1px #1E1E1E; }
+            ```
+        }
+
+        # For theme runtimes @fit-runtime
+        {
+            The renderer writes the mode to \`<html data-sdoc-fit>\` and the
+            theme runtime reads it, publishing \`--sdoc-slide-scale\` and
+            \`--sdoc-slide-scale-y\` on \`:root\`. Only \`stretch\` ever sets them
+            to different values.
+
+            \`--sdoc-slide-scale-y\` defaults to \`--sdoc-slide-scale\`, so a
+            theme shipping its own \`theme.js\` that writes only the one
+            variable still scales uniformly rather than collapsing vertically.
+        }
+    }
+
+    # PowerPoint and Google Slides Export @pptx-export
+    {
+        \`--pptx\` writes a PowerPoint file. Drive imports it as a native Google
+        Slides deck: upload it, then **File > Open with > Google Slides**, or
+        drag it into \`slides.google.com\`. That is the export route rather than
+        the Slides API because it needs no credentials in the toolchain, and
+        because the result is a useful file on its own.
+
+        # How it works @pptx-mechanism
+        {
+            The exporter has no layout engine. It builds the HTML deck, opens
+            it in headless Chrome, and asks the browser where every box, rule,
+            image and run of text ended up. Each of those becomes one
+            absolutely positioned shape in the exported file.
+
+            The consequence worth knowing: **the CSS is the single source of
+            layout truth**. A new layout, a new theme, a change to a margin —
+            all of it exports correctly without the exporter being taught
+            anything, because the exporter only ever reads the result.
+
+            Absolute positioning is also how a designed deck is built by hand.
+            The exported file is loose shapes on one blank layout, which is
+            what a designer would hand over, and it stays editable in Slides.
+        }
+
+        # What carries across @pptx-fidelity
+        {
+            Position, size, typeface, size, weight, italic, colour, letter
+            spacing, alignment and exact line spacing, per run. Fills,
+            borders, corner radii and alpha. Images, embedded from local paths
+            or \`data:\` URIs. Slide backgrounds. Speaker notes, as notes.
+
+            A border on only some sides is exported as a filled bar per side
+            rather than an outlined box, so a hairline under a heading is a
+            hairline rather than a rectangle with three invisible edges.
+
+            What does not carry: web fonts are named, not embedded, so the
+            fonts a theme uses must be available to the viewer. Choosing faces
+            that are on Google Fonts is the reliable route, because Slides
+            resolves those. Remote images are skipped and reported. Mermaid
+            diagrams and KaTeX export as the text and shapes the browser drew,
+            not as editable objects.
         }
     }
 
@@ -489,7 +899,18 @@
         it will be rendered as regular text.
 
         **Using config on the document root.** \`config:\` only works on slide
-        scopes (direct children of the root), not on the root itself.
+        scopes (direct children of the root), and on child scopes in a
+        \`split\` or \`stack\` — not on the root itself.
+
+        **Putting content in a structured layout's slide scope.** In
+        \`columns\`, \`stats\`, \`rows\` and the rest, the *child scopes* are the
+        content. A paragraph written directly in the slide scope appears above
+        the structure, which is occasionally what you want and usually not —
+        \`lede:\` is the way to put a line under the title.
+
+        **Expecting a bullet list to become a pipeline.** A \`pipeline\` slide's
+        steps are the items of a bullet list inside a *child scope*, one scope
+        per row. A list written directly in the slide scope is just a list.
 
         **Forgetting the @notes id.** Speaker notes require the \`@notes\` id
         on the child scope heading. Without it, the scope renders as a visible
