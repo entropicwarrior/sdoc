@@ -32,6 +32,7 @@ const COMMON_KEYS = new Set([
   "footnote",
   "accent",
   "status",
+  "optional",
 ]);
 
 const LAYOUT_KEYS = {
@@ -511,4 +512,5 @@ module.exports = {
   buildBody,
   accentClass,
   slug,
+  truthy,
 };

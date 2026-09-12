@@ -8,7 +8,7 @@
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
 const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, colorSwatchHtml } = require("./sdoc");
-const { extractConfig, buildBody, accentClass, slug } = require("./slide-layouts");
+const { extractConfig, buildBody, accentClass, slug, truthy } = require("./slide-layouts");
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -211,6 +211,23 @@ function extractDetails(children) {
   return { details, contentNodes: rest };
 }
 
+// Whether a slide scope carries `optional: true`.
+//
+// Optional-ness is a slide *property*, not a scope type: a heading carries one
+// `:type` annotation and a drilldown has already spent it on `:detail`, so a
+// detail slide could not also be annotated optional. Reading it off the
+// configuration run keeps the two orthogonal — every combination of
+// spine/detail and required/optional is expressible.
+//
+// The details are pulled out first and the config read without a parent
+// layout, exactly as renderSlide() does it, so this answer and the one the
+// slide renders under can never disagree.
+function isOptionalSlide(scope) {
+  const { contentNodes } = extractDetails(scope.children || []);
+  const { config } = extractConfig(contentNodes);
+  return truthy(config.optional);
+}
+
 // ---------------------------------------------------------------------------
 // Slide rendering
 // ---------------------------------------------------------------------------
@@ -245,6 +262,11 @@ function renderSlide(scope, slideIndex, overlayHtml, position) {
   }
   if (position && position.detail > 0) {
     classes.push("slide-detail");
+  }
+  // Present in the HTML build, which is the presenting format; dropped before
+  // this point when the deck is rendered for PDF or PPTX export.
+  if (truthy(config.optional)) {
+    classes.push("slide-optional");
   }
 
   // On a title slide the kicker sits beneath the statement rather than above
@@ -312,7 +334,8 @@ function renderSlides(nodes, options = {}) {
     themeJs = "",
     darkMode = false,
     themeConfig = {},
-    fit = null
+    fit = null,
+    includeOptional = true
   } = options;
 
   // The design box and print page come from the theme (themes/<name>/theme.json).
@@ -373,14 +396,28 @@ function renderSlides(nodes, options = {}) {
   footerParts.push(`<span class="nav-next">&rsaquo;</span>`);
   const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>`;
 
+  // Optional slides are for the room, not the file that gets sent on. They are
+  // kept in the HTML build (includeOptional defaults to true, so every existing
+  // caller sees the deck it saw before) and dropped here when a deck is
+  // rendered for export. Dropping them before numbering — rather than hiding
+  // them later in print CSS — is what keeps the indicator honest: the
+  // denominator counts the spine slides the reader actually has.
+  //
+  // An optional spine takes its details with it. A detail belongs to its spine;
+  // there is nowhere for it to go once the spine is gone.
+  const kept = includeOptional ? slides : slides.filter((s) => !isOptionalSlide(s));
+
   // Build a flat emission order: each spine slide, followed immediately by its
   // :detail children in source order. The flat order matches what we want for
   // PDF export, so PDF needs no special case.
-  const totalSpines = slides.length;
+  const totalSpines = kept.length;
   const emitted = [];
-  slides.forEach((scope, i) => {
+  kept.forEach((scope, i) => {
     const spineIndex = i + 1; // 1-based
-    const { details } = extractDetails(scope.children);
+    const { details: allDetails } = extractDetails(scope.children);
+    const details = includeOptional
+      ? allDetails
+      : allDetails.filter((d) => !isOptionalSlide(d));
     emitted.push({
       scope,
       position: {
@@ -573,4 +610,4 @@ ${jsTag}${mermaidTag}
 </html>`;
 }
 
-module.exports = { renderSlides, renderSlide, renderNode, renderInline };
+module.exports = { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide };

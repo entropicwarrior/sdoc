@@ -99,6 +99,19 @@ test("config: is found even when another key precedes it", () => {
   assert(config.numbered === "true", "the earlier key is kept once the layout is known");
 });
 
+test("optional: is understood by every scope, whatever layout it names", () => {
+  // It has to be a common key: it marks spine slides, detail slides and slides
+  // under any layout, and none of those share a layout to hang it off.
+  const plain = extractConfig([{ type: "paragraph", text: "optional: true" }]);
+  assert(plain.config.optional === "true", "a plain slide understands optional:");
+  assert(plain.contentNodes.length === 0, "and consumes the line");
+  const laidOut = extractConfig([
+    { type: "paragraph", text: "config: columns" },
+    { type: "paragraph", text: "optional: true" },
+  ]);
+  assert(laidOut.config.optional === "true", "so does a slide naming a layout");
+});
+
 test("a known key after content is content", () => {
   const { config, contentNodes } = extractConfig([
     { type: "paragraph", text: "Body copy." },
