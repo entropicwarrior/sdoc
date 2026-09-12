@@ -11,13 +11,19 @@
 
     @about
     {
-        Every structured slide layout, one slide each, with neutral content.
-        Build it to see what a theme does with the whole layout set:
+        Every slide layout, every variant and every slide property, with
+        neutral content — a theme can be checked against the whole set at
+        once. Build it:
 
         `node tools/build-slides.js examples/layouts-example.sdoc`
 
         Add `--theme path/to/theme` to check a theme of your own against it,
         and `--check` to confirm nothing has overflowed its slide.
+
+        Three slides carry `:detail` children, so Down and Up exercise the
+        vertical navigation; one of those details is marked `optional: true`,
+        so `--pdf`, `--pptx` and `--no-optional` all drop it while the plain
+        HTML build keeps it.
     }
 
     # SDOC Slides @cover
@@ -61,6 +67,36 @@
         # 18× @stat-c
         {
             The ratio the slide is about
+        }
+
+        # Where the time went @stat-detail :detail
+        {
+            config: rows
+
+            kicker: Detail
+
+            lede: A detail slide is a slide. It reads its own `config:` line, so a drilldown can carry any layout.
+
+            # Cold module graph @sd-1
+            {
+                value: 2.4 s
+
+                Resolved on every boot, then cached.
+            }
+
+            # Config parsing @sd-2
+            {
+                value: 0.6 s
+
+                Replaced with a precomputed manifest.
+            }
+
+            # Everything else @sd-3
+            {
+                value: 0.2 s
+
+                Unchanged.
+            }
         }
     }
 
@@ -120,6 +156,78 @@
         # Third @col-3
         {
             Four or more columns tighten the gutter automatically.
+        }
+    }
+
+    # Cards @card-slide
+    {
+        config: columns
+
+        variant: card
+
+        kicker: Columns, card variant
+
+        lede: A card rules its heading in the slide's accent. `caption:` sets a line under the column.
+
+        # Ingest @card-1
+        {
+            caption: Step one
+
+            Cards suit a figure row: a heading, a line of body, a caption
+            underneath.
+        }
+
+        # Index @card-2
+        {
+            caption: Step two
+
+            An image at the top of each column makes the standard figure row.
+        }
+
+        # Serve @card-3
+        {
+            caption: Step three
+
+            The caption sets smaller and greyer than the body.
+        }
+    }
+
+    # People @people-slide
+    {
+        config: columns
+
+        variant: people
+
+        kicker: Columns, people variant
+
+        lede: The people variant wraps onto a second row and sets the caption as an accented role.
+
+        # Avery Lindqvist @person-1
+        {
+            caption: Engineering
+
+            Wrote the parser and still maintains it.
+        }
+
+        # Rowan Okafor @person-2
+        {
+            caption: Design
+
+            Owns the theme system.
+        }
+
+        # Sasha Beaumont @person-3
+        {
+            caption: Research
+
+            Measures what the format costs to read.
+        }
+
+        # Kit Nakamura @person-4
+        {
+            caption: Operations
+
+            Keeps the release pipeline honest.
         }
     }
 
@@ -220,6 +328,45 @@
         }
     }
 
+    # A ledger @ledger-slide
+    {
+        config: rows
+
+        variant: ledger
+
+        kicker: Rows, ledger variant
+
+        lede: The ledger variant drops the body and leaves a label against a figure.
+
+        # Storage @ledger-1
+        {
+            value: 12.4 GB
+        }
+
+        # Index @ledger-2
+        {
+            value: 3.1 GB
+        }
+
+        # Cache @ledger-3
+        {
+            value: 0.9 GB
+        }
+
+        # How the figures are counted @ledger-detail :detail
+        {
+            optional: true
+
+            kicker: Detail, optional
+
+            Marked `optional: true`, so it is here while you present and absent
+            from the PDF and the PPTX. Pass `--with-optional` to keep it, or
+            `--no-optional` to drop the optional slides from the HTML too.
+
+            Measured after compaction, excluding replicas.
+        }
+    }
+
     # Split, with a timeline @split-slide
     {
         config: split
@@ -293,7 +440,18 @@
         {
             value: 270
 
-            Set `fill:` on a bar to override the automatic scale.
+            A bar scaled against the peak.
+        }
+
+        # Coverage @bar-5
+        {
+            value: about three quarters
+
+            fill: 75
+
+            No number to measure, so this bar sets `fill: 75` and draws itself.
+            Without it the bar would be empty: the automatic scale has nothing
+            to read.
         }
     }
 
@@ -310,6 +468,8 @@
         # @stack-pipe
         {
             config: pipeline
+
+            arrow: ⇒
 
             # Signal path @stack-row
             {
@@ -349,6 +509,58 @@
         }
     }
 
+    # The default layout @default-slide
+    {
+        kicker: No config line
+
+        A slide with no `config:` line is left-aligned and runs top to bottom.
+        It is the layout every deck had before the structured ones existed, and
+        it is unchanged.
+
+        {[.]
+            - Prose, lists and tables render as they always did
+            - No child scope is consumed as structure
+            - A nested scope is a nested scope, not a column
+        }
+
+        # A nested scope @default-nested
+        {
+            Under the default layout this renders inline as a section, rather
+            than being read as a cell.
+        }
+    }
+
+    # Two columns @two-column-slide
+    {
+        config: two-column
+
+        kicker: Legacy layout
+
+        lede: `two-column` predates `columns` and still behaves the way it did. Child scopes become the columns.
+
+        # Before @tc-before
+        {
+            The original slide layouts were `center` and `two-column`. Themes
+            written against them target the bare class name.
+        }
+
+        # After @tc-after
+        {
+            `columns` is the same idea with a count class, per-column accents,
+            numbering and variants. Both are supported.
+        }
+
+        # Still a drilldown @tc-detail :detail
+        {
+            A detail slide hangs off any layout, including this one. Press Down
+            to reach it, Up to come back.
+
+            A `:detail` scope has to be a direct child of the slide. Nested
+            inside a column it is not a drilldown at all — it renders inline as
+            part of that column, which is easy to do by accident.
+        }
+    }
+
     # Everything still works @closing
     {
         config: center
@@ -359,6 +571,8 @@
         # Notes @notes
         {
             Speaker notes, drilldown details and PDF export are unchanged.
+            This deck exercises every layout, every variant and every slide
+            property, so a theme can be checked against the whole set at once.
         }
     }
 }
