@@ -99,6 +99,40 @@ test("config: is found even when another key precedes it", () => {
   assert(config.numbered === "true", "the earlier key is kept once the layout is known");
 });
 
+test("optional: is understood by every scope, whatever layout it names", () => {
+  // It has to be a common key: it marks spine slides, detail slides and slides
+  // under any layout, and none of those share a layout to hang it off.
+  const plain = extractConfig([{ type: "paragraph", text: "optional: true" }]);
+  assert(plain.config.optional === "true", "a plain slide understands optional:");
+  assert(plain.contentNodes.length === 0, "and consumes the line");
+  const laidOut = extractConfig([
+    { type: "paragraph", text: "config: columns" },
+    { type: "paragraph", text: "optional: true" },
+  ]);
+  assert(laidOut.config.optional === "true", "so does a slide naming a layout");
+});
+
+test("a boolean key only takes the line when the value is a boolean word", () => {
+  // Every other key renders the text it is given, so consuming the line shows
+  // up in the output. A boolean key discards what it cannot read, which would
+  // delete an opening sentence from the deck without saying so.
+  const prose = extractConfig([
+    { type: "paragraph", text: "Optional: a second seat costs nothing." },
+    { type: "paragraph", text: "Body." },
+  ]);
+  assert(prose.config.optional === undefined, "not read as configuration");
+  assert(prose.contentNodes.length === 2, "the sentence survives as content");
+  assert(prose.contentNodes[0].text.startsWith("Optional:"), "in source order");
+
+  for (const word of ["true", "yes", "on", "1", "false", "no", "off", "0", "TRUE"]) {
+    const { config, contentNodes } = extractConfig([
+      { type: "paragraph", text: `optional: ${word}` },
+    ]);
+    assert(config.optional !== undefined, `optional: ${word} is configuration`);
+    assert(contentNodes.length === 0, `optional: ${word} consumes the line`);
+  }
+});
+
 test("a known key after content is content", () => {
   const { config, contentNodes } = extractConfig([
     { type: "paragraph", text: "Body copy." },

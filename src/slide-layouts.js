@@ -32,6 +32,7 @@ const COMMON_KEYS = new Set([
   "footnote",
   "accent",
   "status",
+  "optional",
 ]);
 
 const LAYOUT_KEYS = {
@@ -52,6 +53,17 @@ const CELL_KEYS = {
   rows: ["value"],
   bars: ["value", "fill"],
 };
+
+// Keys whose value is a boolean. Every other key renders the text it is given,
+// so consuming the line is visible in the output; a boolean key discards
+// anything it does not recognise, which would make an opening sentence
+// disappear. These therefore only take the line when the value is a word they
+// actually understand — "Optional: a second seat costs nothing" is prose.
+const BOOLEAN_KEYS = new Set(["optional", "numbered", "rule"]);
+const BOOLEAN_WORDS = new Set([
+  "true", "yes", "on", "1",
+  "false", "no", "off", "0",
+]);
 
 // Every key any scope might understand. A leading paragraph opening with one
 // of these is a configuration *candidate*; whether it is kept depends on the
@@ -133,6 +145,13 @@ function extractConfig(children, parentLayout) {
   const rejected = [];
   for (const candidate of candidates) {
     if (!allowed.has(candidate.key)) {
+      rejected.push(candidate.node);
+      continue;
+    }
+    if (
+      BOOLEAN_KEYS.has(candidate.key) &&
+      !BOOLEAN_WORDS.has(candidate.value.trim().toLowerCase())
+    ) {
       rejected.push(candidate.node);
       continue;
     }
@@ -505,10 +524,12 @@ function buildBody(layout, cell, ctx) {
 }
 
 module.exports = {
+  BOOLEAN_KEYS,
   CONFIG_KEYS,
   STRUCTURED_LAYOUTS,
   extractConfig,
   buildBody,
   accentClass,
   slug,
+  truthy,
 };

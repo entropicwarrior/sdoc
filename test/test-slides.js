@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
-const { renderSlides, renderSlide, renderNode, renderInline } = require("../src/slide-renderer.js");
+const { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide } = require("../src/slide-renderer.js");
 
 let pass = 0, fail = 0;
 const asyncTests = [];
@@ -919,6 +919,231 @@ test("detail slide can use config: center", () => {
   const m = html.match(/<div class="([^"]*)"[^>]*data-spine="1" data-detail="1"/);
   assert(m, "detail slide found");
   assert(m[1].split(/\s+/).includes("center"), "detail has center class");
+});
+
+// ============================================================
+console.log("--- Optional slides ---");
+
+// `optional: true` is a slide property rather than a scope type, because a
+// heading carries one `:type` and a drilldown has already spent it on
+// `:detail`. These tests pin the orthogonality: both spine and detail slides
+// can be optional, and optional-ness never changes which of the two a slide is.
+
+const OPTIONAL_DECK = `
+# Deck {
+    # Required spine {
+        Plain.
+    }
+
+    # Spine with details {
+        Body.
+
+        # Required detail :detail {
+            Kept.
+        }
+
+        # Optional detail :detail {
+            optional: true
+
+            Reserve.
+        }
+    }
+
+    # Optional spine {
+        optional: true
+
+        Reserve spine.
+
+        # Detail of an optional spine :detail {
+            Goes with its parent.
+        }
+    }
+
+    # Last spine {
+        Plain.
+    }
+}
+`;
+
+function slideAttrs(html) {
+  return (html.match(/data-spine="\d+" data-detail="\d+"/g) || []);
+}
+
+test("optional slides are present in the HTML build by default", () => {
+  const html = parseAndRender(OPTIONAL_DECK);
+  assert(slideAttrs(html).length === 7, "expected 7 slides, got " + slideAttrs(html).length);
+  assert(html.includes("Reserve spine."), "optional spine body present");
+  assert(html.includes("Reserve."), "optional detail body present");
+});
+
+test("an optional slide carries the slide-optional class", () => {
+  const html = parseAndRender(OPTIONAL_DECK);
+  const marked = html.match(/<div class="[^"]*slide-optional[^"]*"/g) || [];
+  assert(marked.length === 2, "expected 2 marked slides, got " + marked.length);
+});
+
+test("optional-ness does not change spine or detail identity", () => {
+  const html = parseAndRender(OPTIONAL_DECK);
+  // The optional detail is still a detail slide…
+  const detail = html.match(/<div class="([^"]*)"[^>]*data-spine="2" data-detail="2"/);
+  assert(detail, "optional detail emitted under its spine");
+  const detailClasses = detail[1].split(/\s+/);
+  assert(detailClasses.includes("slide-detail"), "optional detail keeps slide-detail");
+  assert(detailClasses.includes("slide-optional"), "optional detail is marked optional");
+  // …and the optional spine is still a spine slide.
+  const spine = html.match(/<div class="([^"]*)"[^>]*data-spine="3" data-detail="0"/);
+  assert(spine, "optional spine emitted in the spine");
+  const spineClasses = spine[1].split(/\s+/);
+  assert(!spineClasses.includes("slide-detail"), "optional spine is not a detail");
+  assert(spineClasses.includes("slide-optional"), "optional spine is marked optional");
+});
+
+test("optional: true is configuration, not content", () => {
+  const html = parseAndRender(OPTIONAL_DECK);
+  assert(!/<p>\s*optional:/i.test(html), "the config line must not render as a paragraph");
+});
+
+test("includeOptional: false drops optional slides", () => {
+  const html = parseAndRender(OPTIONAL_DECK, { includeOptional: false });
+  assert(slideAttrs(html).length === 4, "expected 4 slides, got " + slideAttrs(html).length);
+  assert(!html.includes("Reserve spine."), "optional spine body gone");
+  assert(!html.includes("Reserve."), "optional detail body gone");
+  assert(!html.includes("slide-optional"), "no slide is marked optional");
+  assert(html.includes("Kept."), "required detail survives");
+});
+
+test("an optional spine takes its details with it", () => {
+  const html = parseAndRender(OPTIONAL_DECK, { includeOptional: false });
+  assert(!html.includes("Goes with its parent."), "detail of an excluded spine is excluded");
+});
+
+test("excluding optional slides renumbers the spine", () => {
+  const html = parseAndRender(OPTIONAL_DECK, { includeOptional: false });
+  assert(slideAttrs(html).join("|") ===
+    'data-spine="1" data-detail="0"|data-spine="2" data-detail="0"|' +
+    'data-spine="2" data-detail="1"|data-spine="3" data-detail="0"',
+    "spine numbering closes over the gap: " + slideAttrs(html).join("|"));
+  assert(html.includes('class="slide-indicator">3 / 3'), "denominator counts the kept spines");
+  assert(!html.includes("/ 4"), "the excluded spine is not still counted");
+});
+
+test("a spine whose only detail is optional loses its drilldown affordance on export", () => {
+  const deck = `
+# Deck {
+    # Spine {
+        Body.
+
+        # Only detail :detail {
+            optional: true
+
+            Reserve.
+        }
+    }
+}
+`;
+  const full = parseAndRender(deck);
+  assert(full.includes("slide-has-details"), "the chevron is there while presenting");
+  const exported = parseAndRender(deck, { includeOptional: false });
+  assert(!exported.includes("slide-has-details"), "no chevron pointing at nothing on export");
+});
+
+test("a deck with no optional slides renders identically either way", () => {
+  const deck = `
+# Deck {
+    # One {
+        Body.
+
+        # Drill :detail {
+            Detail body.
+        }
+    }
+
+    # Two {
+        Body.
+    }
+}
+`;
+  assert(parseAndRender(deck) === parseAndRender(deck, { includeOptional: false }),
+    "includeOptional must be inert when nothing is marked optional");
+});
+
+test("optional takes the same truthy words as the other boolean keys", () => {
+  const mark = (value) => `
+# Deck {
+    # Kept {
+        Body.
+    }
+
+    # Marked {
+        optional: ${value}
+
+        Reserve.
+    }
+}
+`;
+  for (const yes of ["true", "yes", "on", "1", "TRUE"]) {
+    const html = parseAndRender(mark(yes), { includeOptional: false });
+    assert(!html.includes("Reserve."), `optional: ${yes} should exclude the slide`);
+  }
+  for (const no of ["false", "no", "later"]) {
+    const html = parseAndRender(mark(no), { includeOptional: false });
+    assert(html.includes("Reserve."), `optional: ${no} should keep the slide`);
+  }
+});
+
+// The CLI decides includeOptional from the output format and the flags, and
+// that resolution lives in build-slides.js rather than in the renderer, so it
+// needs exercising through the CLI. HTML only — no browser required.
+test("the CLI resolves optional slides per format, and the flags override it", () => {
+  const { execFileSync } = require("child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-cli-opt-"));
+  const input = path.join(dir, "deck.sdoc");
+  fs.writeFileSync(input, `
+# Deck {
+    @meta {
+        type: slides
+    }
+
+    # Kept {
+        Always here.
+    }
+
+    # Reserve {
+        optional: true
+
+        Only when asked.
+    }
+}
+`);
+  const cli = path.join(__dirname, "..", "tools", "build-slides.js");
+  const build = (...flags) => {
+    const out = path.join(dir, "out-" + (flags.join("") || "default") + ".html");
+    execFileSync(process.execPath, [cli, input, "-o", out, ...flags], { stdio: "ignore" });
+    return fs.readFileSync(out, "utf-8");
+  };
+
+  // HTML keeps them by default: it is the format you present from.
+  assert(build().includes("Only when asked."), "HTML default keeps optional slides");
+  // But an HTML deck is also something you send on.
+  assert(!build("--no-optional").includes("Only when asked."), "--no-optional drops them from HTML");
+  assert(build("--with-optional").includes("Only when asked."), "--with-optional keeps them");
+  // The indicator denominator follows whatever was kept.
+  assert(build("--no-optional").includes('class="slide-indicator">1 / 1'), "denominator counts kept spines");
+  assert(build().includes('class="slide-indicator">2 / 2'), "and counts them all by default");
+  // Last flag wins, as with --fit.
+  assert(!build("--with-optional", "--no-optional").includes("Only when asked."), "last flag wins");
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("isOptionalSlide reads the flag off a scope", () => {
+  const { nodes } = parseSlides(OPTIONAL_DECK);
+  const slides = nodes[0].children;
+  assert(isOptionalSlide(slides[2]) === true, "the optional spine reads as optional");
+  assert(isOptionalSlide(slides[0]) === false, "a plain spine does not");
+  const details = slides[1].children.filter((c) => c.scopeType === "detail");
+  assert(isOptionalSlide(details[1]) === true, "the optional detail reads as optional");
+  assert(isOptionalSlide(details[0]) === false, "the required detail does not");
 });
 
 // ============================================================
