@@ -96,6 +96,8 @@ node tools/build-slides.js deck.sdoc --pptx                # PowerPoint / Google
 node tools/build-slides.js deck.sdoc --check               # report slides that overflow
 node tools/build-slides.js deck.sdoc --theme themes/mine   # use a custom theme
 node tools/build-slides.js deck.sdoc --fit cover           # off-ratio window behaviour
+node tools/build-slides.js deck.sdoc --pdf --with-optional # keep the optional slides
+node tools/build-slides.js deck.sdoc --no-optional         # HTML without them
         ```
 
         # Options
@@ -107,6 +109,7 @@ node tools/build-slides.js deck.sdoc --fit cover           # off-ratio window be
                 - `--check` -- build the HTML, measure every slide in a browser, and report any whose content has run past the margin the theme reserved
                 - `--theme <dir>` -- a theme directory holding `theme.css`, and optionally `theme.js`, `theme.json` and assets (default: the built-in theme)
                 - `--fit contain|cover|stretch` -- what happens when the window is not the slide's shape: letterbox, crop, or distort (default: `contain`)
+                - `--with-optional` / `--no-optional` -- force slides marked `optional: true` in or out, in any output format. By default the HTML build keeps them and the `--pdf` and `--pptx` exports drop them, which is the common case for each; an HTML deck you are sending rather than presenting wants `--no-optional`
                 - `--dark` -- dark-mode colour overrides
                 - `--help` / `-h` -- show usage information and exit
             }

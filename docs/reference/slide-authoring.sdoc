@@ -107,6 +107,18 @@
             reserved. \`--pptx\` runs the same check for free, because it has
             already measured the deck.
 
+            To override what a format does with the optional slides:
+
+            ```
+            node tools/build-slides.js deck.sdoc --pdf --with-optional
+            node tools/build-slides.js deck.sdoc --no-optional
+            ```
+
+            A slide marked \`optional: true\` is kept in the HTML build and
+            left out of \`--pdf\` and \`--pptx\`. Either default can be
+            overridden in any format: \`--with-optional\` keeps them,
+            \`--no-optional\` drops them. See [Optional Slides](#optional).
+
             To use a custom theme:
 
             ```
@@ -138,6 +150,7 @@
                 \`footnote:\` | Small print pinned under the body: provenance, caveats, sources.
                 \`status:\` | A second line under the kicker on a title slide, for a distribution notice.
                 \`accent:\` | \`primary\`, \`secondary\`, \`tertiary\` or \`neutral\`. An accent names a role; the theme chooses the colour.
+                \`optional:\` | \`true\` holds the slide back from the exports, and from any build passed \`--no-optional\`. See [Optional Slides](#optional).
                 \`numbered:\` | \`columns\` and \`rows\`. \`true\` numbers the children 01, 02, 03.
                 \`variant:\` | \`columns\` and \`rows\`. A named treatment, such as \`panel\` or \`mono\`.
                 \`weights:\` | \`split\` only. The ratio between panes, as in \`48 52\`.
@@ -150,11 +163,11 @@
             }
 
             A key is only configuration where it means something. \`config:\`,
-            \`kicker:\`, \`lede:\`, \`footnote:\`, \`accent:\` and \`status:\` are
-            understood by every scope; the rest are understood only by the
-            layout named against them above. Anywhere else they are ordinary
-            text — a slide opening "Value: the customer keeps their data."
-            renders that sentence, it does not silently swallow it. A
+            \`kicker:\`, \`lede:\`, \`footnote:\`, \`accent:\`, \`status:\` and
+            \`optional:\` are understood by every scope; the rest are understood
+            only by the layout named against them above. Anywhere else they are
+            ordinary text — a slide opening "Value: the customer keeps their
+            data." renders that sentence, it does not silently swallow it. A
             paragraph spanning more than one source line is never
             configuration.
 
@@ -526,6 +539,114 @@
             spine 2, its details in order, and so on. This is the same order
             slides appear in the HTML, so PDF export needs no special case —
             every slide is just one page.
+
+            Every detail is a page, then, including the ones the audience
+            never saw. Mark a detail `optional: true` to keep it out of the
+            exported file — see [Optional Slides](#optional).
+        }
+    }
+
+    # Optional Slides @optional
+    {
+        Some slides exist for the room and not for the file that gets sent
+        on: the answer to a question that may not be asked, the figure
+        behind a figure, the rebuttal you hope to leave unused. Set
+        \`optional: true\` on the slide and it stays in the HTML build, which
+        is what you present from, and leaves the PDF and the PPTX, which are
+        what you send.
+
+        # Syntax @optional-syntax
+        {
+            ```
+            # Unit economics @unit-economics {
+                Headline numbers.
+
+                # Gross margin by cohort @margin :detail {
+                    optional: true
+
+                    The cohort table, if anyone asks for it.
+                }
+            }
+
+            # Pricing objections @objections {
+                optional: true
+
+                Held back unless pricing comes up.
+            }
+            ```
+
+            \`optional:\` is a slide property, not a scope annotation, and that
+            is deliberate: a heading carries one \`:type\`, and a drilldown has
+            already spent it on \`:detail\`. Reading optional-ness off the
+            configuration run keeps the two independent, so all four
+            combinations are available — a required spine, an optional spine,
+            a required detail, an optional detail.
+
+            A slide is the unit. Setting it on a cell inside a structured
+            layout — a column, a pipeline row, a pane of a \`split\` — has no
+            effect: the whole slide travels or none of it does. Mark the slide
+            that holds the cell.
+
+            It is set the way the other boolean properties are: \`true\`,
+            \`yes\`, \`on\` or \`1\` mark the slide; \`false\`, \`no\`, \`off\` or \`0\`
+            leave it alone. Like every slide property it must come before any
+            content.
+
+            A value that is none of those words is not configuration at all.
+            A slide whose first line is "Optional: a second seat costs
+            nothing" renders that sentence — a boolean key discards what it
+            cannot read, so it declines the line rather than swallowing it.
+        }
+
+        # What each format does @optional-formats
+        {
+            {[table]
+                Format | Default | Why
+                HTML | Included | It is the format you present from, and an optional slide is one you may want in the room.
+                PDF | Excluded | It is a format you send on.
+                PPTX | Excluded | The same.
+            }
+
+            The default is a guess about intent, not a property of the format,
+            so either can be overridden anywhere. An HTML deck is also
+            something you send someone:
+
+            ```
+            node tools/build-slides.js deck.sdoc --pdf --with-optional
+            node tools/build-slides.js deck.sdoc --no-optional
+            ```
+
+            When both are given the last one wins, as with \`--fit\`.
+
+            An optional spine takes its details with it. A detail belongs to
+            its spine, and there is nowhere for it to stand once the spine is
+            gone, so it goes whether or not it is marked itself.
+        }
+
+        # Numbering @optional-numbering
+        {
+            Optional slides are dropped before the deck is numbered, not
+            hidden afterwards, so the slide indicator counts what the reader
+            actually holds. A deck of four spines with one of them optional
+            reads \`3 / 3\` on its last page in the exported file and \`4 / 4\`
+            in the HTML build. The pages are consecutive either way; there is
+            no gap where a slide was removed.
+
+            A spine whose only details are optional loses its
+            \`slide-has-details\` class in the export too, so no theme draws a
+            drilldown chevron pointing at nothing.
+        }
+
+        # Themes @optional-theme
+        {
+            An optional slide carries the \`slide-optional\` class wherever it
+            is kept. A theme can use it to mark the slide on screen — a corner
+            tab, a tinted rule — so the presenter can see which slides are off
+            the main path. The built-in theme does not style it, so an optional
+            slide looks like any other until a theme says otherwise.
+
+            Nothing marked optional reaches a build it was excluded from, so
+            the class cannot appear in one.
         }
     }
 
@@ -767,6 +888,10 @@
             A border on only some sides is exported as a filled bar per side
             rather than an outlined box, so a hairline under a heading is a
             hairline rather than a rectangle with three invisible edges.
+
+            What is not in the file at all: slides marked \`optional: true\`,
+            unless \`--with-optional\` was passed. See
+            [Optional Slides](#optional).
 
             What does not carry: web fonts are named, not embedded, so the
             fonts a theme uses must be available to the viewer. Choosing faces

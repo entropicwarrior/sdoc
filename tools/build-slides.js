@@ -4,9 +4,17 @@
 // Usage:
 //   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme]
 //                              [--pdf] [--pptx] [--check] [--fit MODE] [--dark]
+//                              [--with-optional | --no-optional]
 //
 // --fit controls what happens when the window is not the slide's shape:
 // contain (default) letterboxes, cover crops, stretch distorts.
+//
+// Slides marked `optional: true` are kept by default in the HTML build, which
+// is the one you present from, and left out of --pdf and --pptx, which are the
+// formats a deck usually gets sent on in. Either default can be overridden in
+// any format: --with-optional keeps them, --no-optional drops them. An HTML
+// deck is also something you send someone, so the choice belongs to the
+// invocation rather than to the format.
 //
 // If -o is omitted, writes to input.html (or input.pdf / input.pptx).
 // --pptx produces a PowerPoint file that Drive imports as a Google Slides deck.
@@ -21,7 +29,8 @@ const { loadTheme } = require("../src/theme");
 function usage() {
   console.error(
     "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
-    "                    [--pdf] [--pptx] [--check] [--fit contain|cover|stretch] [--dark]"
+    "                    [--pdf] [--pptx] [--check] [--fit contain|cover|stretch] [--dark]\n" +
+    "                    [--with-optional | --no-optional]"
   );
   process.exit(1);
 }
@@ -35,6 +44,8 @@ async function main() {
   let pptxMode = false;
   let checkMode = false;
   let darkMode = false;
+  // null means "whatever this output format defaults to"; the flags force it.
+  let optional = null;
   let fit = null;
 
   for (let i = 0; i < args.length; i++) {
@@ -56,6 +67,10 @@ async function main() {
       }
     } else if (args[i] === "--dark") {
       darkMode = true;
+    } else if (args[i] === "--with-optional") {
+      optional = true;
+    } else if (args[i] === "--no-optional") {
+      optional = false;
     } else if (args[i] === "--help" || args[i] === "-h") {
       usage();
     } else if (!inputPath) {
@@ -102,9 +117,29 @@ async function main() {
     }
   }
 
-  // Extract meta and render
+  // Extract meta and render. Optional slides are kept in the HTML build and
+  // dropped from the exports by default, because that is the common case for
+  // each; --with-optional and --no-optional override the default in any
+  // format. --check measures whatever was rendered, so it reports on the
+  // optional slides exactly when they are in the build.
+  const emitHtml = !pdfMode && !pptxMode;
+  const includeOptional = optional === null ? emitHtml : optional;
+
   const { nodes, meta } = extractMeta(parsed.nodes);
-  const html = renderSlides(nodes, { meta, themeCss, themeJs, darkMode, themeConfig, fit });
+  const html = renderSlides(nodes, {
+    meta, themeCss, themeJs, darkMode, themeConfig, fit, includeOptional
+  });
+
+  // Every emitted slide carries data-spine, so this counts what the render
+  // actually produced. A deck whose slides are all optional exports to nothing
+  // — a blank PDF page, a PPTX with no slide parts — and neither Chrome nor
+  // the PPTX writer treats that as an error, so say it here.
+  if (!includeOptional && !/ data-spine="/.test(html)) {
+    console.error(
+      "Warning: every slide in this deck is optional, so the export has no slides.\n" +
+      "         Pass --with-optional to include them."
+    );
+  }
 
   // --pdf and --pptx both start from the built HTML, so write it once and
   // hand the same file to each exporter.
@@ -112,7 +147,6 @@ async function main() {
     ? path.resolve(outputPath)
     : resolvedInput.replace(/\.sdoc$/i, "") + ".html";
 
-  const emitHtml = !pdfMode && !pptxMode;
   if (emitHtml) {
     fs.mkdirSync(path.dirname(htmlOutput), { recursive: true });
     fs.writeFileSync(htmlOutput, html, "utf-8");
