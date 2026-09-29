@@ -924,6 +924,46 @@ if (!findChrome()) {
     assert(findings.length === 0, "overflow: " + JSON.stringify(findings));
   });
 
+  // A theme derived from the default before the drilldown chevron became a
+  // real element keeps the old pseudo-element rule, and that rule still
+  // paints: the deck then shows two chevrons a few pixels apart on every
+  // spine slide with details. Nothing else in the build can see this, because
+  // one chevron comes from the theme and the other from the renderer.
+  test("a theme carrying the old chevron rule is warned about", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-stale-chevron-"));
+    fs.writeFileSync(
+      path.join(dir, "theme.css"),
+      `.slide { background: #fff; }
+       .slide-has-details::after {
+         content: "\\2304";
+         position: absolute;
+         bottom: 18px;
+       }`
+    );
+    const warnings = loadTheme(dir, path.join(__dirname, "..", "themes", "default")).warnings;
+    assert(
+      warnings.some((w) => /slide-has-details::after/.test(w)),
+      "expected a stale-chevron warning, got: " + JSON.stringify(warnings)
+    );
+  });
+
+  test("the shipped theme does not trip the stale chevron warning", () => {
+    // Guards the guard: a false positive here would cry wolf on every build.
+    const warnings = loadTheme(path.join(__dirname, "..", "themes", "default")).warnings;
+    assert(warnings.length === 0, "default theme should load clean, got: " + JSON.stringify(warnings));
+  });
+
+  test("a theme that only mentions the old rule in a comment is left alone", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-chevron-comment-"));
+    fs.writeFileSync(
+      path.join(dir, "theme.css"),
+      `/* Was: .slide-has-details::after { content: "x"; } — now .nav-down. */
+       .slide { background: #fff; }`
+    );
+    const warnings = loadTheme(dir, path.join(__dirname, "..", "themes", "default")).warnings;
+    assert(warnings.length === 0, "documenting the old rule is not using it: " + JSON.stringify(warnings));
+  });
+
   // These two assert against themes/default, not the throwaway theme: the
   // claim under test is the shipped theme's cascade, and it is a claim the
   // authoring guide makes to deck authors.

@@ -100,6 +100,44 @@ function readThemeConfig(themeDir) {
   }
 }
 
+// The drilldown chevron used to be a pseudo-element on .slide-has-details.
+// It is now two real elements, .nav-up and .nav-down, which the runtime shows
+// and hides per position. A theme derived from the default before that change
+// still carries the old rule, and the old rule still renders: `content` on
+// .slide-has-details::after paints a chevron of its own whatever the renderer
+// emits. The result is two chevrons a few pixels apart on every spine slide
+// that has details, and nothing in the build otherwise notices, because the
+// duplicate is in the theme and the original is in the renderer.
+//
+// Only a rule that actually paints something is worth warning about, so a
+// `content` of none/normal/empty is left alone.
+const NO_CONTENT = new Set(["none", "normal", '""', "''"]);
+
+function staleChevronWarnings(css) {
+  // Comments first: a theme that merely *documents* the old rule is fine.
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const warnings = [];
+  // Innermost declaration blocks: the selector cannot contain braces, so this
+  // also reaches rules nested inside @media without tripping on the wrapper.
+  const rule = /([^{}]*)\{([^{}]*)\}/g;
+  let match;
+  while ((match = rule.exec(stripped)) !== null) {
+    const selector = match[1];
+    if (!/\.slide-has-details\s*::?after\b/.test(selector)) continue;
+    const content = /(?:^|[;{\s])content\s*:\s*([^;]+)/i.exec(match[2]);
+    if (!content) continue;
+    if (NO_CONTENT.has(content[1].trim().toLowerCase())) continue;
+    warnings.push(
+      "theme still draws the old drilldown chevron with " +
+      "`.slide-has-details::after { content: ... }`. That is now a duplicate of " +
+      ".nav-down, which the renderer emits and the runtime drives, so spine " +
+      "slides with details show two chevrons. Remove the rule from the theme."
+    );
+    break; // one rule is enough to say it; listing every copy adds no information
+  }
+  return warnings;
+}
+
 // Reads a theme directory. `fallbackDir` supplies theme.js when the theme
 // ships none, which is how a theme opts into the default runtime (keyboard
 // navigation, touch, fit-to-window scaling) without copying it.
@@ -122,6 +160,7 @@ function loadTheme(themeDir, fallbackDir) {
     for (const ref of missing) {
       warnings.push(`theme asset not found, left as a plain reference: ${ref}`);
     }
+    warnings.push(...staleChevronWarnings(raw));
   } else {
     warnings.push(`theme.css not found at ${cssPath}`);
   }
@@ -138,4 +177,4 @@ function loadTheme(themeDir, fallbackDir) {
   return { themeCss, themeJs, themeConfig, warnings, dir: resolved };
 }
 
-module.exports = { loadTheme, inlineCssAssets, readThemeConfig, DEFAULT_THEME_CONFIG };
+module.exports = { loadTheme, inlineCssAssets, readThemeConfig, staleChevronWarnings, DEFAULT_THEME_CONFIG };
