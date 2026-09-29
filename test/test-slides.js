@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
-const { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide } = require("../src/slide-renderer.js");
+const { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide, inlineDeckImages } = require("../src/slide-renderer.js");
 
 let pass = 0, fail = 0;
 const asyncTests = [];
@@ -392,6 +392,98 @@ test("includes slide footer with nav indicators", () => {
   assert(html.includes('class="slide-footer"'), "should have slide footer");
   assert(html.includes('class="nav-prev"'), "should have nav-prev");
   assert(html.includes('class="nav-next"'), "should have nav-next");
+});
+
+// ============================================================
+console.log("\n--- Image inlining ---");
+
+// A one-pixel PNG, so the fixtures carry real bytes rather than a stub whose
+// base64 an assertion could match by accident.
+const PNG_1PX = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
+
+function imageFixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-img-"));
+  fs.mkdirSync(path.join(dir, "img"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "img", "pic.png"), PNG_1PX);
+  return dir;
+}
+
+test("a local image is embedded, resolved against the .sdoc", () => {
+  // The documented contract: "Paths are resolved relative to the .sdoc file."
+  // Embedding settles it once, so where the built file is written stops
+  // mattering — which is the bug: an HTML build sent elsewhere with -o used to
+  // ship a relative path that named nothing and said nothing about it.
+  const dir = imageFixture();
+  const { html, inlined, missing } = inlineDeckImages(
+    '<img src="img/pic.png" alt="x" />', dir
+  );
+  assert(missing.length === 0, "nothing should be missing: " + JSON.stringify(missing));
+  assert(inlined.length === 1, "one image inlined");
+  assert(html.includes("data:image/png;base64,"), "src became a data URI");
+  assert(!html.includes('src="img/pic.png"'), "relative path is gone");
+  assert(html.includes('alt="x"'), "other attributes survive");
+});
+
+test("remote and data sources are left exactly as they are", () => {
+  const dir = imageFixture();
+  const cases = [
+    '<img src="https://example.com/a.png" />',
+    '<img src="//example.com/a.png" />',
+    '<img src="data:image/png;base64,AAAA" />',
+  ];
+  for (const one of cases) {
+    const out = inlineDeckImages(one, dir);
+    assert(out.html === one, "left alone: " + one);
+    assert(out.inlined.length === 0 && out.missing.length === 0,
+      "neither inlined nor missing: " + one);
+  }
+});
+
+test("an unreadable local image is reported, not silently dropped", () => {
+  // The whole point. The old failure mode was a broken-image glyph in a PDF
+  // and a build that printed nothing and exited 0.
+  const dir = imageFixture();
+  const { html, missing } = inlineDeckImages('<img src="img/absent.png" />', dir);
+  assert(missing.length === 1, "the missing image is reported");
+  assert(/absent\.png/.test(missing[0]), "reported by name: " + missing[0]);
+  // Left as written, so a deck whose images really do sit beside the OUTPUT
+  // keeps working; it just no longer does so silently.
+  assert(html.includes('src="img/absent.png"'), "reference is preserved");
+});
+
+test("a local file that is not an embeddable image type is reported", () => {
+  const dir = imageFixture();
+  fs.writeFileSync(path.join(dir, "notes.txt"), "not an image");
+  const { missing } = inlineDeckImages('<img src="notes.txt" />', dir);
+  assert(missing.length === 1 && /notes\.txt/.test(missing[0]),
+    "unsupported type reported: " + JSON.stringify(missing));
+});
+
+test("query strings and escaped entities in a src still resolve", () => {
+  const dir = imageFixture();
+  const { missing, html } = inlineDeckImages('<img src="img/pic.png?v=2" />', dir);
+  assert(missing.length === 0, "?query stripped before resolving: " + JSON.stringify(missing));
+  assert(html.includes("data:image/png;base64,"), "still embedded");
+});
+
+test("a rendered deck's images survive being written to another directory", () => {
+  // End to end over the real renderer: the regression this guards is that
+  // renderSlides emits the raw src and something downstream must resolve it.
+  const dir = imageFixture();
+  const html = parseAndRender(`
+# Deck {
+    # Slide {
+        ![A picture](img/pic.png)
+    }
+}
+`);
+  assert(html.includes('src="img/pic.png"'), "renderer emits the path as written");
+  const out = inlineDeckImages(html, dir);
+  assert(out.missing.length === 0, "resolved against the deck directory");
+  assert(out.html.includes("data:image/png;base64,"), "embedded for any output location");
 });
 
 // ============================================================

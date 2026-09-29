@@ -23,7 +23,7 @@
 const fs = require("fs");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc");
-const { renderSlides } = require("../src/slide-renderer");
+const { renderSlides, inlineDeckImages } = require("../src/slide-renderer");
 const { loadTheme } = require("../src/theme");
 
 function usage() {
@@ -126,9 +126,21 @@ async function main() {
   const includeOptional = optional === null ? emitHtml : optional;
 
   const { nodes, meta } = extractMeta(parsed.nodes);
-  const html = renderSlides(nodes, {
+  let html = renderSlides(nodes, {
     meta, themeCss, themeJs, darkMode, themeConfig, fit, includeOptional
   });
+
+  // Image paths in a .sdoc are relative to the .sdoc, which stops being true
+  // the moment the built file is written somewhere else. Resolve them here,
+  // against the input, and every format gets the same answer wherever -o
+  // points. Previously only --pdf and --pptx did, and only because their temp
+  // page happened to sit beside the input; the HTML build shipped broken
+  // images and said nothing.
+  const images = inlineDeckImages(html, path.dirname(resolvedInput));
+  html = images.html;
+  for (const ref of images.missing) {
+    console.error(`Warning: image could not be read, left as a plain reference: ${ref}`);
+  }
 
   // Every emitted slide carries data-spine, so this counts what the render
   // actually produced. A deck whose slides are all optional exports to nothing
@@ -155,9 +167,10 @@ async function main() {
     return;
   }
 
-  // Both exporters read the page through a browser, so the temp copy must sit
-  // beside the input for relative asset references (images, diagrams) to
-  // resolve the way they do in the built deck.
+  // Both exporters read the page through a browser. Images are already
+  // embedded by this point, so the temp copy's location no longer decides
+  // whether they resolve; it stays beside the input so that anything else a
+  // deck reaches for relatively still resolves from where the deck was written.
   const tmpHtml = path.join(
     path.dirname(resolvedInput),
     ".sdoc-slides-" + Date.now() + ".html"

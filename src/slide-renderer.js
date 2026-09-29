@@ -7,8 +7,97 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
+const fs = require("fs");
+const path = require("path");
 const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, colorSwatchHtml } = require("./sdoc");
 const { extractConfig, buildBody, accentClass, slug, truthy } = require("./slide-layouts");
+
+// ---------------------------------------------------------------------------
+// Image inlining
+//
+// renderSlides emits `<img src>` exactly as the document wrote it, and the
+// documentation is explicit that those paths are relative to the .sdoc file.
+// A built deck, though, is a single file that gets written wherever -o says
+// and then moved, mailed and opened from somewhere else entirely, at which
+// point a relative path no longer names anything. The PDF and PPTX exporters
+// dodged this by reading the deck from a temp copy beside the input; the HTML
+// build had no such trick and silently shipped broken images whenever the
+// output went to another directory.
+//
+// Inlining resolves the paths once, against the .sdoc, and makes the question
+// of where the file ends up irrelevant for every format. It is the same thing
+// loadTheme already does for a theme's fonts and backgrounds, for the same
+// reason, and readImage in slide-pptx.js already decodes data: URIs, so the
+// PPTX export embeds them exactly as it did loose files.
+//
+// This reads from disk, so it is not part of renderSlides: the renderer stays
+// a pure AST-to-HTML function and the builder calls this afterwards.
+// ---------------------------------------------------------------------------
+
+const INLINE_IMAGE_TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+};
+
+// Returns { html, inlined, missing }. `missing` names every local image that
+// could not be embedded — the silent failure this exists to stop. A remote or
+// data: URI is neither inlined nor missing: there is nothing to resolve.
+function inlineDeckImages(html, baseDir) {
+  const inlined = [];
+  const missing = [];
+
+  const out = html.replace(/(<img\b[^>]*?\bsrc=")([^"]*)(")/gi, (match, pre, src, post) => {
+    const raw = src.trim();
+    if (!raw) return match;
+    // Already embedded, or somewhere this build cannot reach.
+    if (/^data:/i.test(raw)) return match;
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(raw)) return match;
+
+    // The src sits in an HTML attribute, so entities are decoded before it is
+    // read as a path, and any ?query or #fragment dropped.
+    const decoded = raw
+      .replace(/&amp;/g, "&")
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/[?#].*$/, "");
+
+    let filePath;
+    try {
+      filePath = path.isAbsolute(decoded)
+        ? decoded
+        : path.resolve(baseDir, decodeURIComponent(decoded));
+    } catch {
+      filePath = path.isAbsolute(decoded) ? decoded : path.resolve(baseDir, decoded);
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = INLINE_IMAGE_TYPES[ext];
+    if (!mime) {
+      missing.push(`${decoded} (not an image type this build can embed)`);
+      return match;
+    }
+
+    let data;
+    try {
+      data = fs.readFileSync(filePath);
+    } catch {
+      missing.push(decoded);
+      return match;
+    }
+
+    inlined.push(decoded);
+    return `${pre}data:${mime};base64,${data.toString("base64")}${post}`;
+  });
+
+  return { html: out, inlined, missing };
+}
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -672,4 +761,4 @@ ${jsTag}${mermaidTag}
 </html>`;
 }
 
-module.exports = { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide };
+module.exports = { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide, inlineDeckImages };
