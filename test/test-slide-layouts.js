@@ -824,6 +824,7 @@ const { harvestGeometry } = require("../src/slide-geometry.js");
 const { buildPptx } = require("../src/slide-pptx.js");
 const { loadTheme } = require("../src/theme.js");
 const { findChrome } = require("../src/slide-pdf.js");
+const { spawn } = require("child_process");
 
 const EXAMPLE = path.join(__dirname, "..", "examples", "layouts-example.sdoc");
 
@@ -922,6 +923,133 @@ if (!findChrome()) {
     const geometry = await geometryPromise;
     const findings = overflowReport(geometry);
     assert(findings.length === 0, "overflow: " + JSON.stringify(findings));
+  });
+
+  // ----------------------------------------------------------------------
+  // Runtime navigation. These drive the shipped theme.js in a real browser:
+  // the two axes are a behaviour of that script, and nothing else in the
+  // suite executes it. Keys go in, the active slide's position comes back.
+  // ----------------------------------------------------------------------
+  function driveKeys(keys) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-nav-"));
+    const file = path.join(dir, "nav.html");
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    // Spine 2 carries the details; 1 and 3 have none, so a move off either
+    // end and a move out of a column are both reachable.
+    const src = `
+# Nav {
+    @meta {
+        type: slides
+    }
+
+    # One
+    {
+        Body one.
+    }
+
+    # Two
+    {
+        Body two.
+
+        # D1 :detail
+        {
+            Detail one.
+        }
+
+        # D2 :detail
+        {
+            Detail two.
+        }
+
+        # D3 :detail
+        {
+            Detail three.
+        }
+    }
+
+    # Three
+    {
+        Body three.
+    }
+}`;
+    const parsed = parseSdoc(src);
+    assert(parsed.errors.length === 0, "fixture parse errors: " + JSON.stringify(parsed.errors));
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const html = renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeJs: theme.themeJs, themeConfig: theme.themeConfig
+    });
+    assert(/data-detail="3"/.test(html), "fixture should emit 3 details");
+
+    const probe = `<script>
+(function () {
+  var keys = ${JSON.stringify(keys)};
+  var trail = [];
+  function at() {
+    var e = document.querySelector(".slide.active");
+    return e.getAttribute("data-spine") + "." + e.getAttribute("data-detail");
+  }
+  trail.push(at());
+  keys.forEach(function (k) {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+    trail.push(at());
+  });
+  var pre = document.createElement("pre");
+  pre.id = "sdoc-nav-trail";
+  pre.textContent = trail.join(" ");
+  document.body.appendChild(pre);
+})();
+</script>`;
+    fs.writeFileSync(file, html.replace("</body>", probe + "</body>"), "utf-8");
+
+    return new Promise((resolve, reject) => {
+      const child = spawn(findChrome(), [
+        "--headless", "--disable-gpu", "--dump-dom",
+        "--virtual-time-budget=3000", "file://" + file
+      ], { stdio: ["ignore", "pipe", "ignore"] });
+      let out = "";
+      child.stdout.on("data", (d) => { out += d.toString(); });
+      child.on("error", reject);
+      child.on("close", () => {
+        const m = /<pre id="sdoc-nav-trail">([^<]*)<\/pre>/.exec(out);
+        if (!m) return reject(new Error("navigation probe did not report"));
+        resolve(m[1].trim().split(/\s+/));
+      });
+    });
+  }
+
+  test("Right and Left move along the spine, never within a column", async () => {
+    // Down twice puts us mid-column at 2.2 — the position Michael reported,
+    // where Right used to walk deeper into the column instead of leaving it.
+    const trail = await driveKeys(["ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight"]);
+    assert(trail.join(" ") === "1.0 2.0 2.1 2.2 3.0",
+      "Right from mid-column should land on the next spine, got: " + trail.join(" "));
+
+    const back = await driveKeys(["ArrowRight", "ArrowDown", "ArrowLeft"]);
+    assert(back.join(" ") === "1.0 2.0 2.1 1.0",
+      "Left from a detail should land on the previous spine, got: " + back.join(" "));
+  });
+
+  test("Space walks presentation order rather than the spine", async () => {
+    // Inside a column Space continues down it and then leaves at the bottom,
+    // which is the one place Space and Right deliberately disagree.
+    const trail = await driveKeys(["ArrowRight", "ArrowDown", " ", " ", " "]);
+    assert(trail.join(" ") === "1.0 2.0 2.1 2.2 2.3 3.0",
+      "Space should walk the column and exit, got: " + trail.join(" "));
+  });
+
+  test("Space does not enter a column from a spine slide", async () => {
+    const trail = await driveKeys(["ArrowRight", " "]);
+    assert(trail.join(" ") === "1.0 2.0 3.0",
+      "Space from a spine should skip its details, got: " + trail.join(" "));
+  });
+
+  test("Up steps back one detail; Down walks the column", async () => {
+    const trail = await driveKeys([
+      "ArrowRight", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"
+    ]);
+    // The fourth Down is a no-op at the bottom of the column.
+    assert(trail.join(" ") === "1.0 2.0 2.1 2.2 2.3 2.3 2.2 2.1",
+      "vertical axis should step one at a time, got: " + trail.join(" "));
   });
 
   // A theme derived from the default before the drilldown chevron became a
