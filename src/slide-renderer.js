@@ -401,10 +401,21 @@ function renderSlides(nodes, options = {}) {
   // contract as .nav-prev / .nav-next, and it is why these cannot be a CSS
   // pseudo-element on a build-time class: whether you can go up or down is a
   // property of the current position, not of the slide.
+  // One chevron path, drawn twice, mirrored for the up arrow. Text arrowheads
+  // cannot do this: U+2303 and U+2304 are not designed as a pair and measure
+  // ~26% apart in ink width, and because few fonts carry either codepoint the
+  // metrics come from whatever the OS falls back to — so the mismatch is not
+  // even consistent between platforms. A path is identical by construction
+  // everywhere. The viewBox is symmetric about its own centre (y spans
+  // 1.25..5.75 of 7), so the mirrored copy occupies the same box.
+  const chevronSvg =
+    `<svg viewBox="0 0 12 7" aria-hidden="true" focusable="false">` +
+    `<path d="M1 1.25 L6 5.75 L11 1.25" fill="none" stroke="currentColor" ` +
+    `stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   const vertNavHtml =
     `\n<div class="nav-vert">` +
-    `<span class="nav-up">&#x2303;</span>` +
-    `<span class="nav-down">&#x2304;</span>` +
+    `<span class="nav-up">${chevronSvg}</span>` +
+    `<span class="nav-down">${chevronSvg}</span>` +
     `</div>`;
   const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>${vertNavHtml}`;
 
@@ -519,10 +530,17 @@ function renderSlides(nodes, options = {}) {
    chevron had and .nav-up stacks above it. */
 .nav-vert {
   position: absolute;
-  bottom: 18px; left: 50%;
+  /* 16px, not 18px: the old chevron was a text glyph whose ink ran to the
+     bottom of its line box, so an 18px box offset put the visible mark 18px
+     up. The SVG carries a little padding below the stroke, so the box sits
+     2px lower to land the mark in the same place. Measured, not guessed. */
+  bottom: 16px; left: 50%;
   transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center;
-  line-height: 0.75;
+  /* The two arrows are sized by their own boxes now, not by a line box with
+     leading around a small glyph, which is where the old slack came from. */
+  gap: 0.42em;
+  line-height: 0;
   pointer-events: none;
 }
 .nav-up, .nav-down {
@@ -531,10 +549,19 @@ function renderSlides(nodes, options = {}) {
      on every slide is worse than no arrowhead at all, so the safe state is
      the default and the runtime opts in. */
   visibility: hidden;
+  display: block;
   font-size: 1.2em; color: #ccc;
   cursor: pointer; pointer-events: auto;
   user-select: none;
 }
+.nav-up svg, .nav-down svg {
+  display: block;
+  width: 0.62em; height: auto;
+  stroke: currentColor;
+}
+/* The mirror. Same path, flipped about its own centre, so the pair matches to
+   the pixel whatever font or platform the deck is presented on. */
+.nav-up svg { transform: scaleY(-1); }
 .sdoc-company-footer {
   font-size: 0.7em; color: rgba(0,0,0,0.35);
   letter-spacing: 0.04em;

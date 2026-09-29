@@ -879,6 +879,14 @@ test("every slide carries the vertical nav pair, hidden until the runtime acts",
   assert(html.includes('<span class="nav-up">'), "nav-up emitted");
   assert(html.includes('<span class="nav-down">'), "nav-down emitted");
 
+  // One path, drawn twice and mirrored in CSS. Text arrowheads (U+2303 against
+  // U+2304) are not a matched pair: they measure ~26% apart in ink width, and
+  // since few fonts carry either codepoint the mismatch varies by platform.
+  const paths = html.match(/<path d="M1 1\.25 L6 5\.75 L11 1\.25"/g) || [];
+  assert(paths.length === 6, "expected the same path on all 6 arrows, got " + paths.length);
+  assert(!/[\u2303\u2304]/.test(html), "no text arrowhead glyphs");
+  assert(/\.nav-up svg \{ transform: scaleY\(-1\); \}/.test(html), "up arrow is the mirrored copy");
+
   // Up sits above down in source order, so the bottom-anchored column stacks
   // them the way round Michael asked for.
   const up = html.indexOf('class="nav-up"');
@@ -907,6 +915,22 @@ test("vertical nav starts hidden and is kept out of the print path", () => {
     html.includes(".nav-vert { display: none !important; }"),
     "print block hides .nav-vert"
   );
+});
+
+test("the drilldown chevrons are static", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Spine {
+        # Detail @det :detail { Body. }
+    }
+}
+`);
+  // The down arrow used to bounce to advertise the vertical axis. A visible
+  // chevron carries that on its own, and perpetual motion competes with the
+  // slide, so nothing here animates.
+  assert(!/slide-has-details-bounce/.test(html), "bounce keyframes gone");
+  assert(!/@keyframes/.test(html) || !/nav-down\s*\{[^}]*animation/.test(html),
+    "no animation on the down chevron");
 });
 
 test("detail slide indicator uses N.K notation", () => {
