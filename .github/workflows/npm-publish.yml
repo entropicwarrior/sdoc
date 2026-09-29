@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  # See release.yml — the OIDC token this workflow publishes with.
+  id-token: write
 
 jobs:
   publish:
@@ -24,12 +26,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Must match release.yml: trusted publishing needs npm 11.5.1+.
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
+      - name: Ensure npm supports trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      # npm holds a second trusted publisher for this filename, so the manual
+      # rescue path publishes over OIDC too and needs no token either.
       - name: Publish to npm as @entropicwarrior/sdoc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           node -e "
             const fs = require('fs');

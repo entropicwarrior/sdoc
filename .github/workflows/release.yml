@@ -6,6 +6,9 @@ on:
 
 permissions:
   contents: write
+  # Lets the runner mint the short-lived OIDC token npm exchanges for publish
+  # rights. Without it npm falls back to looking for a token and fails.
+  id-token: write
 
 jobs:
   build:
@@ -15,8 +18,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 24, not 20: trusted publishing needs npm 11.5.1+, which Node 20 does
+          # not ship, and GitHub already forces Node-20 actions onto 24 with a
+          # deprecation warning.
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      # setup-node pins the npm that shipped with the Node it installed, so ask
+      # for the version explicitly rather than inferring it from the runtime.
+      - name: Ensure npm supports trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - run: npm install
 
@@ -32,9 +45,15 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx vsce publish --pat "$VSCE_PAT"
 
+      # Publishes over OIDC against the trusted publisher npm holds for this
+      # repository and this workflow filename. Renaming this file, or moving the
+      # repository, breaks the trust and the publish with it — npm matches the
+      # filename in the OIDC claim.
+      #
+      # No NODE_AUTH_TOKEN. A token here would be the credential npm reaches for
+      # first, so leaving one set would mean never finding out whether OIDC
+      # actually works.
       - name: Publish to npm as @entropicwarrior/sdoc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           node -e "
             const fs = require('fs');
