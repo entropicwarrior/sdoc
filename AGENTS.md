@@ -125,7 +125,7 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
   `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js`
-  (484 + 24 + 65 + 54 + 53 = 680 as of the slide-layouts work)
+  (484 + 24 + 65 + 75 + 62 = 710 as of v0.2.22)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
