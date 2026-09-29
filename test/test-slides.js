@@ -859,6 +859,56 @@ test("spine with details gets slide-has-details class; details do not", () => {
   assert(detailMatch[1].split(/\s+/).includes("slide-detail"), "detail has slide-detail class");
 });
 
+test("every slide carries the vertical nav pair, hidden until the runtime acts", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Spine one {
+        # Detail @det :detail {
+            Detail body.
+        }
+    }
+    # Spine two {
+        No details here.
+    }
+}
+`);
+  // Emitted on every slide, spine and detail alike. The down arrowhead has to
+  // exist on a detail slide or it cannot stay visible while drilling.
+  const pairs = html.match(/<div class="nav-vert">/g) || [];
+  assert(pairs.length === 3, "expected nav-vert on all 3 slides, got " + pairs.length);
+  assert(html.includes('<span class="nav-up">'), "nav-up emitted");
+  assert(html.includes('<span class="nav-down">'), "nav-down emitted");
+
+  // Up sits above down in source order, so the bottom-anchored column stacks
+  // them the way round Michael asked for.
+  const up = html.indexOf('class="nav-up"');
+  const down = html.indexOf('class="nav-down"');
+  assert(up !== -1 && down !== -1 && up < down, "nav-up precedes nav-down");
+
+  // A detail slide gets the pair too — the regression that started this.
+  const detailSlice = html.slice(html.indexOf('data-detail="1"'));
+  assert(detailSlice.includes('class="nav-vert"'), "detail slide carries the pair");
+});
+
+test("vertical nav starts hidden and is kept out of the print path", () => {
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  // Hidden by default: a custom theme.js predating these elements does not
+  // know to hide them, and a dead arrowhead on every slide is worse than none.
+  const rule = html.match(/\.nav-up, \.nav-down \{[^}]*\}/);
+  assert(rule, "structural rule for .nav-up/.nav-down present");
+  assert(/visibility:\s*hidden/.test(rule[0]), "pair starts hidden");
+
+  // The PDF leave-behind must not show navigation affordances.
+  assert(
+    html.includes(".nav-vert { display: none !important; }"),
+    "print block hides .nav-vert"
+  );
+});
+
 test("detail slide indicator uses N.K notation", () => {
   const html = parseAndRender(`
 # Deck {

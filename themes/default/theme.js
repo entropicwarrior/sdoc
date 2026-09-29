@@ -62,11 +62,24 @@
     }
     flatIndex += cur.d;
 
+    // The vertical pair is about this column, not the flat sequence: up is
+    // available whenever we are below the spine, down whenever another detail
+    // sits underneath. Driving them here is what keeps the down arrowhead
+    // alive through a detail column instead of vanishing at the first step.
+    var canGoUp = cur.d > 0;
+    var canGoDown = cur.d < col.length - 1;
+
     slides.forEach(function (slide) {
       var prev = slide.querySelector(".nav-prev");
       var next = slide.querySelector(".nav-next");
       if (prev) prev.style.visibility = flatIndex > 0 ? "visible" : "hidden";
       if (next) next.style.visibility = flatIndex < totalFlat - 1 ? "visible" : "hidden";
+      var up = slide.querySelector(".nav-up");
+      var down = slide.querySelector(".nav-down");
+      // visibility, not display: the pair keeps its box either way, so the
+      // down arrow never shifts when the up arrow above it comes and goes.
+      if (up) up.style.visibility = canGoUp ? "visible" : "hidden";
+      if (down) down.style.visibility = canGoDown ? "visible" : "hidden";
     });
 
     // URL hash: "N" for spine, "N.K" for detail K of spine N (1-based)
@@ -105,8 +118,11 @@
   }
 
   function upStep() {
+    // One step back up the column, not a jump to the spine. From detail 1
+    // that lands on the spine anyway, which is the only case where the two
+    // readings agreed.
     if (cur.d > 0) {
-      show(cur.s, 0);
+      show(cur.s, cur.d - 1);
     }
   }
 
@@ -131,6 +147,18 @@
       show(spineCount - 1, 0);
     }
   });
+
+  // The vertical arrowheads navigate on click. They sit at the centre of the
+  // slide, where the half-of-the-page handler below would read them as
+  // horizontal navigation, so each stops the event before it gets there.
+  document.addEventListener("click", function (e) {
+    var up = e.target.closest && e.target.closest(".nav-up");
+    var down = e.target.closest && e.target.closest(".nav-down");
+    if (!up && !down) return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (up) upStep(); else downStep();
+  }, true);
 
   // Click navigation — right half forward, left half back (spine only)
   document.addEventListener("click", function (e) {

@@ -394,7 +394,19 @@ function renderSlides(nodes, options = {}) {
   }
   footerParts.push(`<span class="slide-indicator">__SLIDE_INDICATOR__</span>`);
   footerParts.push(`<span class="nav-next">&rsaquo;</span>`);
-  const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>`;
+
+  // The vertical pair, stacked up-over-down at bottom centre. Both are emitted
+  // on every slide and start hidden; the theme runtime turns each on only when
+  // that move exists from the slide you are actually on. That is the same
+  // contract as .nav-prev / .nav-next, and it is why these cannot be a CSS
+  // pseudo-element on a build-time class: whether you can go up or down is a
+  // property of the current position, not of the slide.
+  const vertNavHtml =
+    `\n<div class="nav-vert">` +
+    `<span class="nav-up">&#x2303;</span>` +
+    `<span class="nav-down">&#x2304;</span>` +
+    `</div>`;
+  const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>${vertNavHtml}`;
 
   // Optional slides are for the room, not the file that gets sent on. They are
   // kept in the HTML build (includeOptional defaults to true, so every existing
@@ -502,6 +514,27 @@ function renderSlides(nodes, options = {}) {
   cursor: pointer; pointer-events: auto;
   user-select: none;
 }
+/* Vertical drilldown pair. The container is anchored by its bottom edge and
+   grows upward, so .nav-down keeps the exact position the old pseudo-element
+   chevron had and .nav-up stacks above it. */
+.nav-vert {
+  position: absolute;
+  bottom: 18px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  line-height: 0.75;
+  pointer-events: none;
+}
+.nav-up, .nav-down {
+  /* Hidden until a runtime turns them on. A custom theme.js written before
+     these elements existed does not know to hide them, and a dead arrowhead
+     on every slide is worse than no arrowhead at all, so the safe state is
+     the default and the runtime opts in. */
+  visibility: hidden;
+  font-size: 1.2em; color: #ccc;
+  cursor: pointer; pointer-events: auto;
+  user-select: none;
+}
 .sdoc-company-footer {
   font-size: 0.7em; color: rgba(0,0,0,0.35);
   letter-spacing: 0.04em;
@@ -561,6 +594,7 @@ function renderSlides(nodes, options = {}) {
     transform-origin: top left;
   }
   .nav-prev, .nav-next { display: none !important; }
+  .nav-vert { display: none !important; }
   .notes { display: none; }
 }`;
 
@@ -577,6 +611,7 @@ p code, li code { background: rgba(255, 255, 255, 0.08); }
 blockquote { border-left-color: #5b9bd5; color: #9d9d9d; }
 blockquote p { color: #9d9d9d; }
 .nav-prev, .nav-next { color: rgba(255, 255, 255, 0.7); }
+.nav-up, .nav-down { color: rgba(255, 255, 255, 0.5); }
 .sdoc-company-footer { color: rgba(255, 255, 255, 0.35); }
 .sdoc-confidential-notice { color: rgba(235, 120, 120, 0.7); }
 .slide-indicator { color: rgba(255, 255, 255, 0.35); }
