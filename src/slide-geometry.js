@@ -143,7 +143,12 @@ const MEASURE_SCRIPT = `
       // The nav chevrons are a screen affordance, not deck content: nothing
       // clicks them in a PDF or a .pptx. (The theme runtime also hides one of
       // the pair at load time, so measuring them exported a lone arrow.)
-      if (el.classList && (el.classList.contains("nav-prev") || el.classList.contains("nav-next"))) return;
+      // .nav-vert is the vertical drilldown pair and its container; it sits in
+      // the bottom margin, so counting it would report an overflow on any
+      // slide whose content reaches near the bottom of the design box.
+      if (el.classList && (el.classList.contains("nav-prev") ||
+                           el.classList.contains("nav-next") ||
+                           el.classList.contains("nav-vert"))) return;
 
       var cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) return;

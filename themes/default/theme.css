@@ -167,26 +167,22 @@ img {
 }
 
 /* --- Drilldown affordance ---
-   Spine slides that have :detail children get .slide-has-details. The default
-   theme renders a small downward chevron in the bottom-centre to hint that
-   pressing Down (or swiping up) drills in. A custom theme can replace this
-   rule with its own animation. */
+   The renderer emits .nav-up and .nav-down inside .nav-vert on every slide,
+   and the theme runtime shows each one only when that move is available from
+   the current position. So the down arrowhead persists through a detail
+   column for as long as there is another detail below, and the up arrowhead
+   appears as soon as there is somewhere to go back to.
 
-.slide-has-details::after {
-  content: "\2304"; /* ⌄ — DOWN ARROWHEAD */
-  position: absolute;
-  bottom: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 1.2em;
+   Both arrowheads are static. The down one used to bounce to advertise the
+   vertical axis, but a visible chevron carries that on its own, and motion
+   that never stops competes with the slide for attention.
+
+   Spine slides with :detail children still carry .slide-has-details. Nothing
+   in this theme keys off it any more — it stays as a build-time hint for
+   themes that ship no runtime of their own. */
+
+.nav-up, .nav-down {
   color: rgba(0, 0, 0, 0.25);
-  pointer-events: none;
-  animation: slide-has-details-bounce 1.8s ease-in-out infinite;
-}
-
-@keyframes slide-has-details-bounce {
-  0%, 100% { transform: translate(-50%, 0); opacity: 0.4; }
-  50%      { transform: translate(-50%, 4px); opacity: 0.8; }
 }
 
 /* Slide indicator base style is injected structurally by the renderer.

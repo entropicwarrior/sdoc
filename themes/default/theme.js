@@ -50,23 +50,32 @@
     var el = activeEl();
     if (el) el.classList.add("active");
 
-    // Update nav indicator visibility per slide. In the flat slide order,
-    // a slide is "first" if it is the very first emitted slide, and "last"
-    // if it is the very last; in between, every slide has a next/prev in
-    // the flat sequence. We mirror the prior 1D behaviour: show chevrons
-    // when there is something to move to in the *flat* sequence.
-    var flatIndex = 0;
-    var totalFlat = slides.length;
-    for (var si = 0; si < cur.s; si++) {
-      flatIndex += (columns[si] || [{}]).length;
-    }
-    flatIndex += cur.d;
+    // Update nav indicator visibility per slide. The horizontal pair describes
+    // the horizontal move, which is now purely a spine move: from anywhere in
+    // spine 1's column there is no slide to the left, however many details sit
+    // above you in the flat emission order. Keying these off the flat sequence
+    // would show a left chevron that does nothing.
+    var canGoPrev = cur.s > 0;
+    var canGoNext = cur.s < spineCount - 1;
+
+    // The vertical pair is about this column, not the flat sequence: up is
+    // available whenever we are below the spine, down whenever another detail
+    // sits underneath. Driving them here is what keeps the down arrowhead
+    // alive through a detail column instead of vanishing at the first step.
+    var canGoUp = cur.d > 0;
+    var canGoDown = cur.d < col.length - 1;
 
     slides.forEach(function (slide) {
       var prev = slide.querySelector(".nav-prev");
       var next = slide.querySelector(".nav-next");
-      if (prev) prev.style.visibility = flatIndex > 0 ? "visible" : "hidden";
-      if (next) next.style.visibility = flatIndex < totalFlat - 1 ? "visible" : "hidden";
+      if (prev) prev.style.visibility = canGoPrev ? "visible" : "hidden";
+      if (next) next.style.visibility = canGoNext ? "visible" : "hidden";
+      var up = slide.querySelector(".nav-up");
+      var down = slide.querySelector(".nav-down");
+      // visibility, not display: the pair keeps its box either way, so the
+      // down arrow never shifts when the up arrow above it comes and goes.
+      if (up) up.style.visibility = canGoUp ? "visible" : "hidden";
+      if (down) down.style.visibility = canGoDown ? "visible" : "hidden";
     });
 
     // URL hash: "N" for spine, "N.K" for detail K of spine N (1-based)
@@ -74,9 +83,33 @@
     history.replaceState(null, "", "#" + hashVal);
   }
 
-  // Move horizontally one step. On a detail, advance through remaining details
-  // in the column, then return to the parent spine and advance to next spine.
+  // The two axes are independent. Left and right move along the spine and only
+  // along the spine; up and down move within a detail column. From a detail,
+  // a horizontal move leaves the column and lands on the neighbouring spine
+  // slide, rather than walking further into the column you are already in.
+  //
+  // This is what the mouse already did — the half-of-the-page handler below
+  // has always been spine-only — so the keyboard now agrees with it.
   function nextStep() {
+    if (cur.s < spineCount - 1) {
+      show(cur.s + 1, 0);
+    }
+  }
+
+  function prevStep() {
+    if (cur.s > 0) {
+      show(cur.s - 1, 0);
+    }
+  }
+
+  // Space is the "just keep going" key and walks presentation order, which is
+  // not the same as the spine. Inside a detail column it advances through the
+  // remaining details and then leaves for the next spine slide, so you can
+  // drill in with Down and read the rest of the column out on one key.
+  //
+  // It does not *enter* a column: from a spine slide it moves to the next
+  // spine, skipping the details underneath. Details are opened deliberately.
+  function advanceStep() {
     var col = columns[cur.s] || [];
     if (cur.d > 0 && cur.d < col.length - 1) {
       show(cur.s, cur.d + 1);
@@ -84,16 +117,6 @@
     }
     if (cur.s < spineCount - 1) {
       show(cur.s + 1, 0);
-    }
-  }
-
-  function prevStep() {
-    if (cur.d > 0) {
-      show(cur.s, cur.d - 1);
-      return;
-    }
-    if (cur.s > 0) {
-      show(cur.s - 1, 0);
     }
   }
 
@@ -105,15 +128,21 @@
   }
 
   function upStep() {
+    // One step back up the column, not a jump to the spine. From detail 1
+    // that lands on the spine anyway, which is the only case where the two
+    // readings agreed.
     if (cur.d > 0) {
-      show(cur.s, 0);
+      show(cur.s, cur.d - 1);
     }
   }
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "ArrowRight" || e.key === " ") {
+    if (e.key === "ArrowRight") {
       e.preventDefault();
       nextStep();
+    } else if (e.key === " ") {
+      e.preventDefault();
+      advanceStep();
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       prevStep();
@@ -132,6 +161,18 @@
     }
   });
 
+  // The vertical arrowheads navigate on click. They sit at the centre of the
+  // slide, where the half-of-the-page handler below would read them as
+  // horizontal navigation, so each stops the event before it gets there.
+  document.addEventListener("click", function (e) {
+    var up = e.target.closest && e.target.closest(".nav-up");
+    var down = e.target.closest && e.target.closest(".nav-down");
+    if (!up && !down) return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (up) upStep(); else downStep();
+  }, true);
+
   // Click navigation — right half forward, left half back (spine only)
   document.addEventListener("click", function (e) {
     if (e.target.closest("a, button, input, textarea, select")) return;
@@ -142,7 +183,8 @@
     }
   });
 
-  // Touch swipe — horizontal for spine/next-step, vertical for drilldown
+  // Touch swipe — horizontal moves the spine, vertical the detail column,
+  // matching the arrow keys.
   var touchStartX = 0, touchStartY = 0;
   document.addEventListener("touchstart", function (e) {
     touchStartX = e.touches[0].clientX;
