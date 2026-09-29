@@ -136,10 +136,25 @@ async function main() {
   // points. Previously only --pdf and --pptx did, and only because their temp
   // page happened to sit beside the input; the HTML build shipped broken
   // images and said nothing.
-  const images = inlineDeckImages(html, path.dirname(resolvedInput));
+  const imageBase = path.dirname(resolvedInput);
+  const images = inlineDeckImages(html, imageBase);
   html = images.html;
-  for (const ref of images.missing) {
-    console.error(`Warning: image could not be read, left as a plain reference: ${ref}`);
+  for (const miss of images.missing) {
+    const why = miss.reason === "unsupported-type"
+      ? "not an image type this build can embed"
+      : "no such file";
+    // Name the path that was actually tried. A deck written against a
+    // different convention sees a file it believes exists reported as
+    // missing, and only the resolved path shows why.
+    console.error(`Warning: image ${miss.src} — ${why}: ${miss.resolved}`);
+  }
+  if (images.missing.length) {
+    console.error(
+      `Warning: ${images.missing.length} image(s) left as plain references. Image paths\n` +
+      `         resolve relative to the .sdoc file (${imageBase}), in every\n` +
+      `         output format. A deck that keeps its images beside the built output\n` +
+      `         instead will render in HTML opened from there, but export without them.`
+    );
   }
 
   // Every emitted slide carries data-spine, so this counts what the render

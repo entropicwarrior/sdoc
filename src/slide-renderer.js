@@ -46,9 +46,13 @@ const INLINE_IMAGE_TYPES = {
   ".ico": "image/x-icon",
 };
 
-// Returns { html, inlined, missing }. `missing` names every local image that
-// could not be embedded — the silent failure this exists to stop. A remote or
-// data: URI is neither inlined nor missing: there is nothing to resolve.
+// Returns { html, inlined, missing }. `missing` describes every local image
+// that could not be embedded — the silent failure this exists to stop — as
+// { src, resolved, reason }, so the caller can say where it looked and not
+// just what it wanted. Naming the resolved path is what makes the rule
+// visible at the moment it bites: a deck written against a different
+// convention otherwise sees only that a file it can see plainly is "missing".
+// A remote or data: URI is neither inlined nor missing: nothing to resolve.
 function inlineDeckImages(html, baseDir) {
   const inlined = [];
   const missing = [];
@@ -80,7 +84,7 @@ function inlineDeckImages(html, baseDir) {
     const ext = path.extname(filePath).toLowerCase();
     const mime = INLINE_IMAGE_TYPES[ext];
     if (!mime) {
-      missing.push(`${decoded} (not an image type this build can embed)`);
+      missing.push({ src: decoded, resolved: filePath, reason: "unsupported-type" });
       return match;
     }
 
@@ -88,7 +92,7 @@ function inlineDeckImages(html, baseDir) {
     try {
       data = fs.readFileSync(filePath);
     } catch {
-      missing.push(decoded);
+      missing.push({ src: decoded, resolved: filePath, reason: "not-found" });
       return match;
     }
 

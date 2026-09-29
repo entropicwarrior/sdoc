@@ -448,7 +448,13 @@ test("an unreadable local image is reported, not silently dropped", () => {
   const dir = imageFixture();
   const { html, missing } = inlineDeckImages('<img src="img/absent.png" />', dir);
   assert(missing.length === 1, "the missing image is reported");
-  assert(/absent\.png/.test(missing[0]), "reported by name: " + missing[0]);
+  assert(missing[0].src === "img/absent.png", "reported by name: " + missing[0].src);
+  assert(missing[0].reason === "not-found", "reason given: " + missing[0].reason);
+  // The resolved path is the part that shows WHY: a deck written against a
+  // different convention can see the file plainly and needs to be told which
+  // directory was actually searched.
+  assert(missing[0].resolved === path.join(dir, "img", "absent.png"),
+    "resolved path reported: " + missing[0].resolved);
   // Left as written, so a deck whose images really do sit beside the OUTPUT
   // keeps working; it just no longer does so silently.
   assert(html.includes('src="img/absent.png"'), "reference is preserved");
@@ -458,8 +464,10 @@ test("a local file that is not an embeddable image type is reported", () => {
   const dir = imageFixture();
   fs.writeFileSync(path.join(dir, "notes.txt"), "not an image");
   const { missing } = inlineDeckImages('<img src="notes.txt" />', dir);
-  assert(missing.length === 1 && /notes\.txt/.test(missing[0]),
+  assert(missing.length === 1 && missing[0].src === "notes.txt",
     "unsupported type reported: " + JSON.stringify(missing));
+  assert(missing[0].reason === "unsupported-type", "distinguished from not-found");
+  assert(missing[0].resolved === path.join(dir, "notes.txt"), "resolved path reported");
 });
 
 test("query strings and escaped entities in a src still resolve", () => {
