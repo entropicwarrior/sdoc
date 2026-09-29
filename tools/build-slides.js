@@ -23,7 +23,7 @@
 const fs = require("fs");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc");
-const { renderSlides } = require("../src/slide-renderer");
+const { renderSlides, inlineDeckImages } = require("../src/slide-renderer");
 const { loadTheme } = require("../src/theme");
 
 function usage() {
@@ -126,9 +126,36 @@ async function main() {
   const includeOptional = optional === null ? emitHtml : optional;
 
   const { nodes, meta } = extractMeta(parsed.nodes);
-  const html = renderSlides(nodes, {
+  let html = renderSlides(nodes, {
     meta, themeCss, themeJs, darkMode, themeConfig, fit, includeOptional
   });
+
+  // Image paths in a .sdoc are relative to the .sdoc, which stops being true
+  // the moment the built file is written somewhere else. Resolve them here,
+  // against the input, and every format gets the same answer wherever -o
+  // points. Previously only --pdf and --pptx did, and only because their temp
+  // page happened to sit beside the input; the HTML build shipped broken
+  // images and said nothing.
+  const imageBase = path.dirname(resolvedInput);
+  const images = inlineDeckImages(html, imageBase);
+  html = images.html;
+  for (const miss of images.missing) {
+    const why = miss.reason === "unsupported-type"
+      ? "not an image type this build can embed"
+      : "no such file";
+    // Name the path that was actually tried. A deck written against a
+    // different convention sees a file it believes exists reported as
+    // missing, and only the resolved path shows why.
+    console.error(`Warning: image ${miss.src} — ${why}: ${miss.resolved}`);
+  }
+  if (images.missing.length) {
+    console.error(
+      `Warning: ${images.missing.length} image(s) left as plain references. Image paths\n` +
+      `         resolve relative to the .sdoc file (${imageBase}), in every\n` +
+      `         output format. A deck that keeps its images beside the built output\n` +
+      `         instead will render in HTML opened from there, but export without them.`
+    );
+  }
 
   // Every emitted slide carries data-spine, so this counts what the render
   // actually produced. A deck whose slides are all optional exports to nothing
@@ -155,9 +182,10 @@ async function main() {
     return;
   }
 
-  // Both exporters read the page through a browser, so the temp copy must sit
-  // beside the input for relative asset references (images, diagrams) to
-  // resolve the way they do in the built deck.
+  // Both exporters read the page through a browser. Images are already
+  // embedded by this point, so the temp copy's location no longer decides
+  // whether they resolve; it stays beside the input so that anything else a
+  // deck reaches for relatively still resolves from where the deck was written.
   const tmpHtml = path.join(
     path.dirname(resolvedInput),
     ".sdoc-slides-" + Date.now() + ".html"

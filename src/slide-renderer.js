@@ -7,8 +7,101 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const html = renderSlides(nodes, { meta, themeCss, themeJs });
 
+const fs = require("fs");
+const path = require("path");
 const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, colorSwatchHtml } = require("./sdoc");
 const { extractConfig, buildBody, accentClass, slug, truthy } = require("./slide-layouts");
+
+// ---------------------------------------------------------------------------
+// Image inlining
+//
+// renderSlides emits `<img src>` exactly as the document wrote it, and the
+// documentation is explicit that those paths are relative to the .sdoc file.
+// A built deck, though, is a single file that gets written wherever -o says
+// and then moved, mailed and opened from somewhere else entirely, at which
+// point a relative path no longer names anything. The PDF and PPTX exporters
+// dodged this by reading the deck from a temp copy beside the input; the HTML
+// build had no such trick and silently shipped broken images whenever the
+// output went to another directory.
+//
+// Inlining resolves the paths once, against the .sdoc, and makes the question
+// of where the file ends up irrelevant for every format. It is the same thing
+// loadTheme already does for a theme's fonts and backgrounds, for the same
+// reason, and readImage in slide-pptx.js already decodes data: URIs, so the
+// PPTX export embeds them exactly as it did loose files.
+//
+// This reads from disk, so it is not part of renderSlides: the renderer stays
+// a pure AST-to-HTML function and the builder calls this afterwards.
+// ---------------------------------------------------------------------------
+
+const INLINE_IMAGE_TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+};
+
+// Returns { html, inlined, missing }. `missing` describes every local image
+// that could not be embedded — the silent failure this exists to stop — as
+// { src, resolved, reason }, so the caller can say where it looked and not
+// just what it wanted. Naming the resolved path is what makes the rule
+// visible at the moment it bites: a deck written against a different
+// convention otherwise sees only that a file it can see plainly is "missing".
+// A remote or data: URI is neither inlined nor missing: nothing to resolve.
+function inlineDeckImages(html, baseDir) {
+  const inlined = [];
+  const missing = [];
+
+  const out = html.replace(/(<img\b[^>]*?\bsrc=")([^"]*)(")/gi, (match, pre, src, post) => {
+    const raw = src.trim();
+    if (!raw) return match;
+    // Already embedded, or somewhere this build cannot reach.
+    if (/^data:/i.test(raw)) return match;
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(raw)) return match;
+
+    // The src sits in an HTML attribute, so entities are decoded before it is
+    // read as a path, and any ?query or #fragment dropped.
+    const decoded = raw
+      .replace(/&amp;/g, "&")
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/[?#].*$/, "");
+
+    let filePath;
+    try {
+      filePath = path.isAbsolute(decoded)
+        ? decoded
+        : path.resolve(baseDir, decodeURIComponent(decoded));
+    } catch {
+      filePath = path.isAbsolute(decoded) ? decoded : path.resolve(baseDir, decoded);
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = INLINE_IMAGE_TYPES[ext];
+    if (!mime) {
+      missing.push({ src: decoded, resolved: filePath, reason: "unsupported-type" });
+      return match;
+    }
+
+    let data;
+    try {
+      data = fs.readFileSync(filePath);
+    } catch {
+      missing.push({ src: decoded, resolved: filePath, reason: "not-found" });
+      return match;
+    }
+
+    inlined.push(decoded);
+    return `${pre}data:${mime};base64,${data.toString("base64")}${post}`;
+  });
+
+  return { html: out, inlined, missing };
+}
 
 // ---------------------------------------------------------------------------
 // Inline rendering — produces clean HTML without sdoc-* classes
@@ -394,7 +487,30 @@ function renderSlides(nodes, options = {}) {
   }
   footerParts.push(`<span class="slide-indicator">__SLIDE_INDICATOR__</span>`);
   footerParts.push(`<span class="nav-next">&rsaquo;</span>`);
-  const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>`;
+
+  // The vertical pair, stacked up-over-down at bottom centre. Both are emitted
+  // on every slide and start hidden; the theme runtime turns each on only when
+  // that move exists from the slide you are actually on. That is the same
+  // contract as .nav-prev / .nav-next, and it is why these cannot be a CSS
+  // pseudo-element on a build-time class: whether you can go up or down is a
+  // property of the current position, not of the slide.
+  // One chevron path, drawn twice, mirrored for the up arrow. Text arrowheads
+  // cannot do this: U+2303 and U+2304 are not designed as a pair and measure
+  // ~26% apart in ink width, and because few fonts carry either codepoint the
+  // metrics come from whatever the OS falls back to — so the mismatch is not
+  // even consistent between platforms. A path is identical by construction
+  // everywhere. The viewBox is symmetric about its own centre (y spans
+  // 1.25..5.75 of 7), so the mirrored copy occupies the same box.
+  const chevronSvg =
+    `<svg viewBox="0 0 12 7" aria-hidden="true" focusable="false">` +
+    `<path d="M1 1.25 L6 5.75 L11 1.25" fill="none" stroke="currentColor" ` +
+    `stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const vertNavHtml =
+    `\n<div class="nav-vert">` +
+    `<span class="nav-up">${chevronSvg}</span>` +
+    `<span class="nav-down">${chevronSvg}</span>` +
+    `</div>`;
+  const overlayHtml = `\n<div class="slide-footer">${footerParts.join("")}</div>${vertNavHtml}`;
 
   // Optional slides are for the room, not the file that gets sent on. They are
   // kept in the HTML build (includeOptional defaults to true, so every existing
@@ -502,6 +618,43 @@ function renderSlides(nodes, options = {}) {
   cursor: pointer; pointer-events: auto;
   user-select: none;
 }
+/* Vertical drilldown pair. The container is anchored by its bottom edge and
+   grows upward, so .nav-down keeps the exact position the old pseudo-element
+   chevron had and .nav-up stacks above it. */
+.nav-vert {
+  position: absolute;
+  /* 16px, not 18px: the old chevron was a text glyph whose ink ran to the
+     bottom of its line box, so an 18px box offset put the visible mark 18px
+     up. The SVG carries a little padding below the stroke, so the box sits
+     2px lower to land the mark in the same place. Measured, not guessed. */
+  bottom: 16px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  /* The two arrows are sized by their own boxes now, not by a line box with
+     leading around a small glyph, which is where the old slack came from. */
+  gap: 0.42em;
+  line-height: 0;
+  pointer-events: none;
+}
+.nav-up, .nav-down {
+  /* Hidden until a runtime turns them on. A custom theme.js written before
+     these elements existed does not know to hide them, and a dead arrowhead
+     on every slide is worse than no arrowhead at all, so the safe state is
+     the default and the runtime opts in. */
+  visibility: hidden;
+  display: block;
+  font-size: 1.2em; color: #ccc;
+  cursor: pointer; pointer-events: auto;
+  user-select: none;
+}
+.nav-up svg, .nav-down svg {
+  display: block;
+  width: 0.62em; height: auto;
+  stroke: currentColor;
+}
+/* The mirror. Same path, flipped about its own centre, so the pair matches to
+   the pixel whatever font or platform the deck is presented on. */
+.nav-up svg { transform: scaleY(-1); }
 .sdoc-company-footer {
   font-size: 0.7em; color: rgba(0,0,0,0.35);
   letter-spacing: 0.04em;
@@ -561,6 +714,7 @@ function renderSlides(nodes, options = {}) {
     transform-origin: top left;
   }
   .nav-prev, .nav-next { display: none !important; }
+  .nav-vert { display: none !important; }
   .notes { display: none; }
 }`;
 
@@ -577,6 +731,7 @@ p code, li code { background: rgba(255, 255, 255, 0.08); }
 blockquote { border-left-color: #5b9bd5; color: #9d9d9d; }
 blockquote p { color: #9d9d9d; }
 .nav-prev, .nav-next { color: rgba(255, 255, 255, 0.7); }
+.nav-up, .nav-down { color: rgba(255, 255, 255, 0.5); }
 .sdoc-company-footer { color: rgba(255, 255, 255, 0.35); }
 .sdoc-confidential-notice { color: rgba(235, 120, 120, 0.7); }
 .slide-indicator { color: rgba(255, 255, 255, 0.35); }
@@ -610,4 +765,4 @@ ${jsTag}${mermaidTag}
 </html>`;
 }
 
-module.exports = { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide };
+module.exports = { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide, inlineDeckImages };

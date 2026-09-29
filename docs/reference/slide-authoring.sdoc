@@ -458,9 +458,13 @@
             \`variant: card\`, an image at the top of each column with a heading
             and a line of body beneath gives the standard figure row.
 
-            Paths are resolved relative to the \`.sdoc\` file. They are embedded
-            in the PPTX export; a remote URL is left out of it, and the build
-            says which.
+            Paths are resolved relative to the \`.sdoc\` file, in every format.
+            A local image is embedded in the built deck itself — HTML, PDF and
+            PPTX alike — so the file you send someone carries its own pictures
+            and can be moved anywhere. A remote URL is left as a link, and the
+            PPTX export says which ones it could not embed. An image the build
+            cannot read is left as a plain reference and named in a warning,
+            rather than becoming a broken picture nobody was told about.
         }
     }
 
