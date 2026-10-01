@@ -1321,6 +1321,242 @@ test("isOptionalSlide reads the flag off a scope", () => {
 });
 
 // ============================================================
+console.log("\n--- Case-sensitive units ---");
+
+function marks(text) {
+  return renderInline(text).replace(/<span class="sdoc-unit">([^<]*)<\/span>/g, "[$1]");
+}
+
+test("a unit whose case carries meaning is marked", () => {
+  // The bug this exists for: a theme uppercasing a kicker turns 40 mW into
+  // 40 MW, a factor of a billion, silently.
+  assert(marks("40 mW") === "40 [mW]", "milliwatts: " + marks("40 mW"));
+  assert(marks("3.3 kV") === "3.3 [kV]", "kilovolts");
+  assert(marks("500 ms") === "500 [ms]", "milliseconds");
+  assert(marks("2 kWh") === "2 [kWh]", "kilowatt hours");
+  assert(marks("12 µs") === "12 [µs]", "microseconds");
+  assert(marks("100 mol") === "100 [mol]", "moles");
+  assert(marks("40uW") === "40[uW]", "no space needed");
+});
+
+test("megabits and megabytes stay different after folding", () => {
+  assert(marks("8 Mb") === "8 [Mb]", "the bit is protected");
+  assert(marks("8 MB") === "8 MB", "the byte needs no protection");
+});
+
+test("a unit already in capitals is not marked", () => {
+  // Uppercasing cannot hurt it, and a span would only fragment the text run
+  // the exporter measures.
+  assert(marks("1 MW") === "1 MW", "megawatts");
+  assert(marks("3 GB") === "3 GB", "gigabytes");
+  assert(marks("10 Hz") === "10 [Hz]", "but a mixed-case one is");
+});
+
+test("ordinary words after a number are left alone", () => {
+  // A rule like "any short token after a number" would protect these and stop
+  // a deck's kickers uppercasing at all.
+  for (const text of [
+    "9 am", "3 pm", "flight 5 at noon", "7 as planned",
+    "5 Watts", "4 Mandatory fields", "Section 3 A", "we raised 5 M in 2019",
+  ]) {
+    assert(marks(text) === text, "left alone: " + text + " -> " + marks(text));
+  }
+});
+
+test("the mark survives into a slide and the stylesheet opts it out", () => {
+  const html = parseAndRender("# Deck {\n    # Slide {\n        kicker: measured at 40 mW\n\n        Body.\n    }\n}");
+  assert(html.includes(".sdoc-unit { text-transform: none; }"), "the opt-out ships with every deck");
+  const body = html.slice(html.indexOf("<body"));
+  assert(body.includes('<span class="sdoc-unit">mW</span>'), "marked inside the kicker");
+});
+
+// ============================================================
+console.log("\n--- Background images ---");
+
+// Just the markup. The structural stylesheet names .slide-bg, transform and
+// slide-content-scale too, so a bare includes() on the whole document would
+// match the CSS and pass whatever the renderer did.
+function bgSlide(lines) {
+  const html = parseAndRender(`# Deck {\n    # Slide {\n${lines}\n\n        Body copy.\n    }\n}`);
+  return html.slice(html.indexOf("<body"));
+}
+
+test("background: emits an img behind the content", () => {
+  const html = bgSlide("        background: photo.png");
+  assert(html.includes('class="slide-bg"'), "wrapper emitted");
+  assert(html.includes('<img src="photo.png"'), "a real img, so it embeds and exports");
+  // Before .slide-content-scale: the harvest reads atoms in DOM order, and the
+  // picture has to land at the bottom of the z-order in the .pptx.
+  assert(
+    html.indexOf('class="slide-bg"') < html.indexOf("slide-content-scale"),
+    "background precedes the content"
+  );
+});
+
+test("a slide with no background emits no wrapper", () => {
+  assert(!bgSlide("        kicker: THINGS").includes("slide-bg"), "nothing emitted");
+});
+
+test("position and size become object-position and object-fit", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-position: right center\n\n        background-size: contain");
+  assert(html.includes("object-position:right center"), "position applied");
+  assert(html.includes("object-fit:contain"), "size applied");
+});
+
+test("size falls back to cover when the word is not one it knows", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-size: enormous");
+  assert(html.includes("object-fit:cover"), "unknown fit ignored");
+});
+
+test("a linear fade becomes a mask on the wrapper, not on the image", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-fade: linear angle=90 from=30% to=85% max=0.2");
+  assert(html.includes("linear-gradient(90deg, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0) 85%)"), "gradient built");
+  // On the wrapper: a transform carries the element's own mask with it, so a
+  // fade on the image would mirror the moment the picture was flipped.
+  const wrapper = html.slice(html.indexOf('class="slide-bg"'), html.indexOf("<img"));
+  assert(wrapper.includes("mask-image"), "the mask sits on the wrapper");
+});
+
+test("a radial fade takes a centre, and radius means the same as to", () => {
+  const byRadius = bgSlide("        background: photo.png\n\n        background-fade: radial at=80%,30% from=5% radius=55%");
+  const byTo = bgSlide("        background: photo.png\n\n        background-fade: radial at=80%,30% from=5% to=55%");
+  assert(byRadius.includes("radial-gradient(circle at 80% 30%, rgba(0,0,0,1) 5%, rgba(0,0,0,0) 55%)"), "radial built");
+  assert(
+    byRadius.slice(byRadius.indexOf("slide-bg")) === byTo.slice(byTo.indexOf("slide-bg")),
+    "radius and to are the same setting"
+  );
+});
+
+test("fade settings are order-free and an unknown one is ignored", () => {
+  const a = bgSlide("        background: photo.png\n\n        background-fade: linear from=20% angle=45 max=0.5");
+  const b = bgSlide("        background: photo.png\n\n        background-fade: linear max=0.5 angle=45 from=20%");
+  const c = bgSlide("        background: photo.png\n\n        background-fade: linear angle=45 from=20% max=0.5 wobble=9");
+  assert(a.includes("linear-gradient(45deg, rgba(0,0,0,0.5) 20%"), "built as written");
+  assert(a.slice(a.indexOf("slide-bg")) === b.slice(b.indexOf("slide-bg")), "order does not matter");
+  assert(a.slice(a.indexOf("slide-bg")) === c.slice(c.indexOf("slide-bg")), "an unknown setting is ignored");
+});
+
+test("a fade with no shape word is not a fade", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-fade: quite a lot");
+  assert(!html.includes("mask-image"), "nothing masked");
+});
+
+test("a flip mirrors the placement so the image stays where it was put", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-position: right center\n\n        background-flip: horizontal");
+  // Placed left and reflected about the slide centre, which lands it on the
+  // right. Reflecting about the right edge instead would throw it off the
+  // slide entirely: the image lies inside that edge, so its mirror lies
+  // outside the box and is clipped away to nothing.
+  assert(html.includes("object-position:left center"), "placement mirrored");
+  assert(html.includes('class="slide-bg-flip" style="transform:scale(-1,1)"'), "reflected on its own element");
+});
+
+test("a mirrored percentage position reflects about the middle", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-position: 20% 70%\n\n        background-flip: both");
+  assert(html.includes("object-position:80% 30%"), "both axes mirrored");
+  assert(html.includes("transform:scale(-1,-1)"), "reflected on both axes");
+});
+
+test("a lone vertical keyword keeps its axis", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-position: top\n\n        background-flip: vertical");
+  assert(html.includes("object-position:center bottom"), "top is a y, not an x");
+  assert(html.includes("transform:scale(1,-1)"), "y only");
+});
+
+test("scale is anchored where the image sits, and survives a flip", () => {
+  const plain = bgSlide("        background: photo.png\n\n        background-position: right center\n\n        background-scale: 0.6");
+  assert(plain.includes("transform-origin:right center"), "anchored where it was placed");
+  assert(plain.includes("transform:scale(0.6)"), "scaled");
+
+  // With a flip the image is placed left, so the scale anchors there — and the
+  // reflection carries both back to the right.
+  const flipped = bgSlide("        background: photo.png\n\n        background-position: right center\n\n        background-flip: horizontal\n\n        background-scale: 0.6");
+  assert(flipped.includes("transform-origin:left center"), "anchor follows the mirrored placement");
+  assert(flipped.includes("slide-bg-flip"), "flip stays a separate element");
+});
+
+test("the fade never sits on the flipped element", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-flip: horizontal\n\n        background-fade: linear angle=90 from=20% to=80%");
+  const wrapper = html.slice(html.indexOf('class="slide-bg"'), html.indexOf("slide-bg-flip"));
+  assert(wrapper.includes("mask-image"), "fade on the outer wrapper");
+  // Otherwise a fade protecting text on the left would mirror to the right.
+  const flipEl = html.slice(html.indexOf("slide-bg-flip"), html.indexOf("<img"));
+  assert(!flipEl.includes("mask-image"), "fade does not move with the picture");
+});
+
+test("no transform is emitted when nothing asks for one", () => {
+  const html = bgSlide("        background: photo.png");
+  assert(!html.includes("transform"), "left alone");
+  assert(!html.includes("slide-bg-flip"), "no flip element either");
+});
+
+test("scale accepts a percentage as well as a multiplier", () => {
+  assert(bgSlide("        background: photo.png\n\n        background-scale: 60%").includes("transform:scale(0.6)"), "percentage");
+});
+
+test("a background: line that is prose stays prose", () => {
+  // The one key here whose name is also an ordinary sentence opener. Taking it
+  // would delete the sentence and then try to load it as a picture.
+  const html = bgSlide("        background: we started in 2019 with three people.");
+  assert(!html.includes("slide-bg"), "no picture invented");
+  assert(html.includes("we started in 2019"), "the sentence survives");
+});
+
+test("background-flip only takes the line for a word it knows", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-flip: the chart was mirrored by mistake.");
+  assert(html.includes("the chart was mirrored by mistake"), "the sentence survives");
+  assert(!html.includes("transform:scale"), "no flip applied");
+});
+
+test("a two-value size sizes the image's own box", () => {
+  // No fit keyword says "full height, natural width": cover crops a wide image
+  // and contain fits it by width.
+  const html = bgSlide("        background: photo.png\n\n        background-size: auto 100%\n\n        background-position: right center");
+  assert(html.includes("width:auto;height:100%"), "the pair becomes the box");
+  assert(!html.includes("object-fit"), "nothing left for object-fit to decide");
+  // Placed by the background-position rule: the point P% across the image is
+  // laid against the point P% across the slide.
+  assert(html.includes("left:100%;top:50%"), "right centre as percentages");
+  assert(html.includes("transform:translate(-100%,-50%)"), "and the matching offset");
+});
+
+test("a scale folds into a sized box instead of becoming a transform", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-size: auto 100%\n\n        background-scale: 0.5");
+  assert(html.includes("height:50%"), "the measurable half halves");
+  assert(html.includes("width:auto"), "auto still follows the aspect ratio");
+  assert(!html.includes("scale("), "no transform to reconcile with the offset");
+});
+
+test("a sized background still flips back to where it was asked for", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-size: auto 100%\n\n        background-position: right center\n\n        background-flip: horizontal");
+  assert(html.includes("left:0%"), "placed at the mirror");
+  assert(html.includes('class="slide-bg-flip" style="transform:scale(-1,1)"'), "reflected back to the right");
+});
+
+test("a lone size value is not a pair and leaves the keyword path alone", () => {
+  // A lone percentage would mean what background-scale already means.
+  const html = bgSlide("        background: photo.png\n\n        background-size: 50%");
+  assert(html.includes("object-fit:cover"), "falls back to the default fit");
+  assert(!html.includes("position:absolute"), "not the sized path");
+});
+
+test("a size pair that is not lengths stays out of the style attribute", () => {
+  const html = bgSlide("        background: photo.png\n\n        background-size: rather large");
+  assert(html.includes("object-fit:cover"), "not treated as a pair");
+});
+
+test("a background path is embedded against the sdoc like any other image", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-bg-"));
+  // A 1x1 GIF, so the test owns its fixture rather than reaching for one.
+  fs.writeFileSync(path.join(dir, "dot.gif"), Buffer.from("R0lGODlhAQABAAAAACw=", "base64"));
+  const html = bgSlide("        background: dot.gif");
+  const { html: inlined, missing } = inlineDeckImages(html, dir);
+  assert(missing.length === 0, "resolved against the base dir");
+  assert(inlined.includes("data:image/gif;base64,"), "embedded in the deck");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ============================================================
 // Summary — wait for async tests before reporting
 Promise.all(asyncTests).then(() => {
   console.log("\n" + "=".repeat(40));

@@ -41,6 +41,8 @@ const COMMON_KEYS = new Set([
   "background-position",
   "background-size",
   "background-fade",
+  "background-flip",
+  "background-scale",
 ]);
 
 const LAYOUT_KEYS = {
@@ -72,6 +74,26 @@ const BOOLEAN_WORDS = new Set([
   "true", "yes", "on", "1",
   "false", "no", "off", "0",
 ]);
+
+// The same guard, generalised twice over.
+//
+// ENUM_KEYS: the value must be one of a fixed set of words, so
+// "Background-flip: the chart was mirrored by mistake" stays prose.
+//
+// VALUE_SHAPES: the value must look like the kind of thing the key takes.
+// `background:` is the one key here whose name is also an ordinary English
+// sentence opener — "Background: we started in 2019." is a line a deck really
+// does contain — and swallowing it would delete the sentence and then try to
+// load it as a picture. A background only takes the line when the value names
+// an image: a file with a picture extension, a data: URI, or a URL.
+const ENUM_KEYS = {
+  "background-flip": new Set(["horizontal", "vertical", "both", "none"]),
+};
+
+const VALUE_SHAPES = {
+  background: /(?:\.(?:png|jpe?g|gif|svg|webp|avif|bmp|ico)(?:[?#].*)?$)|^data:image\/|^(?:https?:)?\/\//i,
+  "background-scale": /^\d*\.?\d+%?$/,
+};
 
 // Every key any scope might understand. A leading paragraph opening with one
 // of these is a configuration *candidate*; whether it is kept depends on the
@@ -160,6 +182,16 @@ function extractConfig(children, parentLayout) {
       BOOLEAN_KEYS.has(candidate.key) &&
       !BOOLEAN_WORDS.has(candidate.value.trim().toLowerCase())
     ) {
+      rejected.push(candidate.node);
+      continue;
+    }
+    const words = ENUM_KEYS[candidate.key];
+    if (words && !words.has(candidate.value.trim().toLowerCase())) {
+      rejected.push(candidate.node);
+      continue;
+    }
+    const shape = VALUE_SHAPES[candidate.key];
+    if (shape && !shape.test(candidate.value.trim())) {
       rejected.push(candidate.node);
       continue;
     }

@@ -107,12 +107,54 @@ function inlineDeckImages(html, baseDir) {
 // Inline rendering — produces clean HTML without sdoc-* classes
 // ---------------------------------------------------------------------------
 
+// Units are case-sensitive; themes are not.
+//
+// A theme that sets `text-transform: uppercase` on a kicker, a label or a
+// caption — the built-in one does it in ten places — renders "40 mW" as
+// "40 MW". That is a factor of a billion on a power figure, it is silent, and
+// nothing downstream can catch it: the document is correct and only its
+// rendering is wrong, so every parser, test and gate sees a healthy deck. It
+// was found by a person reading a slide.
+//
+// The fix travels with the content rather than with the stylesheet: the
+// renderer marks the unit, and the structural CSS opts that mark out of case
+// folding. A theme gets the protection without knowing it exists, which is the
+// only version that works — the theme is exactly the thing that got it wrong.
+//
+// The symbols are deliberately a closed list. A rule like "any short token
+// after a number" would protect ordinary words and quietly stop a deck's
+// kickers uppercasing at all.
+const SI_PREFIX = "(?:da|Y|Z|E|P|T|G|M|k|h|d|c|m|µ|μ|u|n|p|f|a|z|y)";
+const SI_UNIT =
+  "(?:mol|kat|bps|bar|rad|Hz|Pa|Wb|lm|lx|Bq|Gy|Sv|eV|Wh|Ah|dB|cd|sr|Ω|m|g|s|A|K|N|J|W|C|V|F|S|T|H|L|l|t|B|b)";
+const UNIT_RE = new RegExp(
+  `(\\d)(\\s| )?(${SI_PREFIX}?${SI_UNIT})(?![A-Za-z0-9])`,
+  "g"
+);
+
+// Words that happen to parse as a prefixed unit. "9 am" is a time far more
+// often than it is nine attometres, and protecting it would leave a lone
+// lowercase "am" in an otherwise uppercased line.
+const UNIT_BLOCKLIST = new Set(["am", "pm", "at", "as"]);
+
+function protectUnits(html) {
+  return html.replace(UNIT_RE, (match, digit, space, unit) => {
+    // Nothing to protect when the symbol is already all caps: "1 MW" is
+    // megawatts whether it is folded or not, and a span would only fragment
+    // the text run the exporter measures.
+    if (unit === unit.toUpperCase()) return match;
+    if (UNIT_BLOCKLIST.has(unit.toLowerCase())) return match;
+    return `${digit}${space || ""}<span class="sdoc-unit">${unit}</span>`;
+  });
+}
+
 function renderInlineNodes(nodes) {
   return nodes
     .map((node) => {
       switch (node.type) {
         case "text":
-          return escapeHtml(node.value);
+          // Escape first: the span below is markup and must survive.
+          return protectUnits(escapeHtml(node.value));
         case "code":
           return `<code>${escapeHtml(node.value)}</code>`;
         case "copyable":
@@ -403,6 +445,86 @@ function fadeMask(fade) {
     : `radial-gradient(circle at ${fade.x}% ${fade.y}%, ${stops})`;
 }
 
+// A position split into its two axes, so a flip can mirror one of them.
+// `right center` is x then y; `top` alone is a y with x defaulting to centre.
+function splitPosition(position) {
+  const tokens = String(position).trim().split(/\s+/).filter(Boolean);
+  const isY = (t) => t === "top" || t === "bottom";
+  if (tokens.length === 0) return { x: "center", y: "center" };
+  if (tokens.length === 1) {
+    return isY(tokens[0]) ? { x: "center", y: tokens[0] } : { x: tokens[0], y: "center" };
+  }
+  return isY(tokens[0])
+    ? { x: tokens[1], y: tokens[0] }
+    : { x: tokens[0], y: tokens[1] };
+}
+
+function mirrorAxis(value, low, high) {
+  const v = value.toLowerCase();
+  if (v === low) return high;
+  if (v === high) return low;
+  const pct = /^(-?\d*\.?\d+)%$/.exec(v);
+  if (pct) return `${100 - parseFloat(pct[1])}%`;
+  return value;
+}
+
+// Mirroring the placement is what makes a flip stay where it was put.
+//
+// The reflection itself happens about the slide's centre, because reflecting
+// about the placement edge instead throws the picture clean off the slide: an
+// image sitting against the right edge lies *inside* that edge, so mirroring
+// across it lands the whole thing outside the box, where it is clipped away to
+// nothing. Mirroring the position too puts it back: placed left, reflected
+// about the centre, it arrives on the right — where the author asked for it,
+// facing the other way.
+function mirrorPosition(position, flipX, flipY) {
+  if (!flipX && !flipY) return position;
+  const { x, y } = splitPosition(position);
+  return [
+    flipX ? mirrorAxis(x, "left", "right") : x,
+    flipY ? mirrorAxis(y, "top", "bottom") : y,
+  ].join(" ");
+}
+
+// A two-value `background-size`, as in `auto 100%`: full height, natural
+// width, aspect kept. No `object-fit` keyword can say that — `cover` crops a
+// wide image and `contain` fits it by its width — so a pair is given to the
+// image's own box instead, and the box then *is* the size that was asked for.
+//
+// Only a pair takes this route. A lone value would read as a size on a key
+// whose other values are keywords, and a lone percentage would mean the same
+// thing as `background-scale:` while living somewhere else.
+const SIZE_PART = /^(?:auto|-?\d*\.?\d+(?:%|px|em|rem|vh|vw|vmin|vmax))$/;
+
+function parseBgSize(value) {
+  const tokens = String(value || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length !== 2) return null;
+  if (!tokens.every((t) => SIZE_PART.test(t))) return null;
+  return { w: tokens[0], h: tokens[1] };
+}
+
+// A scale folds into a sized box rather than becoming a transform: multiply
+// what is measurable and leave `auto` to follow the aspect ratio. That keeps
+// the sized path free of transforms, so nothing has to reconcile a scale
+// origin with a translate.
+function scalePart(part, scale) {
+  if (part === "auto" || scale === 1) return part;
+  const m = /^(-?\d*\.?\d+)(.*)$/.exec(part);
+  return m ? `${parseFloat(m[1]) * scale}${m[2]}` : part;
+}
+
+// The CSS background-position rule, as percentages: the point P% across the
+// image is laid against the point P% across the slide. Keywords are the
+// percentages everyone knows them by.
+const POSITION_PERCENT = { left: 0, top: 0, center: 50, right: 100, bottom: 100 };
+
+function axisPercent(value) {
+  const v = String(value).toLowerCase();
+  if (v in POSITION_PERCENT) return POSITION_PERCENT[v];
+  const pct = /^(-?\d*\.?\d+)%$/.exec(v);
+  return pct ? parseFloat(pct[1]) : 50;
+}
+
 // Only what a position can legitimately contain. Everything else in the style
 // attribute is a number this file computed, so this is the one author-supplied
 // string that reaches CSS — and a value carrying a `;` or a quote would
@@ -413,31 +535,93 @@ function cssPosition(value, fallback) {
   return /^[A-Za-z0-9%.\s-]+$/.test(text) ? text : fallback;
 }
 
+// `background-scale: 0.5` or `50%`. Anything else leaves the image alone.
+function parseScale(value) {
+  const text = String(value || "").trim();
+  if (!text) return 1;
+  const n = parseFloat(text);
+  if (!isFinite(n) || n <= 0) return 1;
+  return text.endsWith("%") ? n / 100 : n;
+}
+
 function slideBackground(config) {
   const src = String(config.background || "").trim();
   if (!src) return "";
 
   const fit = String(config["background-size"] || "").trim().toLowerCase();
-  const styles = [
-    `object-position:${cssPosition(config["background-position"], "center")}`,
-    `object-fit:${FIT_WORDS.has(fit) ? fit : "cover"}`,
-  ];
+  const asked = cssPosition(config["background-position"], "center");
 
+  const flip = String(config["background-flip"] || "").trim().toLowerCase();
+  const flipX = flip === "horizontal" || flip === "both";
+  const flipY = flip === "vertical" || flip === "both";
+  const scale = parseScale(config["background-scale"]);
+
+  // Placed at the mirror of where it was asked for; the reflection below then
+  // carries it back there, facing the other way. See mirrorPosition.
+  const placed = mirrorPosition(asked, flipX, flipY);
+  const sized = parseBgSize(config["background-size"]);
+  const styles = [];
+
+  if (sized) {
+    // The box becomes the size that was asked for, so the image fills it at
+    // its own aspect ratio and `object-fit` has nothing left to decide. The
+    // element is then placed by the background-position rule rather than by
+    // `object-position`, which only moves content *within* a box and has none
+    // to move here.
+    const { x, y } = splitPosition(placed);
+    const px = axisPercent(x);
+    const py = axisPercent(y);
+    styles.push(
+      "position:absolute",
+      `width:${scalePart(sized.w, scale)}`,
+      `height:${scalePart(sized.h, scale)}`,
+      `left:${px}%`,
+      `top:${py}%`,
+      `transform:translate(${-px}%,${-py}%)`
+    );
+  } else {
+    styles.push(
+      `object-position:${placed}`,
+      `object-fit:${FIT_WORDS.has(fit) ? fit : "cover"}`
+    );
+
+    // Scale is anchored where the image sits, so shrinking one pinned to an
+    // edge keeps it pinned there instead of drifting towards the middle. The
+    // flip cannot share that origin, so the two are separate transforms on
+    // separate elements rather than one composed pair.
+    if (scale !== 1) {
+      styles.push(`transform-origin:${placed}`, `transform:scale(${scale})`);
+    }
+  }
+
+  // The fade goes on the wrapper, not on the image, and that split matters as
+  // soon as a slide uses both. A transform carries the element's mask with it,
+  // so a fade written to protect text on the left would mirror to the right
+  // the moment the picture was flipped — silently moving the protection away
+  // from the words it was there for. The wrapper never moves: the fade stays
+  // in slide space, where the author was thinking, and the flip stays a fact
+  // about the picture.
   const fade = parseFade(config["background-fade"]);
+  let wrapStyle = "";
   if (fade) {
     const mask = fadeMask(fade);
     // Chrome still wants the prefix for mask-image on some versions, and
     // headless Chrome is what builds the PDF.
-    styles.push(`-webkit-mask-image:${mask}`, `mask-image:${mask}`);
+    wrapStyle = ` style="-webkit-mask-image:${mask};mask-image:${mask}"`;
   }
+
+  // The flip is its own element, between the fade and the image. It cannot go
+  // on the fade, which must not move, and it cannot share the image's own
+  // transform, whose origin belongs to the scale.
+  const img = `<img src="${escapeAttr(src)}" alt="" style="${styles.join(";")}" />`;
+  const inner =
+    flipX || flipY
+      ? `<div class="slide-bg-flip" style="transform:scale(${flipX ? -1 : 1},${flipY ? -1 : 1})">${img}</div>`
+      : img;
 
   // alt is empty and the wrapper is aria-hidden: this is decoration, and a
   // screen reader announcing a filename over every slide is worse than silence.
-  return (
-    `<div class="slide-bg" aria-hidden="true">` +
-    `<img src="${escapeAttr(src)}" alt="" style="${styles.join(";")}" />` +
-    `</div>\n`
-  );
+  return `<div class="slide-bg" aria-hidden="true"${wrapStyle}>${inner}</div>\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -748,6 +932,11 @@ function renderSlides(nodes, options = {}) {
   overflow: hidden;
   pointer-events: none;
 }
+/* A unit symbol, marked by the renderer so that a theme's uppercasing cannot
+   turn "40 mW" into "40 MW". Themes may restyle it, but must not reinstate a
+   text-transform on it. */
+.sdoc-unit { text-transform: none; }
+.slide-bg-flip { width: 100%; height: 100%; }
 .slide-bg img { display: block; width: 100%; height: 100%; }
 .slide-footer {
   position: absolute; bottom: 20px; left: 32px; right: 32px;
