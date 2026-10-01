@@ -33,6 +33,16 @@ const COMMON_KEYS = new Set([
   "accent",
   "status",
   "optional",
+  // A background is slide furniture, like a kicker or a footnote: it belongs
+  // to the slide rather than to the shape its content is arranged in, so it
+  // lives here and works under every layout instead of being listed against a
+  // handful of them.
+  "background",
+  "background-position",
+  "background-size",
+  "background-fade",
+  "background-flip",
+  "background-scale",
 ]);
 
 const LAYOUT_KEYS = {
@@ -67,11 +77,27 @@ const BOOLEAN_WORDS = new Set([
   "false", "no", "off", "0",
 ]);
 
-// The same guard, generalised: a key whose value must be one of a fixed set of
-// words. `label:` on a scatter point names a side, so "Label: the legend is
-// wrong" is prose and must stay prose rather than becoming a dead class.
+// The same guard, generalised twice over.
+//
+// ENUM_KEYS: the value must be one of a fixed set of words. `label:` on a
+// scatter point names a side, so "Label: the legend is wrong" stays the prose
+// it is rather than becoming a dead class, and "Background-flip: the chart was
+// mirrored by mistake" does the same.
+//
+// VALUE_SHAPES: the value must look like the kind of thing the key takes.
+// `background:` is the one key here whose name is also an ordinary English
+// sentence opener — "Background: we started in 2019." is a line a deck really
+// does contain — and swallowing it would delete the sentence and then try to
+// load it as a picture. A background only takes the line when the value names
+// an image: a file with a picture extension, a data: URI, or a URL.
 const ENUM_KEYS = {
   label: new Set(["above", "below", "left", "right"]),
+  "background-flip": new Set(["horizontal", "vertical", "both", "none"]),
+};
+
+const VALUE_SHAPES = {
+  background: /(?:\.(?:png|jpe?g|gif|svg|webp|avif|bmp|ico)(?:[?#].*)?$)|^data:image\/|^(?:https?:)?\/\//i,
+  "background-scale": /^\d*\.?\d+%?$/,
 };
 
 // Every key any scope might understand. A leading paragraph opening with one
@@ -166,6 +192,11 @@ function extractConfig(children, parentLayout) {
     }
     const words = ENUM_KEYS[candidate.key];
     if (words && !words.has(candidate.value.trim().toLowerCase())) {
+      rejected.push(candidate.node);
+      continue;
+    }
+    const shape = VALUE_SHAPES[candidate.key];
+    if (shape && !shape.test(candidate.value.trim())) {
       rejected.push(candidate.node);
       continue;
     }

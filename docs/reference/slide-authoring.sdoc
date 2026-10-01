@@ -165,6 +165,12 @@
                 \`quadrants:\` | \`scatter\` only. \`true\` draws dividers through the midpoint.
                 \`at:\` | On a \`scatter\` child: the position, as \`X Y\` percentages from the bottom-left.
                 \`label:\` | On a \`scatter\` child: \`above\`, \`below\`, \`left\` or \`right\`, the side the text sits on.
+                \`background:\` | An image behind the slide. See [Background Images](#backgrounds).
+                \`background-position:\` | Which part of the image is shown, and where it sits.
+                \`background-size:\` | \`cover\` (default), \`contain\`, \`fill\`, \`none\`, \`scale-down\`, or a pair such as \`auto 100%\`.
+                \`background-scale:\` | A multiplier on that size, as \`0.6\` or \`60%\`.
+                \`background-flip:\` | \`horizontal\`, \`vertical\` or \`both\`.
+                \`background-fade:\` | A gradient that blends the image into the slide.
             }
 
             A key is only configuration where it means something. \`config:\`,
@@ -543,6 +549,161 @@
         }
     }
 
+    # Background Images @backgrounds
+    {
+        \`background:\` puts an image behind a slide. It is a slide property
+        rather than a layout, so it works under every layout — a title, a
+        pipeline, a matrix — and the content goes on top untouched.
+
+        ```
+        # Where the field sits {
+            background: images/photo.png
+
+            background-position: right center
+
+            background-fade: linear angle=90 from=30% to=85% max=0.2
+        }
+        ```
+
+        Paths resolve against the \`.sdoc\`, exactly as inline images do, and
+        the picture is embedded in the built deck — so HTML, PDF and PPTX all
+        carry it and the file can be moved anywhere.
+
+        # Placing the image @background-placing
+        {
+            \`background-position:\` chooses **which part of the image is shown
+            and where it sits**, taking anything CSS \`object-position\` takes:
+            a pair of keywords like \`right center\`, or percentages like
+            \`20% 70%\`.
+
+            \`background-size:\` is how the image is fitted first — \`cover\`
+            (the default) fills the slide and crops, \`contain\` fits the whole
+            picture inside it, and \`none\` draws it at its natural size.
+            \`fill\` and \`scale-down\` are also accepted.
+
+            It also takes **a pair of sizes**, written as width then height,
+            for the shapes no keyword can say. \`auto 100%\` is the common one:
+            full height, natural width, aspect kept — which \`cover\` cannot do
+            because it crops, and \`contain\` cannot do because it fits a tall
+            image by its width instead. Either value may be \`auto\` to follow
+            the aspect ratio, and the other a percentage or a length.
+
+            A pair sizes the picture itself rather than fitting it into the
+            slide, so \`background-position\` then places the whole image: the
+            point that far across the picture is laid against the same point
+            across the slide, which is the rule CSS backgrounds have always
+            followed. \`background-scale:\` multiplies the pair, so \`auto 100%\`
+            at \`0.5\` is half height. Only a pair works this way — a lone value
+            stays a keyword, because a lone percentage would mean exactly what
+            \`background-scale:\` already means.
+
+            Those two together are the pan and crop. With \`cover\`, the image
+            is already cropped to the slide and \`background-position\` slides
+            that crop around: \`0% 0%\` reveals the top of the picture,
+            \`100% 100%\` the bottom. Add \`background-scale:\` above 1 to crop
+            tighter still and the position then picks the region — zoom and
+            pan, with no separate clipping key.
+
+            \`background-scale:\` multiplies whatever \`background-size:\`
+            decided, written as \`0.6\` or \`60%\`. The two compose rather than
+            compete, with one edge worth knowing: scaling below 1 under
+            \`cover\` means the image no longer covers, and the slide shows
+            through around it. Pair a scale with \`none\` when you want a
+            picture at a chosen size rather than a filled slide.
+
+            \`background-flip:\` mirrors the picture — \`horizontal\`,
+            \`vertical\` or \`both\`. The usual reason is to turn a subject so it
+            faces into the slide rather than off the edge.
+
+            **A flip does not move the image.** An image placed \`right center\`
+            and flipped horizontally stays on the right and simply faces the
+            other way, which is what an author means by "on the right, facing
+            left". Under the covers the placement is mirrored and the picture
+            reflected about the slide's centre, which lands it back where it
+            was asked for; you should never need to think about that, and
+            \`background-position\` always describes where the image ends up.
+
+            \`background-scale:\` is anchored wherever the image sits, so one
+            pinned to an edge stays pinned as it shrinks instead of drifting
+            towards the middle — with or without a flip.
+        }
+
+        # Fading it into the slide @background-fade
+        {
+            A photograph at full strength behind body copy is unreadable.
+            \`background-fade:\` takes alpha out of the image across a gradient,
+            so whatever the theme paints behind it shows through and the text
+            keeps its contrast. It is a mask on the image, not a wash of colour
+            over it, which is why one fade works on a white deck and a
+            near-black one without naming a colour anywhere.
+
+            The value starts with a shape and continues with \`name=value\`
+            settings in any order:
+
+            {[table]
+                Setting | Means
+                \`linear\` / \`radial\` | The shape. One of these opens the value.
+                \`angle=\` | \`linear\` only. The direction of the falloff in degrees — \`90\` runs left to right, \`180\` top to bottom.
+                \`at=\` | \`radial\` only. The centre of the circle, as \`70%,40%\`.
+                \`from=\` | Where the falloff begins: a distance along the angle, or a radius out from \`at\`.
+                \`to=\` | Where it finishes. \`radius=\` is the same thing under the name a circle wants.
+                \`min=\` and \`max=\` | The alpha at each end, \`0\` to \`1\`. Default \`0\` and \`1\` — solid to invisible.
+            }
+
+            ```
+            background-fade: linear angle=90 from=30% to=85% max=0.2
+
+            background-fade: radial at=80%,30% from=5% radius=55%
+            ```
+
+            Settings are named rather than positional because a run of bare
+            numbers cannot be read back: \`linear 90 30 85 0 0.2\` tells you
+            nothing six months later, and getting one of them out of order
+            changes the slide silently. A name this does not recognise is
+            ignored rather than shifting the meaning of the next one.
+
+            **The fade belongs to the slide, not to the picture.** Flipping or
+            scaling the image never moves the fade, so a gradient written to
+            protect text on the left keeps protecting the left however the
+            picture is turned.
+        }
+
+        # When a background is not configuration @background-prose
+        {
+            \`Background:\` is also an ordinary way to open a sentence, and a
+            deck really does contain lines like "Background: we started in
+            2019." Taking that as configuration would delete the sentence and
+            then try to load it as a picture.
+
+            So \`background:\` only takes the line when the value names an
+            image — a file with a picture extension, a \`data:\` URI, or a URL.
+            Anything else stays the prose it is. The same guard applies to
+            \`background-flip:\`, which only takes the line for one of its four
+            words.
+        }
+
+        # What the exports do @background-export
+        {
+            The image is emitted as a real \`<img>\`, which is what carries it
+            through the whole pipeline: it is embedded against the \`.sdoc\`
+            like any other picture, the geometry harvest reads it as an image,
+            and the PowerPoint export writes it as a picture shape at the
+            bottom of the slide's z-order. A CSS background would have survived
+            the HTML build and then vanished from the \`.pptx\`.
+
+            The fade is a CSS mask, so HTML and PDF show it exactly. **The
+            PowerPoint export carries the image but not the fade** — the
+            harvest reads boxes, text and images, and a mask is none of those,
+            so the picture arrives at full strength. On a slide whose text sits
+            over a faded photograph, check the \`.pptx\` before sending it.
+
+            A background is deliberately full-bleed, so the layout check counts
+            it as chrome rather than as content that has overflowed its
+            margins — the same treatment the slide footer gets. Without that,
+            every slide carrying one would be reported as overflowing.
+        }
+    }
+
     # Drilldown Slides @drilldown
     {
         A slide deck is normally a 1D spine: Right and Left move along it. A
@@ -851,6 +1012,37 @@
             rules as borders or filled elements, and keep axis labels
             horizontal — which is why the default theme sets the y-axis labels
             in a gutter beside the plot rather than turning them on their side.
+        }
+
+        # Uppercasing, and units @theme-units
+        {
+            **A theme may uppercase text. It must not uppercase units.**
+
+            SI symbols are case-sensitive. \`mW\` is a milliwatt and \`MW\` a
+            megawatt — a factor of a billion — and \`Mb\` and \`MB\` differ by
+            eight. A \`text-transform: uppercase\` on a kicker, a label or a
+            caption therefore corrupts any figure written into that line. It
+            does so silently, and nothing downstream can catch it: the document
+            is correct and only its rendering is wrong, so every parser, test
+            and gate sees a healthy deck.
+
+            The renderer defends against this on every theme's behalf. A unit
+            symbol following a number is wrapped in
+            \`<span class="sdoc-unit">\`, and the structural CSS gives that span
+            \`text-transform: none\`. So a kicker reading "measured at 40 mW"
+            sets as "MEASURED AT 40 mW", with the words folded and the unit
+            left alone. It holds through the PDF and the PowerPoint export too,
+            because the geometry harvest reads the computed style of each run
+            of text rather than the source.
+
+            A theme is free to restyle \`.sdoc-unit\`, but **never give it a
+            \`text-transform\`** — and where a rule of yours might inherit onto
+            it, restate \`text-transform: none\`.
+
+            Only symbols whose case carries meaning are marked. \`1 MW\` is left
+            alone because folding cannot hurt it, and ordinary words after a
+            number are left alone as well, so "9 am" and "Section 3 A" still
+            uppercase the way a designer expects.
         }
 
         # Built-in Default Theme @default-theme

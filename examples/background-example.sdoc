@@ -1,0 +1,268 @@
+# Slide Backgrounds @background-example
+{
+    @meta
+    {
+        type: slides
+
+        title: Slide Backgrounds
+
+        company: SDOC
+    }
+
+    @about
+    {
+        Every form of `background:` — placement, fit, and both fade shapes —
+        against neutral content. Build it:
+
+        `node tools/build-slides.js examples/background-example.sdoc`
+
+        The image is a generated gradient grid, so the white rules make the
+        placement and the falloff legible at a glance.
+    }
+
+    # Slide Backgrounds @cover
+    {
+        config: title
+
+        background: images/gradient-grid.png
+
+        background-fade: radial at=70%,40% from=10% radius=80% max=0.85
+
+        kicker: Background reference
+
+        A picture behind the words, faded so the words still win.
+    }
+
+    # The image, placed and unfaded @plain
+    {
+        background: images/gradient-grid.png
+
+        background-position: center
+
+        lede: `background:` alone covers the slide. No fade, so the grid runs edge to edge.
+
+        This is the starting point every other slide in the deck varies.
+    }
+
+    # A linear fade across the slide @linear
+    {
+        config: columns
+
+        background: images/gradient-grid.png
+
+        background-fade: linear angle=90 from=25% to=85%
+
+        kicker: Linear
+
+        lede: `linear angle=90 from=25% to=85%` — full strength to a quarter across, gone by 85%.
+
+        # angle @lin-1
+        {
+            The direction the falloff runs, in degrees. `90` is left to right;
+            `180` is top to bottom.
+        }
+
+        # from and to @lin-2
+        {
+            Where the falloff starts and finishes along that direction. The gap
+            between them is the softness of the edge.
+        }
+
+        # min and max @lin-3
+        {
+            The alpha at each end. Defaults are `0` and `1`, so the image runs
+            from solid to invisible.
+        }
+    }
+
+    # The same fade, turned and softened @linear-angle
+    {
+        config: stats
+
+        background: images/gradient-grid.png
+
+        background-fade: linear angle=200 from=0% to=60% max=0.7
+
+        kicker: Linear, angled
+
+        lede: `linear angle=200 from=0% to=60% max=0.7` — a shallower ceiling and a shorter ramp.
+
+        # 200 @la-1
+        {
+            degrees of angle
+        }
+
+        # 0.7 @la-2
+        {
+            alpha at full strength
+        }
+
+        # 60% @la-3
+        {
+            where it reaches nothing
+        }
+    }
+
+    # A circular fade around a point @radial
+    {
+        config: rows
+
+        background: images/gradient-grid.png
+
+        background-fade: radial at=80%,30% from=5% radius=55%
+
+        kicker: Radial
+
+        lede: `radial at=80%,30% from=5% radius=55%` — a circle of image, falling off to nothing.
+
+        # at @rad-1
+        {
+            value: 80%,30%
+
+            The centre of the circle, as a position on the slide.
+        }
+
+        # from @rad-2
+        {
+            value: 5%
+
+            The radius out to which the image stays at full strength.
+        }
+
+        # radius @rad-3
+        {
+            value: 55%
+
+            Where it has faded away completely. `to:` means the same thing.
+        }
+    }
+
+    # Placement and fit @placement
+    {
+        config: columns
+
+        background: images/gradient-grid.png
+
+        background-position: right bottom
+
+        background-size: contain
+
+        background-fade: linear angle=270 from=10% to=75% max=0.8
+
+        kicker: Placement
+
+        lede: `background-position: right bottom` with `background-size: contain`.
+
+        # background-position @pl-1
+        {
+            Anything `object-position` takes: a pair of keywords, or
+            percentages such as `70% 20%`.
+        }
+
+        # background-size @pl-2
+        {
+            `cover` by default. `contain`, `fill`, `none` and `scale-down` are
+            the alternatives.
+        }
+    }
+
+    # Flip and scale @flip-scale
+    {
+        config: columns
+
+        background: images/gradient-grid.png
+
+        background-position: right center
+
+        background-size: none
+
+        background-flip: horizontal
+
+        background-scale: 0.6
+
+        background-fade: linear angle=270 from=5% to=70% max=0.9
+
+        kicker: Flip and scale
+
+        lede: `background-flip: horizontal` with `background-scale: 0.6`, placed `right center`.
+
+        # The picture stays put @fs-1
+        {
+            A flip does not move the image. Placed against the right edge and
+            flipped, it stays on the right and faces the other way.
+            `background-position` always says where the image ends up.
+        }
+
+        # The fade stays put too @fs-2
+        {
+            The fade is applied to the slide rather than to the picture, so
+            flipping the image never drags the protected area away from the
+            words it was protecting.
+        }
+
+        # Scale shares the anchor @fs-3
+        {
+            `background-scale: 0.6` shrinks about the same point, so an image
+            pinned to an edge stays pinned instead of drifting to the middle.
+        }
+    }
+
+    # A size the keywords cannot say @sized
+    {
+        config: columns
+
+        background: images/gradient-grid.png
+
+        background-size: auto 100%
+
+        background-position: right center
+
+        background-fade: linear angle=270 from=0% to=85% max=0.9
+
+        kicker: Two-value size
+
+        lede: `background-size: auto 100%` — full height, natural width, aspect kept.
+
+        # Why a pair @sz-1
+        {
+            No fit keyword says this. `cover` scales until both edges are
+            covered and crops the rest; `contain` fits the whole picture
+            inside the slide, which for a tall image means fitting it by width.
+        }
+
+        # What it does @sz-2
+        {
+            A pair sizes the image's own box, so the picture is exactly that
+            size and `background-position` places it as a whole. Either value
+            may be `auto` to follow the aspect ratio.
+        }
+
+        # With the rest @sz-3
+        {
+            `background-scale:` multiplies the pair, so `auto 100%` at `0.5`
+            is half-height. Flips and fades behave exactly as they do with a
+            keyword.
+        }
+    }
+
+    # It works under every layout @any-layout
+    {
+        config: matrix
+
+        background: images/gradient-grid.png
+
+        background-fade: radial at=50%,50% from=0% radius=75% max=0.5
+
+        kicker: Common key
+
+        lede: `background:` is a common key, so it is not tied to a layout.
+
+        {[table]
+            Layout | Background
+            Title | Yes
+            Columns | Yes
+            Stats | Yes
+            Matrix | Yes
+        }
+    }
+}
