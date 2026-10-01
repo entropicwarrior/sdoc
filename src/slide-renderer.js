@@ -687,6 +687,21 @@ function renderSlides(nodes, options = {}) {
    overrides these two rules. */
 .slide-head, .slide-body { display: contents; }
 
+/* Scatter: the positioning mechanism, not the styling.  A point carries its
+   coordinates as left/bottom percentages, which mean nothing unless the plot
+   establishes a containing block and the point is taken out of flow — so those
+   two rules live here rather than in a theme, and a theme that has never heard
+   of this layout still puts the points where the author put them.
+
+   The height floor is the same kind of guarantee.  Every child of the plot is
+   absolutely positioned, so the plot has no content to derive a height from
+   and collapses to nothing, stacking every point on one line.  A theme sets
+   the real height; this only stops the layout from silently folding flat.
+   Everything visible — the dot, the rules, the type, where a label sits
+   relative to its point — belongs to the theme. */
+.scatter-plot { position: relative; min-height: 240px; }
+.scatter-point { position: absolute; }
+
 @media print {
   @page { size: ${pageW}in ${pageH}in; margin: 0; }
   body { overflow: visible; height: auto; }

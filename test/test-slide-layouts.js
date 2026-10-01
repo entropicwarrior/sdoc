@@ -517,6 +517,220 @@ test("bars accept an explicit fill and parse a value written with units", () => 
   assert(html.includes('<div class="bar-value">4,200 docs</div>'), "value rendered as written");
 });
 
+test("scatter places a point at the coordinates it is given", () => {
+  const html = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        # Alder {
+            at: 20 80
+        }
+    }
+}
+`);
+  // bottom, not top: the origin is the bottom-left, so y counts upward and the
+  // author writes the axis they named rather than the direction CSS measures.
+  assert(html.includes('style="left:20.00%;bottom:80.00%"'), "placed at 20 80 from the bottom-left");
+  assert(html.includes('<div class="scatter-dot"></div>'), "the dot is drawn");
+  assert(html.includes('<div class="scatter-label">Alder</div>'), "the heading is the label");
+});
+
+test("a scatter point written entirely in bold is marked, and loses the markers", () => {
+  const html = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        # Alder {
+            at: 10 10
+        }
+
+        # **Ourselves** {
+            at: 90 90
+        }
+    }
+}
+`);
+  assert(html.includes('class="scatter-point is-marked"'), "the bold point is marked");
+  assert((html.match(/class="scatter-point"/g) || []).length === 1, "the plain point is not");
+  assert(html.includes('<div class="scatter-label">Ourselves</div>'), "markers stripped from the label");
+  assert(!html.includes("**"), "no stray emphasis markers");
+});
+
+test("scatter names its axes and splits each pair of ends on a bar", () => {
+  const html = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        x: Cost to run
+
+        y: Work done
+
+        x-ends: cents | pounds
+
+        y-ends: one document | a whole corpus
+
+        # A {
+            at: 50 50
+        }
+    }
+}
+`);
+  assert(html.includes('<div class="scatter-axis-name">Cost to run</div>'), "x axis named");
+  assert(html.includes('<div class="scatter-axis-name">Work done</div>'), "y axis named");
+  assert(html.includes('scatter-x-low">cents</div>'), "x low end");
+  assert(html.includes('scatter-x-high">pounds</div>'), "x high end");
+  assert(html.includes('scatter-y-low">one document</div>'), "y low end");
+  assert(html.includes('scatter-y-high">a whole corpus</div>'), "y high end");
+  // The y gutter reads top to bottom, so the high end is emitted first.
+  assert(
+    html.indexOf("a whole corpus") < html.indexOf("one document"),
+    "the y gutter runs high to low"
+  );
+});
+
+test("an axis with no bar in its ends keeps them out rather than guessing", () => {
+  const html = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        x-ends: cents only
+
+        # A {
+            at: 50 50
+        }
+    }
+}
+`);
+  assert(!html.includes("scatter-axis-end"), "one part is not a pair");
+});
+
+test("scatter draws quadrant dividers only when asked", () => {
+  const withDividers = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        quadrants: true
+
+        # A {
+            at: 50 50
+        }
+    }
+}
+`);
+  const without = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        # A {
+            at: 50 50
+        }
+    }
+}
+`);
+  assert(withDividers.includes("scatter-divider-v"), "vertical divider");
+  assert(withDividers.includes("scatter-divider-h"), "horizontal divider");
+  assert(!without.includes("scatter-divider"), "none by default");
+});
+
+test("a scatter point clamps to the plot and centres when it has no position", () => {
+  const html = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        # Off the top {
+            at: 150 -40
+        }
+
+        # Unplaced {
+            Just a note.
+        }
+    }
+}
+`);
+  assert(html.includes('style="left:100.00%;bottom:0.00%"'), "clamped to the plot");
+  // Visible and obviously wrong beats silently missing.
+  assert(html.includes('style="left:50.00%;bottom:50.00%"'), "an unplaced point sits at the centre");
+});
+
+test("label: places a point's text, and a sentence after it stays content", () => {
+  const placed = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        # A {
+            at: 50 50
+
+            label: left
+        }
+    }
+}
+`);
+  assert(placed.includes('class="scatter-point label-left"'), "the side becomes a class");
+
+  const prose = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        # A {
+            at: 50 50
+
+            Label: the axis ends were wrong on the last draft.
+        }
+    }
+}
+`);
+  assert(!prose.includes("label-"), "prose is not a placement");
+  assert(prose.includes("the axis ends were wrong"), "the sentence survives");
+});
+
+test("at: means nothing outside a scatter and stays content there", () => {
+  const html = render(`
+# Deck {
+    # Slide {
+        config: columns
+
+        # A {
+            at: 20 80
+        }
+    }
+}
+`);
+  assert(html.includes("at: 20 80"), "the line renders as the prose it is");
+});
+
+test("a scatter point takes an accent and keeps content the heading did not carry", () => {
+  const html = render(`
+# Deck {
+    # Slide {
+        config: scatter
+
+        # A {
+            at: 50 50
+
+            accent: secondary
+
+            caption: on demand
+
+            A further note.
+        }
+    }
+}
+`);
+  assert(html.includes("accent-secondary"), "accent applied to the point");
+  assert(html.includes('<div class="scatter-caption">on demand</div>'), "caption rendered");
+  assert(html.includes('class="scatter-note"'), "remaining content kept");
+  assert(html.includes("A further note."), "nothing dropped");
+});
+
 test("split renders two panes and honours weights", () => {
   const html = render(`
 # Deck {

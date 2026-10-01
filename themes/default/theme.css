@@ -194,10 +194,10 @@ img {
 
 /* --- Structured layouts -------------------------------------------------
    The renderer can emit columns, stats, pipelines, matrices, rows, bars,
-   splits and stacks (see docs/reference/slide-authoring.sdoc). A theme is
-   free to restyle any of them, but a deck must never depend on one having
-   done so — these rules give every layout a plain, legible default in the
-   same idiom as the rest of this theme.
+   scatters, splits and stacks (see docs/reference/slide-authoring.sdoc). A
+   theme is free to restyle any of them, but a deck must never depend on one
+   having done so — these rules give every layout a plain, legible default in
+   the same idiom as the rest of this theme.
 
    --sdoc-accent is the slide's current accent. Layouts that distinguish one
    thing from another read it rather than naming a colour, so a theme can
@@ -236,7 +236,7 @@ img {
 
 /* The head and body wrappers stay display:contents in this theme, so the
    structured containers supply their own separation from the head. */
-.pipeline, .stats, .rows, .bars, .matrix, .split, .stack { margin-top: 1em; }
+.pipeline, .stats, .rows, .bars, .matrix, .scatter, .split, .stack { margin-top: 1em; }
 
 /* Head furniture */
 
@@ -460,6 +460,123 @@ img {
 .bar-note, .bar-note p { font-size: 0.85em; line-height: 1.35; color: var(--sdoc-muted); }
 .bar-note { margin-top: 6px; }
 :where(.bars .bar) { --sdoc-accent: var(--sdoc-accent-1); }
+
+/* scatter
+
+   A two-column, two-row frame: the y gutter beside the plot, the x axis under
+   it, and the corner left empty. The axis rules are borders on the plot, and
+   every axis label sets horizontally — nothing here is rotated and nothing is
+   drawn in SVG, because the PowerPoint export measures boxes and text and
+   would lose both.
+
+   A point is a zero-size anchor sitting at its coordinate. The dot and the
+   text are positioned against that anchor, so the dot lands exactly on the
+   author's numbers however long the label is, and `label:` only changes which
+   way the text is offset. */
+
+.scatter {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 12px 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.scatter-plot {
+  grid-column: 2;
+  grid-row: 1;
+  border-left: 2px solid var(--sdoc-rule-strong);
+  border-bottom: 2px solid var(--sdoc-rule-strong);
+}
+
+.scatter-axis { display: flex; font-size: 0.8em; color: var(--sdoc-muted); }
+.scatter-axis-y {
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  text-align: right;
+  max-width: 180px;
+}
+.scatter-axis-x {
+  grid-column: 2;
+  grid-row: 2;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+.scatter-axis-name {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #111;
+}
+.scatter-axis-y .scatter-axis-name { padding: 8px 0; }
+
+/* Quadrant dividers, when the slide asks for them. */
+.scatter-divider { position: absolute; background: var(--sdoc-rule); }
+.scatter-divider-v { left: 50%; top: 0; bottom: 0; width: 1px; }
+.scatter-divider-h { top: 50%; left: 0; right: 0; height: 1px; }
+
+/* The anchor itself has no size: it is the coordinate. */
+.scatter-point { width: 0; height: 0; }
+
+/* Defaults, so an `accent:` an author wrote still wins: unmarked points recede
+   and the marked one takes the first accent. Source order decides between
+   these two, which is why the marked rule comes second. */
+:where(.scatter-point) { --sdoc-accent: var(--sdoc-accent-muted); }
+:where(.scatter-point.is-marked) { --sdoc-accent: var(--sdoc-accent-1); }
+
+.scatter-dot {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--sdoc-accent);
+  transform: translate(-50%, 50%);
+}
+.scatter-point.is-marked .scatter-dot {
+  width: 20px;
+  height: 20px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sdoc-accent) 20%, transparent);
+}
+
+.scatter-text {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: max-content;
+  max-width: 200px;
+  /* Default: under the dot, centred on it. */
+  transform: translate(-50%, 100%);
+  padding-top: 14px;
+}
+.scatter-label { font-size: 0.9em; line-height: 1.2; color: #111; }
+.scatter-point.is-marked .scatter-label { font-weight: 700; color: var(--sdoc-accent); }
+.scatter-caption, .scatter-note, .scatter-note p {
+  font-size: 0.75em;
+  line-height: 1.25;
+  color: var(--sdoc-muted);
+}
+
+/* `label:` moves the text off the dot when two points crowd each other. */
+.scatter-point.label-above .scatter-text {
+  transform: translate(-50%, 0);
+  padding: 0 0 14px;
+}
+.scatter-point.label-left .scatter-text {
+  transform: translate(-100%, 50%);
+  padding: 0 14px 0 0;
+  text-align: right;
+}
+.scatter-point.label-right .scatter-text {
+  transform: translate(0, 50%);
+  padding: 0 0 0 14px;
+}
 
 /* split and stack */
 

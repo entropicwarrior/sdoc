@@ -43,6 +43,7 @@ const LAYOUT_KEYS = {
   matrix: ["highlight"],
   rows: ["numbered", "variant"],
   bars: [],
+  scatter: ["x", "y", "x-ends", "y-ends", "quadrants"],
   split: ["weights"],
   stack: ["rule"],
 };
@@ -52,6 +53,7 @@ const CELL_KEYS = {
   "two-column": ["caption"],
   rows: ["value"],
   bars: ["value", "fill"],
+  scatter: ["at", "caption", "label"],
 };
 
 // Keys whose value is a boolean. Every other key renders the text it is given,
@@ -59,11 +61,18 @@ const CELL_KEYS = {
 // anything it does not recognise, which would make an opening sentence
 // disappear. These therefore only take the line when the value is a word they
 // actually understand — "Optional: a second seat costs nothing" is prose.
-const BOOLEAN_KEYS = new Set(["optional", "numbered", "rule"]);
+const BOOLEAN_KEYS = new Set(["optional", "numbered", "rule", "quadrants"]);
 const BOOLEAN_WORDS = new Set([
   "true", "yes", "on", "1",
   "false", "no", "off", "0",
 ]);
+
+// The same guard, generalised: a key whose value must be one of a fixed set of
+// words. `label:` on a scatter point names a side, so "Label: the legend is
+// wrong" is prose and must stay prose rather than becoming a dead class.
+const ENUM_KEYS = {
+  label: new Set(["above", "below", "left", "right"]),
+};
 
 // Every key any scope might understand. A leading paragraph opening with one
 // of these is a configuration *candidate*; whether it is kept depends on the
@@ -152,6 +161,11 @@ function extractConfig(children, parentLayout) {
       BOOLEAN_KEYS.has(candidate.key) &&
       !BOOLEAN_WORDS.has(candidate.value.trim().toLowerCase())
     ) {
+      rejected.push(candidate.node);
+      continue;
+    }
+    const words = ENUM_KEYS[candidate.key];
+    if (words && !words.has(candidate.value.trim().toLowerCase())) {
       rejected.push(candidate.node);
       continue;
     }
@@ -433,6 +447,120 @@ function buildBars({ config, contentNodes }, ctx) {
   return preamble ? preamble + "\n" + body : body;
 }
 
+// scatter — labelled points placed on two named axes: the positioning chart.
+//   x: / y:            the axis names
+//   x-ends: / y-ends:  the two ends of an axis, low | high
+//   quadrants: true    dividers through the midpoint
+// Each child scope is a point: its heading is the label, `at: X Y` its
+// position, `caption:` a line under the label, and `label:` the side the text
+// sits on when two points would otherwise collide.
+//
+// A point whose heading is entirely bold is *marked*, the same rule a pipeline
+// step follows and for the same reason: on a positioning chart, which point is
+// yours is the argument the slide makes, so it lives in the source as a mark
+// rather than as a colour the author picks. Restyling the deck cannot lose it.
+//
+// Coordinates are percentages of the plot area with the origin at the
+// bottom-left, so y counts *upward* — the author writes the axis they named,
+// not the direction CSS happens to measure in. The point is emitted with
+// `bottom:`, so no arithmetic stands between the source and the box.
+//
+// Everything here is a div. The geometry harvest reads boxes, text and images,
+// so an axis drawn in SVG would export to PowerPoint as nothing at all, and
+// rotated text would export as horizontal text in a tall narrow box. The axis
+// rules are therefore borders and the y-axis labels sit horizontally in a
+// gutter beside the plot.
+function axisEnds(value) {
+  if (!value) return null;
+  const parts = String(value).split("|").map((p) => p.trim());
+  if (parts.length < 2) return null;
+  return { low: parts[0], high: parts[1] };
+}
+
+// `at: 20 80` — two numbers, separated the way `weights:` separates its own.
+// A point with nothing usable sits at the centre: an author can see and move a
+// point in the middle of the plot, where one silently dropped is just missing.
+function parsePosition(value) {
+  const parts = String(value || "")
+    .split(/[\s,/]+/)
+    .map((p) => parseFloat(p))
+    .filter((n) => isFinite(n));
+  const clamp = (n) => Math.max(0, Math.min(100, n));
+  return {
+    x: parts.length > 0 ? clamp(parts[0]) : 50,
+    y: parts.length > 1 ? clamp(parts[1]) : 50,
+  };
+}
+
+function buildScatter({ config, contentNodes }, ctx) {
+  const cells = cellsOf(contentNodes, "scatter");
+  const preamble = ctx.renderChildren(nonCellsOf(contentNodes));
+
+  const points = cells
+    .map((cell) => {
+      const { x, y } = parsePosition(cell.config.at);
+      const title = cell.title || "";
+      const marked = markedText(title);
+      const placement = slug(cell.config.label);
+
+      const classes = ["scatter-point"];
+      if (marked !== null) classes.push("is-marked");
+      if (placement) classes.push(`label-${placement}`);
+      const accent = accentClass(cell.config.accent).trim();
+      if (accent) classes.push(accent);
+
+      const text = [];
+      if (title) {
+        text.push(
+          `<div class="scatter-label">${ctx.renderInline(marked === null ? title : marked)}</div>`
+        );
+      }
+      if (cell.config.caption) {
+        text.push(`<div class="scatter-caption">${ctx.renderInline(cell.config.caption)}</div>`);
+      }
+      // Content other than the heading and the caption (a note on the point)
+      // follows inside the same text block, so nothing an author wrote is lost.
+      const rest = ctx.renderChildren(cell.contentNodes);
+      if (rest) text.push(`<div class="scatter-note">${rest}</div>`);
+
+      return (
+        `<div class="${classes.join(" ")}" style="left:${x.toFixed(2)}%;bottom:${y.toFixed(2)}%">` +
+        `<div class="scatter-dot"></div>` +
+        (text.length ? `<div class="scatter-text">${text.join("")}</div>` : "") +
+        `</div>`
+      );
+    })
+    .join("\n");
+
+  const dividers = truthy(config.quadrants)
+    ? `<div class="scatter-divider scatter-divider-v" aria-hidden="true"></div>` +
+      `<div class="scatter-divider scatter-divider-h" aria-hidden="true"></div>`
+    : "";
+
+  const xEnds = axisEnds(config["x-ends"]);
+  const yEnds = axisEnds(config["y-ends"]);
+
+  // The y gutter reads top to bottom, so the high end comes first.
+  const yParts = [];
+  if (yEnds) yParts.push(`<div class="scatter-axis-end scatter-y-high">${ctx.renderInline(yEnds.high)}</div>`);
+  if (config.y) yParts.push(`<div class="scatter-axis-name">${ctx.renderInline(config.y)}</div>`);
+  if (yEnds) yParts.push(`<div class="scatter-axis-end scatter-y-low">${ctx.renderInline(yEnds.low)}</div>`);
+
+  const xParts = [];
+  if (xEnds) xParts.push(`<div class="scatter-axis-end scatter-x-low">${ctx.renderInline(xEnds.low)}</div>`);
+  if (config.x) xParts.push(`<div class="scatter-axis-name">${ctx.renderInline(config.x)}</div>`);
+  if (xEnds) xParts.push(`<div class="scatter-axis-end scatter-x-high">${ctx.renderInline(xEnds.high)}</div>`);
+
+  const body =
+    `<div class="scatter" data-count="${cells.length}">\n` +
+    `<div class="scatter-axis scatter-axis-y">${yParts.join("")}</div>\n` +
+    `<div class="scatter-plot">${dividers}\n${points}\n</div>\n` +
+    `<div class="scatter-axis scatter-axis-x">${xParts.join("")}</div>\n` +
+    `</div>`;
+
+  return preamble ? preamble + "\n" + body : body;
+}
+
 // split — two panes side by side, each a block with its own layout.
 //   weights: 55 45   the ratio between them (default 50 50)
 function buildSplit({ config, contentNodes }, ctx) {
@@ -478,6 +606,7 @@ const BUILDERS = {
   matrix: buildMatrix,
   rows: buildRows,
   bars: buildBars,
+  scatter: buildScatter,
   split: buildSplit,
   stack: buildStack,
 };
