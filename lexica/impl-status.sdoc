@@ -86,6 +86,7 @@
             Both are now documented under [Writing against the layouts](../docs/reference/slide-authoring.sdoc#theme-classes).
 
             - [ ] Numeric axes with a stated range, ticks and gridlines are out of scope and would be a separate layout
+        }
 
         # Case-Sensitive Units Under an Uppercasing Theme @units-wip
         {
@@ -180,7 +181,7 @@
 
             - [ ] Up-projection is a report, not an edit: applying a text change back into the \`.sdoc\` is still the agent's job, guided by \`pulled/changes.json\`
             - [ ] A slide whose scope has no \`@id\` exports as \`slide-<n>\`, and an edit to it cannot be traced back with confidence
-            - [ ] Design systems (phase 5) not started; \`deck.json\` ships an empty \`designSystems\` list
+            - [ ] A theme is not installed as a design system, so the editor's colour and text menus show bare hex values rather than the theme's named accents; \`deck.json\` ships an empty \`designSystems\` list
             - [ ] \`background-flip:\` cannot be expressed: the subset's \`transform\` takes a scale between 0.5 and 2, so there is no way to mirror an image
             - [ ] Painted \`::before\` and \`::after\` are reported but not materialised; exporting one would mean synthesising a box the theme never emitted
         }
@@ -192,6 +193,7 @@
 
         # Parser Improvements
         {
+            - [ ] A brace-delimited scope left unclosed is auto-closed at EOF with no error, so a missing \`}\` yields a *different tree* and the document still reports as clean. Found in this file: one missing brace nested three sections inside a fourth and moved \`@next-up\` under \`@in-progress\`, and the parser, the test suite and the binding's "every document parses cleanly" check all passed it. Minimal case: \`# A @a { # B @b { x  # C @c { y } }\` parses \`@c\` as a child of \`@b\`. This is the failure [R1](requirements.sdoc#r1) exists to prevent — a scope that opened with \`{\` is not braceless and should be an error at EOF, unlike a genuinely braceless scope
             - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See [C1](requirements.sdoc#c1).
             - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See [C2](requirements.sdoc#c2).
         }
