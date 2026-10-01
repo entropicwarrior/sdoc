@@ -207,7 +207,11 @@ const MEASURE_SCRIPT = `
     for (var i = 0; i < slide.children.length; i++) {
       var child = slide.children[i];
       if (child.classList && child.classList.contains("notes")) continue;
-      inChrome = !!(child.classList && child.classList.contains("slide-footer"));
+      // .slide-bg is full-bleed by design, so it is chrome for the same reason
+      // the footer is: it must still be exported, but counting it towards the
+      // content extent would report an overflow on every slide that has one.
+      inChrome = !!(child.classList && (child.classList.contains("slide-footer") ||
+                                        child.classList.contains("slide-bg")));
       visit(child);
     }
     inChrome = false;

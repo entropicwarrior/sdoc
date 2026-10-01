@@ -33,6 +33,14 @@ const COMMON_KEYS = new Set([
   "accent",
   "status",
   "optional",
+  // A background is slide furniture, like a kicker or a footnote: it belongs
+  // to the slide rather than to the shape its content is arranged in, so it
+  // lives here and works under every layout instead of being listed against a
+  // handful of them.
+  "background",
+  "background-position",
+  "background-size",
+  "background-fade",
 ]);
 
 const LAYOUT_KEYS = {

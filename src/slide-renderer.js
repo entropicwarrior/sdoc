@@ -322,6 +322,125 @@ function isOptionalSlide(scope) {
 }
 
 // ---------------------------------------------------------------------------
+// Slide backgrounds
+//
+// `background:` names an image; the companions place it and blend it into the
+// slide. The image is emitted as a real <img>, never as a CSS
+// background-image, and that is forced by the pipeline rather than chosen for
+// taste: inlineDeckImages() resolves and embeds `<img src>` against the .sdoc,
+// the geometry harvest reads an <img> as an image atom, and slide-pptx turns
+// that atom into a picture shape. A CSS background would get none of the
+// three — it would survive the HTML build and then vanish from the .pptx.
+//
+// The blend is a *mask* on the image rather than a scrim painted over it. A
+// scrim has to know the colour it is fading to, which would put the theme's
+// ground colour in the renderer; a mask takes alpha out of the image and lets
+// whatever the theme paints behind show through. One mechanism works on a
+// white deck and a near-black one, and text stays legible on both.
+// ---------------------------------------------------------------------------
+
+const FIT_WORDS = new Set(["cover", "contain", "fill", "none", "scale-down"]);
+
+function fadeNumber(raw, fallback) {
+  if (raw === undefined) return fallback;
+  const n = parseFloat(String(raw).replace("%", ""));
+  return isFinite(n) ? n : fallback;
+}
+
+// `background-fade: linear angle=100 from=30% to=85%`
+// `background-fade: radial at=70%,40% from=20% radius=70%`
+//
+// The shape is the first bare word and everything after it is `name=value`, so
+// order never matters and a name this does not know is ignored rather than
+// shifting the meaning of the one after it — the failure mode of a purely
+// positional value like `linear 100 30 85 0 1`, which nobody can read back.
+//
+// Four knobs mean the same thing in both shapes: `from` and `to` are where the
+// falloff starts and finishes, `min` and `max` the alpha at each end. For a
+// linear fade those run along `angle`; for a radial one they are radii out
+// from `at`. `radius` is accepted as the name a circle wants for `to`.
+function parseFade(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+
+  const tokens = text.split(/\s+/);
+  const shape = tokens[0].toLowerCase();
+  if (shape !== "linear" && shape !== "radial") return null;
+
+  const params = {};
+  for (const token of tokens.slice(1)) {
+    const eq = token.indexOf("=");
+    if (eq < 1) continue;
+    params[token.slice(0, eq).toLowerCase()] = token.slice(eq + 1);
+  }
+
+  const alpha = (n) => Math.max(0, Math.min(1, n));
+  const fade = {
+    shape,
+    from: fadeNumber(params.from, 0),
+    to: fadeNumber(params.radius !== undefined ? params.radius : params.to, 100),
+    min: alpha(fadeNumber(params.min, 0)),
+    max: alpha(fadeNumber(params.max, 1)),
+  };
+
+  if (shape === "linear") {
+    fade.angle = fadeNumber(params.angle, 90);
+  } else {
+    const at = String(params.at === undefined ? "50%,50%" : params.at).split(",");
+    fade.x = fadeNumber(at[0], 50);
+    fade.y = fadeNumber(at[1], 50);
+  }
+  return fade;
+}
+
+// Black is arbitrary: a mask reads the alpha channel, so only the opacity of
+// each stop matters and the colour never shows.
+function fadeMask(fade) {
+  const stops =
+    `rgba(0,0,0,${fade.max}) ${fade.from}%, rgba(0,0,0,${fade.min}) ${fade.to}%`;
+  return fade.shape === "linear"
+    ? `linear-gradient(${fade.angle}deg, ${stops})`
+    : `radial-gradient(circle at ${fade.x}% ${fade.y}%, ${stops})`;
+}
+
+// Only what a position can legitimately contain. Everything else in the style
+// attribute is a number this file computed, so this is the one author-supplied
+// string that reaches CSS — and a value carrying a `;` or a quote would
+// otherwise add declarations of its own.
+function cssPosition(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  return /^[A-Za-z0-9%.\s-]+$/.test(text) ? text : fallback;
+}
+
+function slideBackground(config) {
+  const src = String(config.background || "").trim();
+  if (!src) return "";
+
+  const fit = String(config["background-size"] || "").trim().toLowerCase();
+  const styles = [
+    `object-position:${cssPosition(config["background-position"], "center")}`,
+    `object-fit:${FIT_WORDS.has(fit) ? fit : "cover"}`,
+  ];
+
+  const fade = parseFade(config["background-fade"]);
+  if (fade) {
+    const mask = fadeMask(fade);
+    // Chrome still wants the prefix for mask-image on some versions, and
+    // headless Chrome is what builds the PDF.
+    styles.push(`-webkit-mask-image:${mask}`, `mask-image:${mask}`);
+  }
+
+  // alt is empty and the wrapper is aria-hidden: this is decoration, and a
+  // screen reader announcing a filename over every slide is worse than silence.
+  return (
+    `<div class="slide-bg" aria-hidden="true">` +
+    `<img src="${escapeAttr(src)}" alt="" style="${styles.join(";")}" />` +
+    `</div>\n`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Slide rendering
 // ---------------------------------------------------------------------------
 
@@ -413,7 +532,11 @@ function renderSlide(scope, slideIndex, overlayHtml, position) {
   // screen mode the wrapper is display:contents (invisible to layout); in
   // print mode it becomes a real block that the beforeprint handler can
   // measure and scale.
-  return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n<div class="slide-content-scale">\n${title}\n${bodyHtml}\n</div>${notesHtml}${overlay}\n</div>`;
+  // First child, so the harvest emits its atom before any content and the
+  // picture lands at the bottom of the z-order in the exported .pptx.
+  const bgHtml = slideBackground(config);
+
+  return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n${bgHtml}<div class="slide-content-scale">\n${title}\n${bodyHtml}\n</div>${notesHtml}${overlay}\n</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -606,7 +729,26 @@ function renderSlides(nodes, options = {}) {
              scale(var(--sdoc-slide-scale), var(--sdoc-slide-scale-y));
   transform-origin: center center;
   overflow: hidden;
+  /* A background image sits at z-index -1 so it paints above the slide's own
+     background and below every bit of content, without the content needing a
+     z-index of its own — which matters, because .slide-head and .slide-body
+     are display:contents and have no box to carry one. That only works while
+     the slide is a stacking context. On screen the transform above makes one,
+     but print removes the transform, so this states it outright and the image
+     stays behind the text in the PDF instead of dropping out of sight. */
+  isolation: isolate;
 }
+/* Slide background image. Full-bleed by design: it is the one thing on a slide
+   that is supposed to reach the edges, which is also why the geometry harvest
+   counts it as chrome rather than as content that has overflowed. */
+.slide-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.slide-bg img { display: block; width: 100%; height: 100%; }
 .slide-footer {
   position: absolute; bottom: 20px; left: 32px; right: 32px;
   display: flex; align-items: baseline;
