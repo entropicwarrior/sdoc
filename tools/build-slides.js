@@ -3,7 +3,7 @@
 //
 // Usage:
 //   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme]
-//                              [--pdf] [--pptx] [--check] [--fit MODE] [--dark]
+//                              [--pdf] [--pptx] [--artifact] [--check] [--fit MODE] [--dark]
 //                              [--with-optional | --no-optional]
 //
 // --fit controls what happens when the window is not the slide's shape:
@@ -29,7 +29,9 @@ const { loadTheme } = require("../src/theme");
 function usage() {
   console.error(
     "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
-    "                    [--pdf] [--pptx] [--check] [--fit contain|cover|stretch] [--dark]\n" +
+    "                    [--pdf] [--pptx] [--artifact] [--artifact-keep-small-text]\n" +
+    "                    [--check]\n" +
+    "                    [--fit contain|cover|stretch] [--dark]\n" +
     "                    [--with-optional | --no-optional]"
   );
   process.exit(1);
@@ -42,6 +44,8 @@ async function main() {
   let themePath = null;
   let pdfMode = false;
   let pptxMode = false;
+  let artifactMode = false;
+  let keepSmallText = false;
   let checkMode = false;
   let darkMode = false;
   // null means "whatever this output format defaults to"; the flags force it.
@@ -57,6 +61,10 @@ async function main() {
       pdfMode = true;
     } else if (args[i] === "--pptx" || args[i] === "--slides") {
       pptxMode = true;
+    } else if (args[i] === "--artifact") {
+      artifactMode = true;
+    } else if (args[i] === "--artifact-keep-small-text") {
+      keepSmallText = true;
     } else if (args[i] === "--check") {
       checkMode = true;
     } else if (args[i] === "--fit" && i + 1 < args.length) {
@@ -122,7 +130,7 @@ async function main() {
   // each; --with-optional and --no-optional override the default in any
   // format. --check measures whatever was rendered, so it reports on the
   // optional slides exactly when they are in the build.
-  const emitHtml = !pdfMode && !pptxMode;
+  const emitHtml = !pdfMode && !pptxMode && !artifactMode;
   const includeOptional = optional === null ? emitHtml : optional;
 
   const { nodes, meta } = extractMeta(parsed.nodes);
@@ -223,12 +231,72 @@ async function main() {
         "or drag the file into slides.google.com — Drive converts it to a native deck."
       );
     }
+    if (artifactMode) {
+      const { harvestArtifact, buildArtifact, writeArtifact, readPreviousManifest } =
+        require("../src/slide-artifact");
+      const outDir = outputPath && !pdfMode && !pptxMode
+        ? path.resolve(outputPath)
+        : resolvedInput.replace(/\.sdoc$/i, "") + ".artifact";
+
+      const harvest = await harvestArtifact(tmpHtml);
+      const built = buildArtifact(harvest, {
+        title: meta.properties?.title || path.basename(resolvedInput, ".sdoc"),
+        theme: themeConfig,
+        baseDir: path.dirname(resolvedInput),
+        sdocVersion: require("../package.json").version,
+        source: { path: path.basename(resolvedInput), theme: themePath || "default" },
+        previousManifest: readPreviousManifest(outDir),
+        minFontSize: !keepSmallText,
+      });
+
+      // Nothing checks these files once they are published: the page drops
+      // what it cannot read and heals the rest in silence. So an error here
+      // stops the export rather than shipping a deck that arrives wrong.
+      if (built.errors.length) {
+        console.error(`Artifact export: ${built.errors.length} error(s), nothing written.`);
+        for (const e of built.errors.slice(0, 40)) {
+          console.error(`  ${e.slide || ""}${e.element ? " <" + e.element + ">" : ""}: ${e.message}`);
+        }
+        if (built.errors.length > 40) console.error(`  … and ${built.errors.length - 40} more`);
+        process.exit(1);
+      }
+
+      const { missing } = writeArtifact(outDir, built, { baseDir: path.dirname(resolvedInput) });
+      console.log(`Artifact: ${outDir} (${built.manifest.slides.length} slides)`);
+      if (built.manifest.scale !== 1) {
+        console.log(
+          `  scaled ${built.manifest.scale}x from the theme's ` +
+          `${built.manifest.designBox.w}x${built.manifest.designBox.h} box onto the fixed 1920x1080 canvas`
+        );
+      }
+      for (const w of dedupe(built.warnings).slice(0, 25)) {
+        console.error(`  warning: ${w.slide ? w.slide + ": " : ""}${w.message}`);
+      }
+      const extra = dedupe(built.warnings).length - 25;
+      if (extra > 0) console.error(`  … and ${extra} more warnings`);
+      for (const m of missing) {
+        console.error(`  warning: asset ${m.name} could not be copied (${m.reason})`);
+      }
+    }
   } catch (err) {
     console.error(err.message);
     process.exit(1);
   } finally {
     try { fs.unlinkSync(tmpHtml); } catch {}
   }
+}
+
+// The same complaint about forty elements is one complaint.
+function dedupe(warnings) {
+  const seen = new Map();
+  for (const w of warnings) {
+    const key = `${w.slide}|${w.message}`;
+    if (!seen.has(key)) seen.set(key, { ...w, count: 1 });
+    else seen.get(key).count++;
+  }
+  return [...seen.values()].map((w) =>
+    w.count > 1 ? { ...w, message: `${w.message} (x${w.count})` } : w
+  );
 }
 
 // Reports slides whose content has run out of the space the theme reserved.

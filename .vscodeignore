@@ -8,6 +8,7 @@ AGENTS.md
 docs/**
 !docs/reference/sdoc-authoring.sdoc
 examples/**
+skills/**
 lexica/**
 test/**
 tools/**

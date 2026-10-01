@@ -357,7 +357,18 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
 // Measures a built deck. `htmlPath` must be a file the browser can open with
 // its relative assets intact, so the caller writes the temp copy beside the
 // original rather than in the system temp directory.
-async function harvestGeometry(htmlPath, options = {}) {
+function harvestGeometry(htmlPath, options = {}) {
+  return runHarvest(htmlPath, MEASURE_SCRIPT, "sdoc-geometry", options);
+}
+
+// The browser half of any harvest: inject a measuring script, open the page in
+// headless Chrome, and read back what it left in a <script type="application/json">.
+//
+// Parameterised because the artifact export runs a second, different script
+// over the same page (src/slide-artifact.js) and wants none of this again: the
+// temp copy beside the original, the sentinel that proves the page finished,
+// the entity-unescaping --dump-dom forces, and the widening retry window.
+async function runHarvest(htmlPath, script, elementId, options = {}) {
   const chrome = findChrome();
   if (!chrome) {
     throw new Error(
@@ -367,11 +378,11 @@ async function harvestGeometry(htmlPath, options = {}) {
 
   const resolved = path.resolve(htmlPath);
   const html = fs.readFileSync(resolved, "utf-8");
-  const injected = html.replace(/<\/body>/i, `<script>${MEASURE_SCRIPT}</script>\n</body>`);
+  const injected = html.replace(/<\/body>/i, `<script>${script}</script>\n</body>`);
 
   const dir = path.dirname(resolved);
   const stamp = Date.now();
-  const tmpHtml = path.join(dir, `.sdoc-geometry-${stamp}.html`);
+  const tmpHtml = path.join(dir, `.${elementId}-${stamp}.html`);
   fs.writeFileSync(tmpHtml, injected, "utf-8");
 
   // A browser measuring a page is not a fast, reliable operation when the
@@ -386,7 +397,7 @@ async function harvestGeometry(htmlPath, options = {}) {
 
   try {
     for (let attempt = 1; attempt <= attempts; attempt++) {
-      const tmpOut = path.join(os.tmpdir(), `sdoc-geometry-${stamp}-${attempt}.dom`);
+      const tmpOut = path.join(os.tmpdir(), `${elementId}-${stamp}-${attempt}.dom`);
       try {
         // Give the previous attempt's Chrome time to exit and release the
         // machine before competing with it.
@@ -394,7 +405,7 @@ async function harvestGeometry(htmlPath, options = {}) {
         const dom = await dumpDom(chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt);
         const match = dom.match(
           new RegExp(
-            '<script type="application/json" id="sdoc-geometry">([\\s\\S]*?)\\n/\\*' + SENTINEL + '\\*/'
+            '<script type="application/json" id="' + elementId + '">([\\s\\S]*?)\\n/\\*' + SENTINEL + '\\*/'
           )
         );
         if (!match) {
@@ -476,4 +487,4 @@ function overflowReport(geometry, options = {}) {
   return findings;
 }
 
-module.exports = { harvestGeometry, overflowReport, MEASURE_SCRIPT };
+module.exports = { harvestGeometry, runHarvest, overflowReport, MEASURE_SCRIPT, SENTINEL };
