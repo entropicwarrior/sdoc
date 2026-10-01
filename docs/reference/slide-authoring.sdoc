@@ -159,7 +159,12 @@
                 \`rule:\` | \`stack\` only. \`true\` draws a hairline between blocks.
                 \`value:\` | On a \`rows\` or \`bars\` child: the right-hand figure.
                 \`fill:\` | On a \`bars\` child: the bar length as a percentage, overriding the automatic scale.
-                \`caption:\` | On a \`columns\` child: a line set under the column.
+                \`caption:\` | On a \`columns\` or \`scatter\` child: a line set under the label.
+                \`x:\` and \`y:\` | \`scatter\` only. The axis names.
+                \`x-ends:\` and \`y-ends:\` | \`scatter\` only. The two ends of an axis, low and high, separated by \`\|\`.
+                \`quadrants:\` | \`scatter\` only. \`true\` draws dividers through the midpoint.
+                \`at:\` | On a \`scatter\` child: the position, as \`X Y\` percentages from the bottom-left.
+                \`label:\` | On a \`scatter\` child: \`above\`, \`below\`, \`left\` or \`right\`, the side the text sits on.
             }
 
             A key is only configuration where it means something. \`config:\`,
@@ -246,7 +251,7 @@
                 \`[text](url)\` | \`<a>\`
                 \`![alt](src)\` / \`![alt](src =50% center)\` | \`<img>\` (with optional width/alignment)
                 Nested scope | \`<section>\` within the slide
-                Child scope, structured layout | One cell: a column, a stat, a pipeline row, a bar, a pane
+                Child scope, structured layout | One cell: a column, a stat, a pipeline row, a bar, a plotted point, a pane
                 \`kicker:\` | \`<div class="kicker">\` above the title
                 \`lede:\` | \`<p class="lede">\` under the title
                 \`footnote:\` | \`<div class="footnote">\` under the body
@@ -347,6 +352,7 @@
             \`matrix\` | — (takes a table) | A competitive comparison, with per-column accents and one row picked out.
             \`rows\` | Label, body, value rows | A layered model, a timeline, a ledger.
             \`bars\` | Labelled quantities | An allocation of money, effort or time.
+            \`scatter\` | Labelled points on two axes | A positioning chart: where the field sits and where you sit in it.
             \`split\` | Two panes | Prose beside a figure, an argument beside its schedule.
             \`stack\` | Blocks, one above another | A slide carrying two layouts, such as a diagram above columns.
         }
@@ -420,6 +426,75 @@
 
             \`arrow:\` sets the glyph drawn between steps, if the default arrow
             is wrong for the diagram.
+        }
+
+        # Scatter, and placing a point @layout-scatter
+        {
+            A \`scatter\` slide is a positioning chart: labelled points on two
+            named axes. Each child scope is a point — its heading is the label,
+            \`at:\` its position and \`caption:\` a line beneath.
+
+            ```
+            # Where the work sits {
+                config: scatter
+
+                x: Cost to run
+
+                y: Work done per request
+
+                x-ends: cents | pounds
+
+                y-ends: one document | a whole corpus
+
+                quadrants: true
+
+                # Alder {
+                    at: 18 72
+
+                    caption: batch, overnight
+                }
+
+                # **This project** {
+                    at: 30 88
+
+                    caption: incremental, on write
+                }
+            }
+            ```
+
+            **A point written entirely in bold is marked**, the same rule a
+            pipeline step follows and for the same reason. On a positioning
+            chart, which point is yours is the argument the slide makes, so it
+            lives in the source as a mark rather than as a colour you chose.
+            Restyle the deck and the argument survives. Set \`accent:\` on a
+            point as well if you want to name its role; an explicit accent
+            always beats the theme's default.
+
+            \`at:\` is two numbers, \`X Y\`, as percentages of the plot area
+            measured **from the bottom-left** — so \`at: 0 0\` is the bottom
+            left corner and a high \`y\` sits high on the slide, the way the axis
+            you named reads. Values outside 0–100 are clamped to the plot, and
+            a point with no \`at:\` sits at the centre, where you can see it and
+            move it.
+
+            The axes are qualitative. There are no ticks, no gridlines and no
+            stated range: \`at:\` positions a point in the plot rather than
+            plotting a measurement, which is what a positioning chart needs. A
+            chart with real numeric axes is a different job and this layout
+            does not pretend to do it.
+
+            \`x-ends:\` and \`y-ends:\` name the low and high end of an axis,
+            separated by \`|\` — the same separator that divides a table's
+            columns. Give both or neither; a value with no \`|\` in it is not a
+            pair and is left off rather than guessed at.
+
+            **Overlap is yours to resolve.** The layout puts every point exactly
+            where you place it and never moves one to avoid a collision, because
+            a point that drifts is a point that no longer says what you meant.
+            Where two labels would collide, either move a point or set
+            \`label:\` on one of them — \`above\`, \`below\`, \`left\` or \`right\` —
+            to send its text the other way. Build with \`--check\` afterwards: a
+            label pushed off the plot is reported like any other overflow.
         }
 
         # Matrix @layout-matrix
@@ -754,9 +829,28 @@
 
             Structured layouts emit stable class names inside the body:
             \`.columns > .column\`, \`.stats > .stat\`, \`.pipeline > .pipe-row\`,
-            \`.matrix\`, \`.rows > .row\`, \`.bars > .bar\`, \`.split > .pane\`,
+            \`.matrix\`, \`.rows > .row\`, \`.bars > .bar\`,
+            \`.scatter > .scatter-plot > .scatter-point\`, \`.split > .pane\`,
             \`.stack > .stack-block\`. A theme is free to style only the ones it
             uses.
+
+            \`scatter\` is the one layout that needs something from a theme
+            rather than merely accepting it. A point carries its coordinates as
+            \`left\` and \`bottom\` percentages, so the plot must have a height
+            for them to be percentages *of* — every point in it is out of flow,
+            and a plot left to find its own height has none. The structural CSS
+            gives \`.scatter-plot\` \`position: relative\` and a minimum height so
+            the layout cannot silently fold flat, and a theme is expected to
+            replace that height with a real one. The default theme makes the
+            frame a grid and lets the plot take the remaining space.
+
+            Two constraints come from the exporter rather than from taste.
+            Geometry is harvested as boxes, text and images, so **an axis drawn
+            in SVG exports to PowerPoint as nothing at all**, and **rotated
+            text exports as horizontal text in a tall narrow box**. Draw axis
+            rules as borders or filled elements, and keep axis labels
+            horizontal — which is why the default theme sets the y-axis labels
+            in a gutter beside the plot rather than turning them on their side.
         }
 
         # Built-in Default Theme @default-theme

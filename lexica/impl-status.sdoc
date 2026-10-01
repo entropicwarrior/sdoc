@@ -68,6 +68,24 @@
             - [ ] Harvest drops mixed content (text in an element that also has a block child) and \`<br>\` line breaks
             - [ ] No CI runs the test suites; the geometry and PPTX tests skip themselves when Chrome is absent
         }
+
+        # Scatter Layout @scatter-wip
+        {
+            Unreleased, on \`feat/scatter-layout\`. A \`scatter\` layout: labelled
+            points on two named axes, the positioning-chart shape. A point
+            written entirely in bold is marked, the same semantic rule a
+            pipeline step follows, so the slide's argument survives a restyle.
+            See [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc#layout-scatter).
+
+            It is the first layout to place content at coordinates rather than
+            in flow, which put two limits of the export path on the record:
+            the geometry harvest reads boxes, text and images, so an axis drawn
+            in SVG exports as nothing, and nothing anywhere handles rotation,
+            so rotated text exports as horizontal text in a tall narrow box.
+            Both are now documented under [Writing against the layouts](../docs/reference/slide-authoring.sdoc#theme-classes).
+
+            - [ ] Numeric axes with a stated range, ticks and gridlines are out of scope and would be a separate layout
+        }
     }
 
     # Next Up @next-up

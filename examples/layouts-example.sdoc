@@ -455,6 +455,55 @@
         }
     }
 
+    # Where the work sits @scatter-slide
+    {
+        config: scatter
+
+        kicker: Scatter
+
+        lede: Points on two named axes. The marked point is written in bold, so a restyled deck keeps the argument.
+
+        x: Cost to run
+
+        y: Work done per request
+
+        x-ends: cents | pounds
+
+        y-ends: one document | a whole corpus
+
+        quadrants: true
+
+        # Alder @sc-alder
+        {
+            at: 18 72
+
+            caption: batch, overnight
+        }
+
+        # Birch @sc-birch
+        {
+            at: 46 40
+
+            caption: on demand
+        }
+
+        # Cedar @sc-cedar
+        {
+            at: 70 84
+
+            label: left
+
+            caption: streaming
+        }
+
+        # **This project** @sc-ours
+        {
+            at: 30 88
+
+            caption: incremental, on write
+        }
+    }
+
     # Stacking two layouts @stack-slide
     {
         config: stack
