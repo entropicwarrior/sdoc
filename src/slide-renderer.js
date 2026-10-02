@@ -731,6 +731,7 @@ function renderSlides(nodes, options = {}) {
   const {
     meta = {},
     themeCss = "",
+    deckCss = "",
     themeJs = "",
     darkMode = false,
     themeConfig = {},
@@ -1083,7 +1084,11 @@ blockquote p { color: #9d9d9d; }
 .slide-indicator { color: rgba(255, 255, 255, 0.35); }
 ` : "";
 
-  const cssTag = `<style>\n${structuralCss}\n${themeCss}\n${darkCss}</style>`;
+  // The deck's own stylesheet comes last, after the theme and after the dark
+  // overrides, so a deck can settle a tie on its own slides without raising
+  // specificity. A theme is shared by every deck built from it; this is the
+  // escape hatch for the one slide that should not look like the others.
+  const cssTag = `<style>\n${structuralCss}\n${themeCss}\n${darkCss}\n${deckCss}</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
   const mermaidTheme = darkMode ? "dark" : "neutral";

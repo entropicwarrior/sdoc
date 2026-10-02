@@ -1321,6 +1321,41 @@ test("isOptionalSlide reads the flag off a scope", () => {
 });
 
 // ============================================================
+console.log("\n--- Deck-scoped stylesheet ---");
+
+test("a deck's own stylesheet is emitted after the theme's", () => {
+  // A theme is shared by every deck built from it, so a deck that wants one
+  // slide to differ has nowhere to put that rule. Emitting it last lets it
+  // settle a tie on source order rather than by raising specificity.
+  const html = parseAndRender("# Deck {\n    # Slide {\n        Body.\n    }\n}", {
+    themeCss: ".slide { color: rebeccapurple }",
+    deckCss: "/* deck.css */\n#slide h2 { color: teal }",
+  });
+  const theme = html.indexOf("rebeccapurple");
+  const deck = html.indexOf("/* deck.css */");
+  assert(theme > 0 && deck > 0, "both stylesheets present");
+  assert(deck > theme, "the deck's sheet comes after the theme's");
+  assert(deck < html.indexOf("</style>"), "and inside the style tag");
+});
+
+test("a deck with no stylesheet of its own is unchanged", () => {
+  const html = parseAndRender("# Deck {\n    # Slide {\n        Body.\n    }\n}");
+  assert(!html.includes("undefined"), "no stray value where the sheet would be");
+});
+
+test("style-append: is read off the meta the parser already provides", () => {
+  // Not a new key: src/sdoc.js has always parsed `style-append:` and the VS
+  // Code preview has always honoured it for documents. Slides never read it,
+  // which is the gap — adding a second key meaning the same thing would have
+  // been the wrong fix.
+  const { parseSdoc, extractMeta } = require("../src/sdoc.js");
+  const src = "# D {\n    @meta\n    {\n        type: slides\n\n        style-append: deck.css\n    }\n\n    # S {\n        Body.\n    }\n}";
+  const { meta } = extractMeta(parseSdoc(src).nodes);
+  assert(meta.styleAppendPath === "deck.css", "styleAppendPath: " + meta.styleAppendPath);
+  assert(meta.properties.css === undefined, "no separate css: key was invented");
+});
+
+// ============================================================
 console.log("\n--- Case-sensitive units ---");
 
 function marks(text) {

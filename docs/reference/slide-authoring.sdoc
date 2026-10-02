@@ -1202,6 +1202,61 @@
         }
     }
 
+    # A Stylesheet for One Deck @deck-css
+    {
+        A theme is shared by every deck built from it. So a deck that wants one
+        slide to depart from the theme has nowhere to put that rule: changing
+        the theme changes every other deck, and forking the theme per deck
+        gives you two stylesheets to keep in step.
+
+        A deck-scoped stylesheet is the third option. It is emitted **after**
+        the theme, so a deck settles a tie on source order rather than by
+        raising specificity — which means a deck's rule can be written as
+        plainly as the theme's.
+
+        Two ways in, and a deck may use both:
+
+        {[table]
+            Where | What
+            \`style-append:\` in \`@meta\` | A stylesheet beside the deck, resolved against the \`.sdoc\`.
+            \`--css path/to/sheet.css\` | A stylesheet from the command line, resolved against the working directory. Repeatable.
+        }
+
+        \`style-append:\` is not a new key. The parser has always read it, and
+        the VS Code preview has always honoured it for documents — slides
+        simply never did. Reusing it keeps one key meaning one thing
+        everywhere, rather than adding a second that means the same.
+
+        ```
+        @meta
+        {
+            type: slides
+
+            title: Quarterly review
+
+            style-append: review.css
+        }
+        ```
+
+        Order is theme, then the deck's \`style-append:\`, then each \`--css\` in
+        the order given — so an ad-hoc sheet on the command line can override
+        the deck's own.
+
+        \`style:\` is **not** read for a deck. On a document it replaces the
+        stylesheet; on a deck, replacing the stylesheet is what \`--theme\`
+        does, so a deck naming it gets a warning rather than a silent surprise.
+
+        Each sheet's \`url(...)\` references are resolved and embedded against
+        that sheet's own directory, the way a theme's are, so the built deck
+        stays a single self-contained file. A stylesheet that is not there, or
+        an asset inside one that is not there, is a warning rather than a
+        failure: a missing decoration should not stop a deck building.
+
+        The stylesheet applies to every format. It is in the HTML the PDF and
+        PowerPoint exports are built from, and the Claude Slides export
+        harvests its computed result like any other rule.
+    }
+
     # Claude Slides Export @artifact
     {
         \`--artifact\` exports the deck as a **Claude Slides artifact** — an

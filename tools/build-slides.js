@@ -3,8 +3,14 @@
 //
 // Usage:
 //   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme]
+//                              [--css path/to/deck.css]
 //                              [--pdf] [--pptx] [--artifact] [--check] [--fit MODE] [--dark]
 //                              [--with-optional | --no-optional]
+//
+// A theme is shared by every deck built from it. --css, and the existing
+// `style-append:` key in a deck's @meta, add a stylesheet scoped to the one
+// deck, emitted after the theme so it settles a tie without raising
+// specificity. Both may be given; the command line comes last.
 //
 // --fit controls what happens when the window is not the slide's shape:
 // contain (default) letterboxes, cover crops, stretch distorts.
@@ -24,11 +30,36 @@ const fs = require("fs");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc");
 const { renderSlides, inlineDeckImages } = require("../src/slide-renderer");
-const { loadTheme } = require("../src/theme");
+const { loadTheme, inlineCssAssets } = require("../src/theme");
+
+// Deck-scoped CSS. A theme is shared by every deck built from it, so a deck
+// that wants one slide to behave differently has nowhere to put that rule
+// without changing every other deck. `css:` in @meta names a stylesheet
+// beside the deck; --css adds one from the command line. Each is read with
+// its own `url(...)` references inlined relative to its own directory, the
+// way a theme's are, so the built file stays self-contained.
+function loadDeckCss(sources) {
+  const parts = [];
+  const warnings = [];
+  for (const source of sources) {
+    if (!fs.existsSync(source.path)) {
+      warnings.push(`stylesheet not found, skipped: ${source.path} (from ${source.from})`);
+      continue;
+    }
+    const raw = fs.readFileSync(source.path, "utf-8");
+    const { css, missing } = inlineCssAssets(raw, path.dirname(source.path));
+    for (const ref of missing) {
+      warnings.push(`stylesheet asset not found, left as a plain reference: ${ref} (in ${source.path})`);
+    }
+    parts.push(`/* ${path.basename(source.path)} */\n${css}`);
+  }
+  return { deckCss: parts.join("\n"), warnings };
+}
 
 function usage() {
   console.error(
     "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
+    "                    [--css path/to/deck.css]\n" +
     "                    [--pdf] [--pptx] [--artifact] [--artifact-keep-small-text]\n" +
     "                    [--check]\n" +
     "                    [--fit contain|cover|stretch] [--dark]\n" +
@@ -42,6 +73,7 @@ async function main() {
   let inputPath = null;
   let outputPath = null;
   let themePath = null;
+  const cssPaths = [];
   let pdfMode = false;
   let pptxMode = false;
   let artifactMode = false;
@@ -57,6 +89,8 @@ async function main() {
       outputPath = args[++i];
     } else if (args[i] === "--theme" && i + 1 < args.length) {
       themePath = args[++i];
+    } else if (args[i] === "--css" && i + 1 < args.length) {
+      cssPaths.push(args[++i]);
     } else if (args[i] === "--pdf") {
       pdfMode = true;
     } else if (args[i] === "--pptx" || args[i] === "--slides") {
@@ -134,8 +168,41 @@ async function main() {
   const includeOptional = optional === null ? emitHtml : optional;
 
   const { nodes, meta } = extractMeta(parsed.nodes);
+
+  // `style-append:` is the key documents have always used for "a stylesheet
+  // after the main one" — src/sdoc.js parses it and the VS Code preview has
+  // honoured it for documents all along. Slides simply never read it, so this
+  // adopts the existing convention rather than adding a second key that means
+  // the same thing. `style:` is deliberately not read here: for a deck,
+  // replacing the stylesheet is what --theme does.
+  //
+  // It resolves against the deck, because that is where the author wrote it
+  // and where the file sits; --css resolves against the working directory,
+  // because that is where the command was typed. The command line comes
+  // second, so an ad-hoc sheet can override the deck's own.
+  const cssSources = [];
+  if (typeof meta.styleAppendPath === "string" && meta.styleAppendPath.trim()) {
+    cssSources.push({
+      path: path.resolve(path.dirname(resolvedInput), meta.styleAppendPath.trim()),
+      from: "@meta style-append:"
+    });
+  }
+  if (meta.stylePath) {
+    console.error(
+      "Warning: `style:` replaces a document's stylesheet and is not read for a deck — " +
+      "use --theme to change the theme, or `style-append:` to add to it."
+    );
+  }
+  for (const p of cssPaths) {
+    cssSources.push({ path: path.resolve(p), from: "--css" });
+  }
+  const { deckCss, warnings: cssWarnings } = loadDeckCss(cssSources);
+  for (const warning of cssWarnings) {
+    console.error(`Warning: ${warning}`);
+  }
+
   let html = renderSlides(nodes, {
-    meta, themeCss, themeJs, darkMode, themeConfig, fit, includeOptional
+    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional
   });
 
   // Image paths in a .sdoc are relative to the .sdoc, which stops being true
