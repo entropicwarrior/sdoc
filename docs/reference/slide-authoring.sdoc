@@ -88,6 +88,16 @@
             This produces \`deck.pptx\`. See [PowerPoint and Google Slides
             Export](#pptx-export) for what it contains and how to import it.
 
+            To export an editable deck to claude.ai:
+
+            ```
+            node tools/build-slides.js deck.sdoc --artifact
+            ```
+
+            This produces the folder \`deck.artifact/\`, which the skill at
+            \`skills/sdoc-artifact/\` publishes as a Claude Slides artifact.
+            See [Claude Slides Export](#artifact).
+
             To choose what happens when the window is not the slide's shape:
 
             ```
@@ -546,6 +556,21 @@
             PPTX export says which ones it could not embed. An image the build
             cannot read is left as a plain reference and named in a warning,
             rather than becoming a broken picture nobody was told about.
+
+            **A CSS \`transform\` does not reach the PowerPoint export.** HTML
+            and PDF are both drawn by a browser, so an image you rotated or
+            mirrored in a stylesheet looks right in each. The PowerPoint export
+            is measured rather than drawn: it reads boxes, text and images, and
+            places the original picture at the box the browser reported. A
+            transform moves that box, so the picture lands in the right place —
+            upright and unmirrored.
+
+            The failure mode is "it looked right when I checked", because the
+            format people check first is the one that works. Flipping an image
+            in CSS is the common case; if the flip carries meaning, flip the
+            file instead. The same holds for rotated text, which exports
+            horizontal, and it is why \`background-flip:\` is dropped by the
+            Claude Slides export rather than silently ignored.
         }
     }
 
@@ -647,7 +672,8 @@
                 \`at=\` | \`radial\` only. The centre of the circle, as \`70%,40%\`.
                 \`from=\` | Where the falloff begins: a distance along the angle, or a radius out from \`at\`.
                 \`to=\` | Where it finishes. \`radius=\` is the same thing under the name a circle wants.
-                \`min=\` and \`max=\` | The alpha at each end, \`0\` to \`1\`. Default \`0\` and \`1\` — solid to invisible.
+                \`max=\` | The alpha at \`from\`, \`0\` to \`1\`. Defaults to \`1\`.
+                \`min=\` | The alpha at \`to\`, \`0\` to \`1\`. Defaults to \`0\`.
             }
 
             ```
@@ -655,6 +681,14 @@
 
             background-fade: radial at=80%,30% from=5% radius=55%
             ```
+
+            **\`max\` goes with \`from\`, not with \`min\`.** The pair is named for
+            strength rather than for position, so the two names do not run in
+            the same direction as the two ends: with no values a fade is solid
+            at \`from\` and invisible by \`to\`. A radial strongest at its centre
+            and gone by its rim is \`max=0.4 min=0\`, not the reverse — and the
+            reverse renders a hole in the middle with the picture blazing at
+            the corners, which looks deliberate enough to be worth stating.
 
             Settings are named rather than positional because a run of bare
             numbers cannot be read back: \`linear 90 30 85 0 0.2\` tells you
@@ -1189,6 +1223,207 @@
             resolves those. Remote images are skipped and reported. Mermaid
             diagrams and KaTeX export as the text and shapes the browser drew,
             not as editable objects.
+        }
+    }
+
+    # A Stylesheet for One Deck @deck-css
+    {
+        A theme is shared by every deck built from it. So a deck that wants one
+        slide to depart from the theme has nowhere to put that rule: changing
+        the theme changes every other deck, and forking the theme per deck
+        gives you two stylesheets to keep in step.
+
+        A deck-scoped stylesheet is the third option. It is emitted **after**
+        the theme, so a deck settles a tie on source order rather than by
+        raising specificity — which means a deck's rule can be written as
+        plainly as the theme's.
+
+        Two ways in, and a deck may use both:
+
+        {[table]
+            Where | What
+            \`style-append:\` in \`@meta\` | A stylesheet beside the deck, resolved against the \`.sdoc\`.
+            \`--css path/to/sheet.css\` | A stylesheet from the command line, resolved against the working directory. Repeatable.
+        }
+
+        \`style-append:\` is not a new key. The parser has always read it, and
+        the VS Code preview has always honoured it for documents — slides
+        simply never did. Reusing it keeps one key meaning one thing
+        everywhere, rather than adding a second that means the same.
+
+        ```
+        @meta
+        {
+            type: slides
+
+            title: Quarterly review
+
+            style-append: review.css
+        }
+        ```
+
+        Order is theme, then the deck's \`style-append:\`, then each \`--css\` in
+        the order given — so an ad-hoc sheet on the command line can override
+        the deck's own.
+
+        \`style:\` is **not** read for a deck. On a document it replaces the
+        stylesheet; on a deck, replacing the stylesheet is what \`--theme\`
+        does, so a deck naming it gets a warning rather than a silent surprise.
+
+        Each sheet's \`url(...)\` references are resolved and embedded against
+        that sheet's own directory, the way a theme's are, so the built deck
+        stays a single self-contained file. A stylesheet that is not there, or
+        an asset inside one that is not there, is a warning rather than a
+        failure: a missing decoration should not stop a deck building.
+
+        The stylesheet applies to every format. It is in the HTML the PDF and
+        PowerPoint exports are built from, and the Claude Slides export
+        harvests its computed result like any other rule.
+    }
+
+    # Claude Slides Export @artifact
+    {
+        \`--artifact\` exports the deck as a **Claude Slides artifact** — an
+        editable deck hosted on claude.ai. You keep authoring in \`.sdoc\`;
+        someone who works visually opens the published deck and finishes it in
+        a real editor, rewriting a line or moving a figure; and their edits can
+        come back into the source rather than stranding there.
+
+        ```
+        node tools/build-slides.js deck.sdoc --artifact
+        ```
+
+        This writes a folder, \`deck.artifact/\`, not a file: \`project/\` holds
+        one HTML file per slide and a \`deck.json\`, \`assets/\` holds every
+        image for uploading, and \`sdoc-artifact.json\` is the manifest that
+        records what was exported. The command stops there. Publishing goes
+        through the Artifact tool, which the script does not have, so the skill
+        at \`skills/sdoc-artifact/\` is the half that publishes the folder and
+        pulls a collaborator's edits back.
+
+        # Why this is not the PowerPoint route @artifact-why
+        {
+            \`--pptx\` emits every element as a loose, absolutely positioned
+            box. That is right for PowerPoint, where a shape sits where it was
+            put and nothing reflows, and it is wrong here twice over. Edited
+            text would overlap its neighbours, which defeats the only reason to
+            publish a deck somewhere editable; and the format caps a container
+            at 24 positioned children and a slide at 200 elements, which a
+            harvested slide passes routinely.
+
+            So this export harvests the DOM *tree* rather than a flat list of
+            boxes, and keeps flow layout. The renderer already emits nested
+            flex containers, headings, paragraphs and lists, and the subset the
+            artifact understands has \`display:flex\`, \`gap\`, \`padding\` and
+            \`flex\`, so the structure maps across almost one to one. **That is
+            what makes an edit reflow**: a column grows when the text in it
+            grows, the way it does in the HTML build.
+
+            It also means there is no per-layout template here to drift out of
+            step. Every layout the renderer can emit exports, including ones
+            added after this was written, because the exporter only ever reads
+            the result — the same property the PPTX export has.
+        }
+
+        # The canvas is fixed @artifact-canvas
+        {
+            A Claude Slides deck is 1920 by 1080, always. A theme's design box
+            is rarely that — the built-in one is 1280 by 720 — so the exporter
+            scales the box onto the canvas and multiplies every length crossing
+            the boundary by the ratio, 1.5 in that case. The manifest records
+            the factor under \`scale\` and the build prints it.
+
+            Nothing in the deck has to change for this. It is the same geometry
+            at a different size, exactly as the design box is already scaled to
+            meet a window.
+        }
+
+        # Slide ids are the sdoc scope ids @artifact-ids
+        {
+            A slide's id in the artifact is the scope id it was written with:
+            \`# Market @market\` publishes as the slide \`market\`.
+
+            That is not cosmetic. Comments left on the published deck key on
+            the id, and so does the pull that maps an edited line back to the
+            scope it came from. **Renaming a scope id orphans its comments**
+            and breaks the thread back to the source, so rename one knowing
+            that.
+
+            A scope with no id still exports — it becomes \`slide-N\` — but its
+            edits cannot be traced back with confidence, and the build says so.
+            An id the artifact cannot take is slugged to one it can, and that
+            is reported too.
+        }
+
+        # What does not survive @artifact-gaps
+        {
+            {[table]
+                Not exported | Why
+                \`background-flip:\` | The subset's \`transform\` takes a scale between 0.5 and 2, so it cannot mirror an image.
+                \`margin\` | The subset has none. The page accepts the declaration and does nothing with it, so spacing has to come from a parent's \`gap\` or its \`padding\`.
+                Monospace on inline code | An inline span carries colour and nothing else, so code keeps its colour and loses its typeface.
+                \`<text>\` inside an svg | Fonts never load inside a drawing, so the labels do not render. Lift them out of the svg, or rasterise it.
+                A painted \`::before\` or \`::after\` | A pseudo-element has no element to export. The built-in theme paints none; a theme in the wild might.
+            }
+
+            Each of these is reported as a warning rather than dropped in
+            silence, so the build tells you what the deck lost.
+        }
+
+        # Type size and typefaces @artifact-type
+        {
+            The format asks for 24px as a minimum type size. A theme written
+            against a 1280-wide box puts its small labels — a kicker, a
+            footnote, an axis label — under that even after the scale, so
+            **the export raises anything below 24px up to it** and names the
+            roles it raised. Raising changes the design, which is why it is
+            said out loud rather than done quietly: a raised kicker can wrap
+            where the HTML build did not.
+
+            Pass \`--artifact-keep-small-text\` to leave the sizes as the theme
+            set them; the build then names each element that lands below the
+            minimum instead. Either way it is a warning and never an error — a
+            deck that breaks the guidance still publishes and still reads, and
+            the real fix belongs to the theme rather than to the deck.
+
+            **A deck may declare at most four typefaces.** Past the fourth, a
+            family is left out and its text falls back to a basic face, with a
+            warning naming what lost its face.
+
+            A face only carries its real typeface if the theme declares it.
+            Each family needs a stylesheet URL, and nothing in the exporter can
+            know what Google hosts, so the theme says: a \`googleFonts\` map in
+            \`theme.json\`, from the CSS family name to the Google Fonts query.
+
+            ```
+            {
+              "name": "wide-dark",
+              "slide": { "width": 1920, "height": 1080 },
+              "googleFonts": { "Space Grotesk": "Space+Grotesk:wght@400;700" }
+            }
+            ```
+
+            A family not in the map still exports — the text is there, at the
+            right size and colour — but it sets in a basic face, and the build
+            names it so you can add the entry or accept the fallback.
+        }
+
+        # Nothing validates on publish @artifact-validation
+        {
+            The page holding a published deck checks nothing. What it cannot
+            read it drops; what it can nearly read it heals. Both happen
+            silently, so a deck outside the subset does not fail to publish —
+            it arrives wrong, and the only way to find out is to look at it.
+
+            That is why the exporter carries its own validator, transcribed
+            from the Slides format reference rather than inferred from what
+            seemed to work, and refuses to emit anything outside the subset. An
+            error stops the export and nothing is written, because the
+            alternative is shipping a deck that arrives changed with nothing to
+            say so.
+
+            Do not hand-edit the generated files to get past an error: the next
+            export overwrites them. Fix the source, or the theme.
         }
     }
 

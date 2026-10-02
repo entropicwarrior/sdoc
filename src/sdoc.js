@@ -300,7 +300,7 @@ function parseBareScope(cursor, directive) {
 
   if (directive.hasOpenBrace) {
     // Brace was on the same line — parse contents until closing }
-    const children = parseBlock(cursor, "normal");
+    const children = parseBlock(cursor, "normal", scopeStartLine);
     return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
   }
 
@@ -311,7 +311,7 @@ function parseBareScope(cursor, directive) {
   }
   if (!cursor.eof() && cursor.current().trim() === COMMAND_SCOPE_OPEN) {
     cursor.next();
-    const children = parseBlock(cursor, "normal");
+    const children = parseBlock(cursor, "normal", scopeStartLine);
     return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
   }
 
@@ -321,10 +321,20 @@ function parseBareScope(cursor, directive) {
   return { type: "scope", title: "", id: directive.id, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index };
 }
 
-function parseBlock(cursor, kind) {
+// `openLine` is the line the opening brace sat on, for a block a brace opened;
+// null for the document itself, which ends at EOF by definition.
+//
+// A block that opened with a brace and reached EOF without its closing one
+// used to end silently, and silence is the worst answer available here: the
+// scopes that follow are parsed as children of the unclosed one, so the
+// document still reports as clean while its tree is wrong. That is the failure
+// R1 exists to prevent — structure inferred rather than stated — and no check
+// downstream can see it, because every check reads the tree.
+function parseBlock(cursor, kind, openLine = null) {
   const nodes = [];
   let paragraphLines = [];
   let paragraphStartLine = 0;
+  let closed = false;
 
   const flushParagraph = () => {
     if (!paragraphLines.length) {
@@ -357,6 +367,7 @@ function parseBlock(cursor, kind) {
     if (trimmed === COMMAND_SCOPE_CLOSE) {
       flushParagraph();
       cursor.next();
+      closed = true;
       break;
     }
 
@@ -428,7 +439,7 @@ function parseBlock(cursor, kind) {
       flushParagraph();
       const scopeStartLine = cursor.index + 1;
       cursor.next();
-      const children = parseBlock(cursor, "normal");
+      const children = parseBlock(cursor, "normal", scopeStartLine);
       nodes.push({ type: "scope", title: "", id: undefined, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index });
       continue;
     }
@@ -448,6 +459,12 @@ function parseBlock(cursor, kind) {
   }
 
   flushParagraph();
+  if (openLine !== null && !closed) {
+    cursor.errors.push({
+      message: `scope opened at line ${openLine} is never closed; add the matching "}"`,
+      line: openLine,
+    });
+  }
   return nodes;
 }
 
@@ -523,7 +540,7 @@ function parseScope(cursor) {
     } else if (isCitationsCommand(trailing.opener)) {
       children = [parseCitationsBody(cursor, scopeStartLine)];
     } else {
-      children = parseBlock(cursor, "normal");
+      children = parseBlock(cursor, "normal", scopeStartLine);
     }
     return makeScopeNode(parsedHeading, children, true, scopeStartLine, cursor.index);
   }
@@ -662,7 +679,7 @@ function parseBracelessBlock(cursor) {
       flushParagraph();
       const scopeStartLine = cursor.index + 1;
       cursor.next();
-      const children = parseBlock(cursor, "normal");
+      const children = parseBlock(cursor, "normal", scopeStartLine);
       nodes.push({ type: "scope", title: "", id: undefined, children, hasHeading: false, lineStart: scopeStartLine, lineEnd: cursor.index });
       continue;
     }
@@ -718,8 +735,9 @@ function parseScopeBlock(cursor) {
     }
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
+      const braceLine = cursor.index;
       cursor.next();
-      return { blockType: "normal", children: parseBlock(cursor, "normal") };
+      return { blockType: "normal", children: parseBlock(cursor, "normal", braceLine) };
     }
 
     if (trimmed === COMMAND_LIST_BULLET || trimmed === COMMAND_LIST_NUMBER) {
@@ -809,7 +827,7 @@ function parseAnonymousListItem(cursor) {
   }
 
   cursor.next();
-  const children = parseBlock(cursor, "normal");
+  const children = parseBlock(cursor, "normal", itemStartLine);
   return { type: "scope", title: "", id: undefined, children, hasHeading: false, lineStart: itemStartLine, lineEnd: cursor.index };
 }
 
@@ -868,7 +886,7 @@ function parseListItemLine(cursor, info, allowContinuation = false) {
     } else if (isCitationsCommand(trailing.opener)) {
       children = [parseCitationsBody(cursor, itemStartLine)];
     } else {
-      children = parseBlock(cursor, "normal");
+      children = parseBlock(cursor, "normal", itemStartLine);
     }
 
     return makeScopeNode(parsed, children, true, itemStartLine, cursor.index, listExtra);
@@ -1059,8 +1077,9 @@ function parseOptionalBlock(cursor) {
     }
 
     if (trimmed === COMMAND_SCOPE_OPEN) {
+      const braceLine = cursor.index;
       cursor.next();
-      return { blockType: "normal", children: parseBlock(cursor, "normal") };
+      return { blockType: "normal", children: parseBlock(cursor, "normal", braceLine) };
     }
 
     if (trimmed === COMMAND_LIST_BULLET || trimmed === COMMAND_LIST_NUMBER) {

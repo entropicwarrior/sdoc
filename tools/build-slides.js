@@ -3,8 +3,14 @@
 //
 // Usage:
 //   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme]
-//                              [--pdf] [--pptx] [--check] [--fit MODE] [--dark]
+//                              [--css path/to/deck.css]
+//                              [--pdf] [--pptx] [--artifact] [--check] [--fit MODE] [--dark]
 //                              [--with-optional | --no-optional]
+//
+// A theme is shared by every deck built from it. --css, and the existing
+// `style-append:` key in a deck's @meta, add a stylesheet scoped to the one
+// deck, emitted after the theme so it settles a tie without raising
+// specificity. Both may be given; the command line comes last.
 //
 // --fit controls what happens when the window is not the slide's shape:
 // contain (default) letterboxes, cover crops, stretch distorts.
@@ -24,12 +30,39 @@ const fs = require("fs");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc");
 const { renderSlides, inlineDeckImages } = require("../src/slide-renderer");
-const { loadTheme } = require("../src/theme");
+const { loadTheme, inlineCssAssets } = require("../src/theme");
+
+// Deck-scoped CSS. A theme is shared by every deck built from it, so a deck
+// that wants one slide to behave differently has nowhere to put that rule
+// without changing every other deck. `css:` in @meta names a stylesheet
+// beside the deck; --css adds one from the command line. Each is read with
+// its own `url(...)` references inlined relative to its own directory, the
+// way a theme's are, so the built file stays self-contained.
+function loadDeckCss(sources) {
+  const parts = [];
+  const warnings = [];
+  for (const source of sources) {
+    if (!fs.existsSync(source.path)) {
+      warnings.push(`stylesheet not found, skipped: ${source.path} (from ${source.from})`);
+      continue;
+    }
+    const raw = fs.readFileSync(source.path, "utf-8");
+    const { css, missing } = inlineCssAssets(raw, path.dirname(source.path));
+    for (const ref of missing) {
+      warnings.push(`stylesheet asset not found, left as a plain reference: ${ref} (in ${source.path})`);
+    }
+    parts.push(`/* ${path.basename(source.path)} */\n${css}`);
+  }
+  return { deckCss: parts.join("\n"), warnings };
+}
 
 function usage() {
   console.error(
     "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
-    "                    [--pdf] [--pptx] [--check] [--fit contain|cover|stretch] [--dark]\n" +
+    "                    [--css path/to/deck.css]\n" +
+    "                    [--pdf] [--pptx] [--artifact] [--artifact-keep-small-text]\n" +
+    "                    [--check]\n" +
+    "                    [--fit contain|cover|stretch] [--dark]\n" +
     "                    [--with-optional | --no-optional]"
   );
   process.exit(1);
@@ -40,8 +73,11 @@ async function main() {
   let inputPath = null;
   let outputPath = null;
   let themePath = null;
+  const cssPaths = [];
   let pdfMode = false;
   let pptxMode = false;
+  let artifactMode = false;
+  let keepSmallText = false;
   let checkMode = false;
   let darkMode = false;
   // null means "whatever this output format defaults to"; the flags force it.
@@ -53,10 +89,16 @@ async function main() {
       outputPath = args[++i];
     } else if (args[i] === "--theme" && i + 1 < args.length) {
       themePath = args[++i];
+    } else if (args[i] === "--css" && i + 1 < args.length) {
+      cssPaths.push(args[++i]);
     } else if (args[i] === "--pdf") {
       pdfMode = true;
     } else if (args[i] === "--pptx" || args[i] === "--slides") {
       pptxMode = true;
+    } else if (args[i] === "--artifact") {
+      artifactMode = true;
+    } else if (args[i] === "--artifact-keep-small-text") {
+      keepSmallText = true;
     } else if (args[i] === "--check") {
       checkMode = true;
     } else if (args[i] === "--fit" && i + 1 < args.length) {
@@ -122,12 +164,45 @@ async function main() {
   // each; --with-optional and --no-optional override the default in any
   // format. --check measures whatever was rendered, so it reports on the
   // optional slides exactly when they are in the build.
-  const emitHtml = !pdfMode && !pptxMode;
+  const emitHtml = !pdfMode && !pptxMode && !artifactMode;
   const includeOptional = optional === null ? emitHtml : optional;
 
   const { nodes, meta } = extractMeta(parsed.nodes);
+
+  // `style-append:` is the key documents have always used for "a stylesheet
+  // after the main one" — src/sdoc.js parses it and the VS Code preview has
+  // honoured it for documents all along. Slides simply never read it, so this
+  // adopts the existing convention rather than adding a second key that means
+  // the same thing. `style:` is deliberately not read here: for a deck,
+  // replacing the stylesheet is what --theme does.
+  //
+  // It resolves against the deck, because that is where the author wrote it
+  // and where the file sits; --css resolves against the working directory,
+  // because that is where the command was typed. The command line comes
+  // second, so an ad-hoc sheet can override the deck's own.
+  const cssSources = [];
+  if (typeof meta.styleAppendPath === "string" && meta.styleAppendPath.trim()) {
+    cssSources.push({
+      path: path.resolve(path.dirname(resolvedInput), meta.styleAppendPath.trim()),
+      from: "@meta style-append:"
+    });
+  }
+  if (meta.stylePath) {
+    console.error(
+      "Warning: `style:` replaces a document's stylesheet and is not read for a deck — " +
+      "use --theme to change the theme, or `style-append:` to add to it."
+    );
+  }
+  for (const p of cssPaths) {
+    cssSources.push({ path: path.resolve(p), from: "--css" });
+  }
+  const { deckCss, warnings: cssWarnings } = loadDeckCss(cssSources);
+  for (const warning of cssWarnings) {
+    console.error(`Warning: ${warning}`);
+  }
+
   let html = renderSlides(nodes, {
-    meta, themeCss, themeJs, darkMode, themeConfig, fit, includeOptional
+    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional
   });
 
   // Image paths in a .sdoc are relative to the .sdoc, which stops being true
@@ -223,12 +298,72 @@ async function main() {
         "or drag the file into slides.google.com — Drive converts it to a native deck."
       );
     }
+    if (artifactMode) {
+      const { harvestArtifact, buildArtifact, writeArtifact, readPreviousManifest } =
+        require("../src/slide-artifact");
+      const outDir = outputPath && !pdfMode && !pptxMode
+        ? path.resolve(outputPath)
+        : resolvedInput.replace(/\.sdoc$/i, "") + ".artifact";
+
+      const harvest = await harvestArtifact(tmpHtml);
+      const built = buildArtifact(harvest, {
+        title: meta.properties?.title || path.basename(resolvedInput, ".sdoc"),
+        theme: themeConfig,
+        baseDir: path.dirname(resolvedInput),
+        sdocVersion: require("../package.json").version,
+        source: { path: path.basename(resolvedInput), theme: themePath || "default" },
+        previousManifest: readPreviousManifest(outDir),
+        minFontSize: !keepSmallText,
+      });
+
+      // Nothing checks these files once they are published: the page drops
+      // what it cannot read and heals the rest in silence. So an error here
+      // stops the export rather than shipping a deck that arrives wrong.
+      if (built.errors.length) {
+        console.error(`Artifact export: ${built.errors.length} error(s), nothing written.`);
+        for (const e of built.errors.slice(0, 40)) {
+          console.error(`  ${e.slide || ""}${e.element ? " <" + e.element + ">" : ""}: ${e.message}`);
+        }
+        if (built.errors.length > 40) console.error(`  … and ${built.errors.length - 40} more`);
+        process.exit(1);
+      }
+
+      const { missing } = writeArtifact(outDir, built, { baseDir: path.dirname(resolvedInput) });
+      console.log(`Artifact: ${outDir} (${built.manifest.slides.length} slides)`);
+      if (built.manifest.scale !== 1) {
+        console.log(
+          `  scaled ${built.manifest.scale}x from the theme's ` +
+          `${built.manifest.designBox.w}x${built.manifest.designBox.h} box onto the fixed 1920x1080 canvas`
+        );
+      }
+      for (const w of dedupe(built.warnings).slice(0, 25)) {
+        console.error(`  warning: ${w.slide ? w.slide + ": " : ""}${w.message}`);
+      }
+      const extra = dedupe(built.warnings).length - 25;
+      if (extra > 0) console.error(`  … and ${extra} more warnings`);
+      for (const m of missing) {
+        console.error(`  warning: asset ${m.name} could not be copied (${m.reason})`);
+      }
+    }
   } catch (err) {
     console.error(err.message);
     process.exit(1);
   } finally {
     try { fs.unlinkSync(tmpHtml); } catch {}
   }
+}
+
+// The same complaint about forty elements is one complaint.
+function dedupe(warnings) {
+  const seen = new Map();
+  for (const w of warnings) {
+    const key = `${w.slide}|${w.message}`;
+    if (!seen.has(key)) seen.set(key, { ...w, count: 1 });
+    else seen.get(key).count++;
+  }
+  return [...seen.values()].map((w) =>
+    w.count > 1 ? { ...w, message: `${w.message} (x${w.count})` } : w
+  );
 }
 
 // Reports slides whose content has run out of the space the theme reserved.
