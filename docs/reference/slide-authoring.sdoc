@@ -556,6 +556,21 @@
             PPTX export says which ones it could not embed. An image the build
             cannot read is left as a plain reference and named in a warning,
             rather than becoming a broken picture nobody was told about.
+
+            **A CSS \`transform\` does not reach the PowerPoint export.** HTML
+            and PDF are both drawn by a browser, so an image you rotated or
+            mirrored in a stylesheet looks right in each. The PowerPoint export
+            is measured rather than drawn: it reads boxes, text and images, and
+            places the original picture at the box the browser reported. A
+            transform moves that box, so the picture lands in the right place —
+            upright and unmirrored.
+
+            The failure mode is "it looked right when I checked", because the
+            format people check first is the one that works. Flipping an image
+            in CSS is the common case; if the flip carries meaning, flip the
+            file instead. The same holds for rotated text, which exports
+            horizontal, and it is why \`background-flip:\` is dropped by the
+            Claude Slides export rather than silently ignored.
         }
     }
 
@@ -657,7 +672,8 @@
                 \`at=\` | \`radial\` only. The centre of the circle, as \`70%,40%\`.
                 \`from=\` | Where the falloff begins: a distance along the angle, or a radius out from \`at\`.
                 \`to=\` | Where it finishes. \`radius=\` is the same thing under the name a circle wants.
-                \`min=\` and \`max=\` | The alpha at each end, \`0\` to \`1\`. Default \`0\` and \`1\` — solid to invisible.
+                \`max=\` | The alpha at \`from\`, \`0\` to \`1\`. Defaults to \`1\`.
+                \`min=\` | The alpha at \`to\`, \`0\` to \`1\`. Defaults to \`0\`.
             }
 
             ```
@@ -665,6 +681,14 @@
 
             background-fade: radial at=80%,30% from=5% radius=55%
             ```
+
+            **\`max\` goes with \`from\`, not with \`min\`.** The pair is named for
+            strength rather than for position, so the two names do not run in
+            the same direction as the two ends: with no values a fade is solid
+            at \`from\` and invisible by \`to\`. A radial strongest at its centre
+            and gone by its rim is \`max=0.4 min=0\`, not the reverse — and the
+            reverse renders a hole in the middle with the picture blazing at
+            the corners, which looks deliberate enough to be worth stating.
 
             Settings are named rather than positional because a run of bare
             numbers cannot be read back: \`linear 90 30 85 0 0.2\` tells you
