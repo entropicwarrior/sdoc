@@ -139,7 +139,7 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
   `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js`
-  (484 + 24 + 65 + 106 + 71 + 46 = 796 on `feat/artifact-export`)
+  (489 + 24 + 65 + 106 + 71 + 46 = 801 on `feat/artifact-export`)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
