@@ -1095,6 +1095,42 @@
             ```
         }
 
+        # The Filmstrip @filmstrip
+        {
+            Press \`F\` while presenting and a strip of every spine slide hides
+            at the bottom edge, rising when the pointer reaches for it. It
+            exists for the case where two people are working on one slide and
+            need to see where it sits in the argument without leaving it.
+
+            Each thumbnail carries its number, its kicker, and its title in
+            deliberately small type — there to give a slide a shape you can
+            recognise from across the deck, not to be read. A dot in the
+            corner marks a spine slide with drilldown details under it.
+
+            {[table]
+                Doing | What happens
+                \`F\` | Turns the strip on, centred on the current slide, and leaves it up until you have moved into it and out again. Press again to turn it off.
+                Pointer at the bottom edge | Raises the strip, centred on the current slide.
+                Click a thumbnail | Goes to that slide.
+                Drag the strip | Scrolls it.
+                Pointer near either end | Scrolls that way, faster the closer you get.
+            }
+
+            Fifteen thumbnails at most are sized to fit the window. Below that
+            the strip scrolls rather than shrinking, because a thumbnail
+            narrower than about fifteen characters of its kicker stops telling
+            you which slide it is. The floor is measured in the kicker's own
+            computed font rather than fixed in pixels, so a theme with a
+            different typeface gets a width that suits it.
+
+            It is a screen affordance and nothing more: hidden in print, so it
+            cannot reach the PDF, and attached outside the slides, so no
+            export sees it. It is part of the renderer rather than of a theme,
+            and it drives navigation by setting the URL hash — which every
+            theme already listens for — so a custom theme gets it without
+            changing anything.
+        }
+
         # Navigation Controls @navigation
         {
             All themes include these controls by default:

@@ -727,6 +727,320 @@ function renderSlide(scope, slideIndex, overlayHtml, position) {
 // Main entry point
 // ---------------------------------------------------------------------------
 
+// Escaped on the way in: a template literal drops an unrecognised escape,
+// so `\s` would arrive as `s` and the regex below would delete every letter
+// s in every kicker. The source file stays normal JS; this keeps it that way.
+const FILMSTRIP_JS = `
+// Filmstrip — the story arc of a deck, on demand.
+//
+// Press T and a strip of every spine slide hides at the bottom edge, rising
+// when the pointer reaches for it the way a dock does. It exists for the case
+// where two people are working on one slide and need to see where it sits in
+// the argument without leaving it.
+//
+// This is structural rather than part of a theme, because navigation is the
+// one thing every theme already implements and none of them should have to
+// implement twice. It couples to a theme through the URL hash alone: setting
+// the hash is how it navigates, which every theme already listens for. It
+// reads the current slide by watching which one carries .active, because a
+// theme writes the hash with replaceState and that fires no event.
+//
+// A thumbnail is the kicker and a very small title. Not a rendering of the
+// slide: the point is to recognise a slide's place in the run, and at this
+// size a picture of it would be a grey smudge.
+(function () {
+  var KEY = "f";
+  var MAX_VISIBLE = 15;
+  var STORE = "sdocFilmstrip";
+
+  var slides = [].slice.call(document.querySelectorAll(".slide"));
+  var spine = slides.filter(function (s) {
+    return (s.getAttribute("data-detail") || "0") === "0";
+  });
+  // One slide is not a story, and nothing about it is worth a strip.
+  if (spine.length < 2) return;
+
+  var HOVER_BAND = 64;
+  var strip = document.createElement("div");
+  strip.className = "sdoc-filmstrip";
+  var track = document.createElement("div");
+  track.className = "sdoc-filmstrip-track";
+  strip.appendChild(track);
+  var hint = document.createElement("div");
+  hint.className = "sdoc-filmstrip-hint";
+
+  function textOf(slide, sel) {
+    var el = slide.querySelector(sel);
+    return el ? el.textContent.replace(/\\s+/g, " ").trim() : "";
+  }
+
+  var items = spine.map(function (slide, i) {
+    var item = document.createElement("button");
+    item.type = "button";
+    item.className = "sdoc-filmstrip-item";
+    if (slide.classList.contains("slide-has-details")) item.className += " has-details";
+    // Out of the tab order on purpose: a deck is driven by arrow keys, and
+    // eighteen invisible tab stops behind a hidden strip help nobody.
+    item.setAttribute("tabindex", "-1");
+
+    var kicker = textOf(slide, ".kicker");
+    var title = textOf(slide, "h1") || textOf(slide, "h2") || textOf(slide, "h3");
+    item.setAttribute("aria-label", "Slide " + (i + 1) + (title ? ": " + title : ""));
+    item.title = (kicker ? kicker + " — " : "") + (title || "Slide " + (i + 1));
+
+    var n = document.createElement("div");
+    n.className = "sdoc-filmstrip-n";
+    n.textContent = String(i + 1);
+    item.appendChild(n);
+
+    // A slide with no kicker still needs a line of its own here, or the
+    // titles of its neighbours sit at different heights and the strip stops
+    // reading as a row.
+    var k = document.createElement("div");
+    k.className = "sdoc-filmstrip-kicker";
+    k.textContent = kicker || " ";
+    item.appendChild(k);
+
+    if (title) {
+      var t = document.createElement("div");
+      t.className = "sdoc-filmstrip-title";
+      t.textContent = title;
+      item.appendChild(t);
+    }
+    track.appendChild(item);
+    return item;
+  });
+
+  // The floor is measured, not guessed: a thumbnail is only useful if you can
+  // read enough of its kicker to tell slides apart, and how many pixels that
+  // takes depends on the typeface the theme chose. So ask the browser how wide
+  // MIN_CHARS characters actually are in the kicker's own computed font,
+  // rather than picking a number that is right for one theme and wrong for
+  // the next.
+  var MIN_CHARS = 15;
+
+  function minItemWidth() {
+    var sample = items[0] && items[0].querySelector(".sdoc-filmstrip-kicker");
+    if (!sample) return 96;
+    var cs = getComputedStyle(sample);
+    var size = parseFloat(cs.fontSize) || 10;
+    var spacing = cs.letterSpacing === "normal" ? 0 : parseFloat(cs.letterSpacing) || 0;
+    var text = new Array(MIN_CHARS + 1).join("N");
+    var width;
+    try {
+      var ctx = (minItemWidth.canvas || (minItemWidth.canvas = document.createElement("canvas"))).getContext("2d");
+      ctx.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+      width = ctx.measureText(text).width;
+    } catch (err) {
+      width = 0;
+    }
+    // A canvas measurement ignores letter-spacing, and an uppercased kicker
+    // carries it on every character.
+    if (!width) width = text.length * size * 0.62;
+    width += spacing * MIN_CHARS;
+    // The box around the text: padding both sides, plus its border.
+    var item = items[0];
+    var ics = getComputedStyle(item);
+    var chrome = (parseFloat(ics.paddingLeft) || 0) + (parseFloat(ics.paddingRight) || 0) +
+                 (parseFloat(ics.borderLeftWidth) || 0) + (parseFloat(ics.borderRightWidth) || 0);
+    return Math.ceil(width + chrome);
+  }
+
+  // At most MAX_VISIBLE across the window, and never narrower than the floor —
+  // below which the strip stops scrolling and starts just not fitting, which
+  // is the right trade: a narrow window shows fewer slides, legibly.
+  // Recomputed on resize because the window is the only input.
+  function sizeItems() {
+    var gap = 8, pad = 24;
+    var floor = minItemWidth();
+    var across = Math.min(MAX_VISIBLE, spine.length);
+    var avail = window.innerWidth - pad;
+    var w = Math.floor((avail - gap * (across - 1)) / across);
+    items.forEach(function (it) { it.style.width = Math.max(floor, w) + "px"; });
+  }
+
+  function currentIndex() {
+    for (var i = 0; i < spine.length; i++) if (spine[i].classList.contains("active")) return i;
+    // A detail slide is active: its spine is the one before it in document order.
+    var active = document.querySelector(".slide.active");
+    if (!active) return 0;
+    var at = slides.indexOf(active);
+    for (var j = at; j >= 0; j--) {
+      var k = spine.indexOf(slides[j]);
+      if (k !== -1) return k;
+    }
+    return 0;
+  }
+
+  function centreCurrent() {
+    var it = items[currentIndex()];
+    if (!it) return;
+    var target = it.offsetLeft - (track.clientWidth - it.offsetWidth) / 2;
+    var most = track.scrollWidth - track.clientWidth;
+    track.scrollLeft = Math.max(0, Math.min(target, most));
+  }
+
+  function markCurrent() {
+    var cur = currentIndex();
+    items.forEach(function (it, i) { it.classList.toggle("is-current", i === cur); });
+    var it = items[cur];
+    if (!it) return;
+    // Keep the current slide in view without yanking the strip while someone
+    // is dragging it.
+    if (dragging) return;
+    var left = it.offsetLeft, right = left + it.offsetWidth;
+    if (left < track.scrollLeft) track.scrollLeft = left - 12;
+    else if (right > track.scrollLeft + track.clientWidth) track.scrollLeft = right - track.clientWidth + 12;
+  }
+
+  // Navigate by hash: the one interface every theme already implements.
+  var DRAG_SLOP = 4;
+  var dragging = false, captured = false, moved = 0, startX = 0, startScroll = 0;
+
+  function goTo(i) { window.location.hash = String(i + 1); }
+
+  // The deck navigates on a click anywhere — left half back, right half
+  // forward. Without this, clicking a thumbnail sets the hash and then the
+  // deck's own handler runs, flips a slide and rewrites the hash before the
+  // hashchange lands: the strip looks broken and the deck looks possessed.
+  strip.addEventListener("click", function (e) { e.stopPropagation(); });
+
+  items.forEach(function (item, i) {
+    item.addEventListener("click", function (e) {
+      e.stopPropagation();
+      // A click that ended a drag is not a click on a slide.
+      if (moved > DRAG_SLOP) return;
+      goTo(i);
+    });
+  });
+
+  track.addEventListener("pointerdown", function (e) {
+    dragging = true; captured = false; moved = 0;
+    startX = e.clientX; startScroll = track.scrollLeft;
+    // Deliberately NOT capturing yet. Capturing the pointer here retargets
+    // the click that follows to this element, so a tap on a thumbnail would
+    // never reach the thumbnail and clicking a slide would do nothing.
+    // Capture once a drag has actually begun, by which point there is no
+    // click to lose.
+  });
+  track.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - startX;
+    moved = Math.max(moved, Math.abs(dx));
+    if (!captured && moved > DRAG_SLOP) {
+      captured = true;
+      try { track.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+    if (captured) track.scrollLeft = startScroll - dx;
+  });
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    if (captured) { try { track.releasePointerCapture(e.pointerId); } catch (err) {} }
+    captured = false;
+  }
+  track.addEventListener("pointerup", endDrag);
+  track.addEventListener("pointercancel", endDrag);
+
+  // Keyboard reach, for the same reason the thumbnails are clickable: a strip
+  // you can see the shape of but not move around in is half a tool.
+  items.forEach(function (item, i) {
+    item.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goTo(i); }
+    });
+  });
+
+  // Edge scrolling: the pointer resting near either end walks the strip along,
+  // faster the closer it gets, so a long deck is reachable without a drag.
+  var edge = 0, raf = null;
+  function step() {
+    if (edge !== 0) { track.scrollLeft += edge; raf = requestAnimationFrame(step); }
+    else raf = null;
+  }
+  strip.addEventListener("pointermove", function (e) {
+    if (dragging) { edge = 0; return; }
+    var r = track.getBoundingClientRect();
+    var band = Math.min(120, r.width * 0.12);
+    if (e.clientX < r.left + band) edge = -Math.ceil((band - (e.clientX - r.left)) / 8);
+    else if (e.clientX > r.right - band) edge = Math.ceil((band - (r.right - e.clientX)) / 8);
+    else edge = 0;
+    if (edge !== 0 && raf === null) raf = requestAnimationFrame(step);
+  });
+  strip.addEventListener("pointerleave", function () { edge = 0; });
+
+  // Show and hide. The pointer reaching the bottom edge opens it; leaving
+  // the strip itself closes it.
+  var enabled = false, pinned = false, openTimer = null;
+  function open() {
+    clearTimeout(openTimer);
+    var wasOpen = strip.classList.contains("is-open");
+    strip.classList.add("is-open");
+    // Centre only as it comes up. While it is up, markCurrent scrolls the
+    // least it can, so the strip stays still under the pointer.
+    if (!wasOpen) centreCurrent();
+  }
+  function close() {
+    openTimer = setTimeout(function () { strip.classList.remove("is-open"); edge = 0; }, 180);
+  }
+  strip.addEventListener("pointerenter", open);
+  strip.addEventListener("pointerleave", function () {
+    // Leaving it is the dismissal a key reveal never had.
+    pinned = false;
+    close();
+  });
+  // Watched on the document rather than through an element laid over the
+  // bottom edge: an element there would also swallow every click meant for
+  // the nav chevrons and the footer sitting under it.
+  document.addEventListener("pointermove", function (e) {
+    if (!enabled || dragging) return;
+    if (e.clientY >= window.innerHeight - HOVER_BAND) { open(); return; }
+    if (pinned) return;
+    if (!strip.contains(e.target)) close();
+  });
+
+  function say(text) {
+    hint.textContent = text;
+    hint.classList.add("is-shown");
+    setTimeout(function () { hint.classList.remove("is-shown"); }, 1400);
+  }
+
+  function setEnabled(on, announce) {
+    enabled = on;
+    pinned = false;
+    if (!on) strip.classList.remove("is-open");
+    try { sessionStorage.setItem(STORE, on ? "1" : "0"); } catch (err) {}
+    if (announce) say(on ? "Slide strip on" : "Slide strip off");
+    if (on) { sizeItems(); markCurrent(); pinned = true; open(); centreCurrent(); }
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
+    if ((e.key || "").toLowerCase() !== KEY) return;
+    e.preventDefault();
+    setEnabled(!enabled, true);
+  });
+
+  // A theme navigates with replaceState, which fires no event, so the active
+  // class is what there is to watch.
+  var observer = new MutationObserver(markCurrent);
+  slides.forEach(function (s) {
+    observer.observe(s, { attributes: true, attributeFilter: ["class"] });
+  });
+  window.addEventListener("resize", function () { sizeItems(); markCurrent(); });
+
+  document.body.appendChild(strip);
+  document.body.appendChild(hint);
+  sizeItems();
+  markCurrent();
+
+  var remembered = null;
+  try { remembered = sessionStorage.getItem(STORE); } catch (err) {}
+  setEnabled(remembered === "1", false);
+})();
+`;
+
 function renderSlides(nodes, options = {}) {
   const {
     meta = {},
@@ -1019,6 +1333,100 @@ function renderSlides(nodes, options = {}) {
    overrides these two rules. */
 .slide-head, .slide-body { display: contents; }
 
+/* Filmstrip: the story arc, on demand.
+   Off until T is pressed, then it hides at the bottom edge and rises when the
+   pointer reaches for it, the way a dock does. It is a screen affordance and
+   nothing else: hidden in print, skipped by the geometry harvest, and absent
+   from every export.
+   A theme may restyle any of this. It must not give .sdoc-filmstrip a
+   position other than fixed, or the strip stops tracking the window. */
+.sdoc-filmstrip {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  z-index: 41;
+  background: rgba(22, 22, 24, 0.92);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 0 12px;
+  transform: translateY(102%);
+  transition: transform 160ms ease-out;
+  user-select: none;
+}
+.sdoc-filmstrip.is-open { transform: translateY(0); }
+.sdoc-filmstrip-track {
+  display: flex; gap: 8px; padding: 0 12px;
+  overflow-x: auto; scrollbar-width: none;
+  scroll-behavior: auto;
+}
+.sdoc-filmstrip-track::-webkit-scrollbar { display: none; }
+.sdoc-filmstrip-item {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  appearance: none;
+  font: inherit;
+  font-family: inherit;
+  text-align: left;
+  margin: 0;
+  height: 64px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.62);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 120ms, background 120ms;
+}
+.sdoc-filmstrip-item:hover { background: rgba(255, 255, 255, 0.1); }
+/* A thumbnail is a button, so clicking it focuses it and the browser rings
+   it in blue — noise, next to the highlight that already says which slide is
+   current. Dropped for a click and kept for a keyboard, which is the one case
+   where a focus ring is the only thing telling you where you are. */
+.sdoc-filmstrip-item:focus { outline: none; }
+.sdoc-filmstrip-item:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 1px;
+}
+.sdoc-filmstrip-item.is-current {
+  border-color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.sdoc-filmstrip-n {
+  font-size: 9px; letter-spacing: 0.08em;
+  opacity: 0.5; font-variant-numeric: tabular-nums;
+}
+.sdoc-filmstrip-kicker {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.07em;
+  text-transform: uppercase; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
+/* Deliberately small. It is there to give the thumbnail a shape you can
+   recognise from across the deck, not to be read. */
+.sdoc-filmstrip-title {
+  font-size: 9px; line-height: 1.25; opacity: 0.68;
+  margin-top: 3px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* A spine slide with drilldown details underneath it. */
+.sdoc-filmstrip-item.has-details::after {
+  content: ""; position: absolute; right: 5px; bottom: 5px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+}
+.sdoc-filmstrip-hint {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 42;
+  font: 500 12px/1 system-ui, sans-serif; letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(22, 22, 24, 0.92);
+  border-radius: 20px; padding: 8px 16px;
+  opacity: 0; transition: opacity 200ms;
+  pointer-events: none;
+}
+.sdoc-filmstrip-hint.is-shown { opacity: 1; }
+
 /* Scatter: the positioning mechanism, not the styling.  A point carries its
    coordinates as left/bottom percentages, which mean nothing unless the plot
    establishes a containing block and the point is taken out of flow — so those
@@ -1061,6 +1469,7 @@ function renderSlides(nodes, options = {}) {
     transform-origin: top left;
   }
   .nav-prev, .nav-next { display: none !important; }
+  .sdoc-filmstrip, .sdoc-filmstrip-hint { display: none !important; }
   .nav-vert { display: none !important; }
   .notes { display: none; }
 }`;
@@ -1090,6 +1499,8 @@ blockquote p { color: #9d9d9d; }
   // escape hatch for the one slide that should not look like the others.
   const cssTag = `<style>\n${structuralCss}\n${themeCss}\n${darkCss}\n${deckCss}</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
+  // After the theme, so the navigation it couples to already exists.
+  const filmstripTag = `<script>\n${FILMSTRIP_JS}\n</script>`;
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
   const mermaidTheme = darkMode ? "dark" : "neutral";
   const mermaidTag = slidesHtml.includes('class="mermaid"')
@@ -1111,7 +1522,7 @@ ${cssTag}${katexTag}
 <body>
 ${slidesHtml}
 
-${jsTag}${mermaidTag}
+${jsTag}${filmstripTag}${mermaidTag}
 </body>
 </html>`;
 }
