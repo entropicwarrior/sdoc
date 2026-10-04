@@ -100,6 +100,49 @@ const ARTIFACT_SCRIPT = `
   // wraps a unit in a span that opts out of text-transform, so that span is its
   // own run and comes back lower-case while the words around it are folded.
   // The subset has no text-transform on a span, so the case must be baked in.
+  // The box is not the ink. A pinned text box positions the element, and what a
+  // reader sees is the glyphs inside it — which a table cell's vertical
+  // centring, or a negative text-indent, puts somewhere else. A Range over the
+  // contents reports where the ink actually is.
+  //
+  // Both directions need a guard, and the second exists because the first
+  // introduced a defect:
+  //
+  //   Vertically, a Range SHORTER than the box means the text really is centred
+  //   inside it, so follow the ink. TALLER means the inline box overhangs the
+  //   line box — which any line-height below the face's natural one does — and
+  //   the Range's top then sits above the real one. Pinning a tight-leaded
+  //   heading from its Range opens a visible gap beneath it.
+  //
+  //   Horizontally, only when the ink escapes the content box to the LEFT: a
+  //   negative text-indent, or something hanging outside. Ink to the right of
+  //   the content start is ordinary centring or alignment, and following it
+  //   would re-pin centred text at its glyphs and shift it. Touches x and w
+  //   only — assigning y here would quietly undo the decision above.
+  function pinToInk(node, el, cs, rect, origin) {
+    var ink;
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      ink = range.getBoundingClientRect();
+    } catch (err) {
+      return;
+    }
+    if (!ink || (!ink.width && !ink.height)) return;
+
+    if (ink.height > 0 && ink.height < rect.height - 0.5) {
+      node.box.y = ink.top - origin.top;
+      node.box.h = ink.height;
+    }
+
+    var contentLeft = rect.left +
+      (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0);
+    if (ink.width > 0 && ink.left < contentLeft - 0.5) {
+      node.box.x = ink.left - origin.left;
+      node.box.w = ink.width;
+    }
+  }
+
   function runsOf(el, baseWeight) {
     var runs = [];
     var base = baseWeight || parseInt(getComputedStyle(el).fontWeight, 10) || 400;
@@ -225,6 +268,7 @@ const ARTIFACT_SCRIPT = `
         node.transparent = true;
       } else if (isTextLeaf(el)) {
         node.runs = runsOf(el);
+        pinToInk(node, el, cs, rect, origin);
         return node;
       }
 
@@ -298,6 +342,9 @@ function harvestArtifact(htmlPath, options = {}) {
 // ---------------------------------------------------------------------------
 
 const TEXT_TAGS = new Set(["h1", "h2", "h3", "p"]);
+// The tags the subset refuses to let type inherit into, so everything they use
+// has to be written on them.
+const HEADING_TAGS = new Set(["h1", "h2", "h3"]);
 
 // Not typefaces: each resolves to whatever the reader's machine supplies, so
 // naming one as a deck face would declare a font that does not exist.
@@ -362,7 +409,14 @@ function borderOf(style, side, scale) {
   const s = style[`border${side}Style`];
   if (!w || !s || s === "none") return null;
   const colour = colourOf(style[`border${side}Color`]) || "#000";
-  return `${lenOf(w, scale)}px ${s} ${colour}`;
+  // A border the theme asked for has to be visible. A hairline computes to
+  // something like 0.666667px: the browser antialiases that into a real line,
+  // and a renderer that rounds it away leaves the frame the author drew simply
+  // missing — 26 of them across 8 slides of one deck. Anything that exists at
+  // all is worth at least a pixel; the alternative is not a thinner line, it is
+  // no line.
+  const width = Math.max(1, lenOf(w, scale));
+  return `${width}px ${s} ${colour}`;
 }
 
 // The declarations for one node, in the subset, with everything the theme
@@ -460,9 +514,21 @@ function declarationsFor(node, ctx, inherited) {
       ctx.smallText.push({ slide: ctx.slide, tag: node.tag, cls: node.cls, size });
     }
   }
-  if (size && size !== inherited.size) push("font-size", `${size}px`);
+  // Emitting a value only when it differs from the inherited one is the usual
+  // harmless economy, and on a heading it is wrong. The Slides format is
+  // explicit that font-size and font-weight "flow into <p> and <li>, but never
+  // into <h1> through <h3>. Headings keep their tag defaults until you set them
+  // directly" — and the subset's headings default to 600. So a 400-weight
+  // heading under a 400-weight parent emitted nothing and arrived bold, on
+  // every heading of every deck. It reads as "the type looks a bit off" rather
+  // than as a bug, and no validator can see it: the output is perfectly
+  // admissible, just not the same picture.
+  const heading = HEADING_TAGS.has(node.tag);
+  if (size && (heading || size !== inherited.size)) push("font-size", `${size}px`);
   const weight = parseInt(s.fontWeight, 10);
-  if (weight && weight !== inherited.weight) push("font-weight", String(Math.round(weight / 100) * 100));
+  if (weight && (heading || weight !== inherited.weight)) {
+    push("font-weight", String(Math.round(weight / 100) * 100));
+  }
   if (s.fontStyle === "italic") push("font-style", "italic");
   const lh = parseFloat(s.lineHeight);
   if (isFinite(lh) && size) {

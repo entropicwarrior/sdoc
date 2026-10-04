@@ -201,6 +201,41 @@ test("a flex or grid container keeps its children as elements", () => {
   assert(offenders.length === 0, offenders.slice(0, 4).join("\n  "));
 });
 
+test("every heading carries its own font-size and font-weight", () => {
+  // The format is explicit that font-size and font-weight "flow into <p> and
+  // <li>, but never into <h1> through <h3>" — and the subset's headings default
+  // to 600. Emitting a value only when it differs from the inherited one, the
+  // usual harmless economy, therefore sent every 400-weight heading out with no
+  // weight at all, and it arrived bold. Deck-wide, invisible to a validator
+  // because the output is perfectly admissible, and it reads as "the type looks
+  // a bit off" rather than as a bug.
+  const bare = [];
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    for (const m of html.matchAll(/<(h[123])\b([^>]*)>/g)) {
+      const attrs = m[2];
+      if (!/font-weight\s*:/.test(attrs)) bare.push(`${file}: <${m[1]}> has no font-weight`);
+      else if (!/font-size\s*:/.test(attrs)) bare.push(`${file}: <${m[1]}> has no font-size`);
+    }
+  }
+  assert(bare.length === 0, `${bare.length} heading(s) left to the subset's defaults:\n  ` + bare.slice(0, 4).join("\n  "));
+});
+
+test("a cut-out picture is not given a rectangular shadow", () => {
+  // box-shadow follows the element's rectangle; a drop-shadow filter follows
+  // the alpha channel. Translating one to the other draws a hard box around a
+  // picture that hasn't got one. Nothing here should emit a box-shadow on an
+  // <img> at all.
+  const boxed = [];
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    for (const m of html.matchAll(/<img\b([^>]*)>/g)) {
+      if (/box-shadow\s*:/.test(m[1])) boxed.push(`${file}: ${m[0].slice(0, 70)}`);
+    }
+  }
+  assert(boxed.length === 0, boxed.join("\n  "));
+});
+
 test("every declaration value has balanced parentheses", () => {
   // Found by publishing: a regex with [^)]* scanning `drop-shadow(rgba(0,0,0,.5) 0 1px 3px)`
   // stops at the inner paren and emits an unbalanced value. The slide then
