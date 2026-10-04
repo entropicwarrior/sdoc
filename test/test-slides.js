@@ -569,8 +569,8 @@ test("structural CSS defines the fixed design box", () => {
     # Slide { Hello. }
 }
 `);
-  assert(html.includes("--sdoc-slide-w: 1280px"), "design box width defined");
-  assert(html.includes("--sdoc-slide-h: 720px"), "design box height defined");
+  assert(html.includes("--sdoc-slide-w: 1920px"), "design box width defined");
+  assert(html.includes("--sdoc-slide-h: 1080px"), "design box height defined");
   // Must default to 1 so a deck with no JS renders at natural size rather
   // than collapsing to scale(0).
   assert(html.includes("--sdoc-slide-scale: 1"), "scale defaults to 1");

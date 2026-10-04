@@ -68,11 +68,22 @@ function inlineCssAssets(css, baseDir) {
 }
 
 // The design box and print page a theme uses when it declares none.
-// 1280 x 720 CSS px is exactly 13.333 x 7.5 in at 96 dpi, so screen and PDF
+// 1920 x 1080 CSS px is exactly 20 x 11.25 in at 96 dpi, so screen and PDF
 // are the same geometry by construction.
+//
+// 1920 rather than the 1280 this started at, because that is the canvas a
+// Claude Slides artifact is fixed at, so the export copies lengths across
+// instead of scaling them.
+//
+// That is the whole of what it buys. A deck is scaled to the window whatever
+// the box, so nothing changes on screen; only the physical page a PDF and a
+// .pptx are cut to. In particular it does NOT lift the theme's small type
+// over that format's 24px minimum: an em is a ratio, so a 0.7em footer is
+// 0.7em of whatever the base is and lands in the same place either way.
+// Raising it is a separate thing the exporter does, and still has to.
 const DEFAULT_THEME_CONFIG = {
-  slide: { width: 1280, height: 720 },
-  page: { width: 13.333, height: 7.5 },
+  slide: { width: 1920, height: 1080 },
+  page: { width: 20, height: 11.25 },
   // How the slide meets a window of a different shape: contain, cover or
   // stretch. The CLI's --fit overrides whatever a theme declares.
   fit: "contain",
