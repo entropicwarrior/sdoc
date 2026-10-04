@@ -35,6 +35,8 @@ const {
   MAX_NOTES,
   validateSlideHtml,
   validateDeckJson,
+  PROPS_FOR_TAG,
+  srgbToRgba,
 } = require("./slide-artifact-validate");
 
 // ---------------------------------------------------------------------------
@@ -329,6 +331,11 @@ function colourOf(value) {
   if (!value) return null;
   const t = String(value).trim();
   if (t === "rgba(0, 0, 0, 0)" || t === "transparent") return null;
+  // A theme written with `color-mix(in srgb, …)` — increasingly ordinary CSS —
+  // computes to `color(srgb r g b / a)`, which the subset has no function for.
+  // Converting it here keeps the theme's colour instead of refusing the deck.
+  const srgb = srgbToRgba(t);
+  if (srgb) return srgb;
   return t.replace(/\s+/g, " ");
 }
 
@@ -520,7 +527,20 @@ function emitNode(node, ctx, inherited, depth) {
   }
 
   const decls = declarationsFor(node, ctx, inherited);
-  const style = decls.length ? ` style="${decls.join(";")}"` : "";
+  // Filtered per emitted tag, from the validator's own table. A declaration this
+  // drops is one the subset would have rejected: an <img> takes box properties
+  // and object-fit, and nothing about type, however much it inherited.
+  const styleFor = (tag, extra) => {
+    const allowed = PROPS_FOR_TAG[tag];
+    const kept = allowed
+      ? decls.filter((d) => allowed.has(d.slice(0, d.indexOf(":"))))
+      : decls.slice();
+    const dropped = decls.length - kept.length;
+    if (dropped > 0) ctx.droppedProps = (ctx.droppedProps || 0) + dropped;
+    if (extra) kept.push(extra);
+    return kept.length ? ` style="${kept.join(";")}"` : "";
+  };
+  const style = styleFor(node.tag === "img" ? "img" : "div");
   const next = {
     font: fontStack(node.style.fontFamily) ? fontStack(node.style.fontFamily).css : inherited.font,
     size: lenOf(node.style.fontSize, ctx.scale) || inherited.size,
@@ -532,7 +552,7 @@ function emitNode(node, ctx, inherited, depth) {
     const asset = ctx.addAsset(node.src);
     if (!asset) return "";
     const fit = node.box.w / node.box.h > (node.natural.w || 1) / (node.natural.h || 1) ? "cover" : "contain";
-    return `<img src="${asset}" alt="${escapeHtml(node.alt)}"${style ? style.slice(0, -1) + `;object-fit:${fit}"` : ` style="object-fit:${fit}"`}>`;
+    return `<img src="${asset}" alt="${escapeHtml(node.alt)}"${styleFor("img", `object-fit:${fit}`)}>`;
   }
 
   if (node.svg) {
@@ -557,6 +577,7 @@ function emitNode(node, ctx, inherited, depth) {
     // Text must sit in a text element: a bare div holding words is not in the
     // subset, and the renderer uses divs for labels and figures.
     const tag = TEXT_TAGS.has(node.tag) ? node.tag : "p";
+    const textStyle = styleFor(tag);
     const html = runsToHtml(node.runs, ctx);
     if (!html.trim()) return "";
     ctx.texts.push({
@@ -564,7 +585,7 @@ function emitNode(node, ctx, inherited, depth) {
       tag,
       text: node.runs.map((r) => (r.br ? "\n" : r.text)).join("").replace(/\s+/g, " ").trim(),
     });
-    return `<${tag}${style}>${html}</${tag}>`;
+    return `<${tag}${textStyle}>${html}</${tag}>`;
   }
 
   const inner = node.children.map((c) => emitNode(c, ctx, next, depth + 1)).join("\n");

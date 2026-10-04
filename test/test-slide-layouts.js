@@ -183,7 +183,7 @@ test("a title slide puts the kicker after the statement and uses h1", () => {
     # Northwind {
         config: title
 
-        kicker: SEED ROUND
+        kicker: FUNDING
 
         A subtitle.
     }
@@ -296,7 +296,7 @@ test("stats uses the scope title as the figure", () => {
         config: stats
 
         # 10µW {
-            A bumble bee brain
+            Idle draw per module
         }
     }
 }
@@ -307,7 +307,7 @@ test("stats uses the scope title as the figure", () => {
     html.includes('<div class="stat-value">10<span class="sdoc-unit">µW</span></div>'),
     "figure, with the unit protected from case folding"
   );
-  assert(html.includes('<div class="stat-label"><p>A bumble bee brain</p></div>'), "caption");
+  assert(html.includes('<div class="stat-label"><p>Idle draw per module</p></div>'), "caption");
 });
 
 test("a pipeline marks bold steps and leaves the rest neutral", () => {

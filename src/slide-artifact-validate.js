@@ -119,11 +119,30 @@ function isLen(v) { return RE_LEN.test(v.trim()); }
 function isPct(v) { return RE_PCT.test(v.trim()); }
 function isNum(v) { return RE_NUM.test(v.trim()); }
 
+// What `color-mix(in srgb, …)` computes to in Chrome. The subset has no such
+// function, so the exporter converts it to rgba() before emitting; this is here
+// so the two agree about what one looks like.
+const RE_COLOR_SRGB =
+  /^color\(\s*srgb\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s*(?:\/\s*([0-9.]+)\s*)?\)$/;
+
+// `color(srgb 0 0.82 0.85 / 0.1)` -> `rgba(0, 209, 217, 0.1)`, or null if it is
+// not that shape. Chrome serialises a color-mix() this way and nothing else in
+// the pipeline knows the function, so it has to be normalised at the edge.
+function srgbToRgba(v) {
+  const m = RE_COLOR_SRGB.exec(String(v).trim().toLowerCase());
+  if (!m) return null;
+  const ch = (x) => Math.max(0, Math.min(255, Math.round(parseFloat(x) * 255)));
+  const alpha = m[4] === undefined ? 1 : Math.max(0, Math.min(1, parseFloat(m[4])));
+  const rgb = `${ch(m[1])}, ${ch(m[2])}, ${ch(m[3])}`;
+  return alpha >= 1 ? `rgb(${rgb})` : `rgba(${rgb}, ${alpha})`;
+}
+
 function isColor(v) {
   const t = v.trim().toLowerCase();
   if (t === "transparent") return true;
   if (t === "currentcolor") return false; // explicitly not in the subset
   if (t.includes("var(")) return false;
+  if (RE_COLOR_SRGB.test(t)) return true;
   return RE_HEX.test(t) || RE_FUNC_COLOR.test(t) || /^[a-z]+$/.test(t);
 }
 
@@ -798,6 +817,10 @@ function validateDeckJson(deck, options = {}) {
 }
 
 module.exports = {
+  // The exporter filters its own declarations through this, so it cannot emit a
+  // property this file would then reject. One table, one source of truth.
+  PROPS_FOR_TAG,
+  srgbToRgba,
   RE_ASSET_PLACEHOLDER,
   SUBSET_RELEASE,
   SUBSET_CONTRACT,

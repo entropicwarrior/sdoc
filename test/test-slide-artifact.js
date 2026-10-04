@@ -654,6 +654,85 @@ test("a deck with images exports rather than refusing outright", () => {
 });
 
 // ============================================================
+console.log("\n--- Declarations are filtered to what each tag may carry ---");
+
+if (!findChrome()) {
+  console.log("  SKIP: Chrome not found");
+} else {
+  test("an <img> never carries the type it inherited (integration)", async () => {
+    // Reported against a real deck: 26 of its 35 export errors were
+    // "font-size is not allowed on <img>", and the same for padding,
+    // line-height and text-align. The exporter built one style string per node
+    // and put it on whatever tag it ended up emitting, so a picture inside a
+    // styled container got that container's type — which the subset refuses,
+    // taking the whole deck with it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-imgprops-"));
+    fs.writeFileSync(path.join(dir, "pic.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAEAQMAAACTPww9AAAABlBMVEUzZsz///8N3jmNAAAAC0lEQVQI12BggAAAAAgAAS8g3TEAAAAASUVORK5CYII=", "base64"));
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        background: pic.png\n\n        Body copy.\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const { inlineDeckImages } = require("../src/slide-renderer.js");
+    const html = inlineDeckImages(
+      renderSlides(nodes, { meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig }),
+      dir
+    ).html;
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, html, "utf-8");
+
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      // Put the type back on, the way a theme that styles the container does.
+      let touched = 0;
+      const walk = (n) => {
+        if (n.tag === "img") {
+          Object.assign(n.style, {
+            fontSize: "48px", lineHeight: "1.5", textAlign: "center", padding: "10px 20px",
+          });
+          touched++;
+        }
+        for (const k of n.children || []) walk(k);
+      };
+      for (const slide of harvest.slides) walk(slide);
+      assert(touched > 0, "the fixture should have an image to style");
+
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      assert(built.errors.length === 0,
+        "the type must be filtered off the img, not emitted and rejected: " +
+        JSON.stringify(built.errors.slice(0, 3)));
+      const slideHtml = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+      const imgTag = /<img[^>]*>/.exec(slideHtml);
+      assert(imgTag, "an img was emitted");
+      for (const prop of ["font-size", "line-height", "text-align", "padding"]) {
+        assert(!imgTag[0].includes(prop + ":"), `${prop} should not reach the img: ${imgTag[0]}`);
+      }
+      assert(imgTag[0].includes("object-fit:"), "the fit it does take is still there");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test("a color-mix() computed value becomes a colour the subset has", () => {
+  // Chrome serialises `color-mix(in srgb, var(--cyan) 10%, transparent)` as
+  // `color(srgb 0 0.819608 0.854902 / 0.1)`. The subset has no color()
+  // function, so a theme using increasingly ordinary CSS was refused outright.
+  const { srgbToRgba } = require("../src/slide-artifact-validate.js");
+  assert(srgbToRgba("color(srgb 0 0.819608 0.854902 / 0.1)") === "rgba(0, 209, 218, 0.1)",
+    "converted with alpha: " + srgbToRgba("color(srgb 0 0.819608 0.854902 / 0.1)"));
+  assert(srgbToRgba("color(srgb 1 0 0)") === "rgb(255, 0, 0)", "no alpha means opaque");
+  assert(srgbToRgba("rgb(1, 2, 3)") === null, "anything else is left alone");
+  const r = validateSlideHtml(
+    '<section id="s1"><p style="background:color(srgb 0 0.82 0.85 / 0.1)">x</p></section>',
+    { slide: "s1" }
+  );
+  assert(!r.errors.some((e) => /colour or a gradient/.test(e.message)),
+    "the validator knows the shape too: " + JSON.stringify(r.errors));
+});
+
+// ============================================================
 Promise.all(asyncTests).then(() => {
   console.log("\n" + "=".repeat(40));
   console.log(`Results: ${pass} passed, ${fail} failed`);
