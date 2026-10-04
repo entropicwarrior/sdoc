@@ -1034,12 +1034,17 @@ function emitNode(node, ctx, inherited, depth) {
     return node.svg.replace(/\sclass="[^"]*"/g, "");
   }
 
-  if (node.rows) return emitTable(node, ctx, style);
+  // Each of these filters against the tag it actually emits. `style` is built
+  // for a div, and a <ul> or a <table> handed a div's allowances carries the
+  // flow properties a div may have and they may not — which the page drops, so
+  // a list meant to be a flex column arrives stacked by accident rather than
+  // by arrangement.
+  if (node.rows) return emitTable(node, ctx, styleFor("table"));
 
   if (node.items) {
     const tag = node.tag;
     const items = node.items.map((i) => `<li>${runsToHtml(i.runs, ctx)}</li>`).join("");
-    return `<${tag}${style}>${items}</${tag}>`;
+    return `<${tag}${styleFor(tag)}>${items}</${tag}>`;
   }
 
   if (node.runs) {

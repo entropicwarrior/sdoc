@@ -367,7 +367,22 @@ async function main() {
       }
 
       const { missing } = writeArtifact(outDir, built, { baseDir: path.dirname(resolvedInput) });
-      console.log(`Artifact: ${outDir} (${built.manifest.slides.length} slides)`);
+
+      // An export that reports success and wrote nothing is the worst shape
+      // this can fail in: a before/after check run against the output folder
+      // reads an empty directory as a clean result. Whatever went wrong
+      // upstream, saying so here costs one stat and makes that misreading
+      // impossible.
+      const manifestPath = path.join(outDir, "sdoc-artifact.json");
+      const slideCount = built.manifest.slides.length;
+      if (!fs.existsSync(manifestPath) || slideCount === 0) {
+        console.error(
+          `Artifact export: ${outDir} has no manifest or no slides. Nothing usable\n` +
+          `         was written, so this is a failure rather than an empty deck.`
+        );
+        process.exit(1);
+      }
+      console.log(`Artifact: ${outDir} (${slideCount} slides)`);
       if (built.manifest.scale !== 1) {
         console.log(
           `  scaled ${built.manifest.scale}x from the theme's ` +
