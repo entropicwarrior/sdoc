@@ -16,7 +16,9 @@ lexica/sdoc-plan.sdoc
 lexica/impl-status.sdoc
 lexica/suggestions.sdoc
 test/
+skills/
 tools/build-slides.js
+tools/artifact-resolve-assets.js
 tools/serve_docs.py
 dist/
 vendor/

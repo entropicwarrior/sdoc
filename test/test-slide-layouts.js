@@ -301,7 +301,12 @@ test("stats uses the scope title as the figure", () => {
     }
 }
 `);
-  assert(html.includes('<div class="stat-value">10µW</div>'), "figure");
+  // The unit is marked so a theme's uppercasing cannot turn µW into ΜW. See
+  // the case-sensitive unit tests in test-slides.js.
+  assert(
+    html.includes('<div class="stat-value">10<span class="sdoc-unit">µW</span></div>'),
+    "figure, with the unit protected from case folding"
+  );
   assert(html.includes('<div class="stat-label"><p>A bumble bee brain</p></div>'), "caption");
 });
 

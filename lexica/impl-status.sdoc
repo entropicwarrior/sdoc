@@ -16,7 +16,7 @@
 
     # Current State @current-state
     {
-        SDOC v0.2.22 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.2.23 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
@@ -37,6 +37,7 @@
             - v0.2.19 — structured slide layouts, theme loading with \`theme.json\`, geometry harvest, PowerPoint / Google Slides export
             - v0.2.21 — optional slides, held back from the formats a deck is sent on in
             - v0.2.22 — drilldown navigation driven by position rather than a build-time class; independent navigation axes (left/right is the spine, up/down the column); deck images resolved against the \`.sdoc\` and embedded in every output format
+            - v0.2.23 — the \`scatter\` layout; slide background images with placement, scale, flip and linear or radial fades; a Claude Slides artifact export with its own validator and a pull/diff that reads a collaborator's edits back; a deck-scoped stylesheet through the existing \`style-append:\` key; the presenter filmstrip; and two silent-corruption fixes — a scope left unclosed no longer parses to a different tree without saying so, and a theme's \`text-transform\` no longer turns "40 mW" into "40 MW"
         }
 
         # GitHub Adoption
@@ -69,23 +70,6 @@
             - [ ] No CI runs the test suites; the geometry and PPTX tests skip themselves when Chrome is absent
         }
 
-        # Scatter Layout @scatter-wip
-        {
-            Unreleased, on \`feat/scatter-layout\`. A \`scatter\` layout: labelled
-            points on two named axes, the positioning-chart shape. A point
-            written entirely in bold is marked, the same semantic rule a
-            pipeline step follows, so the slide's argument survives a restyle.
-            See [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc#layout-scatter).
-
-            It is the first layout to place content at coordinates rather than
-            in flow, which put two limits of the export path on the record:
-            the geometry harvest reads boxes, text and images, so an axis drawn
-            in SVG exports as nothing, and nothing anywhere handles rotation,
-            so rotated text exports as horizontal text in a tall narrow box.
-            Both are now documented under [Writing against the layouts](../docs/reference/slide-authoring.sdoc#theme-classes).
-
-            - [ ] Numeric axes with a stated range, ticks and gridlines are out of scope and would be a separate layout
-        }
     }
 
     # Next Up @next-up
@@ -94,6 +78,7 @@
 
         # Parser Improvements
         {
+            - [ ] A brace-delimited scope left unclosed is auto-closed at EOF with no error, so a missing \`}\` yields a *different tree* and the document still reports as clean. Found in this file: one missing brace nested three sections inside a fourth and moved \`@next-up\` under \`@in-progress\`, and the parser, the test suite and the binding's "every document parses cleanly" check all passed it. Minimal case: \`# A @a { # B @b { x  # C @c { y } }\` parses \`@c\` as a child of \`@b\`. This is the failure [R1](requirements.sdoc#r1) exists to prevent — a scope that opened with \`{\` is not braceless and should be an error at EOF, unlike a genuinely braceless scope
             - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See [C1](requirements.sdoc#c1).
             - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See [C2](requirements.sdoc#c2).
         }

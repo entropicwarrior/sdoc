@@ -53,12 +53,15 @@ Open any `.sdoc` file and click the preview icon in the editor title bar, or run
 
 ```bash
 node tools/build-slides.js deck.sdoc -o slides.html
-node tools/build-slides.js deck.sdoc --pdf     # one page per slide
-node tools/build-slides.js deck.sdoc --pptx    # Drive imports it as Google Slides
-node tools/build-slides.js deck.sdoc --check   # report slides whose content overflows
+node tools/build-slides.js deck.sdoc --pdf      # one page per slide
+node tools/build-slides.js deck.sdoc --pptx     # Drive imports it as Google Slides
+node tools/build-slides.js deck.sdoc --artifact # an editable Claude Slides deck on claude.ai
+node tools/build-slides.js deck.sdoc --check    # report slides whose content overflows
 ```
 
 Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `docs/reference/slide-authoring.sdoc` for the full authoring guide.
+
+`--artifact` writes the folder `deck.artifact/` rather than a file; the skill at `skills/sdoc-artifact/` publishes it to claude.ai and pulls a collaborator's edits back into the `.sdoc`.
 
 ### Export to PDF or HTML
 
