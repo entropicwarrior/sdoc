@@ -816,6 +816,20 @@ test("the browser-half scripts keep their regex escapes", () => {
     assert(!broken, `${file} looks like it lost a backslash before an s`);
     // And the real thing is present, doubled.
     assert(/\\\\s\+/.test(src), `${file} should carry a doubled whitespace class`);
+
+    // A backtick inside the template literal simply ends it, and the error
+    // lands on whatever word follows — nowhere near the comment that caused it.
+    // Three times while writing this, all in prose naming a CSS property.
+    const lines = src.split("\n");
+    const open = lines.findIndex((l) => /_SCRIPT = `/.test(l));
+    const close = lines.findIndex((l, i) => i > open && l === "`;");
+    if (open >= 0 && close > open) {
+      const stray = [];
+      for (let i = open + 1; i < close; i++) {
+        if (lines[i].includes("`")) stray.push(`${file}:${i + 1}`);
+      }
+      assert(stray.length === 0, `a backtick ends the script early at ${stray.join(", ")}`);
+    }
   }
 });
 

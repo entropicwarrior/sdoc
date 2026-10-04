@@ -303,6 +303,251 @@ const ARTIFACT_SCRIPT = `
     };
   }
 
+  // Three things the subset cannot say about a picture, all fixed the same way:
+  // by painting it rather than describing it.
+  //
+  //   object-fit is only cover or contain here, so fill, none and
+  //   scale-down have to be approximated — and approximating fill as cover
+  //   crops and zooms a picture that was meant to be squashed.
+  //
+  //   filter: drop-shadow follows the alpha channel; box-shadow follows the
+  //   element's rectangle. Translating one into the other draws a hard box
+  //   around a cut-out that has not got one.
+  //
+  //   transform allows only scale(N) with N between 0.5 and 2, so a mirror
+  //   cannot be expressed at all.
+  //
+  // A canvas does all three exactly: drawn at the box's own size it *is* fill,
+  // its shadows follow alpha as the filter does, and it can be flipped.
+
+  // "drop-shadow(rgba(0, 0, 0, 0.55) 0px 1px 3px) drop-shadow(...)" — scanned by
+  // paren depth, because a value with rgba() inside it has parentheses of its
+  // own and a flat pattern stops at the first one it meets.
+  function parseDropShadows(filter) {
+    var specs = [];
+    var text = String(filter || "");
+    var head = "drop-shadow(";
+    var i = 0;
+    while (true) {
+      var at = text.indexOf(head, i);
+      if (at < 0) break;
+      var start = at + head.length;
+      var depth = 1;
+      var j = start;
+      while (j < text.length && depth > 0) {
+        var ch = text.charAt(j);
+        if (ch === "(") depth++;
+        else if (ch === ")") depth--;
+        j++;
+      }
+      specs.push(text.slice(start, j - 1));
+      i = j;
+    }
+    var out = [];
+    for (var k = 0; k < specs.length; k++) {
+      var one = parseOneShadow(specs[k]);
+      if (one) out.push(one);
+    }
+    return out;
+  }
+
+  function parseOneShadow(spec) {
+    var colour = null;
+    var text = spec;
+    var ci = text.indexOf("rgb");
+    if (ci >= 0) {
+      var open = text.indexOf("(", ci);
+      if (open > 0) {
+        var depth = 1;
+        var k = open + 1;
+        while (k < text.length && depth > 0) {
+          var ch = text.charAt(k);
+          if (ch === "(") depth++;
+          else if (ch === ")") depth--;
+          k++;
+        }
+        colour = text.slice(ci, k);
+        text = text.slice(0, ci) + " " + text.slice(k);
+      }
+    }
+    var nums = [];
+    var parts = text.split(" ");
+    for (var p = 0; p < parts.length; p++) {
+      var tok = parts[p].trim();
+      if (!tok) continue;
+      var v = parseFloat(tok);
+      if (isFinite(v)) nums.push(v);
+      else if (!colour && tok.charAt(0) === "#") colour = tok;
+    }
+    if (nums.length < 2) return null;
+    return {
+      dx: nums[0], dy: nums[1], blur: nums[2] || 0,
+      colour: colour || "rgba(0, 0, 0, 0.5)"
+    };
+  }
+
+  // Does anything between this element and the slide mirror it? The subset has
+  // no way to say so, so the pixels have to carry it.
+  function mirrorOf(el, stopAt) {
+    var sx = 1, sy = 1;
+    var node = el;
+    while (node && node !== stopAt) {
+      var t = getComputedStyle(node).transform;
+      if (t && t !== "none") {
+        var n = t.match(/-?[0-9.e+]+/gi);
+        if (n && n.length >= 6) {
+          var threeD = t.indexOf("matrix3d") === 0;
+          var a = parseFloat(n[0]);
+          var d = parseFloat(n[threeD ? 5 : 3]);
+          if (a < 0) sx = -sx;
+          if (d < 0) sy = -sy;
+        }
+      }
+      node = node.parentElement;
+    }
+    return { x: sx, y: sy };
+  }
+
+  // Where the pixels land inside the element's own box, which is what
+  // object-fit and object-position decide. Done here rather than described,
+  // because the subset knows only cover and contain.
+  function drawFitted(ctx, el, cs, w, h) {
+    var nw = el.naturalWidth, nh = el.naturalHeight;
+    var fit = cs.objectFit || "fill";
+    var dw, dh, sc;
+    if (fit === "cover") { sc = Math.max(w / nw, h / nh); dw = nw * sc; dh = nh * sc; }
+    else if (fit === "contain") { sc = Math.min(w / nw, h / nh); dw = nw * sc; dh = nh * sc; }
+    else if (fit === "none") { dw = nw; dh = nh; }
+    else if (fit === "scale-down") { sc = Math.min(1, Math.min(w / nw, h / nh)); dw = nw * sc; dh = nh * sc; }
+    else { dw = w; dh = h; }
+    var pos = String(cs.objectPosition || "50% 50%").trim().split(" ");
+    var px = fitOffset(pos[0], w - dw);
+    var py = fitOffset(pos[1] === undefined ? pos[0] : pos[1], h - dh);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.clip();
+    ctx.drawImage(el, px, py, dw, dh);
+    ctx.restore();
+  }
+
+  function fitOffset(token, free) {
+    var t = String(token).trim();
+    if (t.charAt(t.length - 1) === "%") return (parseFloat(t) / 100) * free;
+    var v = parseFloat(t);
+    return isFinite(v) ? v : free / 2;
+  }
+
+  function imageNeedsBake(el, cs) {
+    var fit = cs.objectFit || "fill";
+    if (fit !== "cover" && fit !== "contain") return true;
+    if (String(cs.filter || "").indexOf("drop-shadow") >= 0) return true;
+    var m = mirrorOf(el, el.closest(".slide"));
+    return m.x < 0 || m.y < 0;
+  }
+
+  function bakeOne(el, cs, done) {
+    try {
+      if (!el.complete || !el.naturalWidth) { done(); return; }
+      var slide = el.closest(".slide");
+      var rect = el.getBoundingClientRect();
+      var sRect = slide.getBoundingClientRect();
+      var w = Math.max(1, Math.round(rect.width));
+      var h = Math.max(1, Math.round(rect.height));
+
+      var shadows = parseDropShadows(cs.filter);
+      var pad = { l: 0, t: 0, r: 0, b: 0 };
+      for (var i = 0; i < shadows.length; i++) {
+        var sh = shadows[i];
+        pad.l = Math.max(pad.l, Math.ceil(Math.max(0, sh.blur - sh.dx)));
+        pad.t = Math.max(pad.t, Math.ceil(Math.max(0, sh.blur - sh.dy)));
+        pad.r = Math.max(pad.r, Math.ceil(Math.max(0, sh.blur + sh.dx)));
+        pad.b = Math.max(pad.b, Math.ceil(Math.max(0, sh.blur + sh.dy)));
+      }
+      // The padded picture becomes its own box, and the page clamps a negative
+      // offset to 0 — which would slide the picture inwards rather than place
+      // the shadow. Lose shadow at an edge instead of moving what casts it.
+      pad.l = Math.min(pad.l, Math.max(0, Math.floor(rect.left - sRect.left)));
+      pad.t = Math.min(pad.t, Math.max(0, Math.floor(rect.top - sRect.top)));
+      pad.r = Math.min(pad.r, Math.max(0, Math.floor(sRect.right - rect.right)));
+      pad.b = Math.min(pad.b, Math.max(0, Math.floor(sRect.bottom - rect.bottom)));
+
+      var cw = w + pad.l + pad.r;
+      var chh = h + pad.t + pad.b;
+      var canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = chh;
+      var ctx = canvas.getContext("2d");
+      var mirror = mirrorOf(el, slide);
+
+      var draw = function () {
+        ctx.save();
+        ctx.translate(pad.l + (mirror.x < 0 ? w : 0), pad.t + (mirror.y < 0 ? h : 0));
+        ctx.scale(mirror.x, mirror.y);
+        drawFitted(ctx, el, cs, w, h);
+        ctx.restore();
+      };
+
+      // Each shadow is painted on its own, with the picture pushed clear of the
+      // canvas so that only the shadow lands. That is what lets more than one
+      // of them stack, and a canvas shadow follows the alpha channel exactly as
+      // the filter does — which a box-shadow, following the rectangle, does not.
+      var far = cw + 100;
+      for (var k = 0; k < shadows.length; k++) {
+        ctx.save();
+        ctx.shadowColor = shadows[k].colour;
+        ctx.shadowBlur = shadows[k].blur;
+        ctx.shadowOffsetX = shadows[k].dx + far;
+        ctx.shadowOffsetY = shadows[k].dy;
+        ctx.translate(-far, 0);
+        draw();
+        ctx.restore();
+      }
+      draw();
+
+      el.__sdocBaked = { src: canvas.toDataURL("image/png"), pad: pad, w: cw, h: chh };
+    } catch (err) {
+      // A tainted canvas, usually. Leave the picture as it was.
+    }
+    done();
+  }
+
+  function bakeImages(done) {
+    document.documentElement.style.setProperty("--sdoc-slide-scale", "1");
+    var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+    var wasActive = slides.map(function (s) { return s.classList.contains("active"); });
+    var priorStyle = slides.map(function (s) { return s.getAttribute("style") || ""; });
+    // Exactly the arrangement the measuring pass uses. Switching the slides on
+    // without also parking them at the origin leaves them stacked in normal
+    // flow, where a slide sized against the viewport is a different height —
+    // and a picture baked at that height is then placed at another one.
+    slides.forEach(function (s, i) {
+      s.classList.add("active");
+      s.setAttribute("style", priorStyle[i] + ";position:absolute;top:0;left:0;transform:none;");
+    });
+
+    var targets = [];
+    var imgs = document.querySelectorAll(".slide img");
+    for (var i = 0; i < imgs.length; i++) {
+      var el = imgs[i];
+      if (el.closest && el.closest(".nav-prev, .nav-next, .nav-vert, .notes")) continue;
+      var cs = getComputedStyle(el);
+      if (imageNeedsBake(el, cs)) targets.push({ el: el, cs: cs });
+    }
+
+    var restore = function () {
+      slides.forEach(function (s, i) {
+        s.setAttribute("style", priorStyle[i]);
+        if (!wasActive[i]) s.classList.remove("active");
+      });
+      done();
+    };
+    if (!targets.length) { restore(); return; }
+    var left = targets.length;
+    var one = function () { if (--left <= 0) restore(); };
+    for (var t = 0; t < targets.length; t++) bakeOne(targets[t].el, targets[t].cs, one);
+  }
+
   function slideTree(slide) {
     var origin = slide.getBoundingClientRect();
     var pseudos = [];
@@ -334,9 +579,28 @@ const ARTIFACT_SCRIPT = `
       }
 
       if (tag === "img") {
-        node.src = el.getAttribute("src") || "";
         node.alt = el.getAttribute("alt") || "";
-        node.natural = { w: el.naturalWidth, h: el.naturalHeight };
+        var baked = el.__sdocBaked;
+        if (baked) {
+          // The painted version: its fit, its mirror and its shadows are in the
+          // pixels. The box grows by whatever room the shadows needed, and
+          // moves back by the same amount so the picture itself stays put.
+          node.src = baked.src;
+          node.natural = { w: baked.w, h: baked.h };
+          node.box = {
+            x: node.box.x - baked.pad.l,
+            y: node.box.y - baked.pad.t,
+            w: baked.w,
+            h: baked.h
+          };
+          node.exactFit = true;
+        } else {
+          node.src = el.getAttribute("src") || "";
+          node.natural = { w: el.naturalWidth, h: el.naturalHeight };
+          // The value CSS actually resolved, rather than a guess from the
+          // aspect ratios — which crops a picture the theme asked to fill.
+          node.fit = cs.objectFit || "";
+        }
         return node;
       }
       if (tag === "svg") {
@@ -421,7 +685,7 @@ const ARTIFACT_SCRIPT = `
     };
   }
 
-  function run() {
+  function measure() {
     document.documentElement.style.setProperty("--sdoc-slide-scale", "1");
     var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
     var out = [];
@@ -448,6 +712,10 @@ const ARTIFACT_SCRIPT = `
       requestAnimationFrame(run);
     }
   }
+  // Pictures are painted before anything is measured, because a bake replaces
+  // the source and changes the box.
+  function run() { bakeImages(measure); }
+
   if (document.readyState === "complete") start();
   else window.addEventListener("load", start);
 })();
@@ -737,7 +1005,14 @@ function emitNode(node, ctx, inherited, depth) {
   if (node.tag === "img") {
     const asset = ctx.addAsset(node.src);
     if (!asset) return "";
-    const fit = node.box.w / node.box.h > (node.natural.w || 1) / (node.natural.h || 1) ? "cover" : "contain";
+    // A baked picture is drawn at exactly its box, so cover and contain are the
+    // same thing. Otherwise use what CSS actually resolved, and fall back to
+    // the old guess from the aspect ratios only when the harvest recorded none.
+    const fit = node.exactFit
+      ? "cover"
+      : (node.fit === "cover" || node.fit === "contain")
+        ? node.fit
+        : (node.box.w / node.box.h > (node.natural.w || 1) / (node.natural.h || 1) ? "cover" : "contain");
     return `<img src="${asset}" alt="${escapeHtml(node.alt)}"${styleFor("img", `object-fit:${fit}`)}>`;
   }
 
