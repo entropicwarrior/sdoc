@@ -76,6 +76,12 @@ test/               Test files
   test-slide-artifact.js  Claude Slides export, its validator and the pull diff
                          (node test/test-slide-artifact.js; Chrome-gated tests
                          skip themselves when it is absent)
+  test-artifact-conformance.js  The Claude Slides export feature by feature. Knows
+                         the feature list from src/slide-layouts.js, so a layout or
+                         config key with no deck exercising it fails here. Checks the
+                         exported HTML from test/artifact-golden/, so most of it runs
+                         with no browser; regenerate with --update and read the diff
+  artifact-golden/    The checked-in Claude Slides export of the two example decks
   test-slide-layouts.js  Structured layouts, theme loading, geometry, PPTX
                          (node test/test-slide-layouts.js; the geometry and
                          PPTX tests skip themselves when Chrome is absent)
@@ -138,8 +144,8 @@ should be evaluated against.
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
-  `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js`
-  (489 + 24 + 65 + 111 + 71 + 56 = 816 as of v0.2.24)
+  `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js`
+  (489 + 24 + 65 + 111 + 71 + 56 + 13 = 829 as of v0.2.24)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
