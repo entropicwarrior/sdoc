@@ -185,17 +185,58 @@ const ARTIFACT_SCRIPT = `
   // A pseudo-element that paints has no node to harvest. The built-in theme
   // uses none, but a theme in the wild might, so say so rather than silently
   // dropping a rule or a numeral.
-  function paintedPseudo(el) {
+  // A pseudo-element has no node, so a walk cannot see it — and a theme that
+  // paints a rule, a spur or a disk with one has drawn something the reader
+  // sees. Worse than a missing mark: a pseudo-element occupies space, so
+  // dropping it also *displaces* whatever shared its box.
+  //
+  // There is no element to measure, so the box is reconstructed from the
+  // computed style. An absolutely positioned one is placed from left/top
+  // against its containing block; an in-flow one sits at the start of the
+  // host's content box, centred on the line. Its own transform is then
+  // applied, because a translate(-50%,-50%) is what puts a disk *on* a line
+  // rather than beside it.
+  function pseudoBoxes(el, hostRect, origin) {
+    var out = [];
     var names = ["::before", "::after"];
     for (var i = 0; i < names.length; i++) {
       var cs = getComputedStyle(el, names[i]);
       if (!cs || cs.content === "none" || cs.content === "normal") continue;
-      var paints = (cs.content && cs.content !== '""' && cs.content !== "none") ||
-                   (cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)") ||
-                   px(cs.borderTopWidth) > 0 || px(cs.borderBottomWidth) > 0;
-      if (paints) return names[i];
+
+      var fill = cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+      var edge = px(cs.borderTopWidth) > 0 || px(cs.borderBottomWidth) > 0 ||
+                 px(cs.borderLeftWidth) > 0 || px(cs.borderRightWidth) > 0;
+      var words = cs.content && cs.content !== '""' && cs.content !== "''";
+      if (!fill && !edge && !words) continue;
+
+      var w = px(cs.width), h = px(cs.height);
+      var rec = { pseudo: names[i], words: !!words, painted: !!(fill || edge) };
+
+      if (w > 0 && h > 0 && (fill || edge)) {
+        var x, y;
+        if (cs.position === "absolute" || cs.position === "fixed") {
+          var cb = el;
+          while (cb && cb.parentElement && getComputedStyle(cb).position === "static") {
+            cb = cb.parentElement;
+          }
+          var cbRect = (cb || el).getBoundingClientRect();
+          x = cbRect.left + (px(cs.left) || 0);
+          y = cbRect.top + (px(cs.top) || 0);
+        } else {
+          x = hostRect.left + (px(getComputedStyle(el).paddingLeft) || 0);
+          y = hostRect.top + (hostRect.height - h) / 2;
+        }
+        var m = (cs.transform || "none").match(/-?[0-9.e+]+/gi);
+        if (m && m.length >= 6 && cs.transform.indexOf("matrix") === 0) {
+          x += parseFloat(m[m.length === 16 ? 12 : 4]) || 0;
+          y += parseFloat(m[m.length === 16 ? 13 : 5]) || 0;
+        }
+        rec.box = { x: x - origin.left, y: y - origin.top, w: w, h: h };
+        rec.style = styleOf(cs);
+      }
+      out.push(rec);
     }
-    return null;
+    return out;
   }
 
   function slideTree(slide) {
@@ -221,8 +262,12 @@ const ARTIFACT_SCRIPT = `
         children: []
       };
 
-      var p = paintedPseudo(el);
-      if (p) pseudos.push({ cls: cls, tag: tag, pseudo: p });
+      var ps = pseudoBoxes(el, rect, origin);
+      for (var pi = 0; pi < ps.length; pi++) {
+        ps[pi].cls = cls;
+        ps[pi].tag = tag;
+        pseudos.push(ps[pi]);
+      }
 
       if (tag === "img") {
         node.src = el.getAttribute("src") || "";
@@ -663,6 +708,34 @@ function emitNode(node, ctx, inherited, depth) {
   return `<div${style}>\n${inner}\n</div>`;
 }
 
+// One pinned box for a pseudo-element the theme paints. Only what a box can
+// carry: a fill, an edge, a radius. Whatever the pseudo-element *said* is gone,
+// and that is warned about separately.
+function pseudoHtml(p, ctx) {
+  const scale = ctx.scale;
+  const d = [
+    "position:absolute",
+    `left:${lenOf(p.box.x, scale)}px`,
+    `top:${lenOf(p.box.y, scale)}px`,
+    `width:${lenOf(p.box.w, scale)}px`,
+    `height:${lenOf(p.box.h, scale)}px`,
+  ];
+  const fill = colourOf(p.style.backgroundColor);
+  if (fill) d.push(`background:${fill}`);
+  const sides = ["Top", "Right", "Bottom", "Left"].map((side) => borderOf(p.style, side, scale));
+  if (sides.every((b) => b && b === sides[0])) {
+    d.push(`border:${sides[0]}`);
+  } else {
+    const names = ["border-top", "border-right", "border-bottom", "border-left"];
+    sides.forEach((b, i) => { if (b) d.push(`${names[i]}:${b}`); });
+  }
+  const radius = lenOf(p.style.borderTopLeftRadius, scale);
+  if (radius > 0) d.push(`border-radius:${radius}px`);
+  const opacity = parseFloat(p.style.opacity);
+  if (isFinite(opacity) && opacity < 1) d.push(`opacity:${Math.round(opacity * 100) / 100}`);
+  return `<div style="${d.join(";")}"></div>`;
+}
+
 function emitTable(node, ctx, style) {
   const rows = node.rows
     .map((row, r) => {
@@ -727,14 +800,32 @@ function emitSlide(slide, ctx) {
     notes = `\n<aside>${escapeHtml(text)}</aside>`;
   }
 
+  // A painting pseudo-element becomes a pinned box of its own. It is emitted
+  // before the body so it sits behind the content: a rule beside a wordmark
+  // does not care either way, and a band drawn behind text would be wrong on
+  // top of it.
+  const painted = [];
   for (const p of slide.pseudos || []) {
-    ctx.warnings.push({
-      slide: ctx.slide,
-      message: `the theme paints ${p.pseudo} on <${p.tag}>${p.cls ? " ." + p.cls.split(/\s+/)[0] : ""}; a pseudo-element has no element to export and is dropped`,
-    });
+    const where = `<${p.tag}>${p.cls ? " ." + p.cls.split(/\s+/)[0] : ""}`;
+    if (p.box && p.style) {
+      painted.push(pseudoHtml(p, ctx));
+    } else if (p.painted) {
+      ctx.warnings.push({
+        slide: ctx.slide,
+        message: `the theme paints ${p.pseudo} on ${where}, and its box could not be reconstructed, so it is dropped`,
+      });
+    }
+    if (p.words) {
+      ctx.warnings.push({
+        slide: ctx.slide,
+        message: `${p.pseudo} on ${where} carries text, which has no element to live in and is dropped`,
+      });
+    }
   }
+  const pseudoBody = painted.filter(Boolean).join("\n");
 
-  return `<section id="${ctx.slide}" style="${decls.join(";")}">\n${body}${notes}\n</section>\n`;
+  return `<section id="${ctx.slide}" style="${decls.join(";")}">\n` +
+    `${pseudoBody ? pseudoBody + "\n" : ""}${body}${notes}\n</section>\n`;
 }
 
 // ---------------------------------------------------------------------------

@@ -716,6 +716,50 @@ if (!findChrome()) {
   });
 }
 
+if (findChrome()) {
+  test("a pseudo-element the theme paints becomes a box of its own (integration)", async () => {
+    // A pseudo-element has no node, so a DOM walk cannot see it — and a theme
+    // that draws a rule or a disk with one has drawn something the reader sees.
+    // Worse than a missing mark: it occupies space, so dropping it displaces
+    // whatever shared its box. Reported against a real deck, where losing a
+    // cover rule also moved the wordmark beside it to the slide margin.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-pseudo-"));
+    const parsed = parseSdoc("# Deck {\n    # Slide {\n        Body copy here.\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const html = renderSlides(nodes, {
+      meta,
+      themeCss: theme.themeCss,
+      themeConfig: theme.themeConfig,
+      // An absolutely positioned rule, centred on its own height by a translate
+      // — the shape that needs both the box and the matrix to land correctly.
+      deckCss: ".slide-body { position: relative; }\n" +
+        ".slide-body::before { content: \"\"; position: absolute; left: 20px; top: 50px;" +
+        " width: 120px; height: 6px; background: rgb(220, 30, 30);" +
+        " transform: translate(-10px, -3px); }",
+    });
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, html, "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+      });
+      assert(built.errors.length === 0, "exports clean: " + JSON.stringify(built.errors.slice(0, 2)));
+      const slideHtml = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+      const box = /<div style="position:absolute;[^"]*background:rgb\(220, 30, 30\)[^"]*"><\/div>/.exec(slideHtml);
+      assert(box, "the painted pseudo-element should be emitted as a pinned box:\n" + slideHtml.slice(0, 600));
+      // left 20 and top 50, moved by the element's own translate(-10,-3).
+      assert(/left:10px/.test(box[0]), "its own translate is applied to x: " + box[0]);
+      assert(/top:47px/.test(box[0]), "and to y: " + box[0]);
+      assert(/width:120px/.test(box[0]) && /height:6px/.test(box[0]), "sized from the style: " + box[0]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("the notes limit counts characters, not the escaping around them", () => {
   // Found on a real deck: five slides refused with "speaker notes are 4,140
   // characters; the limit is 4,000", all of them marginal. The exporter
