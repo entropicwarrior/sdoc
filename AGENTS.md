@@ -53,6 +53,9 @@ src/                Source code
   slide-geometry.js   Measures a built deck in headless Chrome
   slide-pptx.js       PowerPoint / Google Slides export, driven by that measurement
   slide-pdf.js        PDF export via headless Chrome (used by build-slides.js --pdf)
+  slide-fade-bake.js  Bakes `background-fade` into the picture for export: a CSS
+                      mask becomes a PDF soft mask that macOS Preview draws as a
+                      hard edge. HTML keeps the mask; --pdf and --pptx bake.
   slide-artifact.js   Claude Slides artifact export: harvests the DOM tree and
                       emits flow layout, so an edit in the editor reflows
   slide-artifact-validate.js  The Slides subset as data, and a validator for it
@@ -139,7 +142,7 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
   `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js`
-  (489 + 24 + 65 + 111 + 71 + 50 = 810 as of v0.2.24)
+  (489 + 24 + 65 + 122 + 71 + 50 = 821 as of v0.2.24)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

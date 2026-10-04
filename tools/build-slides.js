@@ -267,6 +267,43 @@ async function main() {
   );
   fs.writeFileSync(tmpHtml, html, "utf-8");
 
+  // A fade leaves the browser as pixels rather than as a CSS mask: Chrome turns
+  // the mask into a PDF soft mask, and macOS Preview draws that as a hard edge.
+  // Only an export pays for this; the HTML build keeps the real mask, which a
+  // browser renders correctly. See src/slide-fade-bake.js.
+  // --pdf and --pptx only. The Claude Slides artifact is a web page, where the
+  // mask renders correctly; whether its own subset can carry a fade is a
+  // separate question, open in impl-status.
+  const { bakeFades, hasFades } = require("../src/slide-fade-bake");
+  if ((pdfMode || pptxMode) && hasFades(html)) {
+    try {
+      const { baked, warnings } = await bakeFades(tmpHtml);
+      for (const warning of warnings) {
+        console.error(`Warning: ${warning}`);
+      }
+      if (Object.keys(baked).length) {
+        // Re-render rather than patch the built file: the renderer stays the one
+        // place that decides what a slide's HTML looks like.
+        const rebuilt = inlineDeckImages(
+          renderSlides(nodes, {
+            meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit,
+            includeOptional, bakedFades: baked
+          }),
+          imageBase
+        );
+        fs.writeFileSync(tmpHtml, rebuilt.html, "utf-8");
+      }
+    } catch (err) {
+      // A deck that exports with a hard-edged fade is still a deck; one that
+      // fails to export is not. Say what happened and carry on.
+      console.error(
+        `Warning: background fades could not be baked (${err.message}).\n` +
+        `         The export keeps the CSS mask, which macOS Preview renders as a\n` +
+        `         hard edge rather than a fade.`
+      );
+    }
+  }
+
   try {
     if (pdfMode) {
       const { exportSlidePdf } = require("../src/slide-pdf");
