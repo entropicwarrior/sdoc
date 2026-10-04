@@ -16,7 +16,7 @@
 
     # Current State @current-state
     {
-        SDOC v0.2.22 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.2.23 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
@@ -37,6 +37,7 @@
             - v0.2.19 — structured slide layouts, theme loading with \`theme.json\`, geometry harvest, PowerPoint / Google Slides export
             - v0.2.21 — optional slides, held back from the formats a deck is sent on in
             - v0.2.22 — drilldown navigation driven by position rather than a build-time class; independent navigation axes (left/right is the spine, up/down the column); deck images resolved against the \`.sdoc\` and embedded in every output format
+            - v0.2.23 — the \`scatter\` layout; slide background images with placement, scale, flip and linear or radial fades; a Claude Slides artifact export with its own validator and a pull/diff that reads a collaborator's edits back; a deck-scoped stylesheet through the existing \`style-append:\` key; the presenter filmstrip; and two silent-corruption fixes — a scope left unclosed no longer parses to a different tree without saying so, and a theme's \`text-transform\` no longer turns "40 mW" into "40 MW"
         }
 
         # GitHub Adoption
@@ -69,122 +70,6 @@
             - [ ] No CI runs the test suites; the geometry and PPTX tests skip themselves when Chrome is absent
         }
 
-        # Scatter Layout @scatter-wip
-        {
-            Merged to \`develop\` and \`main\` on 1 Oct 2026 (PR #64), unreleased —
-            no version bump yet. A \`scatter\` layout: labelled
-            points on two named axes, the positioning-chart shape. A point
-            written entirely in bold is marked, the same semantic rule a
-            pipeline step follows, so the slide's argument survives a restyle.
-            See [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc#layout-scatter).
-
-            It is the first layout to place content at coordinates rather than
-            in flow, which put two limits of the export path on the record:
-            the geometry harvest reads boxes, text and images, so an axis drawn
-            in SVG exports as nothing, and nothing anywhere handles rotation,
-            so rotated text exports as horizontal text in a tall narrow box.
-            Both are now documented under [Writing against the layouts](../docs/reference/slide-authoring.sdoc#theme-classes).
-
-            - [ ] Numeric axes with a stated range, ticks and gridlines are out of scope and would be a separate layout
-        }
-
-        # Case-Sensitive Units Under an Uppercasing Theme @units-wip
-        {
-            Unreleased, on \`feat/slide-background\`. A theme that sets
-            \`text-transform: uppercase\` rendered "40 mW" as "40 MW" — a factor
-            of 10⁹ on a power figure. The built-in theme does this in ten
-            places and the structural CSS in one, so it was not a third-party
-            theme's problem.
-
-            The defect class is the interesting part: the document was correct
-            and only its rendering was wrong, so no parser, test or gate could
-            see it. It was found by a person reading a slide.
-
-            Fixed in the renderer rather than in the theme, because the theme
-            is the thing that gets it wrong: a unit symbol following a number
-            is wrapped in \`<span class="sdoc-unit">\` and the structural CSS
-            opts that span out of case folding. Any theme is protected without
-            knowing the guard exists, and it survives PDF and PPTX because the
-            harvest reads the computed style per run. Symbols are a closed
-            list, and already-capital symbols are left unmarked so no text run
-            is fragmented for nothing. See
-            [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc#theme-units).
-
-            - [ ] The same guard is not applied by the document renderer in \`sdoc.js\`; no shipped document CSS uppercases prose today, so nothing is broken, but a custom stylesheet could reintroduce it
-        }
-
-        # Slide Background Images @background-wip
-        {
-            Unreleased, on \`feat/slide-background\`. \`background:\` and its five
-            companions put an image behind any slide: \`background-position:\`,
-            \`background-size:\`, \`background-scale:\`, \`background-flip:\` and
-            \`background-fade:\`. Common keys, so every layout gets them. See
-            [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc#backgrounds).
-
-            Three decisions worth keeping:
-
-            {[.]
-                - The image is an \`<img>\`, not a CSS background. That is what makes it embed against the \`.sdoc\`, survive the geometry harvest and export to PowerPoint as a picture shape. A CSS background would build fine and then vanish from the \`.pptx\`.
-                - The fade is a mask on the wrapper rather than a coloured scrim, so one fade works on a white deck and a near-black one without the renderer knowing the theme's ground colour — and because it sits on the wrapper, flipping the image never drags the fade off the text it was protecting.
-                - \`background:\` only takes the line when the value names an image. "Background: we started in 2019." is a sentence a deck really contains, and swallowing it would delete it and then try to load it as a picture. Generalised as \`VALUE_SHAPES\` beside \`BOOLEAN_KEYS\`.
-            }
-
-            - [ ] The PPTX export carries the image but not the fade: the harvest reads boxes, text and images, and a mask is none of those, so the picture arrives at full strength. Exporting it would mean teaching the harvest to read gradients and the exporter to write \`a:gradFill\`.
-            - [ ] No way to confine a background to a sub-rectangle of the slide — it is full-bleed, softened by the fade. A hard-edged panel occupying part of the slide would need a further key.
-
-            \`background-size:\` also takes a pair, as in \`auto 100%\`, for the
-            shapes no fit keyword can say. A pair sizes the image's own box and
-            the background-position rule then places the whole picture, which
-            is a second placement path beside \`object-position\` — kept to the
-            pair alone, so the keyword path is untouched. A scale folds into
-            the pair rather than becoming a transform, so nothing has to
-            reconcile a scale origin against the placement offset.
-        }
-
-        # Claude Slides Artifact Export @artifact-wip
-        {
-            Unreleased, on \`feat/artifact-export\`. A fourth export target
-            beside HTML, PDF and PPTX. \`--artifact\` writes
-            \`<deck>.artifact/\` — \`project/\` as the artifact stores it,
-            \`assets/\` for the upload step, and a manifest — and the skill at
-            \`skills/sdoc-artifact/\` publishes it to claude.ai and pulls a
-            collaborator's edits back. See
-            [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc#artifact).
-
-            The design decision is that this harvests the DOM *tree*, not the
-            flat list of positioned atoms the PPTX export is built from, and
-            not a per-layout template. Three reasons:
-
-            {[.]
-                - The artifact is an editing surface. A pinned box does not reflow, so an edited line overlaps its neighbour — which defeats the only reason to publish a deck somewhere editable.
-                - The subset caps a container at 24 positioned children and a slide at 200 elements. A harvested slide passes both routinely, so the PPTX atom list could not be reused even if reflow did not matter.
-                - A per-layout template would have to be taught every layout and would drift the first time one changed. The renderer's semantic HTML maps onto the subset's \`display:flex\`, \`gap\`, \`padding\` and \`flex\` almost one to one, so every layout exports, including ones added later.
-            }
-
-            The validator is a module of its own because nothing checks a
-            published deck: the page drops what it cannot read and heals the
-            rest in silence, so an export outside the subset arrives wrong
-            rather than failing. Its rules are transcribed from the Slides
-            type's own format reference, with the release and contract
-            recorded in the file, so a type change is re-transcribed rather
-            than patched into the checks that consume it.
-
-            \`tools/artifact-diff.js\` closes the loop. The editor re-saves
-            every slide it touches normalised — declarations reordered, colours
-            re-cased, whitespace collapsed — so both sides are parsed and
-            compared structurally rather than as bytes, or an untouched deck
-            would report as entirely rewritten. A colour change on something
-            whose role carries meaning (a marked pipeline step, a marked
-            scatter point) is reported separately, because in \`.sdoc\` that
-            mark is bold in the source and the theme picks the colour: writing
-            a picked colour back would turn an argument into a decoration.
-
-            - [ ] Up-projection is a report, not an edit: applying a text change back into the \`.sdoc\` is still the agent's job, guided by \`pulled/changes.json\`
-            - [ ] A slide whose scope has no \`@id\` exports as \`slide-<n>\`, and an edit to it cannot be traced back with confidence
-            - [ ] A theme is not installed as a design system, so the editor's colour and text menus show bare hex values rather than the theme's named accents; \`deck.json\` ships an empty \`designSystems\` list
-            - [ ] \`background-flip:\` cannot be expressed: the subset's \`transform\` takes a scale between 0.5 and 2, so there is no way to mirror an image
-            - [ ] Painted \`::before\` and \`::after\` are reported but not materialised; exporting one would mean synthesising a box the theme never emitted
-        }
     }
 
     # Next Up @next-up
