@@ -764,8 +764,28 @@ function pinnedBox(styles) {
   return { left: get("left"), top: get("top"), width: get("width"), height: get("height") };
 }
 
+// The characters a reader sees, not the characters in the file. The parser
+// keeps text as written, so `&` arrives as `&amp;` — and counting that form
+// against a limit measures the escaping rather than the content. Speaker notes
+// truncated to exactly 4,000 characters were then reported as 4,140 and the
+// export refused, which is how this was found.
+const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
+function decodeEntities(text) {
+  return String(text).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, body) => {
+    if (body[0] === "#") {
+      const code = body[1] === "x" || body[1] === "X"
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code) : whole;
+    }
+    const named = ENTITIES[body.toLowerCase()];
+    return named === undefined ? whole : named;
+  });
+}
+
 function textOf(el) {
-  if (el.tag === "#text") return el.value;
+  if (el.tag === "#text") return decodeEntities(el.value);
   return (el.children || []).map(textOf).join("");
 }
 
@@ -820,6 +840,7 @@ module.exports = {
   // The exporter filters its own declarations through this, so it cannot emit a
   // property this file would then reject. One table, one source of truth.
   PROPS_FOR_TAG,
+  decodeEntities,
   srgbToRgba,
   RE_ASSET_PLACEHOLDER,
   SUBSET_RELEASE,

@@ -15,6 +15,7 @@ const {
   validateSlideHtml,
   validateDeckJson,
   MIN_FONT_SIZE,
+  MAX_NOTES,
 } = require("../src/slide-artifact-validate.js");
 const {
   harvestArtifact,
@@ -714,6 +715,35 @@ if (!findChrome()) {
     }
   });
 }
+
+test("the notes limit counts characters, not the escaping around them", () => {
+  // Found on a real deck: five slides refused with "speaker notes are 4,140
+  // characters; the limit is 4,000", all of them marginal. The exporter
+  // truncates to exactly 4,000 and then escapes, so an ampersand in the notes
+  // became `&amp;` and the validator counted the file rather than the content.
+  // Every one of those decks was inside the limit as a reader would count it.
+  const plain = "x&".repeat(1995);           // 3,990 characters
+  const escaped = plain.replace(/&/g, "&amp;");
+  assert(escaped.length > MAX_NOTES, "the escaped form is what used to be counted");
+  const r = validateSlideHtml(`<section id="s1"><aside>${escaped}</aside></section>`, { slide: "s1" });
+  assert(!r.errors.some((e) => /speaker notes/.test(e.message)),
+    "within the limit as a reader counts it: " + JSON.stringify(r.errors.slice(0, 2)));
+});
+
+test("notes genuinely over the limit are still refused", () => {
+  const tooLong = "y".repeat(MAX_NOTES + 50);
+  const r = validateSlideHtml(`<section id="s1"><aside>${tooLong}</aside></section>`, { slide: "s1" });
+  assert(r.errors.some((e) => /speaker notes/.test(e.message)), "the limit still bites");
+});
+
+test("over-long notes are cut with a warning rather than refused", () => {
+  // The exporter's half: it truncates and says so, so a long note costs a
+  // warning and a trimmed aside instead of an export that writes nothing.
+  const { decodeEntities } = require("../src/slide-artifact-validate.js");
+  assert(decodeEntities("a &amp; b") === "a & b", "entities decode");
+  assert(decodeEntities("&#39;q&#39;") === "'q'", "numeric entities decode");
+  assert(decodeEntities("&notareal;") === "&notareal;", "an unknown entity is left alone");
+});
 
 test("a color-mix() computed value becomes a colour the subset has", () => {
   // Chrome serialises `color-mix(in srgb, var(--cyan) 10%, transparent)` as
