@@ -320,8 +320,8 @@
   // PDF / print rendering: measure each slide's natural content size and
   // apply transform: scale() so the content fits the page exactly.  In
   // screen mode .slide-content-scale is display:contents (invisible to
-  // layout); in print mode it becomes display:block, at which point we
-  // can measure its scrollWidth / scrollHeight and shrink to fit.
+  // layout); in print mode it becomes a real flex column that fills the
+  // slide, at which point we can measure it and shrink to fit.
   // ---------------------------------------------------------------------
   function fitSlidesForPrint() {
     var allSlides = document.querySelectorAll(".slide");
@@ -329,25 +329,51 @@
       var slide = allSlides[i];
       var wrap = slide.querySelector(".slide-content-scale");
       if (!wrap) continue;
-      // Reset any prior transform so the natural size can be measured.
+      // Reset any prior fit so the natural size can be measured.
       wrap.style.transform = "";
-      // Use the slide's box as the target — print CSS sets it to the
-      // page size (100vw x 100vh, which in print is 13.333in x 7.5in).
-      var rect = slide.getBoundingClientRect();
-      var pageW = rect.width;
-      var pageH = rect.height;
+      wrap.style.flex = "";
+      wrap.style.justifyContent = "";
+      // The room the content actually has is the wrapper's box, which sits
+      // inside the theme's padding.  The slide's box overstates it by that
+      // padding on all four sides, so measuring against the slide let
+      // content overflow by up to a padding's worth without being scaled.
+      var box = wrap.getBoundingClientRect();
+      var pageW = box.width;
+      var pageH = box.height;
+      if (!(pageW > 0) || !(pageH > 0)) continue;
+      // Measure the content at its natural height, not stretched.  Print CSS
+      // stretches the wrapper to fill the slide so an auto margin inside has
+      // something to push against; while it is stretched, content taller than
+      // the page is centred, so it spills above the wrapper's top edge as
+      // well as below — and scrollHeight only sees what is below that edge,
+      // which makes the overflow look about half its real size.
+      wrap.style.flex = "0 0 auto";
+      wrap.style.justifyContent = "flex-start";
       var contentW = wrap.scrollWidth;
       var contentH = wrap.scrollHeight;
-      if (contentW <= 0 || contentH <= 0 || pageW <= 0 || pageH <= 0) continue;
-      var s = Math.min(pageW / contentW, pageH / contentH, 1);
+      var s = contentW > 0 && contentH > 0
+        ? Math.min(pageW / contentW, pageH / contentH, 1)
+        : 1;
       if (s < 0.999) {
+        // Leave it unstretched and start-aligned.  scale() is a visual
+        // transform and does not relayout, so content still centred in a box
+        // it overflows would stay clipped at the top however far it shrank;
+        // from the top-left corner the scaled box lands inside the page.
         wrap.style.transform = "scale(" + s + ")";
+      } else {
+        // It fits: hand the layout back to the stylesheet.
+        wrap.style.flex = "";
+        wrap.style.justifyContent = "";
       }
     }
   }
   function unfitSlidesAfterPrint() {
     var wraps = document.querySelectorAll(".slide-content-scale");
-    for (var i = 0; i < wraps.length; i++) wraps[i].style.transform = "";
+    for (var i = 0; i < wraps.length; i++) {
+      wraps[i].style.transform = "";
+      wraps[i].style.flex = "";
+      wraps[i].style.justifyContent = "";
+    }
   }
   window.addEventListener("beforeprint", fitSlidesForPrint);
   window.addEventListener("afterprint", unfitSlidesAfterPrint);

@@ -1,0 +1,136 @@
+{
+  "deck": "examples/svg-example.sdoc",
+  "slides": [
+    {
+      "id": "shapes",
+      "layout": null,
+      "atoms": {
+        "text": 4
+      },
+      "text": [
+        "Simple Shapes",
+        "Basic SVG primitives — rectangles, circles, and text:",
+        "Service A Cache DB",
+        "1 / 4"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 4,
+        "runs": [
+          "Simple Shapes",
+          "Basic SVG primitives — rectangles, circles, and text:",
+          "Service A",
+          "Cache",
+          "DB",
+          "1 / 4"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "architecture",
+      "layout": null,
+      "atoms": {
+        "text": 4
+      },
+      "text": [
+        "Architecture Diagram",
+        "A service topology with arrows showing data flow:",
+        "Client API Gateway Worker Database",
+        "2 / 4"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 4,
+        "runs": [
+          "Architecture Diagram",
+          "A service topology with arrows showing data flow:",
+          "Client",
+          "API Gateway",
+          "Worker",
+          "Database",
+          "2 / 4"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "dashboard",
+      "layout": null,
+      "atoms": {
+        "text": 4
+      },
+      "text": [
+        "Status Dashboard",
+        "A simple bar chart rendered with SVG:",
+        "Q1 Q2 Q3 Q4 110 80 120 60",
+        "3 / 4"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 4,
+        "runs": [
+          "Status Dashboard",
+          "A simple bar chart rendered with SVG:",
+          "Q1",
+          "Q2",
+          "Q3",
+          "Q4",
+          "110",
+          "80",
+          "120",
+          "60",
+          "3 / 4"
+        ]
+      },
+      "source": {
+        "svgs": 1,
+        "shapes": 3,
+        "texts": 3
+      }
+    },
+    {
+      "id": "mixed",
+      "layout": null,
+      "atoms": {
+        "text": 6,
+        "box": 1
+      },
+      "text": [
+        "Mixed Content",
+        "SVG diagrams work alongside regular SDOC content. Here is a small inline icon-style graphic:",
+        "i SVG renders inline with text content.",
+        "The diagram above is a simple callout box built entirely from SVG primitives. Below is a regular code block for comparison:",
+        "const svg = document.querySelector('svg');",
+        "4 / 4"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 8,
+        "runs": [
+          "Mixed Content",
+          "SVG diagrams work alongside regular SDOC content. Here is a small inline icon-style graphic:",
+          "i",
+          "SVG renders inline with text content.",
+          "The diagram above is a simple callout box built entirely from SVG primitives. Below is a regular code block for comparison:",
+          "const svg = document.querySelector('svg');",
+          "4 / 4"
+        ]
+      },
+      "source": {
+        "svgs": 2,
+        "shapes": 2,
+        "texts": 0
+      }
+    }
+  ],
+  "media": 0
+}

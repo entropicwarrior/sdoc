@@ -100,6 +100,14 @@ const RE_FUNC_COLOR = /^(rgb|rgba|hsl|hsla)\(/i;
 const RE_BAD_UNIT = /\d(em|rem|vw|vh|vmin|vmax|ch|ex|pt|cm|mm|in|pc)\b/i;
 const RE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const RE_BLOB = /^\/?_blob\/[A-Za-z0-9_-]+$/;
+
+// What an export writes before its assets have been uploaded. An image cannot
+// carry its final `/_blob/<id>` until the publish step has put the file on the
+// artifact and been told the id, so the export emits this and
+// tools/artifact-resolve-assets.js rewrites it afterwards — and exits non-zero
+// if any survive. It is only ever valid in that window: callers opt in with
+// `assetPlaceholders`, and a file being published still fails on one.
+const RE_ASSET_PLACEHOLDER = /^sdoc-asset:[^"'\s>]+$/;
 const RE_DS_PATH = /^project\/ds\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_./-]+$/;
 
 const ALIGN_WORDS = new Set([
@@ -499,6 +507,9 @@ function parseStyle(style) {
 function validateSlideHtml(html, options = {}) {
   const slide = options.slide || "(slide)";
   const declaredFaces = options.declaredFaces || new Set();
+  // Set by the exporter, which has not uploaded its assets yet. Never set by
+  // anything checking a file that is about to be published.
+  const assetPlaceholders = options.assetPlaceholders === true;
   const errors = [];
   const warnings = [];
 
@@ -618,6 +629,9 @@ function validateSlideHtml(html, options = {}) {
       if (!src) warn("<img> has no src: the type reads that as a deliberately empty frame", el);
       else if (/^data:/i.test(src)) err("an <img> src may not be a data: URI; upload the file and use its /_blob/<id>", el);
       else if (/^https?:/i.test(src)) err("an <img> src may not be an http URL; upload the file and use its /_blob/<id>", el);
+      else if (assetPlaceholders && RE_ASSET_PLACEHOLDER.test(src)) {
+        // An unresolved export. The resolve step turns it into a blob id.
+      }
       else if (!RE_BLOB.test(src) && !RE_DS_PATH.test(src)) {
         err(`an <img> src must be /_blob/<id> or project/ds/<folder>/…, found "${src}"`, el);
       }
@@ -737,7 +751,8 @@ function textOf(el) {
 }
 
 // deck.json, checked against the same reference.
-function validateDeckJson(deck) {
+function validateDeckJson(deck, options = {}) {
+  const assetPlaceholders = options.assetPlaceholders === true;
   const errors = [];
   const warnings = [];
   const err = (m) => errors.push({ slide: "deck.json", message: m });
@@ -769,7 +784,8 @@ function validateDeckJson(deck) {
       err(`face "${key}" href must be a https://fonts.googleapis.com/css2? link`);
     }
     if (face.href && face.href.length > 1024) err(`face "${key}" href is over 1024 characters`);
-    if (face.src && !RE_BLOB.test(face.src) && !RE_DS_PATH.test(face.src)) {
+    if (face.src && !RE_BLOB.test(face.src) && !RE_DS_PATH.test(face.src) &&
+        !(assetPlaceholders && RE_ASSET_PLACEHOLDER.test(face.src))) {
       err(`face "${key}" src must be /_blob/<id> or project/ds/<folder>/…`);
     }
   }
@@ -782,6 +798,7 @@ function validateDeckJson(deck) {
 }
 
 module.exports = {
+  RE_ASSET_PLACEHOLDER,
   SUBSET_RELEASE,
   SUBSET_CONTRACT,
   CANVAS,
