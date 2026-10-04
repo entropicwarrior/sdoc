@@ -314,6 +314,85 @@ test("a system keyword is never taken for a declared face", () => {
 // ============================================================
 console.log("\n--- Export through a browser ---");
 
+// ============================================================
+console.log("\n--- Scaling a theme onto the canvas ---");
+
+// A harvest, hand-built. The default theme is 1920x1080 now, the same as the
+// canvas, so nothing it produces exercises the scaling any more — and a theme
+// of another size is exactly the case that would break silently.
+function fakeStyle(over) {
+  return Object.assign({
+    display: "block", flexDirection: "row", flexWrap: "nowrap", gap: "0px",
+    alignItems: "normal", justifyContent: "normal",
+    gridTemplateColumns: "none", gridTemplateRows: "none",
+    paddingTop: "0px", paddingRight: "0px", paddingBottom: "0px", paddingLeft: "0px",
+    backgroundColor: "rgba(0, 0, 0, 0)", backgroundImage: "none",
+    borderTopWidth: "0px", borderRightWidth: "0px", borderBottomWidth: "0px", borderLeftWidth: "0px",
+    borderTopStyle: "none", borderRightStyle: "none", borderBottomStyle: "none", borderLeftStyle: "none",
+    borderTopColor: "rgb(0, 0, 0)", borderRightColor: "rgb(0, 0, 0)",
+    borderBottomColor: "rgb(0, 0, 0)", borderLeftColor: "rgb(0, 0, 0)",
+    borderTopLeftRadius: "0px", opacity: "1",
+    flexGrow: "0", flexShrink: "1", flexBasis: "auto",
+    marginTop: "0px", marginRight: "0px", marginBottom: "0px", marginLeft: "0px",
+    position: "static",
+    fontFamily: "Arial, sans-serif", fontSize: "16px", fontWeight: "400", fontStyle: "normal",
+    lineHeight: "24px", letterSpacing: "normal", textAlign: "start", textTransform: "none",
+    whiteSpace: "normal", color: "rgb(17, 17, 17)",
+  }, over || {});
+}
+
+function fakeHarvest(design) {
+  return {
+    slides: [{
+      id: "one", classes: "slide", layout: null, spine: 1, detail: 0,
+      design: design, notes: "", pseudos: [],
+      style: fakeStyle({
+        backgroundColor: "rgb(255, 255, 255)", fontSize: "16px",
+        paddingTop: "60px", paddingRight: "100px", paddingBottom: "60px", paddingLeft: "100px",
+      }),
+      children: [{
+        tag: "h2", cls: "", style: fakeStyle({ fontSize: "32px", fontWeight: "700" }),
+        box: { x: 0, y: 0, w: 400, h: 40 }, runs: [{ text: "Title" }],
+      }],
+    }],
+  };
+}
+
+test("a theme smaller than the canvas is scaled onto it", () => {
+  const built = buildArtifact(fakeHarvest({ w: 1280, h: 720 }), { title: "T", now: "2026-01-01T00:00:00Z" });
+  assert(built.errors.length === 0, "no errors: " + JSON.stringify(built.errors.slice(0, 2)));
+  assert(built.manifest.scale === 1.5, "scale: " + built.manifest.scale);
+  const html = built.files["project/slides/one.html"];
+  assert(/padding:90px 150px 90px 150px/.test(html), "60/100 padding scaled: " + html.slice(0, 160));
+  assert(/font-size:48px/.test(html), "32px type scaled to 48px");
+});
+
+test("a theme already the size of the canvas is copied across untouched", () => {
+  const built = buildArtifact(fakeHarvest({ w: 1920, h: 1080 }), { title: "T", now: "2026-01-01T00:00:00Z" });
+  assert(built.manifest.scale === 1, "scale: " + built.manifest.scale);
+  const html = built.files["project/slides/one.html"];
+  assert(/padding:60px 100px 60px 100px/.test(html), "padding unscaled");
+  assert(/font-size:32px/.test(html), "type unscaled");
+});
+
+test("a theme larger than the canvas is scaled down", () => {
+  // The floor is off here: scaling and the 24px minimum are separate features
+  // and a test that asserts both at once cannot say which one broke.
+  const opts = { title: "T", now: "2026-01-01T00:00:00Z", minFontSize: false };
+  const built = buildArtifact(fakeHarvest({ w: 3840, h: 2160 }), opts);
+  assert(built.manifest.scale === 0.5, "scale: " + built.manifest.scale);
+  assert(/font-size:16px/.test(built.files["project/slides/one.html"]), "32px type halved");
+});
+
+test("scaling down below the type's floor raises it, and says so", () => {
+  // Halving a 32px heading lands it at 16px, under the 24px the Slides format
+  // asks for. Raising it is right, but silently would not be.
+  const built = buildArtifact(fakeHarvest({ w: 3840, h: 2160 }), { title: "T", now: "2026-01-01T00:00:00Z" });
+  assert(/font-size:24px/.test(built.files["project/slides/one.html"]), "raised to the floor");
+  assert(built.warnings.some((w) => /raised .* text size/.test(w.message)),
+    "and reported: " + JSON.stringify(built.warnings.map((w) => w.message).slice(0, 3)));
+});
+
 const EXAMPLE = path.join(__dirname, "..", "examples", "layouts-example.sdoc");
 
 if (!findChrome()) {
@@ -367,17 +446,21 @@ if (!findChrome()) {
     }
   });
 
-  test("the theme's 1280x720 box is scaled 1.5x onto the fixed canvas", async () => {
+  test("the built-in theme needs no scaling: its box is the canvas", async () => {
+    // Since 0.2.24 the default box is 1920x1080, which is what a Claude Slides
+    // artifact is fixed at. Lengths copy across instead of being scaled, and a
+    // theme's small type clears the format's 24px floor without being raised.
     const { built } = await builtPromise;
-    assert(built.manifest.designBox.w === 1280 && built.manifest.designBox.h === 720, "design box measured");
+    assert(built.manifest.designBox.w === 1920 && built.manifest.designBox.h === 1080,
+      "design box measured: " + JSON.stringify(built.manifest.designBox));
     assert(built.manifest.canvas.w === 1920 && built.manifest.canvas.h === 1080, "canvas is fixed");
-    assert(built.manifest.scale === 1.5, "scale: " + built.manifest.scale);
-    // The theme's `.slide { padding: 60px 100px }` is the one number in the
+    assert(built.manifest.scale === 1, "scale: " + built.manifest.scale);
+    // The theme's `.slide { padding: 90px 150px }` is the one number in the
     // output a reader can check against the stylesheet by eye.
     const cover = built.files[`project/slides/${built.deck.cover}.html`];
     const style = parseStyle(/<section [^>]*style="([^"]*)"/.exec(cover)[1]);
     const padding = style.find((d) => d.prop === "padding").value;
-    assert(padding === "90px 150px 90px 150px", "padding should be 1.5x 60px 100px, got " + padding);
+    assert(padding === "90px 150px 90px 150px", "padding copied unscaled, got " + padding);
   });
 
   test("two builds of one harvest differ only where the timestamp does", async () => {

@@ -1056,10 +1056,10 @@ function renderSlides(nodes, options = {}) {
   // The design box and print page come from the theme (themes/<name>/theme.json).
   // They must agree: the box in CSS pixels is the page in inches at 96 dpi, which
   // is what makes screen and PDF the same geometry.
-  const slideW = (themeConfig.slide && themeConfig.slide.width) || 1280;
-  const slideH = (themeConfig.slide && themeConfig.slide.height) || 720;
-  const pageW = (themeConfig.page && themeConfig.page.width) || 13.333;
-  const pageH = (themeConfig.page && themeConfig.page.height) || 7.5;
+  const slideW = (themeConfig.slide && themeConfig.slide.width) || 1920;
+  const slideH = (themeConfig.slide && themeConfig.slide.height) || 1080;
+  const pageW = (themeConfig.page && themeConfig.page.width) || 20;
+  const pageH = (themeConfig.page && themeConfig.page.height) || 11.25;
 
   // How the design box meets a window of a different shape.
   //   contain — scale to fit, letterbox the remainder (the default)
@@ -1254,7 +1254,7 @@ function renderSlides(nodes, options = {}) {
 .slide-bg-flip { width: 100%; height: 100%; }
 .slide-bg img { display: block; width: 100%; height: 100%; }
 .slide-footer {
-  position: absolute; bottom: 20px; left: 32px; right: 32px;
+  position: absolute; bottom: 30px; left: 48px; right: 48px;
   display: flex; align-items: baseline;
   pointer-events: none;
 }
@@ -1273,7 +1273,7 @@ function renderSlides(nodes, options = {}) {
      bottom of its line box, so an 18px box offset put the visible mark 18px
      up. The SVG carries a little padding below the stroke, so the box sits
      2px lower to land the mark in the same place. Measured, not guessed. */
-  bottom: 16px; left: 50%;
+  bottom: 24px; left: 50%;
   transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center;
   /* The two arrows are sized by their own boxes now, not by a line box with
@@ -1439,7 +1439,7 @@ function renderSlides(nodes, options = {}) {
    the real height; this only stops the layout from silently folding flat.
    Everything visible — the dot, the rules, the type, where a label sits
    relative to its point — belongs to the theme. */
-.scatter-plot { position: relative; min-height: 240px; }
+.scatter-plot { position: relative; min-height: 360px; }
 .scatter-point { position: absolute; }
 
 @media print {
