@@ -64,6 +64,7 @@
             export driven by that measurement. See
             [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc).
 
+            - [x] \`--artifact\` could not export any deck containing an image. The exporter writes an \`sdoc-asset:<file>\` placeholder, because an image cannot carry its \`/_blob/<id>\` until the publish step has uploaded the file and been told the id — and the subset validator rejected that placeholder as an invalid \`<img>\` src, so the export reported an error per image and wrote nothing. The two halves of the documented flow disagreed. The validator now accepts the placeholder only when the caller opts in, which the exporter does and nothing else does, so a file reaching a publish with one unresolved still fails. \`tools/artifact-resolve-assets.js\` already exits non-zero on a leftover, so the publish-time guarantee was never the gap
             - [ ] Gate \`--check\` consistently: it is ignored with \`--pdf\` and unconditional with \`--pptx\`, and never sets a non-zero exit code
             - [ ] Decide whether the new modules join the package \`exports\` map or leave the npm tarball — they ship today but are unreachable
             - [ ] Warn when a theme's \`slide\` box and \`page\` size disagree at 96 dpi, instead of silently clipping the PDF

@@ -785,11 +785,13 @@ function buildArtifact(harvest, options = {}) {
   for (const [file, html] of Object.entries(files)) {
     if (!file.endsWith(".html")) continue;
     const slide = file.replace(/^project\/slides\/|\.html$/g, "");
-    const r = validateSlideHtml(html, { slide, declaredFaces });
+    // The export's own assets are still placeholders at this point: they get
+    // their blob ids only once the publish step has uploaded the files.
+    const r = validateSlideHtml(html, { slide, declaredFaces, assetPlaceholders: true });
     errors.push(...r.errors);
     warnings.push(...r.warnings);
   }
-  const d = validateDeckJson(deck);
+  const d = validateDeckJson(deck, { assetPlaceholders: true });
   errors.push(...d.errors);
   warnings.push(...d.warnings);
 

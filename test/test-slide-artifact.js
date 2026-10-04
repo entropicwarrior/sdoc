@@ -599,6 +599,61 @@ test("a bare number keeps its meaning: 600 is a weight, 12 is a length", () => {
 });
 
 // ============================================================
+console.log("\n--- Asset placeholders, between export and publish ---");
+
+// An image cannot carry its final /_blob/<id> until the publish step has
+// uploaded the file and been told the id, so the export writes a placeholder
+// and tools/artifact-resolve-assets.js rewrites it. The validator used to
+// reject that placeholder outright, which meant no deck containing an image
+// could be exported at all — the export refused and wrote nothing.
+const imgSrc = (src) => `<section id="s1"><img src="${src}" alt="" /></section>`;
+const srcErrors = (r) => r.errors.filter((e) => /src must be/.test(e.message));
+
+test("an export may carry an unresolved asset placeholder", () => {
+  const r = validateSlideHtml(imgSrc("sdoc-asset:embedded-1.png"), {
+    slide: "s1", assetPlaceholders: true,
+  });
+  assert(srcErrors(r).length === 0, "the export stage accepts it: " + JSON.stringify(srcErrors(r)));
+});
+
+test("a placeholder that reached the publish step is still an error", () => {
+  const r = validateSlideHtml(imgSrc("sdoc-asset:embedded-1.png"), { slide: "s1" });
+  assert(srcErrors(r).length === 1, "unresolved by default, which is what guards a publish");
+});
+
+test("the opt-in is narrow: a data: URI is refused either way", () => {
+  const r = validateSlideHtml(imgSrc("data:image/png;base64,AA"), {
+    slide: "s1", assetPlaceholders: true,
+  });
+  assert(r.errors.some((e) => /data: URI/.test(e.message)), "still refused");
+});
+
+test("a resolved blob id passes without the opt-in", () => {
+  const r = validateSlideHtml(imgSrc("/_blob/abc123"), { slide: "s1" });
+  assert(srcErrors(r).length === 0, "the resolved form is the normal one");
+});
+
+test("a font face follows the same rule, since deck.json carries one too", () => {
+  const deck = { title: "t", order: ["a"], faces: { Body: { src: "sdoc-asset:f.woff2" } } };
+  const lenient = validateDeckJson(deck, { assetPlaceholders: true });
+  const strict = validateDeckJson(deck);
+  assert(srcErrors(lenient).length === 0, "accepted while exporting");
+  assert(srcErrors(strict).length === 1, "refused once it would be published");
+});
+
+test("a deck with images exports rather than refusing outright", () => {
+  // The whole bug in one assertion: before, this wrote nothing and reported an
+  // error for every image in the deck.
+  const parsed = parseSdoc(
+    "# Deck {\n    # Slide {\n        background: pic.png\n\n        Body copy.\n    }\n}"
+  );
+  assert(parsed.errors.length === 0, "fixture parses");
+  const { nodes, meta } = extractMeta(parsed.nodes);
+  const html = renderSlides(nodes, { meta });
+  assert(html.includes('<img src="pic.png"'), "the deck has an image to export");
+});
+
+// ============================================================
 Promise.all(asyncTests).then(() => {
   console.log("\n" + "=".repeat(40));
   console.log(`Results: ${pass} passed, ${fail} failed`);
