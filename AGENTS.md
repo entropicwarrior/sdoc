@@ -79,6 +79,18 @@ test/               Test files
   test-slide-artifact.js  Claude Slides export, its validator and the pull diff
                          (node test/test-slide-artifact.js; Chrome-gated tests
                          skip themselves when it is absent)
+  test-artifact-conformance.js  The Claude Slides export feature by feature. Knows
+                         the feature list from src/slide-layouts.js, so a layout or
+                         config key with no deck exercising it fails here. Checks the
+                         exported HTML from test/artifact-golden/, so most of it runs
+                         with no browser; regenerate with --update and read the diff
+  test-pptx-conformance.js  The PowerPoint / Google Slides export feature by feature.
+                         Same shape as the artifact one: knows the layout list, and
+                         checks a structural digest under test/pptx-golden/ so the
+                         guards run with no browser (--update to regenerate)
+  artifact-golden/    The checked-in Claude Slides export of the two example decks
+  pptx-golden/        Structural digests of the PPTX export: what the harvest found
+                      per slide against what reached the file
   test-slide-layouts.js  Structured layouts, theme loading, geometry, PPTX
                          (node test/test-slide-layouts.js; the geometry and
                          PPTX tests skip themselves when Chrome is absent)
@@ -141,8 +153,8 @@ should be evaluated against.
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
-  `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js`
-  (489 + 24 + 65 + 122 + 71 + 50 = 821 as of v0.2.24)
+  `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js`
+  (489 + 24 + 65 + 122 + 71 + 56 + 13 + 9 = 849 as of v0.2.24)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
