@@ -60,7 +60,7 @@ function usage() {
   console.error(
     "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
     "                    [--css path/to/deck.css]\n" +
-    "                    [--pdf] [--pptx] [--artifact] [--artifact-keep-small-text]\n" +
+    "                    [--pdf] [--pptx] [--artifact] [--artifact-raise-small-text]\n" +
     "                    [--check]\n" +
     "                    [--fit contain|cover|stretch] [--dark]\n" +
     "                    [--with-optional | --no-optional]"
@@ -77,7 +77,7 @@ async function main() {
   let pdfMode = false;
   let pptxMode = false;
   let artifactMode = false;
-  let keepSmallText = false;
+  let raiseSmallText = false;
   let checkMode = false;
   let darkMode = false;
   // null means "whatever this output format defaults to"; the flags force it.
@@ -97,8 +97,8 @@ async function main() {
       pptxMode = true;
     } else if (args[i] === "--artifact") {
       artifactMode = true;
-    } else if (args[i] === "--artifact-keep-small-text") {
-      keepSmallText = true;
+    } else if (args[i] === "--artifact-raise-small-text") {
+      raiseSmallText = true;
     } else if (args[i] === "--check") {
       checkMode = true;
     } else if (args[i] === "--fit" && i + 1 < args.length) {
@@ -271,11 +271,12 @@ async function main() {
   // the mask into a PDF soft mask, and macOS Preview draws that as a hard edge.
   // Only an export pays for this; the HTML build keeps the real mask, which a
   // browser renders correctly. See src/slide-fade-bake.js.
-  // --pdf and --pptx only. The Claude Slides artifact is a web page, where the
-  // mask renders correctly; whether its own subset can carry a fade is a
-  // separate question, open in impl-status.
+  // Every format that leaves the browser. The Claude Slides subset has no
+  // mask-image either — it was left out of this at first on the grounds that
+  // an artifact is a web page, and a published deck then arrived with its
+  // backgrounds unfaded.
   const { bakeFades, hasFades } = require("../src/slide-fade-bake");
-  if ((pdfMode || pptxMode) && hasFades(html)) {
+  if ((pdfMode || pptxMode || artifactMode) && hasFades(html)) {
     try {
       const { baked, warnings } = await bakeFades(tmpHtml);
       for (const warning of warnings) {
@@ -350,7 +351,7 @@ async function main() {
         sdocVersion: require("../package.json").version,
         source: { path: path.basename(resolvedInput), theme: themePath || "default" },
         previousManifest: readPreviousManifest(outDir),
-        minFontSize: !keepSmallText,
+        minFontSize: raiseSmallText,
       });
 
       // Nothing checks these files once they are published: the page drops

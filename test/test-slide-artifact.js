@@ -385,10 +385,23 @@ test("a theme larger than the canvas is scaled down", () => {
   assert(/font-size:16px/.test(built.files["project/slides/one.html"]), "32px type halved");
 });
 
-test("scaling down below the type's floor raises it, and says so", () => {
-  // Halving a 32px heading lands it at 16px, under the 24px the Slides format
-  // asks for. Raising it is right, but silently would not be.
+test("text under the type's floor is left at the size the theme set", () => {
+  // Halving a 32px heading lands it at 16px, under the 24px the format asks
+  // for — and the format says of that floor, in its own words, "(not
+  // build-checked)". A published deck with text down to 8.67px renders every
+  // size as authored, so raising them changed the design for a rule nothing
+  // enforces. They are left alone, and reported so the author knows.
   const built = buildArtifact(fakeHarvest({ w: 3840, h: 2160 }), { title: "T", now: "2026-01-01T00:00:00Z" });
+  assert(/font-size:16px/.test(built.files["project/slides/one.html"]),
+    "kept at the authored size: " + built.files["project/slides/one.html"].slice(0, 200));
+  assert(built.warnings.some((w) => /under the .* the type asks for/.test(w.message)),
+    "and reported: " + JSON.stringify(built.warnings.map((w) => w.message).slice(0, 3)));
+});
+
+test("raising to the floor is still available, and still says so", () => {
+  const built = buildArtifact(fakeHarvest({ w: 3840, h: 2160 }), {
+    title: "T", now: "2026-01-01T00:00:00Z", minFontSize: true,
+  });
   assert(/font-size:24px/.test(built.files["project/slides/one.html"]), "raised to the floor");
   assert(built.warnings.some((w) => /raised .* text size/.test(w.message)),
     "and reported: " + JSON.stringify(built.warnings.map((w) => w.message).slice(0, 3)));

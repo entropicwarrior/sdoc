@@ -101,6 +101,14 @@ const ARTIFACT_SCRIPT = `
   function isTextLeaf(el) {
     if (!el.textContent || !el.textContent.trim()) return false;
     var own = getComputedStyle(el);
+    // A box that arranges its children is not a run of text, whatever those
+    // children are. Treating a flex row of marks as a text leaf emits it as a
+    // <p>, and the subset allows display/gap/align-items on a section or a div
+    // and nowhere else — so the row arrives stacked. It has to be a div.
+    if (own.display === "flex" || own.display === "grid" ||
+        own.display === "inline-flex" || own.display === "inline-grid") {
+      if (el.children.length > 0) return false;
+    }
     for (var i = 0; i < el.children.length; i++) {
       var child = el.children[i];
       var cs = getComputedStyle(child);
@@ -1100,6 +1108,19 @@ function emitTable(node, ctx, style) {
           if (align && !["start", "left"].includes(align)) parts.push(`text-align:${align}`);
           const colour = colourOf(cell.style.color);
           if (colour) parts.push(`color:${colour}`);
+          // A cell carries its own type. Without this a header set in the
+          // deck's mono face inherits the table's instead, and the face is
+          // never declared because nothing asked for it — the column headings
+          // come out in the body face and look like a different table.
+          const face = fontStack(cell.style.fontFamily);
+          if (face) {
+            parts.push(`font-family:${face.css}`);
+            if (face.declared) ctx.faces.add(face.declared);
+          }
+          const cellSize = lenOf(cell.style.fontSize, ctx.scale);
+          if (cellSize) parts.push(`font-size:${cellSize}px`);
+          const cellWeight = parseInt(cell.style.fontWeight, 10);
+          if (cellWeight) parts.push(`font-weight:${String(Math.round(cellWeight / 100) * 100)}`);
           const cs = parts.length ? ` style="${parts.join(";")}"` : "";
           return `<${tag}${cs}>${runsToHtml(cell.runs, ctx)}</${tag}>`;
         })
@@ -1246,7 +1267,11 @@ function buildArtifact(harvest, options = {}) {
       smallText: [],
       texts: [],
       raised: [],
-      minFont: options.minFontSize !== false,
+      // Off unless asked for. The format's 24px floor is advisory — it says so
+      // itself, "(not build-checked)" — and a published deck with 169 elements
+      // down to 8.67px renders every one at its authored size. Raising them
+      // changed the design for a rule nothing enforces.
+      minFont: options.minFontSize === true,
       addAsset(src) {
         if (!src) return null;
         // The artifact takes an uploaded asset, never a data: URI, so an
@@ -1264,7 +1289,7 @@ function buildArtifact(harvest, options = {}) {
       const roles = [...new Set(ctx.raised.map((r) => r.cls ? "." + r.cls.split(/\s+/)[0] : r.tag))];
       warnings.push({
         slide: id,
-        message: `raised ${ctx.raised.length} text size(s) to the ${MIN_FONT_SIZE}px minimum (${roles.join(", ")}); pass --artifact-keep-small-text to leave them as the theme set them`,
+        message: `raised ${ctx.raised.length} text size(s) to the ${MIN_FONT_SIZE}px minimum (${roles.join(", ")})`,
       });
     }
     files[`project/slides/${id}.html`] = html;

@@ -1416,8 +1416,10 @@
             said out loud rather than done quietly: a raised kicker can wrap
             where the HTML build did not.
 
-            Pass \`--artifact-keep-small-text\` to leave the sizes as the theme
-            set them; the build then names each element that lands below the
+            The format asks for 24px as a minimum but does not enforce it — its own
+            reference says \`(not build-checked)\`, and text well below it renders at
+            the size it was authored. So sizes are left as the theme set them. Pass
+            \`--artifact-raise-small-text\` to raise anything under 24px instead.
             minimum instead. Either way it is a warning and never an error — a
             deck that breaks the guidance still publishes and still reads, and
             the real fix belongs to the theme rather than to the deck.

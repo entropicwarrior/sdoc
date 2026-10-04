@@ -348,10 +348,16 @@ function checkBorder(v) {
 // Which properties each kind of element may carry
 // ---------------------------------------------------------------------------
 
-const LAYOUT_PROPS = [
+// Arranging children is for a section or a div only — the format lists
+// display, gap, align-items, justify-content, flex-direction, flex-wrap and
+// justify-items against those two tags and no others. A <p> carrying them is
+// admissible-looking output whose layout the page silently drops, so a row of
+// marks meant to sit side by side arrives stacked.
+const FLOW_PROPS = [
   "display", "flex-direction", "flex-wrap", "gap", "align-items", "justify-content",
-  "justify-items", "grid-template-columns", "grid-template-rows", "padding", "overflow",
+  "justify-items", "grid-template-columns", "grid-template-rows",
 ];
+const LAYOUT_PROPS = [...FLOW_PROPS, "padding", "overflow"];
 const BOX_PROPS = [
   "position", "left", "top", "right", "bottom", "width", "height",
   "min-width", "min-height", "max-width", "max-height",
@@ -393,7 +399,9 @@ const PROPS_FOR_TAG = {
   aside: new Set([]),
 };
 for (const tag of TEXT_TAGS) {
-  PROPS_FOR_TAG[tag] = new Set([...LAYOUT_PROPS, ...BOX_PROPS, ...TYPE_PROPS]);
+  // Box and type, plus padding and overflow — but not the flow properties,
+  // which belong to a section or a div.
+  PROPS_FOR_TAG[tag] = new Set([...BOX_PROPS, ...TYPE_PROPS, "padding", "overflow"]);
 }
 
 // ---------------------------------------------------------------------------

@@ -71,8 +71,10 @@ publish  url: <deck>  file_path: <dir>/assets/<file>  asset: true
 Each upload returns a `/_blob/<id>`. Record them all at once:
 
 ```
-node tools/artifact-resolve-assets.js <dir> --set <file>=/_blob/<id> ...
+node tools/artifact-resolve-assets.js <dir> [--set <file>=/_blob/<id>]...
 ```
+
+One `--set` per pair: a bare pair after the first is an unknown argument.
 
 That rewrites every `sdoc-asset:<file>` placeholder in the slide files and
 `deck.json`, and saves the ids so a later export skips the upload. Do not
