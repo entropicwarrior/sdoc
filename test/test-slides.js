@@ -557,7 +557,11 @@ test("rendered slides include print styles", () => {
 `);
   assert(html.includes("@media print"), "should have @media print block");
   assert(html.includes("page-break-after"), "should have page-break rules");
-  assert(html.includes("display: block !important"), "should force slides visible in print");
+  assert(html.includes("display: flex !important"), "should force slides visible in print");
+  // Regression guard: this was `display: block`, which made the theme's
+  // `justify-content` inert and collapsed a `margin-top: auto`, so a slide
+  // centred on screen printed hard against the top of the page.
+  assert(html.includes("flex-direction: column !important"), "print slides stay a flex column");
 });
 
 // ============================================================
@@ -608,6 +612,56 @@ test("print neutralizes the screen transform so each slide is one page", () => {
   );
 });
 
+// One rule out of the @media print block, with its comments stripped: the
+// assertions below look for declarations, and a comment that mentions the very
+// property it warns against would otherwise answer for the stylesheet.
+function printRule(html, selector) {
+  const block = html.slice(html.indexOf("@media print"));
+  const start = block.indexOf(selector);
+  assert(start !== -1, "print block styles " + selector.trim());
+  return block.slice(start, block.indexOf("}", start)).replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+test("print keeps the slide a flex column, as the screen layout is", () => {
+  // A print block that set `display: block` would silently change the layout
+  // every theme is written against: justify-content goes inert and an auto
+  // margin computes to 0, so a centred slide prints hard against the top of
+  // the page and a footnote pinned to the foot rides up under the body.
+  // This guard is cheap and unconditional; the geometry tests below prove the
+  // consequence, but they need a browser and skip without one.
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  const rule = printRule(html, "  .slide {");
+  assert(!/display:\s*block/.test(rule),
+    "the slide must not fall back to block layout in print");
+  assert(/display:\s*flex\s*!important/.test(rule), "the slide stays a flex container in print");
+  assert(/flex-direction:\s*column\s*!important/.test(rule), "the slide stays a column in print");
+});
+
+test("the print scale wrapper fills the slide and inherits its flex rules", () => {
+  // The wrapper has to be a real box in print, because fitSlidesForPrint
+  // transforms it — and a real box takes over as the flex container, leaving
+  // .slide one full-height child and nothing to distribute. So the wrapper
+  // must fill the slide (or an auto margin inside has nothing to push
+  // against) and must inherit rather than hard-code the theme's alignment:
+  // our own theme centres every slide, not only .layout-title.
+  const html = parseAndRender(`
+# Deck {
+    # Slide { Hello. }
+}
+`);
+  const rule = printRule(html, "  .slide-content-scale {");
+  assert(/display:\s*flex\s*!important/.test(rule), "wrapper is a flex container");
+  assert(/flex-direction:\s*column\s*!important/.test(rule), "wrapper is a column");
+  assert(/flex:\s*1 1 auto\s*!important/.test(rule), "wrapper fills the slide");
+  assert(/justify-content:\s*inherit/.test(rule), "wrapper inherits the slide's justify-content");
+  assert(/align-items:\s*inherit/.test(rule), "wrapper inherits the slide's align-items");
+  assert(/transform-origin:\s*top left/.test(rule), "scaling still anchors at the top left");
+});
+
 test("findChrome returns a string or null", () => {
   const { findChrome } = require("../src/slide-pdf");
   const result = findChrome();
@@ -647,6 +701,216 @@ test("exportPdf produces a file (integration)", async () => {
     try { fs.unlinkSync(tmpHtml); } catch {}
     try { fs.unlinkSync(tmpPdf); } catch {}
   }
+});
+
+// ============================================================
+console.log("\n--- Print layout geometry ---");
+
+// The repo's geometry harvest measures in screen media, which is exactly how
+// a print-only layout bug reached a release: the HTML was right and only the
+// PDF was wrong. These tests put the print rules, and only those, into the
+// cascade by promoting the @media print block to @media all, then measure the
+// result in a real browser. Everything inside one slide is then the real
+// print layout, fitSlidesForPrint included — it runs because the scale
+// wrapper has a box. What this does not model is pagination and @page, so a
+// bug in how slides break across pages would still get past it.
+const { runHarvest, SENTINEL } = require("../src/slide-geometry.js");
+const { loadTheme } = require("../src/theme.js");
+
+function promotePrintRules(html) {
+  assert(html.includes("@media print {"), "deck carries a print block");
+  return html.replace("@media print {", "@media all {");
+}
+
+const PRINT_GEOMETRY_SCRIPT = `
+(function () {
+  // Where the ink actually sits: the union of every leaf that carries text.
+  // Measuring the wrapper's own box would not catch a slide that is centred
+  // correctly but whose content has spilled out of it.
+  function inkOf(root, origin) {
+    var min = 1e9, max = -1e9;
+    var all = root.querySelectorAll("*");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.children.length) continue;
+      if (!el.textContent || !el.textContent.trim()) continue;
+      var r = el.getBoundingClientRect();
+      if (r.height <= 0) continue;
+      if (r.top - origin < min) min = r.top - origin;
+      if (r.bottom - origin > max) max = r.bottom - origin;
+    }
+    return { top: min, bottom: max };
+  }
+
+  function run() {
+    var out = {};
+    // Report a thrown measurement rather than letting the page go silent: a
+    // harvest that never files its findings fails every assertion with the
+    // same unhelpful timeout, whatever actually went wrong.
+    try {
+      var slides = document.querySelectorAll(".slide");
+      for (var i = 0; i < slides.length; i++) {
+        var slide = slides[i];
+        var wrap = slide.querySelector(".slide-content-scale");
+        var sRect = slide.getBoundingClientRect();
+        var sStyle = getComputedStyle(slide);
+        var wStyle = getComputedStyle(wrap);
+        var ink = inkOf(wrap, sRect.top);
+        var foot = slide.querySelector(".footnote");
+        out[slide.id] = {
+          slideH: sRect.height,
+          display: sStyle.display,
+          direction: sStyle.flexDirection,
+          wrapDisplay: wStyle.display,
+          wrapJustify: wStyle.justifyContent,
+          scaled: wStyle.transform !== "none",
+          inkTop: ink.top,
+          inkBottom: ink.bottom,
+          footnoteBottom: foot ? foot.getBoundingClientRect().bottom - sRect.top : null
+        };
+      }
+    } catch (e) {
+      out = { __error: String((e && e.message) || e) };
+    }
+    var el = document.createElement("script");
+    el.type = "application/json";
+    el.id = "sdoc-print-geometry";
+    el.textContent = JSON.stringify(out) + "\\n/*${SENTINEL}*/";
+    document.body.appendChild(el);
+  }
+
+  function start() {
+    // fitSlidesForPrint runs on load and again on a double rAF, and web fonts
+    // can move the metrics it measured. Measure after all of that.
+    var go = function () {
+      requestAnimationFrame(function () { requestAnimationFrame(run); });
+    };
+    if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+      document.fonts.ready.then(go);
+    } else {
+      go();
+    }
+  }
+
+  if (document.readyState === "complete") start();
+  else window.addEventListener("load", start);
+})();
+`;
+
+// One deck covers all four cases, so the browser is driven once.
+//   cover   — the theme centres it; it must not print against the top
+//   body    — a footnote in normal flow, on a slide the theme also centres
+//   pinned  — the same, with the auto margin a theme uses to pin a footnote
+//             to the foot of the slide (ours does not; the reporter's does)
+//   toomuch — more lines than the page holds, for fitSlidesForPrint
+const PRINT_DECK = `
+# Deck {
+    @meta { type: slides }
+
+    # A Centred Title @cover {
+        config: title
+
+        The theme centres this, so the PDF must too.
+    }
+
+    # A Normal Slide @body {
+        footnote: Provenance, in normal flow under the body.
+
+        - First point
+        - Second point
+    }
+
+    # A Pinned Footnote @pinned {
+        footnote: Pinned to the foot of the slide by an auto margin.
+
+        - First point
+        - Second point
+    }
+
+    # Far Too Much @toomuch {
+        footnote: The last thing on the slide, and it must survive the fit.
+
+${Array.from({ length: 26 }, (_, i) => `        - Line ${i + 1} of a body with far more in it than one page holds`).join("\n\n")}
+    }
+}
+`;
+
+let printGeometryPromise = null;
+function printGeometry() {
+  if (printGeometryPromise) return printGeometryPromise;
+  const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+  const html = promotePrintRules(parseAndRender(PRINT_DECK, {
+    themeCss: theme.themeCss,
+    themeJs: theme.themeJs,
+    themeConfig: theme.themeConfig,
+    // Only this slide pins its footnote, so the comparison with #body shows
+    // the auto margin is what moved it rather than the print rules alone.
+    deckCss: "#pinned .footnote { margin-top: auto; }"
+  }));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-print-geom-"));
+  const file = path.join(dir, "deck.html");
+  fs.writeFileSync(file, html, "utf-8");
+  printGeometryPromise = runHarvest(file, PRINT_GEOMETRY_SCRIPT, "sdoc-print-geometry")
+    .finally(() => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} });
+  return printGeometryPromise;
+}
+
+test("print keeps a centred slide centred (geometry)", async () => {
+  if (!require("../src/slide-pdf").findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const g = await printGeometry();
+  for (const id of ["cover", "body"]) {
+    const s = g[id];
+    assert(s, "measured slide " + id);
+    assert(s.display === "flex" && s.direction === "column",
+      id + ": slide is a flex column in print, got " + s.display + "/" + s.direction);
+    assert(s.wrapJustify === "center",
+      id + ": the wrapper inherits the theme's centring, got " + s.wrapJustify);
+    // Equal air above and below is the whole claim. In block layout the top
+    // gap was one padding and the bottom gap most of the page.
+    const above = s.inkTop;
+    const below = s.slideH - s.inkBottom;
+    assert(Math.abs(above - below) < s.slideH * 0.06,
+      id + ": content is not centred — " + above.toFixed(0) + "px above, " +
+      below.toFixed(0) + "px below a " + s.slideH.toFixed(0) + "px page");
+  }
+});
+
+test("an auto margin still reaches the foot of the page in print (geometry)", async () => {
+  if (!require("../src/slide-pdf").findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const g = await printGeometry();
+  const pinned = g.pinned, body = g.body;
+  assert(pinned && body, "measured both footnote slides");
+  assert(pinned.footnoteBottom > pinned.slideH * 0.85 &&
+         pinned.footnoteBottom <= pinned.slideH,
+    "a footnote with margin-top:auto should sit at the foot, got " +
+    pinned.footnoteBottom.toFixed(0) + " of " + pinned.slideH.toFixed(0));
+  assert(body.footnoteBottom < body.slideH * 0.75,
+    "a footnote without it should stay under the body, got " +
+    body.footnoteBottom.toFixed(0) + " of " + body.slideH.toFixed(0));
+});
+
+test("content taller than the page is scaled to fit, not clipped (geometry)", async () => {
+  if (!require("../src/slide-pdf").findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const g = await printGeometry();
+  const s = g.toomuch;
+  assert(s, "measured the overflowing slide");
+  assert(s.scaled, "fitSlidesForPrint should have scaled the wrapper");
+  // Centring an overflow spills it out of both ends, where scaling from the
+  // top-left cannot bring the top back, so the fit has to start-align too.
+  assert(s.inkTop >= -1,
+    "content runs off the top of the page by " + (-s.inkTop).toFixed(0) + "px");
+  assert(s.inkBottom <= s.slideH + 1,
+    "content runs off the bottom of the page by " +
+    (s.inkBottom - s.slideH).toFixed(0) + "px");
 });
 
 // ============================================================
@@ -1648,6 +1912,158 @@ test("a background path is embedded against the sdoc like any other image", () =
   assert(missing.length === 0, "resolved against the base dir");
   assert(inlined.includes("data:image/gif;base64,"), "embedded in the deck");
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ============================================================
+console.log("\n--- Baking a background fade for export ---");
+
+const { hasFades } = require("../src/slide-fade-bake.js");
+
+test("a fade carries its parsed spec in the markup, for the export to bake from", () => {
+  const html = bgSlide(
+    "        background: photo.png\n\n        background-fade: linear angle=200 from=10% to=60% max=0.7"
+  );
+  assert(html.includes("mask-image:"), "the CSS mask is still what a browser renders");
+  const m = /data-fade="([^"]*)"/.exec(html);
+  assert(m, "the spec travels with the slide");
+  const spec = JSON.parse(m[1].replace(/&quot;/g, '"'));
+  // Read back out of the computed mask-image instead, and this is lost: Chrome
+  // normalises the gradient and drops an angle of 180deg altogether, it being
+  // the default `to bottom`.
+  assert(spec.shape === "linear" && spec.angle === 200, "shape and angle survive");
+  assert(spec.from === 10 && spec.to === 60 && spec.max === 0.7, "stops and alpha survive");
+});
+
+test("a background with no fade carries no spec and needs no browser", () => {
+  const html = bgSlide("        background: photo.png");
+  assert(!html.includes("data-fade="), "nothing to bake");
+  assert(!hasFades(html), "so the export does not launch Chrome for it");
+});
+
+test("hasFades sees a deck that needs baking", () => {
+  const html = bgSlide(
+    "        background: photo.png\n\n        background-fade: linear angle=90 from=25% to=85%"
+  );
+  assert(hasFades(html), "a fade is work for the export");
+});
+
+test("a baked slide drops the mask and every placement rule it already contains", () => {
+  const parsed = parseSdoc(
+    "# Deck {\n    # Slide {\n        background: photo.png\n\n" +
+    "        background-size: contain\n\n        background-position: right bottom\n\n" +
+    "        background-flip: horizontal\n\n        background-fade: linear angle=90 from=25% to=85%\n\n" +
+    "        Body copy.\n    }\n}"
+  );
+  assert(parsed.errors.length === 0, "fixture parses");
+  const { nodes, meta } = extractMeta(parsed.nodes);
+  const baked = renderSlides(nodes, {
+    meta,
+    bakedFades: { 0: "data:image/jpeg;base64,BAKED" },
+  });
+  const body = markupOf(baked.slice(baked.indexOf("<body")));
+  assert(body.includes("data:image/jpeg;base64,BAKED"), "the baked picture is used");
+  // Each of these is already in the baked pixels. Emitting any of them again
+  // would apply it twice — the fade doubled, the picture flipped back.
+  assert(!body.includes("mask-image:"), "no mask survives into the export");
+  assert(!body.includes("data-fade="), "nothing left to bake");
+  assert(!body.includes("slide-bg-flip"), "the flip is in the pixels");
+  assert(!body.includes("object-fit:contain"), "the fit is in the pixels");
+  assert(!/<div class="slide-bg"[^>]*style=/.test(body), "the wrapper carries no mask style");
+});
+
+test("an unbaked slide in the same deck keeps its own mask", () => {
+  const parsed = parseSdoc(
+    "# Deck {\n    # One {\n        background: a.png\n\n" +
+    "        background-fade: linear angle=90 from=25% to=85%\n\n        Body.\n    }\n" +
+    "    # Two {\n        background: b.png\n\n" +
+    "        background-fade: linear angle=90 from=25% to=85%\n\n        Body.\n    }\n}"
+  );
+  const { nodes, meta } = extractMeta(parsed.nodes);
+  // Only the first slide baked, as happens when one slide's image fails to load.
+  const html = renderSlides(nodes, { meta, bakedFades: { 0: "data:image/jpeg;base64,BAKED" } });
+  const body = markupOf(html.slice(html.indexOf("<body")));
+  assert(body.includes("BAKED"), "the baked slide uses its picture");
+  assert(body.includes('<img src="b.png"'), "the other slide is untouched");
+  assert((body.match(/mask-image:/g) || []).length >= 1, "and keeps its mask");
+});
+
+// A graphics-state soft mask is what a CSS mask becomes in Chrome's PDF, and
+// what Quartz draws as a hard edge. It has to be counted by inflating the
+// streams: pdfimages and friends list only image-level /SMask entries and are
+// blind to these, which is how the bug survived — a deck full of them lists as
+// two ordinary JPEGs.
+function gsSoftMasks(pdfPath) {
+  const zlib = require("zlib");
+  const raw = fs.readFileSync(pdfPath);
+  const latin = raw.toString("latin1");
+  const blobs = [Buffer.from(latin, "latin1")];
+  const re = /stream\r?\n/g;
+  let m;
+  while ((m = re.exec(latin)) !== null) {
+    const start = m.index + m[0].length;
+    const end = raw.indexOf("endstream", start);
+    if (end < 0) continue;
+    try { blobs.push(zlib.inflateSync(raw.subarray(start, end))); } catch { /* not flate */ }
+  }
+  return (Buffer.concat(blobs).toString("latin1").match(/\/SMask\s*<</g) || []).length;
+}
+
+test("baking a fade removes the soft mask Preview renders wrong (integration)", async () => {
+  const { exportSlidePdf, findChrome } = require("../src/slide-pdf");
+  if (!findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const { bakeFades } = require("../src/slide-fade-bake.js");
+  const themeCss = fs.readFileSync(
+    path.join(__dirname, "..", "themes", "default", "theme.css"), "utf-8"
+  );
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-bake-"));
+  fs.writeFileSync(path.join(dir, "pic.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAEAQMAAACTPww9AAAABlBMVEUzZsz///8N3jmNAAAAC0lEQVQI12BggAAAAAgAAS8g3TEAAAAASUVORK5CYII=", "base64"));
+
+  const parsed = parseSdoc(
+    "# Deck {\n    # Slide {\n        background: pic.png\n\n" +
+    "        background-fade: linear angle=90 from=25% to=85%\n\n        Body copy.\n    }\n}"
+  );
+  assert(parsed.errors.length === 0, "fixture parses");
+  const { nodes, meta } = extractMeta(parsed.nodes);
+  const build = (bakedFades) =>
+    inlineDeckImages(renderSlides(nodes, { meta, themeCss, bakedFades }), dir).html;
+
+  const page = { width: 20, height: 11.25 };
+  const maskedHtml = path.join(dir, "masked.html");
+  const bakedHtml = path.join(dir, "baked.html");
+  const maskedPdf = path.join(dir, "masked.pdf");
+  const bakedPdf = path.join(dir, "baked.pdf");
+
+  try {
+    fs.writeFileSync(maskedHtml, build({}), "utf-8");
+
+    const { baked, warnings } = await bakeFades(maskedHtml);
+    assert(
+      Object.keys(baked).length === 1,
+      "the fade should bake; warnings: " + warnings.join(" | ")
+    );
+    assert(
+      String(baked[0]).startsWith("data:image/jpeg"),
+      "an opaque ground composites to a JPEG, which keeps the export small"
+    );
+
+    fs.writeFileSync(bakedHtml, build(baked), "utf-8");
+    await exportSlidePdf(maskedHtml, maskedPdf, page);
+    await exportSlidePdf(bakedHtml, bakedPdf, page);
+
+    // Feature-relative, never absolute. A legitimate cut-out PNG carries an
+    // image-level soft mask of its own, so "none anywhere" would fail on any
+    // deck that has one. What must hold is that the fade itself adds none.
+    const before = gsSoftMasks(maskedPdf);
+    const after = gsSoftMasks(bakedPdf);
+    assert(before > 0, "the CSS mask does produce the construct (control)");
+    assert(after === 0, `baking should remove it, found ${after}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ============================================================
