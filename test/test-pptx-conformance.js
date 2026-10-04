@@ -60,17 +60,12 @@ const CORPUS = [
 // A gap has to be written down with its measurement, not left to be noticed.
 // When one is fixed the digest stops matching and the entry has to go, so this
 // cannot rot into a list of things that quietly started working.
-const KNOWN_GAPS = {
-  svgShapes:
-    "The geometry harvest has no case for SVG. visit() emits an atom for an <img>, " +
-    "a painted box or a text leaf and otherwise recurses, and <path>/<circle>/<rect>/" +
-    "<line> match none of those, so every SVG shape is dropped. <text> inside an SVG " +
-    "does match isTextLeaf, so the labels survive on their own — which is worse than " +
-    "dropping the drawing outright, because a diagram arrives as orphaned words with " +
-    "nothing under them. Measured on a real 21-slide deck: 69 shapes dropped, all 45 " +
-    "labels kept. The fix is to rasterise each <svg> in the page and emit it as an " +
-    "image atom, which the fade bake already shows how to do.",
-};
+// A gap has to be written down with its measurement, not left to be noticed.
+// When one is fixed the invariant below turns green and the entry has to go, so
+// this cannot rot into a list of things that quietly started working.
+//
+// Empty today. `svgShapes` lived here until the harvest learned to rasterise.
+const KNOWN_GAPS = {};
 
 // ---------------------------------------------------------------------------
 // Layer A — the feature list
@@ -138,8 +133,16 @@ function digestOf(entry, geometry, pptxBuffer, html) {
   // harvest is the thing under test and cannot be its own witness.
   const slideHtml = html.split(/(?=<div class="slide)/).filter((s) => s.startsWith('<div class="slide'));
   const svgPerSlide = slideHtml.map((s) => {
-    const svgs = (s.match(/<svg\b[\s\S]*?<\/svg>/g) || [])
-      .filter((v) => !/nav-(prev|next|up|down|vert)/.test(v));
+    // The navigation chevrons are drawings too, and they are chrome. The class
+    // naming them sits on the <span> that wraps each one, never on the <svg>
+    // itself, so they have to be recognised by what precedes them — filtering
+    // on the svg's own markup counts every chevron as deck content.
+    const svgs = [];
+    for (const m of s.matchAll(/<svg\b[\s\S]*?<\/svg>/g)) {
+      const before = s.slice(Math.max(0, m.index - 200), m.index);
+      if (/nav-(prev|next|up|down|vert)/.test(before)) continue;
+      svgs.push(m[0]);
+    }
     const shapes = svgs.reduce((n, v) =>
       n + (v.match(/<(?:path|circle|rect|line|polygon|polyline|ellipse)\b/g) || []).length, 0);
     const texts = svgs.reduce((n, v) => n + (v.match(/<text\b/g) || []).length, 0);
@@ -250,49 +253,43 @@ test("a deck with images ships the media to go with them", () => {
 // ---------------------------------------------------------------------------
 console.log("\n--- Known gaps, held to their measurement ---");
 
-test("SVG shapes are still dropped, and the gap entry still describes it", () => {
-  // Asserting the broken behaviour on purpose. When the harvest learns to
-  // rasterise an SVG this fails, and whoever fixed it has to delete the entry
-  // in KNOWN_GAPS — which is the only way a known gap reliably stops being one.
-  assert(KNOWN_GAPS.svgShapes, "the gap entry was removed; delete this test with it");
-  let shapesInSource = 0, slidesWithSvg = 0, labelsKept = 0;
+test("a drawing reaches the export as a picture", () => {
+  // The harvest has no case for <path>, <circle>, <rect> or <line>, so it used
+  // to drop every SVG shape — while <text> inside one does look like a text
+  // leaf and survived, so a diagram arrived as orphaned labels with nothing
+  // under them. 69 shapes dropped and all 45 labels kept, on a real deck.
+  // Each <svg> is rasterised before the walk now and arrives as one image.
+  let slidesWithSvg = 0;
+  const missing = [];
   for (const d of digests) {
     for (const s of d.slides) {
-      if (!s.source || !s.source.shapes) continue;
+      if (!s.source || !s.source.svgs) continue;
       slidesWithSvg++;
-      shapesInSource += s.source.shapes;
-      labelsKept += Math.min(s.source.texts, s.text.length);
-    }
-  }
-  assert(slidesWithSvg > 0,
-    "no corpus deck has an SVG any more, so this gap is no longer measured — " +
-    "keep examples/svg-example.sdoc in the corpus or remove the gap entry");
-  assert(shapesInSource > 0, "the corpus's SVGs have no shapes to drop");
-  // The labels do survive, which is the part that makes it look like a bug.
-  assert(labelsKept >= 0, "unreachable");
-});
-
-test("an SVG's labels do not arrive without their drawing", () => {
-  // The real invariant, failing today for the reason in KNOWN_GAPS.svgShapes.
-  // It is written the right way round so that fixing the harvest turns it
-  // green rather than leaving a test that enshrines the bug.
-  const orphaned = [];
-  for (const d of digests) {
-    for (const s of d.slides) {
-      if (!s.source || !s.source.shapes) continue;
-      const drawingReached = (s.atoms.image || 0) + (s.atoms.box || 0);
-      if (s.source.texts > 0 && drawingReached === 0) {
-        orphaned.push(`${d.deck} ${s.id}: ${s.source.shapes} shape(s) dropped, ` +
-          `${s.source.texts} label(s) kept with nothing under them`);
+      if ((s.atoms.image || 0) === 0) {
+        missing.push(`${d.deck} ${s.id}: ${s.source.svgs} drawing(s), no picture in the export`);
       }
     }
   }
-  if (orphaned.length && KNOWN_GAPS.svgShapes) {
-    console.log("    KNOWN GAP: " + orphaned.length + " slide(s) with orphaned SVG labels");
-    for (const o of orphaned.slice(0, 3)) console.log("      " + o);
-    return;
+  assert(slidesWithSvg > 0,
+    "no corpus deck has an SVG any more, so this is no longer measured — " +
+    "keep examples/svg-example.sdoc in the corpus");
+  assert(missing.length === 0, missing.join("\n  "));
+});
+
+test("an SVG's labels never arrive without their drawing", () => {
+  // The symptom that made the gap worse than a plain omission: words with
+  // nothing under them read as a bug, where a missing diagram reads as absence.
+  const orphaned = [];
+  for (const d of digests) {
+    for (const s of d.slides) {
+      if (!s.source || !s.source.texts) continue;
+      const drawingReached = (s.atoms.image || 0) + (s.atoms.box || 0);
+      if (drawingReached === 0) {
+        orphaned.push(`${d.deck} ${s.id}: ${s.source.texts} label(s), no drawing`);
+      }
+    }
   }
-  assert(orphaned.length === 0, orphaned.slice(0, 5).join("\n  "));
+  assert(orphaned.length === 0, orphaned.join("\n  "));
 });
 
 // ---------------------------------------------------------------------------

@@ -90,6 +90,12 @@ const MEASURE_SCRIPT = `
     if (!el.textContent || !el.textContent.trim()) return false;
     for (var i = 0; i < el.children.length; i++) {
       var child = el.children[i];
+      // A drawing is not an inline word, whatever its display says. An <svg>
+      // is display:inline by default, so a box holding one used to qualify as
+      // a text leaf — and since textContent includes the drawing's own <text>,
+      // a diagram with labels came out as a text atom of its labels and the
+      // shapes were never visited at all. That is the whole bug.
+      if (String(child.tagName).toLowerCase() === "svg") return false;
       var display = getComputedStyle(child).display;
       if (display !== "inline" && display !== "inline-block" && display !== "contents") return false;
       if (display === "contents" && !isTextLeaf(child)) return false;
@@ -166,6 +172,7 @@ const MEASURE_SCRIPT = `
         return;
       }
 
+
       // A painted box: a background, a border, or both.
       var fill = rgba(cs.backgroundColor);
       var border = borderOf(cs);
@@ -179,6 +186,25 @@ const MEASURE_SCRIPT = `
           radius: parseFloat(cs.borderTopLeftRadius) || 0,
           cls: el.className || ""
         });
+      }
+
+      // A drawing is one picture, not a tree of atoms. Nothing here has a case
+      // for <path>, <circle>, <rect> or <line>, so recursing into an <svg> drops
+      // every shape — while <text> inside it does look like a text leaf and
+      // survives, which is worse than losing the drawing outright: the labels
+      // arrive with nothing under them. Rasterised in the pass before this one,
+      // so it is already an image here, with its fonts baked in.
+      //
+      // Placed after the painted box on purpose: the frame can be on the <svg>
+      // element itself, and returning before that check loses it.
+      if (String(el.tagName).toLowerCase() === "svg") {
+        if (el.__sdocRaster) {
+          push({ kind: "image", box: box, src: el.__sdocRaster, alt: el.getAttribute("aria-label") || "" });
+          return;
+        }
+        // Rasterising failed. Falling through loses less than an empty box
+        // would, and the count is reported so the build can say so.
+        rasterFailures++;
       }
 
       if (isTextLeaf(el)) {
@@ -243,6 +269,76 @@ const MEASURE_SCRIPT = `
     };
   }
 
+  var rasterFailures = 0;
+  var rasterised = 0;
+
+  // Draw every <svg> on the page into a PNG, once, before anything is measured.
+  // Async because an image has to decode, and the walk that follows is not — so
+  // the result is parked on the element and read back synchronously.
+  function rasteriseSvgs(done) {
+    var docEl = document.documentElement;
+    docEl.style.setProperty("--sdoc-slide-scale", "1");
+
+    // A drawing in a slide that is not showing has no size, so every slide is
+    // switched on for the duration and put back afterwards.
+    var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+    var wasActive = slides.map(function (s) { return s.classList.contains("active"); });
+    slides.forEach(function (s) { s.classList.add("active"); });
+
+    var targets = [];
+    var all = document.querySelectorAll(".slide svg");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      // The navigation chevrons are chrome; the walk skips them anyway.
+      if (el.closest && el.closest(".nav-prev, .nav-next, .nav-vert, .notes")) continue;
+      targets.push(el);
+    }
+
+    var restore = function () {
+      slides.forEach(function (s, i) { if (!wasActive[i]) s.classList.remove("active"); });
+      done();
+    };
+    if (!targets.length) { restore(); return; }
+
+    var left = targets.length;
+    var one = function () { if (--left <= 0) restore(); };
+
+    targets.forEach(function (el) {
+      try {
+        var rect = el.getBoundingClientRect();
+        var w = Math.max(1, Math.round(rect.width));
+        var h = Math.max(1, Math.round(rect.height));
+        var clone = el.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        clone.setAttribute("width", String(w));
+        clone.setAttribute("height", String(h));
+        var markup = new XMLSerializer().serializeToString(clone);
+        var img = new Image();
+        img.onload = function () {
+          try {
+            // Twice the measured size: the source is vector and the export is
+            // printed, so the raster wants room the screen never needed.
+            var c = document.createElement("canvas");
+            c.width = w * 2;
+            c.height = h * 2;
+            var ctx2 = c.getContext("2d");
+            ctx2.drawImage(img, 0, 0, c.width, c.height);
+            el.__sdocRaster = c.toDataURL("image/png");
+            rasterised++;
+          } catch (err) {
+            // A tainted canvas, usually: something inside the drawing came
+            // from a URL the page may not read back.
+          }
+          one();
+        };
+        img.onerror = function () { one(); };
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(markup);
+      } catch (err) {
+        one();
+      }
+    });
+  }
+
   function run() {
     var docEl = document.documentElement;
     // Measure at the design size, not at whatever the window happens to be.
@@ -265,7 +361,10 @@ const MEASURE_SCRIPT = `
       if (!wasActive) slide.classList.remove("active");
     });
 
-    var payload = { box: box, slides: out };
+    var payload = {
+      box: box, slides: out,
+      rasterised: rasterised, rasterFailures: rasterFailures
+    };
     var el = document.createElement("script");
     el.type = "application/json";
     el.id = "sdoc-geometry";
@@ -274,10 +373,17 @@ const MEASURE_SCRIPT = `
   }
 
   function start() {
+    // Fonts first: a drawing's labels are rasterised with whatever face has
+    // loaded, and measuring before they settle moves everything.
+    var go = function () {
+      requestAnimationFrame(function () {
+        rasteriseSvgs(function () { requestAnimationFrame(run); });
+      });
+    };
     if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
-      document.fonts.ready.then(function () { requestAnimationFrame(run); });
+      document.fonts.ready.then(go);
     } else {
-      requestAnimationFrame(run);
+      go();
     }
   }
 
