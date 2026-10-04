@@ -86,6 +86,7 @@
             Both are now documented under [Writing against the layouts](../docs/reference/slide-authoring.sdoc#theme-classes).
 
             - [ ] Numeric axes with a stated range, ticks and gridlines are out of scope and would be a separate layout
+        }
 
         # Case-Sensitive Units Under an Uppercasing Theme @units-wip
         {
@@ -139,6 +140,51 @@
             the pair rather than becoming a transform, so nothing has to
             reconcile a scale origin against the placement offset.
         }
+
+        # Claude Slides Artifact Export @artifact-wip
+        {
+            Unreleased, on \`feat/artifact-export\`. A fourth export target
+            beside HTML, PDF and PPTX. \`--artifact\` writes
+            \`<deck>.artifact/\` — \`project/\` as the artifact stores it,
+            \`assets/\` for the upload step, and a manifest — and the skill at
+            \`skills/sdoc-artifact/\` publishes it to claude.ai and pulls a
+            collaborator's edits back. See
+            [slide-authoring.sdoc](../docs/reference/slide-authoring.sdoc#artifact).
+
+            The design decision is that this harvests the DOM *tree*, not the
+            flat list of positioned atoms the PPTX export is built from, and
+            not a per-layout template. Three reasons:
+
+            {[.]
+                - The artifact is an editing surface. A pinned box does not reflow, so an edited line overlaps its neighbour — which defeats the only reason to publish a deck somewhere editable.
+                - The subset caps a container at 24 positioned children and a slide at 200 elements. A harvested slide passes both routinely, so the PPTX atom list could not be reused even if reflow did not matter.
+                - A per-layout template would have to be taught every layout and would drift the first time one changed. The renderer's semantic HTML maps onto the subset's \`display:flex\`, \`gap\`, \`padding\` and \`flex\` almost one to one, so every layout exports, including ones added later.
+            }
+
+            The validator is a module of its own because nothing checks a
+            published deck: the page drops what it cannot read and heals the
+            rest in silence, so an export outside the subset arrives wrong
+            rather than failing. Its rules are transcribed from the Slides
+            type's own format reference, with the release and contract
+            recorded in the file, so a type change is re-transcribed rather
+            than patched into the checks that consume it.
+
+            \`tools/artifact-diff.js\` closes the loop. The editor re-saves
+            every slide it touches normalised — declarations reordered, colours
+            re-cased, whitespace collapsed — so both sides are parsed and
+            compared structurally rather than as bytes, or an untouched deck
+            would report as entirely rewritten. A colour change on something
+            whose role carries meaning (a marked pipeline step, a marked
+            scatter point) is reported separately, because in \`.sdoc\` that
+            mark is bold in the source and the theme picks the colour: writing
+            a picked colour back would turn an argument into a decoration.
+
+            - [ ] Up-projection is a report, not an edit: applying a text change back into the \`.sdoc\` is still the agent's job, guided by \`pulled/changes.json\`
+            - [ ] A slide whose scope has no \`@id\` exports as \`slide-<n>\`, and an edit to it cannot be traced back with confidence
+            - [ ] A theme is not installed as a design system, so the editor's colour and text menus show bare hex values rather than the theme's named accents; \`deck.json\` ships an empty \`designSystems\` list
+            - [ ] \`background-flip:\` cannot be expressed: the subset's \`transform\` takes a scale between 0.5 and 2, so there is no way to mirror an image
+            - [ ] Painted \`::before\` and \`::after\` are reported but not materialised; exporting one would mean synthesising a box the theme never emitted
+        }
     }
 
     # Next Up @next-up
@@ -147,6 +193,7 @@
 
         # Parser Improvements
         {
+            - [ ] A brace-delimited scope left unclosed is auto-closed at EOF with no error, so a missing \`}\` yields a *different tree* and the document still reports as clean. Found in this file: one missing brace nested three sections inside a fourth and moved \`@next-up\` under \`@in-progress\`, and the parser, the test suite and the binding's "every document parses cleanly" check all passed it. Minimal case: \`# A @a { # B @b { x  # C @c { y } }\` parses \`@c\` as a child of \`@b\`. This is the failure [R1](requirements.sdoc#r1) exists to prevent — a scope that opened with \`{\` is not braceless and should be an error at EOF, unlike a genuinely braceless scope
             - [ ] Enforce single root scope (grammar says `document = scope` but parser allows multiple top-level scopes). Parser should warn on violation. See [C1](requirements.sdoc#c1).
             - [ ] Decouple rendering from AST. Current renderer functions are HTML-centric. Need format-neutral AST with separate renderer modules. See [C2](requirements.sdoc#c2).
         }

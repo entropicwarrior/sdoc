@@ -37,6 +37,53 @@ function test(name, fn) {
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
 // ============================================================
+// An unclosed scope
+
+test("a scope opened with a brace and never closed is an error", () => {
+  // It used to end silently at EOF, which is the worst answer available: the
+  // scopes after it parse as its children, so the document reports as clean
+  // with the wrong tree, and nothing downstream can see it because everything
+  // downstream reads the tree.
+  const r = parseSdoc("# A @a {\n    # B @b {\n        x\n\n    # C @c {\n        y\n    }\n}\n");
+  assert(r.errors.length === 1, "one error, got " + r.errors.length);
+  assert(/never closed/.test(r.errors[0].message), r.errors[0].message);
+  // The outermost scope is the one that reaches EOF unclosed: @b is closed by
+  // the brace meant for @a. Which brace the author forgot cannot be known, so
+  // the report names the scope that is demonstrably still open rather than
+  // guessing at the one they meant.
+  assert(r.errors[0].line === 1, "names the outermost unclosed scope, got line " + r.errors[0].line);
+});
+
+test("the error names the line the scope opened on, not the end of the file", () => {
+  const r = parseSdoc("# A @a {\n    x\n}\n\n# B @b {\n    y\n");
+  assert(r.errors.length === 1, "one error");
+  assert(r.errors[0].line === 5, "line 5, got " + r.errors[0].line);
+});
+
+test("a well-formed document reports nothing", () => {
+  const r = parseSdoc("# A @a {\n    # B @b {\n        x\n    }\n\n    # C @c {\n        y\n    }\n}\n");
+  assert(r.errors.length === 0, "no errors: " + JSON.stringify(r.errors));
+  assert(r.nodes[0].children.filter((c) => c.type === "scope").length === 2, "@b and @c are siblings");
+});
+
+test("a braceless scope still ends at EOF without complaint", () => {
+  // A scope that never opened a brace is not missing one. This is the
+  // distinction the check turns on, and the reason it is not simply counting.
+  assert(parseSdoc("# A @a\n    Some content.\n").errors.length === 0, "braceless scope");
+  assert(parseSdoc("# Title\n\nSome prose.\n").errors.length === 0, "implicit root");
+  assert(parseSdoc("# A @a {\n    # B @b\n        text\n}\n").errors.length === 0, "braceless inside braced");
+});
+
+test("an unclosed scope no longer swallows the ones after it", () => {
+  const bad = parseSdoc("# A @a {\n    # B @b {\n        x\n\n    # C @c {\n        y\n    }\n}\n");
+  const b = bad.nodes[0].children.find((c) => c.id === "b");
+  // The tree is still built so the error can be reported alongside content,
+  // but the document is no longer silently accepted.
+  assert(b && b.children.some((c) => c.id === "c"), "c nests under b, which is why this must be reported");
+});
+
+
+// ============================================================
 console.log("--- Paragraphs ---");
 
 test("single paragraph", () => {

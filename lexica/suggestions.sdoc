@@ -223,4 +223,101 @@
             - `:word` is now used for scope types (v0.2, see @s4). `::` remains reserved for potential future use.
         }
     }
+
+    # S11: Optical Left-Margin Alignment @s11
+    {
+        Priority: Low
+        Serves: R3 ([requirements.sdoc](requirements.sdoc))
+
+        A slide's kicker, title and lede all start at the same box edge and
+        their ink does not, because each first glyph carries a different left
+        side bearing. Boxes align; ink does not; the reader sees the ink.
+
+        Proposed and measured by a deck author rather than inferred here. The
+        measurements are the valuable part, so they are recorded rather than
+        summarised.
+
+        # Why a per-font constant does not work @s11-why
+        {
+            First-letter bearings measured from a live render with canvas
+            \`actualBoundingBoxLeft\`, in em:
+
+            {[table]
+                Shape | Letters | Bearing
+                flat-sided | B D E I M P R | 0.090
+                round | C S | 0.039–0.047
+                diagonal or open | A T W | 0.018–0.024
+            }
+
+            The spread is 0.074em, which at a 68px title is 5.03px — larger
+            than the correction itself. In the deck that prompted this, eight
+            of 26 titles began with A, T or W, so one constant would be wrong
+            by up to 5px on nearly a third of the deck.
+
+            Pure ink alignment is also wrong: a round C or a diagonal A is
+            meant to overhang slightly, and setting its ink flush against a
+            flat-sided P reads as indented. A hand-rolled version in a company
+            theme had already discovered this and added a manual nudge back to
+            the right, with different values for display and small text.
+        }
+
+        # The rule @s11-rule
+        {
+            Shift each line right by \`max_lsb - lsb_i\` — the difference
+            between its own bearing and the largest bearing in the group —
+            with a small optical allowance adjusting the group as a whole.
+
+            Expressed as a relative correction rather than an absolute one,
+            flat-sided letters take most of the shift, round letters a little
+            and A/T/W almost none, out of one formula rather than a per-glyph
+            table that goes stale whenever a title's first letter changes.
+
+            It applies within a group of lines meant to share a margin — the
+            head — not to all left-aligned text, which would have each block
+            optically aligning against itself rather than against anything a
+            reader perceives as a column.
+        }
+
+        # What the formats do with it @s11-formats
+        {
+            Measured, not assumed, and it decides the implementation.
+
+            {[table]
+                Approach | Box moves | Survives the PPTX export
+                \`text-indent\` | No | No
+                \`margin\` | Yes | Yes
+            }
+
+            The PowerPoint export is measured rather than drawn: it records
+            each box and places the original text or picture there.
+            \`text-indent\` shifts glyphs inside a box that does not move, so
+            the exporter never sees it. A margin moves the box, so it carries.
+            \`text-indent\` also indents only the first line, which leaves a
+            wrapping title aligned on line one and not on line two.
+
+            Neither survives the Claude Slides export: that subset has neither
+            property.
+
+            The direction matters too. Pulling the widest-bearing line *left*
+            moves its box outside the content margin and the layout check
+            reports it — correctly, since optical alignment means boxes
+            deliberately do not align. Shifting the other lines *right*
+            instead keeps every box inside the margin, so the correction is
+            both export-safe and check-safe and needs no negative values.
+        }
+
+        # Prior art to retire @s11-prior
+        {
+            A company deck theme hand-codes this for one title slide with a
+            measured per-glyph table and a warning that changing the first
+            letter invalidates it, and a deck stylesheet carries a single
+            measured pixel value with the same warning. Both are what this
+            would delete.
+
+            Both are also test cases — but "it matches today" is the wrong
+            success criterion for them, because both are written in
+            \`text-indent\` and are therefore already absent from those decks'
+            PowerPoint exports. Nobody had looked.
+        }
+    }
 }

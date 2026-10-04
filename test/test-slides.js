@@ -23,6 +23,14 @@ function test(name, fn) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
+// The rendered markup with every <script> removed. Several assertions below
+// ask whether a class or a tag appears in a deck, and the answer must come
+// from the markup rather than from the source of the runtime shipped beside
+// it, which names the very classes it goes looking for.
+function markupOf(html) {
+  return html.replace(/<script\b[\s\S]*?<\/script>/gi, "");
+}
+
 function parseAndRender(sdoc, options = {}) {
   const parsed = parseSdoc(sdoc);
   assert(parsed.errors.length === 0, "parse errors: " + parsed.errors.map(e => e.message).join(", "));
@@ -850,7 +858,7 @@ test("svg block in slide strips script tags", () => {
     }
 }
 `);
-  assert(!html.includes("<script"), "should strip script from slide SVG");
+  assert(!markupOf(html).includes("<script"), "should strip script from slide SVG");
   assert(html.includes("<rect/>"), "should keep safe elements");
 });
 
@@ -870,7 +878,7 @@ test("plain 1D deck still gets spine/detail metadata but no detail slides", () =
   assert(html.includes('data-spine="2"'), "spine 2 attr present");
   assert(html.includes('data-detail="0"'), "detail=0 attr on spine slides");
   assert(!html.includes('data-detail="1"'), "no detail slides emitted");
-  assert(!html.includes("slide-has-details"), "no has-details class for 1D deck");
+  assert(!markupOf(html).includes("slide-has-details"), "no has-details class for 1D deck");
 });
 
 test("slide-indicator shows spine count denominator", () => {
@@ -1216,9 +1224,9 @@ test("a spine whose only detail is optional loses its drilldown affordance on ex
 }
 `;
   const full = parseAndRender(deck);
-  assert(full.includes("slide-has-details"), "the chevron is there while presenting");
+  assert(markupOf(full).includes("slide-has-details"), "the chevron is there while presenting");
   const exported = parseAndRender(deck, { includeOptional: false });
-  assert(!exported.includes("slide-has-details"), "no chevron pointing at nothing on export");
+  assert(!markupOf(exported).includes("slide-has-details"), "no chevron pointing at nothing on export");
 });
 
 test("a deck with no optional slides renders identically either way", () => {
@@ -1318,6 +1326,92 @@ test("isOptionalSlide reads the flag off a scope", () => {
   const details = slides[1].children.filter((c) => c.scopeType === "detail");
   assert(isOptionalSlide(details[1]) === true, "the optional detail reads as optional");
   assert(isOptionalSlide(details[0]) === false, "the required detail does not");
+});
+
+// ============================================================
+console.log("\n--- Filmstrip ---");
+
+test("the filmstrip runtime ships with every deck, whatever the theme", () => {
+  // Structural rather than part of a theme: navigation is the one thing every
+  // theme implements, and none of them should have to implement it twice. It
+  // couples to a theme through the URL hash alone.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n\n    # Two {\n        b\n    }\n}");
+  assert(html.includes("sdoc-filmstrip-track"), "runtime present with no theme at all");
+  assert(html.includes('var KEY = "f"'), "bound to F");
+});
+
+test("the filmstrip runtime survives being embedded in a template literal", () => {
+  // It very much did not. A template literal drops an unrecognised escape, so
+  // `\\s` arrived as `s` and the regex meant to collapse whitespace became one
+  // that replaced every letter s with a space: "Purpose" rendered "Purpo e" in
+  // every thumbnail of every deck. Silent, and invisible to any test that did
+  // not look at the emitted source.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n}");
+  assert(html.includes('replace(/\\s+/g, " ")'), "the whitespace regex kept its backslash");
+  assert(!/replace\(\/s\+\/g/.test(html), "and did not collapse into a literal s");
+});
+
+test("the filmstrip is hidden in print, so it cannot reach the PDF", () => {
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n}");
+  const print = html.slice(html.indexOf("@media print"));
+  assert(/\.sdoc-filmstrip[^{]*\{ display: none !important; \}/.test(print), "hidden in print");
+});
+
+test("a thumbnail is a button, and the strip swallows its own clicks", () => {
+  // The deck navigates on a click anywhere — left half back, right half
+  // forward. A thumbnail that did not stop the click would set the hash and
+  // then watch the deck flip a slide and overwrite it.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n}");
+  assert(html.includes('createElement("button")'), "a real button, which the theme's click handler already exempts");
+  assert(html.includes("strip.addEventListener(\"click\", function (e) { e.stopPropagation(); })"),
+    "and the strip stops every click, for a theme that exempts nothing");
+});
+
+test("the filmstrip lives outside the slides, so no export can see it", () => {
+  // It is appended to the body. The geometry harvest walks each slide's own
+  // children, so a body-level element is never measured — which is what keeps
+  // it out of the PowerPoint and Claude Slides exports.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n}");
+  const body = html.slice(html.indexOf("<body"));
+  const slideAt = body.indexOf('class="slide');
+  const stripAt = body.indexOf("sdoc-filmstrip-track");
+  assert(slideAt !== -1 && stripAt !== -1, "both present");
+  assert(html.includes("document.body.appendChild(strip)"), "attached to the body, not to a slide");
+});
+
+// ============================================================
+console.log("\n--- Deck-scoped stylesheet ---");
+
+test("a deck's own stylesheet is emitted after the theme's", () => {
+  // A theme is shared by every deck built from it, so a deck that wants one
+  // slide to differ has nowhere to put that rule. Emitting it last lets it
+  // settle a tie on source order rather than by raising specificity.
+  const html = parseAndRender("# Deck {\n    # Slide {\n        Body.\n    }\n}", {
+    themeCss: ".slide { color: rebeccapurple }",
+    deckCss: "/* deck.css */\n#slide h2 { color: teal }",
+  });
+  const theme = html.indexOf("rebeccapurple");
+  const deck = html.indexOf("/* deck.css */");
+  assert(theme > 0 && deck > 0, "both stylesheets present");
+  assert(deck > theme, "the deck's sheet comes after the theme's");
+  assert(deck < html.indexOf("</style>"), "and inside the style tag");
+});
+
+test("a deck with no stylesheet of its own is unchanged", () => {
+  const html = parseAndRender("# Deck {\n    # Slide {\n        Body.\n    }\n}");
+  assert(!html.includes("undefined"), "no stray value where the sheet would be");
+});
+
+test("style-append: is read off the meta the parser already provides", () => {
+  // Not a new key: src/sdoc.js has always parsed `style-append:` and the VS
+  // Code preview has always honoured it for documents. Slides never read it,
+  // which is the gap — adding a second key meaning the same thing would have
+  // been the wrong fix.
+  const { parseSdoc, extractMeta } = require("../src/sdoc.js");
+  const src = "# D {\n    @meta\n    {\n        type: slides\n\n        style-append: deck.css\n    }\n\n    # S {\n        Body.\n    }\n}";
+  const { meta } = extractMeta(parseSdoc(src).nodes);
+  assert(meta.styleAppendPath === "deck.css", "styleAppendPath: " + meta.styleAppendPath);
+  assert(meta.properties.css === undefined, "no separate css: key was invented");
 });
 
 // ============================================================
