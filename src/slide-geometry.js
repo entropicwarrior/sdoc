@@ -414,7 +414,14 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
         // a fallback face is the wrong size, so the page must be held open
         // past that: a virtual-time budget fast-forwards timers and delays
         // the dump until the budget is spent.
-        "--virtual-time-budget=8000",
+        // Virtual time, not wall clock: Chrome fast-forwards through idle
+        // periods, so a generous budget costs little on a simple deck and is
+        // the difference between reporting and being cut off on a busy one.
+        // Decoding images spends it — the SVG rasterising pass waits on one
+        // decode per drawing — and a page cut off mid-pass never reports at
+        // all, which surfaces as "serialised before it reported its geometry"
+        // rather than as anything about time.
+        "--virtual-time-budget=30000",
         "--user-data-dir=" + profile,
         "--dump-dom",
         fileUrl,
