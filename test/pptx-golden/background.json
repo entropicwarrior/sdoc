@@ -1,0 +1,434 @@
+{
+  "deck": "examples/background-example.sdoc",
+  "slides": [
+    {
+      "id": "cover",
+      "layout": "title",
+      "atoms": {
+        "image": 1,
+        "text": 5
+      },
+      "text": [
+        "Slide Backgrounds",
+        "A picture behind the words, faded so the words still win.",
+        "BACKGROUND REFERENCE",
+        "SDOC",
+        "1 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 5,
+        "runs": [
+          "Slide Backgrounds",
+          "A picture behind the words, faded so the words still win.",
+          "BACKGROUND REFERENCE",
+          "SDOC",
+          "1 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "plain",
+      "layout": null,
+      "atoms": {
+        "image": 1,
+        "text": 5
+      },
+      "text": [
+        "The image, placed and unfaded",
+        "background: alone covers the slide. No fade, so the grid runs edge to edge.",
+        "This is the starting point every other slide in the deck varies.",
+        "SDOC",
+        "2 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 5,
+        "runs": [
+          "The image, placed and unfaded",
+          "background:",
+          "alone covers the slide. No fade, so the grid runs edge to edge.",
+          "This is the starting point every other slide in the deck varies.",
+          "SDOC",
+          "2 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "linear",
+      "layout": "columns",
+      "atoms": {
+        "image": 1,
+        "text": 11
+      },
+      "text": [
+        "LINEAR",
+        "A linear fade across the slide",
+        "linear angle=90 from=25% to=85% — full strength to a quarter across, gone by 85%.",
+        "angle",
+        "The direction the falloff runs, in degrees. 90 is left to right; 180 is top to bottom.",
+        "from and to",
+        "Where the falloff starts and finishes along that direction. The gap between them is the softness of the edge.",
+        "min and max",
+        "The alpha at each end. Defaults are 0 and 1, so the image runs from solid to invisible.",
+        "SDOC",
+        "3 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 11,
+        "runs": [
+          "LINEAR",
+          "A linear fade across the slide",
+          "linear angle=90 from=25% to=85%",
+          "— full strength to a quarter across, gone by 85%.",
+          "angle",
+          "The direction the falloff runs, in degrees.",
+          "90",
+          "is left to right;",
+          "180",
+          "is top to bottom.",
+          "from and to",
+          "Where the falloff starts and finishes along that direction. The gap between them is the softness of the edge.",
+          "min and max",
+          "The alpha at each end. Defaults are",
+          "0",
+          "and",
+          "1",
+          ", so the image runs from solid to invisible.",
+          "SDOC",
+          "3 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "linear-angle",
+      "layout": "stats",
+      "atoms": {
+        "image": 1,
+        "text": 11
+      },
+      "text": [
+        "LINEAR, ANGLED",
+        "The same fade, turned and softened",
+        "linear angle=200 from=0% to=60% max=0.7 — a shallower ceiling and a shorter ramp.",
+        "200",
+        "DEGREES OF ANGLE",
+        "0.7",
+        "ALPHA AT FULL STRENGTH",
+        "60%",
+        "WHERE IT REACHES NOTHING",
+        "SDOC",
+        "4 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 11,
+        "runs": [
+          "LINEAR, ANGLED",
+          "The same fade, turned and softened",
+          "linear angle=200 from=0% to=60% max=0.7",
+          "— a shallower ceiling and a shorter ramp.",
+          "200",
+          "DEGREES OF ANGLE",
+          "0.7",
+          "ALPHA AT FULL STRENGTH",
+          "60%",
+          "WHERE IT REACHES NOTHING",
+          "SDOC",
+          "4 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "radial",
+      "layout": "rows",
+      "atoms": {
+        "image": 1,
+        "text": 14,
+        "box": 3
+      },
+      "text": [
+        "RADIAL",
+        "A circular fade around a point",
+        "radial at=80%,30% from=5% radius=55% — a circle of image, falling off to nothing.",
+        "at",
+        "The centre of the circle, as a position on the slide.",
+        "80%,30%",
+        "from",
+        "The radius out to which the image stays at full strength.",
+        "5%",
+        "radius",
+        "Where it has faded away completely. to: means the same thing.",
+        "55%",
+        "SDOC",
+        "5 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 18,
+        "runs": [
+          "RADIAL",
+          "A circular fade around a point",
+          "radial at=80%,30% from=5% radius=55%",
+          "— a circle of image, falling off to nothing.",
+          "at",
+          "The centre of the circle, as a position on the slide.",
+          "80%,30%",
+          "from",
+          "The radius out to which the image stays at full strength.",
+          "5%",
+          "radius",
+          "Where it has faded away completely.",
+          "to:",
+          "means the same thing.",
+          "55%",
+          "SDOC",
+          "5 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 2,
+        "shapes": 2,
+        "texts": 0
+      }
+    },
+    {
+      "id": "placement",
+      "layout": "columns",
+      "atoms": {
+        "image": 1,
+        "text": 9
+      },
+      "text": [
+        "PLACEMENT",
+        "Placement and fit",
+        "background-position: right bottom with background-size: contain.",
+        "background-position",
+        "Anything object-position takes: a pair of keywords, or percentages such as 70% 20%.",
+        "background-size",
+        "cover by default. contain, fill, none and scale-down are the alternatives.",
+        "SDOC",
+        "6 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 9,
+        "runs": [
+          "PLACEMENT",
+          "Placement and fit",
+          "background-position: right bottom",
+          "with",
+          "background-size: contain",
+          ".",
+          "background-position",
+          "Anything",
+          "object-position",
+          "takes: a pair of keywords, or percentages such as",
+          "70% 20%",
+          ".",
+          "background-size",
+          "cover",
+          "by default.",
+          "contain",
+          ",",
+          "fill",
+          ",",
+          "none",
+          "and",
+          "scale-down",
+          "are the alternatives.",
+          "SDOC",
+          "6 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "flip-scale",
+      "layout": "columns",
+      "atoms": {
+        "image": 1,
+        "text": 11
+      },
+      "text": [
+        "FLIP AND SCALE",
+        "Flip and scale",
+        "background-flip: horizontal with background-scale: 0.6, placed right center.",
+        "The picture stays put",
+        "A flip does not move the image. Placed against the right edge and flipped, it stays on the right and faces the other way. background-position always says where the image ends up.",
+        "The fade stays put too",
+        "The fade is applied to the slide rather than to the picture, so flipping the image never drags the protected area away from the words it was protecting.",
+        "Scale shares the anchor",
+        "background-scale: 0.6 shrinks about the same point, so an image pinned to an edge stays pinned instead of drifting to the middle.",
+        "SDOC",
+        "7 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 11,
+        "runs": [
+          "FLIP AND SCALE",
+          "Flip and scale",
+          "background-flip: horizontal",
+          "with",
+          "background-scale: 0.6",
+          ", placed",
+          "right center",
+          ".",
+          "The picture stays put",
+          "A flip does not move the image. Placed against the right edge and flipped, it stays on the right and faces the other way.",
+          "background-position",
+          "always says where the image ends up.",
+          "The fade stays put too",
+          "The fade is applied to the slide rather than to the picture, so flipping the image never drags the protected area away from the words it was protecting.",
+          "Scale shares the anchor",
+          "background-scale: 0.6",
+          "shrinks about the same point, so an image pinned to an edge stays pinned instead of drifting to the middle.",
+          "SDOC",
+          "7 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "sized",
+      "layout": "columns",
+      "atoms": {
+        "image": 1,
+        "text": 11
+      },
+      "text": [
+        "TWO-VALUE SIZE",
+        "A size the keywords cannot say",
+        "background-size: auto 100% — full height, natural width, aspect kept.",
+        "Why a pair",
+        "No fit keyword says this. cover scales until both edges are covered and crops the rest; contain fits the whole picture inside the slide, which for a tall image means fitting it by width.",
+        "What it does",
+        "A pair sizes the image's own box, so the picture is exactly that size and background-position places it as a whole. Either value may be auto to follow the aspect ratio.",
+        "With the rest",
+        "background-scale: multiplies the pair, so auto 100% at 0.5 is half-height. Flips and fades behave exactly as they do with a keyword.",
+        "SDOC",
+        "8 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 11,
+        "runs": [
+          "TWO-VALUE SIZE",
+          "A size the keywords cannot say",
+          "background-size: auto 100%",
+          "— full height, natural width, aspect kept.",
+          "Why a pair",
+          "No fit keyword says this.",
+          "cover",
+          "scales until both edges are covered and crops the rest;",
+          "contain",
+          "fits the whole picture inside the slide, which for a tall image means fitting it by width.",
+          "What it does",
+          "A pair sizes the image's own box, so the picture is exactly that size and",
+          "background-position",
+          "places it as a whole. Either value may be",
+          "auto",
+          "to follow the aspect ratio.",
+          "With the rest",
+          "background-scale:",
+          "multiplies the pair, so",
+          "auto 100%",
+          "at",
+          "0.5",
+          "is half-height. Flips and fades behave exactly as they do with a keyword.",
+          "SDOC",
+          "8 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "any-layout",
+      "layout": "matrix",
+      "atoms": {
+        "image": 1,
+        "text": 15,
+        "box": 10
+      },
+      "text": [
+        "COMMON KEY",
+        "It works under every layout",
+        "background: is a common key, so it is not tied to a layout.",
+        "LAYOUT",
+        "BACKGROUND",
+        "Title",
+        "Yes",
+        "Columns",
+        "Yes",
+        "Stats",
+        "Yes",
+        "Matrix",
+        "Yes",
+        "SDOC",
+        "9 / 9"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 25,
+        "runs": [
+          "COMMON KEY",
+          "It works under every layout",
+          "background:",
+          "is a common key, so it is not tied to a layout.",
+          "LAYOUT",
+          "BACKGROUND",
+          "Title",
+          "Yes",
+          "Columns",
+          "Yes",
+          "Stats",
+          "Yes",
+          "Matrix",
+          "Yes",
+          "SDOC",
+          "9 / 9"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    }
+  ],
+  "media": 1
+}

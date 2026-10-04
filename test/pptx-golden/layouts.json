@@ -1,0 +1,1030 @@
+{
+  "deck": "examples/layouts-example.sdoc",
+  "slides": [
+    {
+      "id": "cover",
+      "layout": "title",
+      "atoms": {
+        "text": 6
+      },
+      "text": [
+        "SDOC Slides",
+        "Structured layouts for decks that carry an argument.",
+        "LAYOUT REFERENCE",
+        "BUILD IT, THEN BUILD IT AGAIN WITH YOUR OWN THEME",
+        "SDOC",
+        "1 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 6,
+        "runs": [
+          "SDOC Slides",
+          "Structured layouts for decks that carry an argument.",
+          "LAYOUT REFERENCE",
+          "BUILD IT, THEN BUILD IT AGAIN WITH YOUR OWN THEME",
+          "SDOC",
+          "1 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "divider",
+      "layout": "section",
+      "atoms": {
+        "text": 5
+      },
+      "text": [
+        "SECTION",
+        "One statement, nothing else",
+        "A section divider states the turn the argument is about to take.",
+        "SDOC",
+        "2 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 5,
+        "runs": [
+          "SECTION",
+          "One statement, nothing else",
+          "A section divider states the turn the argument is about to take.",
+          "SDOC",
+          "2 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "stats-slide",
+      "layout": "stats",
+      "atoms": {
+        "text": 11
+      },
+      "text": [
+        "STATS",
+        "Three figures, three captions",
+        "The stats layout sets a figure against a small caption.",
+        "3.2 s",
+        "MEDIAN COLD START, BEFORE",
+        "180 ms",
+        "MEDIAN COLD START, AFTER",
+        "18×",
+        "THE RATIO THE SLIDE IS ABOUT",
+        "SDOC",
+        "3 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 11,
+        "runs": [
+          "STATS",
+          "Three figures, three captions",
+          "The stats layout sets a figure against a small caption.",
+          "3.2",
+          "s",
+          "MEDIAN COLD START, BEFORE",
+          "180",
+          "ms",
+          "MEDIAN COLD START, AFTER",
+          "18×",
+          "THE RATIO THE SLIDE IS ABOUT",
+          "SDOC",
+          "3 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "stat-detail",
+      "layout": "rows",
+      "atoms": {
+        "text": 14,
+        "box": 3
+      },
+      "text": [
+        "DETAIL",
+        "Where the time went",
+        "A detail slide is a slide. It reads its own config: line, so a drilldown can carry any layout.",
+        "Cold module graph",
+        "Resolved on every boot, then cached.",
+        "2.4 s",
+        "Config parsing",
+        "Replaced with a precomputed manifest.",
+        "0.6 s",
+        "Everything else",
+        "Unchanged.",
+        "0.2 s",
+        "SDOC",
+        "3.1 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 18,
+        "runs": [
+          "DETAIL",
+          "Where the time went",
+          "A detail slide is a slide. It reads its own",
+          "config:",
+          "line, so a drilldown can carry any layout.",
+          "Cold module graph",
+          "Resolved on every boot, then cached.",
+          "2.4",
+          "s",
+          "Config parsing",
+          "Replaced with a precomputed manifest.",
+          "0.6",
+          "s",
+          "Everything else",
+          "Unchanged.",
+          "0.2",
+          "s",
+          "SDOC",
+          "3.1 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 2,
+        "shapes": 2,
+        "texts": 0
+      }
+    },
+    {
+      "id": "pipeline-slide",
+      "layout": "pipeline",
+      "atoms": {
+        "text": 21,
+        "box": 8
+      },
+      "text": [
+        "PIPELINE",
+        "Two paths, one of them shorter",
+        "A bold step is marked and takes the row's accent. Marking is semantic: it says this step is required, and the theme decides what that looks like.",
+        "THE LONG WAY",
+        "REQUEST",
+        "→",
+        "ENCODE",
+        "→",
+        "QUEUE",
+        "→",
+        "DECODE",
+        "→",
+        "HANDLER",
+        "THE SHORT WAY",
+        "REQUEST",
+        "→",
+        "DISPATCH",
+        "→",
+        "HANDLER",
+        "SDOC",
+        "4 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 29,
+        "runs": [
+          "PIPELINE",
+          "Two paths, one of them shorter",
+          "A bold step is marked and takes the row's accent. Marking is semantic: it says this step is required, and the theme decides what that looks like.",
+          "THE LONG WAY",
+          "REQUEST",
+          "→",
+          "ENCODE",
+          "→",
+          "QUEUE",
+          "→",
+          "DECODE",
+          "→",
+          "HANDLER",
+          "THE SHORT WAY",
+          "REQUEST",
+          "→",
+          "DISPATCH",
+          "→",
+          "HANDLER",
+          "SDOC",
+          "4 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "columns-slide",
+      "layout": "columns",
+      "atoms": {
+        "text": 13
+      },
+      "text": [
+        "COLUMNS",
+        "Numbered columns",
+        "01",
+        "First",
+        "Columns take one child scope each. Adding numbered: true prefixes them 01, 02, 03.",
+        "02",
+        "Second",
+        "A column holds anything a slide holds: prose, a list, a table, an image, a nested block.",
+        "03",
+        "Third",
+        "Four or more columns tighten the gutter automatically.",
+        "SDOC",
+        "5 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 13,
+        "runs": [
+          "COLUMNS",
+          "Numbered columns",
+          "01",
+          "First",
+          "Columns take one child scope each. Adding",
+          "numbered: true",
+          "prefixes them 01, 02, 03.",
+          "02",
+          "Second",
+          "A column holds anything a slide holds: prose, a list, a table, an image, a nested block.",
+          "03",
+          "Third",
+          "Four or more columns tighten the gutter automatically.",
+          "SDOC",
+          "5 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "card-slide",
+      "layout": "columns",
+      "atoms": {
+        "text": 14,
+        "box": 3
+      },
+      "text": [
+        "COLUMNS, CARD VARIANT",
+        "Cards",
+        "A card rules its heading in the slide's accent. caption: sets a line under the column.",
+        "Ingest",
+        "Cards suit a figure row: a heading, a line of body, a caption underneath.",
+        "Step one",
+        "Index",
+        "An image at the top of each column makes the standard figure row.",
+        "Step two",
+        "Serve",
+        "The caption sets smaller and greyer than the body.",
+        "Step three",
+        "SDOC",
+        "6 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 17,
+        "runs": [
+          "COLUMNS, CARD VARIANT",
+          "Cards",
+          "A card rules its heading in the slide's accent.",
+          "caption:",
+          "sets a line under the column.",
+          "Ingest",
+          "Cards suit a figure row: a heading, a line of body, a caption underneath.",
+          "Step one",
+          "Index",
+          "An image at the top of each column makes the standard figure row.",
+          "Step two",
+          "Serve",
+          "The caption sets smaller and greyer than the body.",
+          "Step three",
+          "SDOC",
+          "6 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "people-slide",
+      "layout": "columns",
+      "atoms": {
+        "text": 17
+      },
+      "text": [
+        "COLUMNS, PEOPLE VARIANT",
+        "People",
+        "The people variant wraps onto a second row and sets the caption as an accented role.",
+        "Avery Lindqvist",
+        "Wrote the parser and still maintains it.",
+        "ENGINEERING",
+        "Rowan Okafor",
+        "Owns the theme system.",
+        "DESIGN",
+        "Sasha Beaumont",
+        "Measures what the format costs to read.",
+        "RESEARCH",
+        "Kit Nakamura",
+        "Keeps the release pipeline honest.",
+        "OPERATIONS",
+        "SDOC",
+        "7 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 17,
+        "runs": [
+          "COLUMNS, PEOPLE VARIANT",
+          "People",
+          "The people variant wraps onto a second row and sets the caption as an accented role.",
+          "Avery Lindqvist",
+          "Wrote the parser and still maintains it.",
+          "ENGINEERING",
+          "Rowan Okafor",
+          "Owns the theme system.",
+          "DESIGN",
+          "Sasha Beaumont",
+          "Measures what the format costs to read.",
+          "RESEARCH",
+          "Kit Nakamura",
+          "Keeps the release pipeline honest.",
+          "OPERATIONS",
+          "SDOC",
+          "7 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 2,
+        "shapes": 2,
+        "texts": 0
+      }
+    },
+    {
+      "id": "panel-slide",
+      "layout": "columns",
+      "atoms": {
+        "text": 19,
+        "box": 6
+      },
+      "text": [
+        "COLUMNS, PANEL VARIANT",
+        "Panels",
+        "PATENT",
+        "Patent",
+        "Hard-edged panels divided by a single-pixel seam. Accents alternate unless a column sets its own.",
+        "SOFTWARE",
+        "Software",
+        "Dense copy can set in a second, narrower face.",
+        "DATA",
+        "Data",
+        "Five panels is the practical limit at this measure.",
+        "STANDARD",
+        "Standard",
+        "A column can set accent: to override the alternation.",
+        "PATHWAY",
+        "Pathway",
+        "The panel variant suits a set of parallel assets.",
+        "SDOC",
+        "8 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 25,
+        "runs": [
+          "COLUMNS, PANEL VARIANT",
+          "Panels",
+          "PATENT",
+          "Patent",
+          "Hard-edged panels divided by a single-pixel seam. Accents alternate unless a column sets its own.",
+          "SOFTWARE",
+          "Software",
+          "Dense copy can set in a second, narrower face.",
+          "DATA",
+          "Data",
+          "Five panels is the practical limit at this measure.",
+          "STANDARD",
+          "Standard",
+          "A column can set",
+          "accent:",
+          "to override the alternation.",
+          "PATHWAY",
+          "Pathway",
+          "The panel variant suits a set of parallel assets.",
+          "SDOC",
+          "8 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "matrix-slide",
+      "layout": "matrix",
+      "atoms": {
+        "text": 34,
+        "box": 25
+      },
+      "text": [
+        "MATRIX",
+        "A comparison matrix",
+        "WHO",
+        "REGIME",
+        "CONVERSION",
+        "WHAT THEY BUILD",
+        "HOW WE DIFFER",
+        "Alpha Systems",
+        "Series C",
+        "Watts+",
+        "Yes",
+        "A managed service with a proprietary runtime",
+        "More capital, a longer runway",
+        "Beta Compute",
+        "shipping",
+        "Watts",
+        "Yes",
+        "An appliance with an on-device runtime",
+        "The strongest comparable in the set",
+        "Gamma Micro",
+        "public",
+        "Milliwatts",
+        "n/a",
+        "A general-purpose part, no specialisation",
+        "The closest public comparator",
+        "This company",
+        "raising",
+        "Milliwatts and below",
+        "No",
+        "One path, no conversion step in it",
+        "The only row with no in the conversion column",
+        "A footnote sets small and grey under the body, for provenance and caveats.",
+        "SDOC",
+        "9 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 59,
+        "runs": [
+          "MATRIX",
+          "A comparison matrix",
+          "WHO",
+          "REGIME",
+          "CONVERSION",
+          "WHAT THEY BUILD",
+          "HOW WE DIFFER",
+          "Alpha Systems",
+          "Series C",
+          "Watts+",
+          "Yes",
+          "A managed service with a proprietary runtime",
+          "More capital, a longer runway",
+          "Beta Compute",
+          "shipping",
+          "Watts",
+          "Yes",
+          "An appliance with an on-device runtime",
+          "The strongest comparable in the set",
+          "Gamma Micro",
+          "public",
+          "Milliwatts",
+          "n/a",
+          "A general-purpose part, no specialisation",
+          "The closest public comparator",
+          "This company",
+          "raising",
+          "Milliwatts and below",
+          "No",
+          "One path, no conversion step in it",
+          "The only row with no in the conversion column",
+          "A footnote sets small and grey under the body, for provenance and caveats.",
+          "SDOC",
+          "9 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "rows-slide",
+      "layout": "rows",
+      "atoms": {
+        "text": 16,
+        "box": 3
+      },
+      "text": [
+        "ROWS",
+        "Numbered rows",
+        "01",
+        "Tools and simulator",
+        "A row carries an index, a label, a body and a right-hand value. Any of the four may be omitted.",
+        "Layer 1",
+        "02",
+        "Application engineering",
+        "Rows separate with hairlines rather than boxes, which keeps a dense list legible at projection distance.",
+        "Layer 2",
+        "03",
+        "Licensed IP",
+        "The variant: mono form turns the label into a monospace accent — a date, a process node, a stage — which reads as a timeline.",
+        "Layer 3",
+        "SDOC",
+        "10 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 20,
+        "runs": [
+          "ROWS",
+          "Numbered rows",
+          "01",
+          "Tools and simulator",
+          "A row carries an index, a label, a body and a right-hand value. Any of the four may be omitted.",
+          "Layer 1",
+          "02",
+          "Application engineering",
+          "Rows separate with hairlines rather than boxes, which keeps a dense list legible at projection distance.",
+          "Layer 2",
+          "03",
+          "Licensed IP",
+          "The",
+          "variant: mono",
+          "form turns the label into a monospace accent — a date, a process node, a stage — which reads as a timeline.",
+          "Layer 3",
+          "SDOC",
+          "10 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "ledger-slide",
+      "layout": "rows",
+      "atoms": {
+        "text": 11,
+        "box": 3
+      },
+      "text": [
+        "ROWS, LEDGER VARIANT",
+        "A ledger",
+        "The ledger variant drops the body and leaves a label against a figure.",
+        "Storage",
+        "12.4 GB",
+        "Index",
+        "3.1 GB",
+        "Cache",
+        "0.9 GB",
+        "SDOC",
+        "11 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 15,
+        "runs": [
+          "ROWS, LEDGER VARIANT",
+          "A ledger",
+          "The ledger variant drops the body and leaves a label against a figure.",
+          "Storage",
+          "12.4 GB",
+          "Index",
+          "3.1 GB",
+          "Cache",
+          "0.9 GB",
+          "SDOC",
+          "11 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 2,
+        "shapes": 2,
+        "texts": 0
+      }
+    },
+    {
+      "id": "split-slide",
+      "layout": "split",
+      "atoms": {
+        "text": 12,
+        "box": 3
+      },
+      "text": [
+        "SPLIT",
+        "Split, with a timeline",
+        "The split layout renders two child scopes as panes, each with its own layout. Give it weights: 48 52 to set the ratio.",
+        "A pane is a slide within a slide: it can be a pipeline, a set of rows, a matrix, or plain prose like this one.",
+        "SEP 2026",
+        "First milestone, stated as a date and an outcome.",
+        "MAR 2027",
+        "Second milestone.",
+        "BETA",
+        "A stage name reads as well as a date does.",
+        "SDOC",
+        "12 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 16,
+        "runs": [
+          "SPLIT",
+          "Split, with a timeline",
+          "The split layout renders two child scopes as panes, each with its own layout. Give it",
+          "weights: 48 52",
+          "to set the ratio.",
+          "A pane is a slide within a slide: it can be a pipeline, a set of rows, a matrix, or plain prose like this one.",
+          "SEP 2026",
+          "First milestone, stated as a date and an outcome.",
+          "MAR 2027",
+          "Second milestone.",
+          "BETA",
+          "A stage name reads as well as a date does.",
+          "SDOC",
+          "12 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "bars-slide",
+      "layout": "bars",
+      "atoms": {
+        "text": 20,
+        "box": 10
+      },
+      "text": [
+        "BARS",
+        "Bars",
+        "Bars scale against the largest value unless a bar sets fill: itself.",
+        "Documents indexed",
+        "4200",
+        "A note sets in monospace under the track.",
+        "Documents reviewed",
+        "2150",
+        "Values are parsed for their first number, so 4,200 docs works too.",
+        "Awaiting review",
+        "1780",
+        "A bar with no fill: is scaled against the largest value.",
+        "Rejected",
+        "270",
+        "A bar scaled against the peak.",
+        "Coverage",
+        "about three quarters",
+        "No number to measure, so this bar sets fill: 75 and draws itself. Without it the bar would be empty: the automatic scale has nothing to read.",
+        "SDOC",
+        "13 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 30,
+        "runs": [
+          "BARS",
+          "Bars",
+          "Bars scale against the largest value unless a bar sets",
+          "fill:",
+          "itself.",
+          "Documents indexed",
+          "4200",
+          "A note sets in monospace under the track.",
+          "Documents reviewed",
+          "2150",
+          "Values are parsed for their first number, so",
+          "4,200 docs",
+          "works too.",
+          "Awaiting review",
+          "1780",
+          "A bar with no",
+          "fill:",
+          "is scaled against the largest value.",
+          "Rejected",
+          "270",
+          "A bar scaled against the peak.",
+          "Coverage",
+          "about three quarters",
+          "No number to measure, so this bar sets",
+          "fill: 75",
+          "and draws itself. Without it the bar would be empty: the automatic scale has nothing to read.",
+          "SDOC",
+          "13 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "scatter-slide",
+      "layout": "scatter",
+      "atoms": {
+        "text": 19,
+        "box": 7
+      },
+      "text": [
+        "SCATTER",
+        "Where the work sits",
+        "Points on two named axes. The marked point is written in bold, so a restyled deck keeps the argument.",
+        "a whole corpus",
+        "WORK DONE PER REQUEST",
+        "one document",
+        "Alder",
+        "batch, overnight",
+        "Birch",
+        "on demand",
+        "Cedar",
+        "streaming",
+        "This project",
+        "incremental, on write",
+        "cents",
+        "COST TO RUN",
+        "pounds",
+        "SDOC",
+        "14 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 27,
+        "runs": [
+          "SCATTER",
+          "Where the work sits",
+          "Points on two named axes. The marked point is written in bold, so a restyled deck keeps the argument.",
+          "a whole corpus",
+          "WORK DONE PER REQUEST",
+          "one document",
+          "Alder",
+          "batch, overnight",
+          "Birch",
+          "on demand",
+          "Cedar",
+          "streaming",
+          "This project",
+          "incremental, on write",
+          "cents",
+          "COST TO RUN",
+          "pounds",
+          "SDOC",
+          "14 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "stack-slide",
+      "layout": "stack",
+      "atoms": {
+        "text": 24,
+        "box": 6
+      },
+      "text": [
+        "STACK",
+        "Stacking two layouts",
+        "A stack renders each child scope as a block with its own layout, which is how one slide carries a diagram above a set of columns.",
+        "SIGNAL PATH",
+        "SENSE",
+        "⇒",
+        "CONVERT",
+        "⇒",
+        "COMPUTE",
+        "⇒",
+        "CONVERT",
+        "⇒",
+        "ACT",
+        "01",
+        "The engine",
+        "Blocks compose downward, separated by a hairline when the stack sets rule: true.",
+        "02",
+        "The path",
+        "Each block reads its own config: line.",
+        "03",
+        "The tooling",
+        "Nesting stops here: a block inside a block is plain content.",
+        "SDOC",
+        "15 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 30,
+        "runs": [
+          "STACK",
+          "Stacking two layouts",
+          "A stack renders each child scope as a block with its own layout, which is how one slide carries a diagram above a set of columns.",
+          "SIGNAL PATH",
+          "SENSE",
+          "⇒",
+          "CONVERT",
+          "⇒",
+          "COMPUTE",
+          "⇒",
+          "CONVERT",
+          "⇒",
+          "ACT",
+          "01",
+          "The engine",
+          "Blocks compose downward, separated by a hairline when the stack sets",
+          "rule: true",
+          ".",
+          "02",
+          "The path",
+          "Each block reads its own",
+          "config:",
+          "line.",
+          "03",
+          "The tooling",
+          "Nesting stops here: a block inside a block is plain content.",
+          "SDOC",
+          "15 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 2,
+        "shapes": 2,
+        "texts": 0
+      }
+    },
+    {
+      "id": "default-slide",
+      "layout": null,
+      "atoms": {
+        "text": 10
+      },
+      "text": [
+        "NO CONFIG LINE",
+        "The default layout",
+        "A slide with no config: line is left-aligned and runs top to bottom. It is the layout every deck had before the structured ones existed, and it is unchanged.",
+        "Prose, lists and tables render as they always did",
+        "No child scope is consumed as structure",
+        "A nested scope is a nested scope, not a column",
+        "A nested scope",
+        "Under the default layout this renders inline as a section, rather than being read as a cell.",
+        "SDOC",
+        "16 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 10,
+        "runs": [
+          "NO CONFIG LINE",
+          "The default layout",
+          "A slide with no",
+          "config:",
+          "line is left-aligned and runs top to bottom. It is the layout every deck had before the structured ones existed, and it is unchanged.",
+          "Prose, lists and tables render as they always did",
+          "No child scope is consumed as structure",
+          "A nested scope is a nested scope, not a column",
+          "A nested scope",
+          "Under the default layout this renders inline as a section, rather than being read as a cell.",
+          "SDOC",
+          "16 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "two-column-slide",
+      "layout": "two-column",
+      "atoms": {
+        "text": 9
+      },
+      "text": [
+        "LEGACY LAYOUT",
+        "Two columns",
+        "two-column predates columns and still behaves the way it did. Child scopes become the columns.",
+        "Before",
+        "The original slide layouts were center and two-column. Themes written against them target the bare class name.",
+        "After",
+        "columns is the same idea with a count class, per-column accents, numbering and variants. Both are supported.",
+        "SDOC",
+        "17 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 9,
+        "runs": [
+          "LEGACY LAYOUT",
+          "Two columns",
+          "two-column",
+          "predates",
+          "columns",
+          "and still behaves the way it did. Child scopes become the columns.",
+          "Before",
+          "The original slide layouts were",
+          "center",
+          "and",
+          "two-column",
+          ". Themes written against them target the bare class name.",
+          "After",
+          "columns",
+          "is the same idea with a count class, per-column accents, numbering and variants. Both are supported.",
+          "SDOC",
+          "17 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "tc-detail",
+      "layout": null,
+      "atoms": {
+        "text": 5
+      },
+      "text": [
+        "Still a drilldown",
+        "A detail slide hangs off any layout, including this one. Press Down to reach it, Up to come back.",
+        "A :detail scope has to be a direct child of the slide. Nested inside a column it is not a drilldown at all — it renders inline as part of that column, which is easy to do by accident.",
+        "SDOC",
+        "17.1 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 5,
+        "runs": [
+          "Still a drilldown",
+          "A detail slide hangs off any layout, including this one. Press Down to reach it, Up to come back.",
+          "A",
+          ":detail",
+          "scope has to be a direct child of the slide. Nested inside a column it is not a drilldown at all — it renders inline as part of that column, which is easy to do by accident.",
+          "SDOC",
+          "17.1 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "closing",
+      "layout": "center",
+      "atoms": {
+        "text": 4
+      },
+      "text": [
+        "Everything still works",
+        "The unstructured layouts — default, center, two-column — behave exactly as they always did.",
+        "SDOC",
+        "18 / 18"
+      ],
+      "pptx": {
+        "pictures": 0,
+        "shapes": 4,
+        "runs": [
+          "Everything still works",
+          "The unstructured layouts — default,",
+          "center",
+          ",",
+          "two-column",
+          "— behave exactly as they always did.",
+          "SDOC",
+          "18 / 18"
+        ]
+      },
+      "source": {
+        "svgs": 2,
+        "shapes": 2,
+        "texts": 0
+      }
+    }
+  ],
+  "media": 0
+}
