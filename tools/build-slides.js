@@ -61,6 +61,7 @@ function usage() {
     "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
     "                    [--css path/to/deck.css]\n" +
     "                    [--pdf] [--pptx] [--artifact] [--artifact-raise-small-text]\n" +
+    "                    [--artifact-pinned]\n" +
     "                    [--check]\n" +
     "                    [--fit contain|cover|stretch] [--dark]\n" +
     "                    [--with-optional | --no-optional]"
@@ -78,6 +79,7 @@ async function main() {
   let pptxMode = false;
   let artifactMode = false;
   let raiseSmallText = false;
+  let pinAll = false;
   let checkMode = false;
   let darkMode = false;
   // null means "whatever this output format defaults to"; the flags force it.
@@ -97,6 +99,8 @@ async function main() {
       pptxMode = true;
     } else if (args[i] === "--artifact") {
       artifactMode = true;
+    } else if (args[i] === "--artifact-pinned") {
+      pinAll = true;
     } else if (args[i] === "--artifact-raise-small-text") {
       raiseSmallText = true;
     } else if (args[i] === "--check") {
@@ -352,6 +356,7 @@ async function main() {
         source: { path: path.basename(resolvedInput), theme: themePath || "default" },
         previousManifest: readPreviousManifest(outDir),
         minFontSize: raiseSmallText,
+        pinAll,
       });
 
       // Nothing checks these files once they are published: the page drops

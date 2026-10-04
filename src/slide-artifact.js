@@ -33,6 +33,7 @@ const {
   RE_ID,
   MIN_FONT_SIZE,
   MAX_NOTES,
+  MAX_PINNED_PER_HOST,
   validateSlideHtml,
   validateDeckJson,
   PROPS_FOR_TAG,
@@ -823,7 +824,7 @@ function declarationsFor(node, ctx, inherited) {
   const scale = ctx.scale;
   const push = (prop, value) => { if (value !== null && value !== undefined && value !== "") d.push(`${prop}:${value}`); };
 
-  const pinned = s.position === "absolute" || s.position === "fixed";
+  const pinned = ctx.pinHere === true || s.position === "absolute" || s.position === "fixed";
   if (pinned) {
     push("position", "absolute");
     push("left", `${lenOf(node.box.x, scale)}px`);
@@ -1062,6 +1063,14 @@ function emitNode(node, ctx, inherited, depth) {
     return `<${tag}${textStyle}>${html}</${tag}>`;
   }
 
+  if (ctx.pinHere) {
+    // The pinned walker emits this container's children as its siblings, so
+    // nesting them here would place each one against this box instead of the
+    // slide. All that is left is whatever this box itself paints.
+    const paints = decls.some((d) => /^(background|border)/.test(d));
+    return paints ? `<div${style}></div>` : "";
+  }
+
   const inner = node.children.map((c) => emitNode(c, ctx, next, depth + 1)).join("\n");
   if (!inner.trim() && !decls.some((d) => /^(background|border|flex)/.test(d))) return "";
   if (depth >= 14) {
@@ -1097,6 +1106,64 @@ function pseudoHtml(p, ctx) {
   const opacity = parseFloat(p.style.opacity);
   if (isFinite(opacity) && opacity < 1) d.push(`opacity:${Math.round(opacity * 100) / 100}`);
   return `<div style="${d.join(";")}"></div>`;
+}
+
+// The traced alternative to the flow emitter above.
+//
+// Every element is pinned where the browser put it, as a flat list of siblings
+// under the section. Flat is not a detail: a position:absolute element nested
+// inside another is placed against *that* one, so a tree of pinned boxes
+// offsets every child by its parent and the deck slides apart. Each box has to
+// be a direct child of the slide, holding slide coordinates.
+//
+// What this buys is exactness — nothing is re-derived, so nothing can drift.
+// What it costs is the thing the format is for: a flat sheet of pinned boxes
+// is not a deck anyone can edit, and a table traced this way stops being a
+// table. That is why it is the opt-in and flow is the default.
+function emitPinnedSlide(slide, ctx, inherited) {
+  const out = [];
+  const walk = (node, inh) => {
+    if (node.transparent) {
+      for (const kid of node.children || []) walk(kid, inh);
+      return;
+    }
+    const next = {
+      font: fontStack(node.style.fontFamily) ? fontStack(node.style.fontFamily).css : inh.font,
+      size: lenOf(node.style.fontSize, ctx.scale) || inh.size,
+      weight: parseInt(node.style.fontWeight, 10) || inh.weight,
+      colour: colourOf(node.style.color) || inh.colour,
+    };
+    const html = emitNode(node, { ...ctx, pinAll: false, pinHere: true }, inh, 1);
+    if (html && html.trim()) out.push(html);
+    // A leaf has already emitted everything it holds. Anything else is a
+    // container whose own paint is now pinned, so only its children are left.
+    if (!node.runs && !node.rows && !node.items && node.tag !== "img" && !node.svg) {
+      for (const kid of node.children || []) walk(kid, next);
+    }
+  };
+  for (const kid of slide.children || []) walk(kid, inherited);
+  const boxes = out.filter(Boolean);
+
+  // The format allows a host only so many positioned children, and a traced
+  // slide passes that easily. A plain div is transparent to absolute
+  // positioning — a child still resolves against the nearest *positioned*
+  // ancestor, which is the section — so the list can be grouped without any
+  // of the coordinates moving.
+  if (boxes.length <= MAX_PINNED_PER_HOST) return boxes.join("\n");
+  const groups = [];
+  for (let i = 0; i < boxes.length; i += MAX_PINNED_PER_HOST) {
+    // Only a position:relative element starts a new host — a plain div shares
+    // its parent's count — and that same rule makes it the containing block
+    // for the boxes inside it. Given no height and no offset it sits at the
+    // section's own origin, which a traced slide leaves unpadded, so every
+    // coordinate still means what it says.
+    groups.push(
+      `<div style="position:relative;height:0">\n` +
+      boxes.slice(i, i + MAX_PINNED_PER_HOST).join("\n") +
+      `\n</div>`
+    );
+  }
+  return groups.join("\n");
 }
 
 function emitTable(node, ctx, style) {
@@ -1151,10 +1218,17 @@ function emitSlide(slide, ctx) {
   if (size) decls.push(`font-size:${size}px`);
 
   const pad = ["Top", "Right", "Bottom", "Left"].map((k) => Math.min(256, lenOf(s[`padding${k}`], scale)));
-  decls.push(`padding:${pad.map((p) => `${p}px`).join(" ")}`);
-  decls.push("display:flex", "flex-direction:column");
-  const gap = parseFloat(s.gap);
-  if (isFinite(gap) && gap > 0) decls.push(`gap:${lenOf(gap, scale)}px`);
+  if (ctx.pinAll) {
+    // A traced slide arranges nothing: every box carries its own slide
+    // coordinates. Padding would move the origin those are measured from, and
+    // a flex column would lay out the hosts holding them — so the section
+    // keeps its paint and drops the rest.
+  } else {
+    decls.push(`padding:${pad.map((p) => `${p}px`).join(" ")}`);
+    decls.push("display:flex", "flex-direction:column");
+    const gap = parseFloat(s.gap);
+    if (isFinite(gap) && gap > 0) decls.push(`gap:${lenOf(gap, scale)}px`);
+  }
   if (s.justifyContent === "center") decls.push("justify-content:center");
 
   const inherited = {
@@ -1164,7 +1238,9 @@ function emitSlide(slide, ctx) {
     colour,
   };
 
-  const body = slide.children.map((c) => emitNode(c, ctx, inherited, 1)).filter(Boolean).join("\n");
+  const body = ctx.pinAll
+    ? emitPinnedSlide(slide, ctx, inherited)
+    : slide.children.map((c) => emitNode(c, ctx, inherited, 1)).filter(Boolean).join("\n");
 
   let notes = "";
   if (slide.notes) {
@@ -1277,6 +1353,8 @@ function buildArtifact(harvest, options = {}) {
       // down to 8.67px renders every one at its authored size. Raising them
       // changed the design for a rule nothing enforces.
       minFont: options.minFontSize === true,
+      // Trace the layout instead of rebuilding it. Exact, and not editable.
+      pinAll: options.pinAll === true,
       addAsset(src) {
         if (!src) return null;
         // The artifact takes an uploaded asset, never a data: URI, so an

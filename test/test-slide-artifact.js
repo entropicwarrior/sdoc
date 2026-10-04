@@ -814,6 +814,56 @@ if (findChrome()) {
   });
 }
 
+if (findChrome()) {
+  test("tracing pins every box and arranges nothing (integration)", async () => {
+    // The opt-in alternative to flow. The subset has no margin, and a container
+    // has one gap — which says "space my children equally" and nothing else —
+    // so a theme that spaces different children differently cannot be rebuilt
+    // from flow properties. Tracing sidesteps the question by copying the
+    // answer: every box is pinned where the browser put it.
+    //
+    // Flat on purpose. A position:absolute box nested in another is placed
+    // against that one, so a tree of pinned boxes offsets every child by its
+    // parent; each has to be a direct child of a host holding slide coordinates.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-traced-"));
+    const parsed = parseSdoc(fs.readFileSync(EXAMPLE, "utf-8"));
+    assert(parsed.errors.length === 0, "the example parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeJs: theme.themeJs, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const opts = { title: "T", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" };
+      const flow = buildArtifact(harvest, opts);
+      const traced = buildArtifact(harvest, { ...opts, pinAll: true });
+
+      assert(traced.errors.length === 0,
+        "a traced deck is still inside the subset: " + JSON.stringify(traced.errors.slice(0, 3)));
+
+      const count = (built, needle) => Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html"))
+        .reduce((n, [, b]) => n + (b.split(needle).length - 1), 0);
+
+      assert(count(traced, "position:absolute") > count(flow, "position:absolute"),
+        "tracing pins far more than flow does");
+      assert(count(traced, "display:flex") < count(flow, "display:flex"),
+        "and arranges far less");
+      // The section itself must not arrange or pad, or every coordinate inside
+      // it is measured from the wrong origin.
+      const section = /<section [^>]*>/.exec(
+        Object.entries(traced.files).find(([f]) => f.endsWith(".html"))[1]
+      )[0];
+      assert(!/display:flex/.test(section), "a traced section does not lay out: " + section);
+      assert(!/padding:/.test(section), "nor pad: " + section);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("the browser-half scripts keep their regex escapes", () => {
   // Both harvests are held in template literals, which eat any escape they do
   // not recognise: a `\\s` written once arrives in the page as a bare `s`, so
