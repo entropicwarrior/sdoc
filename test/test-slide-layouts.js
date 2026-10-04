@@ -896,8 +896,10 @@ test("a url() escaping the theme directory is refused", () => {
 test("a theme with no theme.json gets the default design box", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-theme-"));
   const { config } = readThemeConfig(dir);
-  assert(config.slide.width === 1280 && config.slide.height === 720, "1280x720");
-  assert(config.page.width === 13.333, "13.333in page");
+  assert(config.slide.width === 1920 && config.slide.height === 1080, "1920x1080");
+  // 1920 CSS px is exactly 20in at 96dpi, which is what keeps screen and
+  // PDF the same geometry.
+  assert(config.page.width === 20 && config.page.height === 11.25, "20 x 11.25in page");
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
