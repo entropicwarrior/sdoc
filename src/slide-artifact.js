@@ -84,13 +84,45 @@ const ARTIFACT_SCRIPT = `
   // Without that recursion the wrappers the renderer makes transparent
   // (.slide-content-scale, .slide-head, .slide-body) look like leaves, and a
   // whole slide collapses into one paragraph.
+  // The first family in a stack, which is what actually gets used.
+  function firstFace(stack) {
+    return String(stack || "").split(",")[0].trim().replace(/^["']|["']$/g, "").toLowerCase();
+  }
+
+  // A non-whitespace text node sitting directly inside the element.
+  function hasLooseText(el) {
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var k = el.childNodes[i];
+      if (k.nodeType === 3 && k.nodeValue && k.nodeValue.trim()) return true;
+    }
+    return false;
+  }
+
   function isTextLeaf(el) {
     if (!el.textContent || !el.textContent.trim()) return false;
+    var own = getComputedStyle(el);
     for (var i = 0; i < el.children.length; i++) {
       var child = el.children[i];
-      var d = getComputedStyle(child).display;
+      var cs = getComputedStyle(child);
+      var d = cs.display;
       if (d === "contents") { if (!isTextLeaf(child)) return false; continue; }
       if (d !== "inline" && d !== "inline-block") return false;
+      // The subset has no font-size or font-family on a span — "no sizes or
+      // fonts on spans (use two blocks)" — so an inline mark set larger, or in
+      // another face, is flattened to its parent's type: a 44px figure
+      // rendering as 28px body text.
+      //
+      // The remedy is to let it be its own block, and that is only safe when
+      // the mark IS the whole of its parent. This export emits flow, not pinned
+      // boxes, so splitting a mark out of the middle of a sentence would stack
+      // the words around it as separate paragraphs and break the line. A
+      // standalone figure in its own paragraph becomes a block and looks
+      // identical; a code span inside prose keeps its place and loses its size,
+      // which is said out loud rather than silently done.
+      var differs =
+        Math.abs((parseFloat(cs.fontSize) || 0) - (parseFloat(own.fontSize) || 0)) > 0.5 ||
+        firstFace(cs.fontFamily) !== firstFace(own.fontFamily);
+      if (differs && el.children.length === 1 && !hasLooseText(el)) return false;
     }
     return true;
   }
@@ -239,6 +271,38 @@ const ARTIFACT_SCRIPT = `
     return out;
   }
 
+  // A run of text with no element of its own. It still has a position — a Range
+  // over it reports one — so it can be carried as a text node like any other.
+  function looseText(textNode, host, origin) {
+    if (!textNode.nodeValue || !textNode.nodeValue.trim()) return null;
+    var rect;
+    try {
+      var range = document.createRange();
+      range.selectNode(textNode);
+      rect = range.getBoundingClientRect();
+    } catch (err) {
+      return null;
+    }
+    if (!rect || (!rect.width && !rect.height)) return null;
+    var cs = getComputedStyle(host);
+    return {
+      tag: "p",
+      cls: "",
+      roleCls: "",
+      style: styleOf(cs),
+      box: { x: rect.left - origin.left, y: rect.top - origin.top, w: rect.width, h: rect.height },
+      children: [],
+      runs: [{
+        text: transformText(textNode.nodeValue.replace(/\\s+/g, " "), cs.textTransform),
+        bold: parseInt(cs.fontWeight, 10) > 400,
+        italic: cs.fontStyle === "italic",
+        underline: false,
+        href: null,
+        color: null
+      }]
+    };
+  }
+
   function slideTree(slide) {
     var origin = slide.getBoundingClientRect();
     var pseudos = [];
@@ -317,9 +381,20 @@ const ARTIFACT_SCRIPT = `
         return node;
       }
 
-      for (var i = 0; i < el.children.length; i++) {
-        var child = visit(el.children[i], cls || inheritedCls || "");
-        if (child) node.children.push(child);
+      // childNodes, not children: an element that is not a text leaf can still
+      // hold bare text beside its element children — prose next to a figure,
+      // or the words either side of a mark that had to be split out. The
+      // walking only the element children skips every one of those, and the
+      // only visible sign is that the slide got shorter.
+      for (var i = 0; i < el.childNodes.length; i++) {
+        var kid = el.childNodes[i];
+        if (kid.nodeType === 3) {
+          var loose = looseText(kid, el, origin);
+          if (loose) node.children.push(loose);
+        } else if (kid.nodeType === 1) {
+          var child = visit(kid, cls || inheritedCls || "");
+          if (child) node.children.push(child);
+        }
       }
       return node;
     }

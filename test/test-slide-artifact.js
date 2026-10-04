@@ -760,6 +760,65 @@ if (findChrome()) {
   });
 }
 
+if (findChrome()) {
+  test("a figure set large in its own paragraph keeps its size (integration)", async () => {
+    // The subset has no font-size or font-family on a span, so an inline mark
+    // set larger is flattened to its parent's type — a 44px figure rendering as
+    // 28px body text. When the mark is the whole of its parent it can become a
+    // block of its own and look identical.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-inline-"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        **10 W**\n\n        Body copy with `code` inside the sentence.\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const html = renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: ".slide-body strong { font-size: 64px; color: rgb(0, 200, 210); }",
+    });
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, html, "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      assert(built.errors.length === 0, "exports clean: " + JSON.stringify(built.errors.slice(0, 2)));
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+
+      // The standalone figure became its own block and kept its size.
+      assert(/font-size:64px/.test(out), "the figure keeps its size:\n" + out.slice(0, 700));
+
+      // The sentence did NOT get split into stacked paragraphs. This export
+      // emits flow, not pinned boxes, so breaking a line into blocks would be
+      // worse than losing a code span's face.
+      const sentence = /<p[^>]*>[^<]*Body copy with/.exec(out);
+      assert(sentence, "the sentence is still one element:\n" + out.slice(0, 700));
+      assert(/inside the sentence/.test(sentence.input.slice(sentence.index, sentence.index + 400)),
+        "and it still runs to the end rather than stacking");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test("the browser-half scripts keep their regex escapes", () => {
+  // Both harvests are held in template literals, which eat any escape they do
+  // not recognise: a `\\s` written once arrives in the page as a bare `s`, so
+  // `replace(/\\s+/g, " ")` silently becomes "replace every letter s with a
+  // space". It has shipped that way once — a filmstrip rendering "Purpose" as
+  // "Purpo e" in every deck — and nearly again here. The source has to double
+  // every backslash, and nothing but reading the evaluated script proves it.
+  for (const file of ["slide-artifact.js", "slide-geometry.js"]) {
+    const src = fs.readFileSync(path.join(__dirname, "..", "src", file), "utf-8");
+    // The character class below is matched literally, not interpreted: a bare
+    // "s+" where a whitespace class was meant is the signature of the bug.
+    const broken = /[/(]s\+[/)]/.test(src.replace(/\\\\s/g, "\u0000"));
+    assert(!broken, `${file} looks like it lost a backslash before an s`);
+    // And the real thing is present, doubled.
+    assert(/\\\\s\+/.test(src), `${file} should carry a doubled whitespace class`);
+  }
+});
+
 test("the notes limit counts characters, not the escaping around them", () => {
   // Found on a real deck: five slides refused with "speaker notes are 4,140
   // characters; the limit is 4,000", all of them marginal. The exporter
