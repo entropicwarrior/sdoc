@@ -544,9 +544,19 @@ function parseScale(value) {
   return text.endsWith("%") ? n / 100 : n;
 }
 
-function slideBackground(config) {
+function slideBackground(config, baked) {
   const src = String(config.background || "").trim();
   if (!src) return "";
+
+  // An export has already painted the picture, its placement and its fade into
+  // one flat image (see src/slide-fade-bake.js), because a CSS mask with a
+  // transparent stop is what macOS Preview renders as a hard edge. Everything
+  // below is in those pixels now, so emitting any of it a second time — the
+  // mask, the object-fit, the flip — would apply it twice.
+  if (baked) {
+    return `<div class="slide-bg" aria-hidden="true"><img src="${escapeAttr(baked)}"` +
+      ` alt="" style="width:100%;height:100%;object-fit:fill" /></div>\n`;
+  }
 
   const fit = String(config["background-size"] || "").trim().toLowerCase();
   const asked = cssPosition(config["background-position"], "center");
@@ -603,7 +613,13 @@ function slideBackground(config) {
   // about the picture.
   const fade = parseFade(config["background-fade"]);
   let wrapStyle = "";
+  // The parsed spec, carried for the export's bake. Reading it back out of the
+  // computed mask-image instead would lose information: Chrome normalises the
+  // gradient and drops an angle of 180deg altogether, it being the default
+  // `to bottom`.
+  let fadeAttr = "";
   if (fade) {
+    fadeAttr = ` data-fade="${escapeAttr(JSON.stringify(fade))}"`;
     const mask = fadeMask(fade);
     // Chrome still wants the prefix for mask-image on some versions, and
     // headless Chrome is what builds the PDF.
@@ -621,7 +637,7 @@ function slideBackground(config) {
 
   // alt is empty and the wrapper is aria-hidden: this is decoration, and a
   // screen reader announcing a filename over every slide is worse than silence.
-  return `<div class="slide-bg" aria-hidden="true"${wrapStyle}>${inner}</div>\n`;
+  return `<div class="slide-bg" aria-hidden="true"${fadeAttr}${wrapStyle}>${inner}</div>\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -630,7 +646,7 @@ function slideBackground(config) {
 
 // position: { spine: 1-based spine index, detail: 0 for spine, 1..N for details,
 //             totalSpines: total number of spine slides, hasDetails: bool (spine only) }
-function renderSlide(scope, slideIndex, overlayHtml, position) {
+function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade) {
   // Pull :detail children out first so they don't appear inline in the spine
   // slide's content; they're rendered as sibling vertical slides instead.
   const { contentNodes: afterDetails } = extractDetails(scope.children);
@@ -718,7 +734,7 @@ function renderSlide(scope, slideIndex, overlayHtml, position) {
   // measure and scale.
   // First child, so the harvest emits its atom before any content and the
   // picture lands at the bottom of the z-order in the exported .pptx.
-  const bgHtml = slideBackground(config);
+  const bgHtml = slideBackground(config, bakedFade);
 
   return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n${bgHtml}<div class="slide-content-scale">\n${title}\n${bodyHtml}\n</div>${notesHtml}${overlay}\n</div>`;
 }
@@ -1050,7 +1066,11 @@ function renderSlides(nodes, options = {}) {
     darkMode = false,
     themeConfig = {},
     fit = null,
-    includeOptional = true
+    includeOptional = true,
+    // slide index -> a data URI with the fade already in its pixels. Only an
+    // export fills this in; the HTML build keeps the real CSS mask, which a
+    // browser renders correctly and which costs no browser to produce.
+    bakedFades = {}
   } = options;
 
   // The design box and print page come from the theme (themes/<name>/theme.json).
@@ -1179,7 +1199,8 @@ function renderSlides(nodes, options = {}) {
   });
 
   const slidesHtml = emitted
-    .map(({ scope, position }, index) => renderSlide(scope, index, overlayHtml, position))
+    .map(({ scope, position }, index) =>
+      renderSlide(scope, index, overlayHtml, position, bakedFades[index]))
     .join("\n\n");
 
   const title = meta.properties?.title
@@ -1446,7 +1467,13 @@ function renderSlides(nodes, options = {}) {
   @page { size: ${pageW}in ${pageH}in; margin: 0; }
   body { overflow: visible; height: auto; }
   .slide {
-    display: block !important;
+    /* A column flex box, exactly as on screen. display:block here would be
+       cheaper, but it silently changes the layout the theme was written
+       against: justify-content goes inert and a margin-top:auto that pins a
+       footnote to the foot of the slide computes to 0, so content that is
+       centred on screen prints hard against the top of the page. */
+    display: flex !important;
+    flex-direction: column !important;
     position: relative !important;
     opacity: 1 !important;
     pointer-events: auto !important;
@@ -1463,9 +1490,29 @@ function renderSlides(nodes, options = {}) {
     page-break-inside: avoid; break-inside: avoid;
   }
   .slide:last-child { page-break-after: auto; break-after: auto; }
+  /* On screen this wrapper is display:contents, so the theme's rules on
+     .slide reach the slide's own content directly. In print it must be a real
+     box, because fitSlidesForPrint scales it — and a real box swallows those
+     rules: .slide is left with one full-height child, so it has nothing to
+     distribute and its own justify-content/align-items stop meaning anything.
+     The wrapper therefore takes over as the flex container and inherits those
+     properties from .slide, so whatever a theme set there still decides the
+     layout. Inheriting beats naming layouts (.layout-title and friends): a
+     theme that centres every slide, or one with layouts we have never heard
+     of, keeps working. */
   .slide-content-scale {
-    display: block;
+    display: flex !important;
+    flex-direction: column !important;
+    /* Fill the slide's content box, so an auto margin inside has the slide's
+       full height to push against, as it does on screen. min-height:0 lets it
+       shrink back when the content is taller than the page — the overflow is
+       what fitSlidesForPrint measures. */
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
     width: 100%;
+    justify-content: inherit;
+    align-items: inherit;
+    gap: inherit;
     transform-origin: top left;
   }
   .nav-prev, .nav-next { display: none !important; }
