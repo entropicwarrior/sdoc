@@ -32,7 +32,7 @@ const os = require("os");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
 const { renderSlides } = require("../src/slide-renderer.js");
-const { loadTheme } = require("../src/theme.js");
+const { loadTheme, inlineCssAssets } = require("../src/theme.js");
 const { runHarvest, SENTINEL } = require("../src/slide-geometry.js");
 const { harvestArtifact, buildArtifact } = require("../src/slide-artifact.js");
 
@@ -159,6 +159,13 @@ html, body { background: #fff; }
    ever stops doing so, the model is still the format's. */
 h1, h2, h3 { font-weight: 600; }
 img { display: block; }
+/* Speaker notes take no space in the viewer — the reference says so outright:
+   "<aside> = speaker notes (one per slide, last; takes no space)". Left
+   visible they are a flex child of the section like any other, and on a slide
+   with long notes they squeezed the body by their whole height and pulled
+   everything under it up. That was reported as a footnote 170px out of place
+   on a real deck, and it was this page, not the export. */
+.fidelity-frame aside { display: none; }
 </style></head><body>
 ${frames}
 </body></html>`;
@@ -203,6 +210,28 @@ function narrowToSlides(nodes, wanted) {
     );
   }
   return wrapped ? [{ ...nodes[0], children: kept }] : kept;
+}
+
+// The deck's own stylesheet, named by `@meta style-append:` and resolved
+// against the .sdoc, exactly as tools/build-slides.js resolves it. Without it
+// the harness builds and measures a deck nobody ships: both sides still agree,
+// because both come from the same build, so the numbers look fine and describe
+// something else. A deck's own sheet is where its per-slide rules live — the
+// image heights, the shadows — so a defect in any of them was invisible here.
+function loadDeckCss(deckPath, meta) {
+  const rel = typeof meta.styleAppendPath === "string" ? meta.styleAppendPath.trim() : "";
+  if (!rel) return { css: "", from: null };
+  const at = path.resolve(path.dirname(deckPath), rel);
+  if (!fs.existsSync(at)) {
+    // Not a warning. The deck names a sheet and it is not there, so what would
+    // be measured is not the deck.
+    throw new Error(
+      `the deck's @meta style-append names ${rel}, which is not at ${at}. ` +
+        "Refusing to measure a build without the deck's own stylesheet."
+    );
+  }
+  const { css } = inlineCssAssets(fs.readFileSync(at, "utf-8"), path.dirname(at));
+  return { css, from: at };
 }
 
 function median(xs) {
@@ -277,8 +306,9 @@ async function main() {
 
   // Beside the source, so relative images resolve exactly as they do in a build.
   const buildPath = path.join(path.dirname(resolved), `.fidelity-build-${Date.now()}.html`);
+  const deck = loadDeckCss(resolved, meta);
   const buildHtml = renderSlides(nodes, {
-    meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+    meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig, deckCss: deck.css,
   });
   fs.writeFileSync(buildPath, buildHtml, "utf-8");
 
@@ -470,6 +500,7 @@ async function main() {
 
   console.log(`\n  deck   ${path.basename(resolved)}${wanted ? ` (${report.slides.length} of its slides)` : ""}`);
   console.log(`  theme  ${themeDir}`);
+  console.log(`  css    ${deck.from || "(the deck names none)"}`);
   console.log(
     `\nflow vs build — ${report.slides.length} slides, ${t.elements} text elements\n` +
       `  vertical   median ${t.medianDy}px   max ${t.maxDy}px\n` +

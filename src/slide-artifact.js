@@ -1307,9 +1307,25 @@ function declarationsFor(node, ctx, inherited) {
     const shrink = parseFloat(s.flexShrink);
     const basis = s.flexBasis;
     if (grow > 0) {
-      // `flex:1` is the share the subset documents; anything else is spelled out.
-      const basisPart = basis && basis !== "auto" && basis !== "0%" ? ` ${lenOf(basis, scale)}px` : "";
-      push("flex", grow === 1 && (shrink === 1 || !isFinite(shrink)) && !basisPart ? "1" : `${grow} ${isFinite(shrink) ? shrink : 1}${basisPart || " 0%"}`);
+      // The basis is part of the answer, not a detail to round off. `flex:1`
+      // is `1 1 0%`: the item starts at nothing and takes its share of what is
+      // left. `flex: 1 1 auto` starts at its content and grows from there. The
+      // two agree while the content fits and part company when it does not —
+      // with 0% the box stays at the available height and its content spills,
+      // with auto the box grows. A basis of `auto` was being written as
+      // `flex:1`, which is the one case where they differ, and it showed up as
+      // a footnote 170px out of place under a body that had overflowed.
+      //
+      // The subset's grammar takes auto: `flex: none | auto | N [N] [LEN | 0% | auto]`.
+      const sh = isFinite(shrink) ? shrink : 1;
+      let basisPart;
+      if (!basis || basis === "auto") basisPart = "auto";
+      else if (basis === "0%" || basis === "0px") basisPart = "0%";
+      else basisPart = `${lenOf(basis, scale)}px`;
+      push(
+        "flex",
+        grow === 1 && sh === 1 && basisPart === "0%" ? "1" : `${grow} ${sh} ${basisPart}`
+      );
     }
   }
 
