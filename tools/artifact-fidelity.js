@@ -31,10 +31,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
-const { renderSlides } = require("../src/slide-renderer.js");
+const { renderSlides, inlineDeckImages } = require("../src/slide-renderer.js");
 const { loadTheme, inlineCssAssets } = require("../src/theme.js");
 const { runHarvest, SENTINEL } = require("../src/slide-geometry.js");
-const { harvestArtifact, buildArtifact } = require("../src/slide-artifact.js");
+const { harvestArtifact, buildArtifact, ARTIFACT_SCRIPT } = require("../src/slide-artifact.js");
 
 const CANVAS = { w: 1920, h: 1080 };
 
@@ -307,21 +307,52 @@ async function main() {
   // Beside the source, so relative images resolve exactly as they do in a build.
   const buildPath = path.join(path.dirname(resolved), `.fidelity-build-${Date.now()}.html`);
   const deck = loadDeckCss(resolved, meta);
-  const buildHtml = renderSlides(nodes, {
+  let buildHtml = renderSlides(nodes, {
     meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig, deckCss: deck.css,
   });
+  // Embed the pictures, exactly as tools/build-slides.js does. This is not an
+  // optimisation: a picture left as a file:// reference taints the canvas it is
+  // drawn into, so every bake fails silently and a drop-shadow is dropped
+  // rather than painted. The harness then measures a pipeline nobody runs —
+  // one where shadowed images behave differently from the real build.
+  const embedded = inlineDeckImages(buildHtml, path.dirname(resolved));
+  buildHtml = embedded.html;
+  if (embedded.missing && embedded.missing.length) {
+    const names = embedded.missing.map((m) => m.src || m.path || JSON.stringify(m));
+    throw new Error(
+      `${embedded.missing.length} image(s) in this deck could not be embedded: ${names.slice(0, 4).join(", ")}. ` +
+        "Every bake behind one fails silently, so the measurement would not be of this deck."
+    );
+  }
   fs.writeFileSync(buildPath, buildHtml, "utf-8");
 
+  // Two measurements of the same build, for two different questions.
+  //
+  // The baked one is what the exporter works from: a picture with a shadow is
+  // painted into its pixels, so the element grows by the bleed and the export
+  // is emitted at that size. The unbaked one is the deck as a reader sees it,
+  // where a filter paints outside the box and costs no layout at all.
+  //
+  // Comparing the export against the BAKED build hides exactly the defect that
+  // matters here — both sides carry the growth and agree — so the reference is
+  // the unbaked one. Where the two disagree the export has invented layout the
+  // deck never had, and that is reported rather than measured away.
   let harvest;
+  let reference;
   try {
     harvest = await harvestArtifact(buildPath);
+    reference = await harvestArtifact(buildPath, {
+      script: "window.__sdocNoBake = true;\n" + ARTIFACT_SCRIPT,
+    });
   } finally {
     try { fs.unlinkSync(buildPath); } catch {}
   }
 
-  const built = buildArtifact(harvest, {
-    title: meta.title || "deck", theme: theme.themeConfig, now: new Date().toISOString(),
-  });
+  const opts = { title: meta.title || "deck", theme: theme.themeConfig, now: new Date().toISOString() };
+  const built = buildArtifact(harvest, opts);
+  // Same slides, same text, measured before the bake: the boxes to judge against.
+  const truth = buildArtifact(reference, opts);
+  const truthBySlide = new Map(truth.manifest.slides.map((x) => [x.id, x.texts || []]));
 
   // A picture that does not load collapses to nothing and drags everything
   // below and beside it, which reads as a large layout error and is not one.
@@ -352,7 +383,7 @@ async function main() {
       unresolved += (withBytes.match(/sdoc-asset:/g) || []).length;
       return withBytes;
     });
-    return { id: s.id, html, texts: s.texts || [] };
+    return { id: s.id, html, texts: truthBySlide.get(s.id) || s.texts || [] };
   });
   if (unresolved) {
     console.error(

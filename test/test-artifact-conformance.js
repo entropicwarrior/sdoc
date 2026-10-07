@@ -238,6 +238,50 @@ test("a cut-out picture is not given a rectangular shadow", () => {
   assert(boxed.length === 0, boxed.join("\n  "));
 });
 
+test("a painted box that holds no text carries its own size", () => {
+  // The one class of defect a positional check cannot see. A box painted by
+  // CSS and sized by CSS — a bar track at `height: 8px`, a rule, a swatch —
+  // has no content to fall back on, so emitting no size makes it zero-high and
+  // invisible. Nothing moves: the chart is simply not there.
+  //
+  // Measured on a real deck before this was fixed: six tracks and six fills on
+  // one slide, all twelve stripped. The positional harness called that slide
+  // 42px out, because the labels beside the bars shifted by the bars' height.
+  // The number was real and described something far smaller than what broke.
+  const offenders = [];
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    // Walk each <div ...> to its matching close, so a container is judged on
+    // everything inside it rather than on the next tag along.
+    const open = /<div\b([^>]*)>/g;
+    let m;
+    while ((m = open.exec(html))) {
+      const attrs = m[1];
+      if (!/background|border|box-shadow/.test(attrs)) continue;
+      let depth = 1;
+      const scan = /<\/?div\b[^>]*>/g;
+      scan.lastIndex = open.lastIndex;
+      let close = html.length;
+      let t;
+      while ((t = scan.exec(html))) {
+        depth += t[0].startsWith("</") ? -1 : 1;
+        if (depth === 0) { close = t.index; break; }
+      }
+      const inner = html.slice(open.lastIndex, close);
+      const text = inner.replace(/<[^>]*>/g, "").trim();
+      if (text) continue;
+      // Nothing inside it reads. It is visible only if something in here has a
+      // size — itself, or a painted child it holds.
+      if (/(?:^|;)(?:width|height|aspect-ratio|flex):/.test(attrs)) continue;
+      if (/(?:^|;|")(?:width|height):/.test(inner)) continue;
+      offenders.push(`${file}: ${m[0].slice(0, 110)}`);
+    }
+  }
+  assert(offenders.length === 0,
+    "painted box(es) with no text and no size, so nothing of them is visible:\n  " +
+      offenders.slice(0, 4).join("\n  "));
+});
+
 test("a table's cells carry one padding, and it is the deck's", () => {
   // The format gives a table one padding for all its cells ("padding · td/th:
   // one per table, ≤64"). Emitting none left every cell on the subset's own

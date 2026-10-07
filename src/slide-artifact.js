@@ -52,7 +52,7 @@ const ARTIFACT_SCRIPT = `
 (function () {
   // Only what the subset can express. Anything else is resolved by the browser
   // and then deliberately thrown away.
-  var BOX = ["display","flexDirection","flexWrap","gap","alignItems","justifyContent",
+  var BOX = ["display","flexDirection","flexWrap","gap","rowGap","columnGap","alignItems","justifyContent",
              "gridTemplateColumns","gridTemplateRows","paddingTop","paddingRight",
              "paddingBottom","paddingLeft","backgroundColor","backgroundImage",
              "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
@@ -87,8 +87,17 @@ const ARTIFACT_SCRIPT = `
   // Specificity is not resolved — the last matching declaration wins, which is
   // the common case and, for a property nothing else sets, the only case. An
   // inline style beats all of it, as it does in the cascade.
-  function anchorsOf(el) {
-    var found = { top: false, bottom: false, left: false, right: false };
+  // Also which of its own size the deck wrote. A box that paints and is sized
+  // by CSS has no content to fall back on: emit nothing and it is a zero-high
+  // track and a zero-wide fill, so a bar chart is simply not there. A box sized
+  // by its content must NOT be pinned to a measured size, or nothing reflows —
+  // so the two are told apart the only way they can be, by whether a rule
+  // actually declared it.
+  var AUTHORED = ["top", "right", "bottom", "left", "width", "height"];
+  var authoredRules = null;
+  function sizingRules() {
+    if (authoredRules) return authoredRules;
+    authoredRules = [];
     var sheets = document.styleSheets;
     for (var i = 0; i < sheets.length; i++) {
       var rules;
@@ -97,13 +106,27 @@ const ARTIFACT_SCRIPT = `
       for (var j = 0; j < rules.length; j++) {
         var r = rules[j];
         if (!r || !r.selectorText || !r.style) continue;
-        var hits = false;
-        try { hits = el.matches(r.selectorText); } catch (err) { continue; }
-        if (!hits) continue;
-        for (var k in found) {
-          if (r.style.getPropertyValue(k)) found[k] = true;
+        var props = [];
+        for (var k = 0; k < AUTHORED.length; k++) {
+          if (r.style.getPropertyValue(AUTHORED[k])) props.push(AUTHORED[k]);
         }
+        // Only the rules that say anything about size or placement are kept,
+        // so the walk below is over a handful rather than every rule in the
+        // deck for every element on the slide.
+        if (props.length) authoredRules.push({ sel: r.selectorText, props: props });
       }
+    }
+    return authoredRules;
+  }
+
+  function anchorsOf(el) {
+    var found = { top: false, bottom: false, left: false, right: false, width: false, height: false };
+    var rules = sizingRules();
+    for (var i = 0; i < rules.length; i++) {
+      var hits = false;
+      try { hits = el.matches(rules[i].sel); } catch (err) { continue; }
+      if (!hits) continue;
+      for (var j = 0; j < rules[i].props.length; j++) found[rules[i].props[j]] = true;
     }
     if (el.style) {
       for (var k2 in found) {
@@ -844,7 +867,7 @@ const ARTIFACT_SCRIPT = `
         cls: cls,
         roleCls: cls || inheritedCls || "",
         style: styleOf(cs),
-        anchors: (cs.position === "absolute" || cs.position === "fixed") ? anchorsOf(el) : null,
+        anchors: anchorsOf(el),
         box: { x: rect.left - origin.left, y: rect.top - origin.top, w: rect.width, h: rect.height },
         children: []
       };
@@ -1003,7 +1026,15 @@ const ARTIFACT_SCRIPT = `
   }
   // Pictures are painted before anything is measured, because a bake replaces
   // the source and changes the box.
+  //
+  // Except when the caller wants the page as a reader sees it. A baked picture
+  // carries its drop-shadow in its pixels, so the element grows by the bleed —
+  // and a filter paints outside the box and takes no layout space, so the deck
+  // never had that size. Measuring after the bake makes the growth invisible:
+  // the reference and the export both have it and agree. A measurement meant
+  // to judge the export against the deck has to be taken before.
   function run() {
+    if (window.__sdocNoBake) { rasteriseLabelled(measure); return; }
     bakeImages(function () { rasteriseLabelled(measure); });
   }
 
@@ -1013,7 +1044,10 @@ const ARTIFACT_SCRIPT = `
 `;
 
 function harvestArtifact(htmlPath, options = {}) {
-  return runHarvest(htmlPath, ARTIFACT_SCRIPT, "sdoc-artifact", options);
+  // `script` lets a caller measure the same page a different way — the
+  // fidelity harness prepends a flag to take the page before its pictures are
+  // baked, which is the geometry a reader sees.
+  return runHarvest(htmlPath, options.script || ARTIFACT_SCRIPT, "sdoc-artifact", options);
 }
 
 // ---------------------------------------------------------------------------
@@ -1221,6 +1255,17 @@ function declarationsFor(node, ctx, inherited) {
     }
   }
 
+  // A size the deck wrote, on a box that is not pinned. Flow sizes almost
+  // everything by content or by flex share, and pinning a measured size to all
+  // of it would stop the deck reflowing — which is the whole point of flow. But
+  // a painted box sized only by CSS has nothing to fall back on: `.bar-track`
+  // is `height: 8px` and holds nothing, so with the height gone it is invisible
+  // and so is the chart it is part of. Authored is the line between the two.
+  if (!pinned && node.anchors) {
+    if (node.anchors.width && node.box.w > 0) push("width", `${lenOf(node.box.w, scale)}px`);
+    if (node.anchors.height && node.box.h > 0) push("height", `${lenOf(node.box.h, scale)}px`);
+  }
+
   if (s.alignSelf && !["auto", "normal", "stretch"].includes(s.alignSelf)) {
     push("align-self", alignWord(s.alignSelf));
   }
@@ -1233,7 +1278,38 @@ function declarationsFor(node, ctx, inherited) {
       const cols = gridTracks(s.gridTemplateColumns, scale);
       if (cols) push("grid-template-columns", cols);
     }
-    const gap = parseFloat(s.gap);
+    // The subset has `gap` and neither longhand, and a deck that writes only
+    // one of them computes `gap` as "normal 32px" — which parses to NaN, so the
+    // spacing vanished without a word. Four slides of a real deck had every row
+    // body sitting 32px left of where it belonged.
+    //
+    // One value is all the format takes, so the axis that actually spaces this
+    // box decides: a row is spaced by its column gap, a column by its row gap.
+    // A grid using both differently cannot be expressed and says so.
+    const rowGap = parseFloat(s.rowGap);
+    const colGap = parseFloat(s.columnGap);
+    const column = (s.flexDirection || "").startsWith("column");
+    let gap = parseFloat(s.gap);
+    if (!isFinite(gap)) {
+      gap = s.display === "grid"
+        ? Math.max(isFinite(rowGap) ? rowGap : 0, isFinite(colGap) ? colGap : 0)
+        : column
+          ? rowGap
+          : colGap;
+    }
+    if (
+      s.display === "grid" &&
+      isFinite(rowGap) && isFinite(colGap) && rowGap > 0 && colGap > 0 &&
+      Math.abs(rowGap - colGap) > 0.5
+    ) {
+      ctx.warnings.push({
+        slide: ctx.slide,
+        kind: "gap-axes-differ",
+        message:
+          `a grid spaces its rows by ${Math.round(rowGap)}px and its columns by ${Math.round(colGap)}px, ` +
+          "and the subset takes one gap for both; the larger is used",
+      });
+    }
     if (isFinite(gap) && gap > 0) push("gap", `${Math.min(512, lenOf(gap, scale))}px`);
     if (s.alignItems && s.alignItems !== "normal" && s.alignItems !== "stretch") push("align-items", alignWord(s.alignItems));
     if (s.justifyContent && s.justifyContent !== "normal" && s.justifyContent !== "flex-start") {
@@ -1434,6 +1510,21 @@ function emitNode(node, ctx, inherited, depth) {
       : decls.slice();
     const dropped = decls.length - kept.length;
     if (dropped > 0) ctx.droppedProps = (ctx.droppedProps || 0) + dropped;
+    // Most of what a tag refuses is spacing, and the count above is enough.
+    // `display` is not: the subset allows it on a section and a div and
+    // nowhere else, so a <p> told to centre its text with flex loses the
+    // instruction and the words sit at the top of the box instead. That moves
+    // text rather than the space around it, and it is worth a sentence.
+    if (allowed && !allowed.has("display") && decls.some((d) => d.startsWith("display:"))) {
+      ctx.warnings.push({
+        slide: ctx.slide,
+        kind: "display-dropped",
+        message:
+          `<${tag}>${node.cls ? " ." + node.cls.split(/\s+/)[0] : ""} is a flex or grid box in the deck, ` +
+          "and the subset allows display only on a section or a div — its contents fall back to the top " +
+          "left of it; wrap them in a div, or arrange from the parent",
+      });
+    }
     if (extra) kept.push(extra);
     return kept.length ? ` style="${kept.join(";")}"` : "";
   };
