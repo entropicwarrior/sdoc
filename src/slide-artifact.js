@@ -99,6 +99,22 @@ const ARTIFACT_SCRIPT = `
     return false;
   }
 
+  // A drawing is carried across as markup and shown as an image, and nothing
+  // on the other side has the stylesheet that defined a custom property — the
+  // subset says so outright: no currentcolor, no var(). So each one is replaced
+  // here, in the live page, with the literal the browser computed for it. A
+  // stroke written as var(--accent) arrives painted rather than black.
+  function resolveSvgVars(markup, probe) {
+    return String(markup).replace(
+      /var\\(\\s*(--[\\w-]+)\\s*(?:,\\s*([^)]*))?\\)/g,
+      function (whole, name, fallback) {
+        var value = "";
+        try { value = getComputedStyle(probe).getPropertyValue(name).trim(); } catch (err) {}
+        return value || String(fallback || "").trim() || "#000";
+      }
+    );
+  }
+
   function isTextLeaf(el) {
     if (!el.textContent || !el.textContent.trim()) return false;
     var own = getComputedStyle(el);
@@ -114,6 +130,14 @@ const ARTIFACT_SCRIPT = `
       var child = el.children[i];
       var cs = getComputedStyle(child);
       var d = cs.display;
+      // A drawing is not an inline word, whatever its display says. An <svg> is
+      // display:inline by default, and its own <text> labels count towards
+      // textContent — so a block holding a labelled diagram looked like a run
+      // of text, was emitted as a <p> of those labels, and the drawing was
+      // never visited. Three of a real deck's technical diagrams vanished that
+      // way, and the only ones that survived were the two a stylesheet had
+      // made display:block for unrelated reasons.
+      if (String(child.tagName).toLowerCase() === "svg") return false;
       if (d === "contents") { if (!isTextLeaf(child)) return false; continue; }
       if (d !== "inline" && d !== "inline-block") return false;
       // The subset has no font-size or font-family on a span — "no sizes or
@@ -171,8 +195,23 @@ const ARTIFACT_SCRIPT = `
     }
     if (!ink || (!ink.width && !ink.height)) return;
 
-    if (ink.height > 0 && ink.height < rect.height - 0.5) {
-      node.box.y = ink.top - origin.top;
+    // Kept whole as well as applied, because the two emitters want different
+    // things from it: flow adjusts only where it must, tracing copies the
+    // answer outright.
+    node.ink = {
+      x: ink.left - origin.left,
+      y: ink.top - origin.top,
+      w: ink.width,
+      h: ink.height,
+      // A Range taller than the box means the inline box overhangs the line
+      // box, which any line-height below the face's natural one does — and the
+      // Range's top then sits above the real one, so it is not to be trusted
+      // vertically even when tracing.
+      trustY: ink.height > 0 && ink.height < rect.height - 0.5
+    };
+
+    if (node.ink.trustY) {
+      node.box.y = node.ink.y;
       node.box.h = ink.height;
     }
 
@@ -613,7 +652,7 @@ const ARTIFACT_SCRIPT = `
         return node;
       }
       if (tag === "svg") {
-        node.svg = el.outerHTML;
+        node.svg = resolveSvgVars(el.outerHTML, el);
         return node;
       }
       if (tag === "table") {
@@ -826,10 +865,22 @@ function declarationsFor(node, ctx, inherited) {
 
   const pinned = ctx.pinHere === true || s.position === "absolute" || s.position === "fixed";
   if (pinned) {
+    // Tracing pins text where its glyphs are, not where its box is. The two
+    // differ whenever something inside the box moved the ink — a leading
+    // ::before, a negative text-indent, a cell that centres — and a box pinned
+    // at its own left with the ink 646px further along lands the words on top
+    // of whatever pushed them. Flow mode leaves this alone: there the text is
+    // still laid out, so the box is the right thing to place.
+    const ink = ctx.pinHere && node.runs && node.ink && node.ink.w > 0 ? node.ink : null;
+    const at = {
+      x: ink ? ink.x : node.box.x,
+      y: ink && ink.trustY ? ink.y : node.box.y,
+      w: ink ? ink.w : node.box.w,
+    };
     push("position", "absolute");
-    push("left", `${lenOf(node.box.x, scale)}px`);
-    push("top", `${lenOf(node.box.y, scale)}px`);
-    push("width", `${lenOf(node.box.w, scale)}px`);
+    push("left", `${lenOf(at.x, scale)}px`);
+    push("top", `${lenOf(at.y, scale)}px`);
+    push("width", `${lenOf(at.w, scale)}px`);
     // A pinned text box needs a width to wrap; a height would stop it growing
     // when someone edits it, so only painted boxes get one.
     if (!node.runs) push("height", `${lenOf(node.box.h, scale)}px`);

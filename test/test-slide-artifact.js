@@ -864,6 +864,50 @@ if (findChrome()) {
   });
 }
 
+if (findChrome()) {
+  test("a labelled drawing survives, and its var() is resolved (integration)", async () => {
+    // An <svg> is display:inline by default and its own <text> counts towards
+    // textContent, so the block holding a labelled diagram looked like a run of
+    // text: it was emitted as a <p> of those labels and the drawing was never
+    // visited. Three of a real deck's technical diagrams vanished that way, and
+    // the only ones that survived were two a stylesheet had made display:block
+    // for unrelated reasons — which is why no example here caught it.
+    //
+    // And a drawing is carried as markup and shown as an image, so nothing on
+    // the far side has the stylesheet that defined a custom property. The
+    // subset says as much: no var(). Each is resolved here, in the live page.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-svgtext-"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        Body copy.\n\n        ```svg\n" +
+      '        <svg viewBox="0 0 400 100" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="d">\n' +
+      '        <rect x="10" y="10" width="120" height="60" fill="var(--probe-fill)" stroke="#333"/>\n' +
+      '        <text x="200" y="50">LABEL</text>\n' +
+      "        </svg>\n        ```\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses: " + JSON.stringify(parsed.errors.slice(0, 2)));
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const html = renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: ".slide { --probe-fill: rgb(12, 34, 56); }",
+    });
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, html, "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      assert(built.errors.length === 0, "exports clean: " + JSON.stringify(built.errors.slice(0, 2)));
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+      assert(/<svg[\s>]/.test(out), "the drawing is in the export:\n" + out.slice(0, 500));
+      assert(/<rect\b/.test(out), "and its shapes, not just its labels");
+      assert(!/var\(/.test(out), "no custom property survives: " + (/var\([^)]*\)/.exec(out) || [""])[0]);
+      assert(/rgb\(12, 34, 56\)/.test(out), "resolved to the literal the page computed");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("the browser-half scripts keep their regex escapes", () => {
   // Both harvests are held in template literals, which eat any escape they do
   // not recognise: a `\\s` written once arrives in the page as a bare `s`, so
