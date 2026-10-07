@@ -324,6 +324,12 @@ const ARTIFACT_SCRIPT = `
     };
 
     if (node.ink.trustY) {
+      // The box is replaced by the ink so TRACING can pin the glyphs where
+      // they are. The real border box is kept, because a CSS height has to be
+      // the border box or the element is shorter than its own type: an h2 with
+      // 20px of padding over a 72px line is a 92px box, and emitting the 86px
+      // of ink clipped the descenders off every title that had padding.
+      node.borderBox = { h: rect.height, w: rect.width };
       node.box.y = node.ink.y;
       node.box.h = ink.height;
     }
@@ -1398,8 +1404,11 @@ function declarationsFor(node, ctx, inherited) {
     if ((node.anchors.width || needsOwnBox) && node.box.w > 0) {
       push("width", `${lenOf(node.box.w, scale)}px`);
     }
-    if ((node.anchors.height || needsOwnHeight) && node.box.h > 0) {
-      push("height", `${lenOf(node.box.h, scale)}px`);
+    // The border box, never the ink: the ink is what tracing pins, and a CSS
+    // height taken from it makes the element shorter than its own type.
+    const ownH = (node.borderBox && node.borderBox.h) || node.box.h;
+    if ((node.anchors.height || needsOwnHeight) && ownH > 0) {
+      push("height", `${lenOf(ownH, scale)}px`);
     }
   }
 
