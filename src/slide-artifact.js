@@ -1291,14 +1291,23 @@ function declarationsFor(node, ctx, inherited) {
     const column = (s.flexDirection || "").startsWith("column");
     let gap = parseFloat(s.gap);
     if (!isFinite(gap)) {
-      gap = s.display === "grid"
-        ? Math.max(isFinite(rowGap) ? rowGap : 0, isFinite(colGap) ? colGap : 0)
-        : column
-          ? rowGap
-          : colGap;
+      // Whichever axis this box actually spaces along — but only when there is
+      // a choice to make. A row that wraps is spaced down the page by its ROW
+      // gap, so picking by direction alone would drop a `row-gap: 54px` on a
+      // wrapping row and leave its lines touching. So: if only one longhand is
+      // a length, that is the answer whatever the direction.
+      const haveRow = isFinite(rowGap) && rowGap > 0;
+      const haveCol = isFinite(colGap) && colGap > 0;
+      if (haveRow && !haveCol) gap = rowGap;
+      else if (haveCol && !haveRow) gap = colGap;
+      else if (haveRow && haveCol) {
+        gap = s.display === "grid" || s.flexWrap === "wrap"
+          ? Math.max(rowGap, colGap)
+          : column ? rowGap : colGap;
+      }
     }
     if (
-      s.display === "grid" &&
+      (s.display === "grid" || s.flexWrap === "wrap") &&
       isFinite(rowGap) && isFinite(colGap) && rowGap > 0 && colGap > 0 &&
       Math.abs(rowGap - colGap) > 0.5
     ) {
