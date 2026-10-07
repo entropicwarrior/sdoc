@@ -938,6 +938,12 @@ const ARTIFACT_SCRIPT = `
         if (ps[pi].painted && ps[pi].lead > 0) {
           node.leadPad = Math.max(node.leadPad || 0, ps[pi].lead);
         }
+        if (ps[pi].painted && ps[pi].box) {
+          node.pseudos = node.pseudos || [];
+          node.pseudos.push(ps[pi]);
+          // Marked so the slide-level pass does not emit it a second time.
+          ps[pi].attached = true;
+        }
         pseudos.push(ps[pi]);
       }
 
@@ -1419,17 +1425,16 @@ function declarationsFor(node, ctx, inherited) {
   // open. Flow only: a traced box is pinned at its ink, which already has it.
   if (!ctx.pinHere && node.leadPad > 0) {
     const want = pad[3] + lenOf(node.leadPad, scale);
-    pad[3] = Math.min(256, want);
     if (want > 256) {
-      // The format caps padding at 256px, so a wider one cannot be given back
-      // at all. Saying which slide, and that tracing does not have the
-      // problem, is more use than a silently half-moved line.
-      ctx.warnings.push({
-        slide: ctx.slide,
-        message: `a ::before holds ${Math.round(want)}px of this line open and padding stops at 256px, ` +
-          `so the text after it sits about ${Math.round(want - 256)}px left of where the deck has it — ` +
-          `--artifact-pinned places it where the deck has it`,
-      });
+      // Padding stops at 256px, so a wider gap cannot be given back that way —
+      // on a real cover a 646px mark left the words 408px adrift, the largest
+      // error in that deck. A gap this size is expressible, just not as
+      // padding: a flex row holding a sized spacer and then the text puts the
+      // words exactly where the deck has them, and still reflows. The wrapper
+      // is built at emit time; here the padding is simply left alone.
+      node.leadSpacer = Math.round(want);
+    } else {
+      pad[3] = Math.min(256, want);
     }
   }
   if (pad.some((p) => p > 0)) push("padding", pad.every((p) => p === pad[0]) ? `${pad[0]}px` : pad.map((p) => `${p}px`).join(" "));
@@ -1627,7 +1632,32 @@ function emitNode(node, ctx, inherited, depth) {
     ctx.hoisted.push(html);
     return "";
   }
-  return html;
+
+  // Where a leading pseudo-element held more space open than padding can carry,
+  // the space is given back as a sized spacer in a flex row. An empty div and
+  // a width are both in the subset, and unlike a pinned box this still reflows
+  // when the words change.
+  let out = html;
+  if (out && node.leadSpacer && !ctx.pinHere) {
+    out =
+      `<div style="display:flex;align-items:baseline">\n` +
+      `<div style="width:${node.leadSpacer}px"></div>\n` +
+      `${out}\n</div>`;
+  }
+
+  // A painted pseudo-element belongs with its host, not at the top of the
+  // slide. Every one used to be emitted before all the content so it sat
+  // behind it — which is right for a band drawn behind its own text, and wrong
+  // the moment a full-bleed backdrop is listed later and paints over the lot.
+  // Paint order is source order and there is no z-index, so the only way a
+  // pseudo lands in the right layer is to be emitted where its host is.
+  if (!ctx.pinHere && node.pseudos && node.pseudos.length && ctx.hoisted) {
+    for (const ps of node.pseudos) {
+      const box = pseudoHtml(ps, ctx);
+      if (box) ctx.hoisted.push(box);
+    }
+  }
+  return out;
 }
 
 // Tagged with the box the exporter believed it was placing, for measurement.
@@ -2062,9 +2092,12 @@ function emitSlide(slide, ctx) {
   const painted = [];
   for (const p of slide.pseudos || []) {
     const where = `<${p.tag}>${p.cls ? " ." + p.cls.split(/\s+/)[0] : ""}`;
-    if (p.box && p.style) {
+    // In flow, a host emits its own pseudo in its own place, so paint order
+    // follows the deck's. Tracing arranges nothing and emits every box here,
+    // and anything no host claimed still falls back to this pass.
+    if (p.box && p.style && (ctx.pinAll || !p.attached)) {
       painted.push(pseudoHtml(p, ctx));
-    } else if (p.painted) {
+    } else if (p.painted && !p.box) {
       ctx.warnings.push({
         slide: ctx.slide,
         message: `the theme paints ${p.pseudo} on ${where}, and its box could not be reconstructed, so it is dropped`,

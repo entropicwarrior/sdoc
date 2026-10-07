@@ -1029,6 +1029,95 @@ if (findChrome()) {
   });
 }
 
+// --- A gap too wide for padding is given back as a spacer ------------------
+if (findChrome()) {
+  test("a leading gap wider than padding allows becomes a spacer (integration)", async () => {
+    // A ::before in flow holds space open on its host's first line. Pinning it
+    // hands that space back, so the words slide left by its width, and the
+    // compensation was padding — which the format caps at 256px. On a real
+    // cover a 646px mark left the words 408px adrift, the largest error in
+    // that deck, and all the exporter could do was say so.
+    //
+    // A gap that size is expressible, just not as padding: a flex row with a
+    // sized spacer puts the words where the deck has them and still reflows.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-spacer-"));
+    const parsed = parseSdoc("# Deck {\n    # One {\n        Body copy.\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      // Far past the 256px cap, and painted so it travels as a box of its own.
+      deckCss: "h2::before { content: ''; display: inline-block; width: 640px; " +
+        "height: 20px; background: rgb(10, 120, 200); }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+
+      const spacer = /<div style="width:(\d+)px"><\/div>/.exec(out);
+      assert(spacer, "a sized spacer stands in for the gap:\n" + out.slice(0, 700));
+      assert(parseInt(spacer[1], 10) > 256,
+        "and it is the full width, not the capped one: " + spacer[1]);
+      assert(!/padding:0px 0px 0px 256px/.test(out),
+        "so the padding is not quietly clipped instead");
+      assert(built.errors.length === 0,
+        "and the slide is inside the subset: " + JSON.stringify(built.errors.slice(0, 2)));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- A painted pseudo-element lands in its host's layer --------------------
+if (findChrome()) {
+  test("a pseudo-element is not painted over by a later backdrop (integration)", async () => {
+    // Every synthesised pseudo box used to be emitted before all the content,
+    // so it sat behind it. That is right for a band drawn behind its own text
+    // and wrong the moment a full-bleed backdrop is listed later: paint order
+    // is source order and there is no z-index, so the backdrop covered it.
+    // Seen on a published cover — the rule under the wordmark was drawn and
+    // then hidden.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-pseudoz-"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # One {\n        config: cover\n\n        Body copy.\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses: " + JSON.stringify(parsed.errors.slice(0, 2)));
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      // A rule under the heading, and a full-bleed backdrop after it in the
+      // deck's own order.
+      deckCss:
+        "h2 { position: relative; }" +
+        "h2::after { content: ''; position: absolute; left: 0; bottom: -12px; " +
+        "width: 300px; height: 6px; background: rgb(200, 30, 30); }" +
+        ".slide::before { content: ''; position: absolute; left: 0; top: 0; " +
+        "width: 1920px; height: 1080px; background: rgb(0, 0, 0); }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+
+      const rule = out.indexOf("rgb(200, 30, 30)");
+      const heading = out.indexOf("<h2");
+      assert(rule >= 0, "the rule is in the export:\n" + out.slice(0, 600));
+      assert(heading >= 0, "and so is its host");
+      // Paint order is source order: the rule must come after its host, not
+      // before everything on the slide.
+      assert(rule > heading,
+        "the rule is emitted with its host rather than behind all the content");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 // --- A pinned box is lifted out of the flow it was nested in ---------------
 if (findChrome()) {
   test("a pinned box is emitted as a direct child of the section (integration)", async () => {
