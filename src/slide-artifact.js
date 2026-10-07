@@ -58,12 +58,60 @@ const ARTIFACT_SCRIPT = `
              "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
              "borderTopStyle","borderRightStyle","borderBottomStyle","borderLeftStyle",
              "borderTopColor","borderRightColor","borderBottomColor","borderLeftColor",
-             "borderTopLeftRadius","opacity","flexGrow","flexShrink","flexBasis",
-             "marginTop","marginRight","marginBottom","marginLeft","position"];
+             "borderTopLeftRadius","opacity","flexGrow","flexShrink","flexBasis","boxShadow",
+             // A child that places itself in its parent's cross axis. The
+             // subset has it, and converting a margin-inline auto centring to
+             // align-self center is the standard move for a theme being made
+             // flow-ready — which did nothing at all while this went
+             // unharvested, because the replacement was dropped as well.
+             "alignSelf",
+             "marginTop","marginRight","marginBottom","marginLeft","position",
+             // Which edge the author anchored to. A box held at the bottom of
+             // its parent and re-emitted at the top coordinate it happened to
+             // measure at stops being held there the moment anything inside it
+             // changes size — and the export removes chrome from inside it.
+             "top","right","bottom","left"];
   var TYPE = ["fontFamily","fontSize","fontWeight","fontStyle","lineHeight",
-              "letterSpacing","textAlign","textTransform","whiteSpace","color"];
+              "letterSpacing","textAlign","textTransform","whiteSpace","color",
+              // Paint on text, lost for the same reason a box-shadow was.
+              "textShadow"];
 
   function px(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; }
+
+  // Which edge a positioned box was actually anchored to. getComputedStyle
+  // resolves top and bottom to used values for any positioned element, so both
+  // come back as lengths whatever the author wrote and neither says anything.
+  // The rules that matched it do say: a footer written as "bottom: 30px"
+  // declares bottom and never declares top.
+  //
+  // Specificity is not resolved — the last matching declaration wins, which is
+  // the common case and, for a property nothing else sets, the only case. An
+  // inline style beats all of it, as it does in the cascade.
+  function anchorsOf(el) {
+    var found = { top: false, bottom: false, left: false, right: false };
+    var sheets = document.styleSheets;
+    for (var i = 0; i < sheets.length; i++) {
+      var rules;
+      try { rules = sheets[i].cssRules; } catch (err) { continue; }
+      if (!rules) continue;
+      for (var j = 0; j < rules.length; j++) {
+        var r = rules[j];
+        if (!r || !r.selectorText || !r.style) continue;
+        var hits = false;
+        try { hits = el.matches(r.selectorText); } catch (err) { continue; }
+        if (!hits) continue;
+        for (var k in found) {
+          if (r.style.getPropertyValue(k)) found[k] = true;
+        }
+      }
+    }
+    if (el.style) {
+      for (var k2 in found) {
+        if (el.style.getPropertyValue(k2)) found[k2] = true;
+      }
+    }
+    return found;
+  }
 
   function styleOf(cs) {
     var out = {};
@@ -210,10 +258,27 @@ const ARTIFACT_SCRIPT = `
   //   only — assigning y here would quietly undo the decision above.
   function pinToInk(node, el, cs, rect, origin) {
     var ink;
+    var tops = [];
     try {
       var range = document.createRange();
       range.selectNodeContents(el);
       ink = range.getBoundingClientRect();
+      // How many lines the words actually occupied. A Range reports one rect
+      // per inline box, not per line, so a sentence holding a <b> gives
+      // several on one line: they are clustered by top edge instead of
+      // counted. Needed because a traced box is pinned at exactly the ink's
+      // width, and the artifact's copy of a face is never bit-identical to
+      // this one — a fraction of a pixel wider and a line that fitted wraps.
+      var rects = range.getClientRects();
+      for (var ri = 0; ri < rects.length; ri++) {
+        var rr = rects[ri];
+        if (!rr.width && !rr.height) continue;
+        var seen = false;
+        for (var ti = 0; ti < tops.length; ti++) {
+          if (Math.abs(tops[ti] - rr.top) < Math.max(1, rr.height * 0.5)) { seen = true; break; }
+        }
+        if (!seen) tops.push(rr.top);
+      }
     } catch (err) {
       return;
     }
@@ -231,7 +296,8 @@ const ARTIFACT_SCRIPT = `
       // box, which any line-height below the face's natural one does — and the
       // Range's top then sits above the real one, so it is not to be trusted
       // vertically even when tracing.
-      trustY: ink.height > 0 && ink.height < rect.height - 0.5
+      trustY: ink.height > 0 && ink.height < rect.height - 0.5,
+      lines: tops.length || 1
     };
 
     if (node.ink.trustY) {
@@ -276,8 +342,12 @@ const ARTIFACT_SCRIPT = `
             underline: marks.underline || tag === "u",
             href: marks.href || (tag === "a" ? child.getAttribute("href") : null),
             // A span the renderer coloured, or one it used to protect a unit:
-            // either way its own colour is worth keeping.
-            color: marks.color || tag === "span" || tag === "code"
+            // either way its own colour is worth keeping. And any mark at all
+            // that the theme gave a colour of its own — keying this on the tag
+            // meant a themed <strong> became a bare <b> and the word inherited
+            // its heading's colour, which is one cyan word arriving grey.
+            color: marks.color || tag === "span" || tag === "code" ||
+              cs2.color !== getComputedStyle(node).color
           });
         }
       }
@@ -624,6 +694,137 @@ const ARTIFACT_SCRIPT = `
     for (var t = 0; t < targets.length; t++) bakeOne(targets[t].el, targets[t].cs, one);
   }
 
+  // A drawing is one opaque graphic on the other side, and the format says
+  // outright that fonts never load inside one: a <text> label arrives in
+  // whatever face the viewer falls back to. So a labelled drawing is painted
+  // here, where the deck's own faces are live, and carried across as a picture.
+  //
+  // Painting alone does not do it. An <svg> handed to an <img> is an isolated
+  // document and cannot see this page's @font-face rules either, so the raster
+  // falls back exactly as the viewer would. Measured: the PNG of a webfont
+  // label came back byte-identical to the fallback rendering, and different
+  // from the real face. So the faces the labels actually ask for are copied
+  // into the clone first — by then their src is a data: URL, which travels.
+  //
+  // Only labelled drawings are painted. One without text renders correctly as
+  // markup, and markup stays vector, stays small, and stays under the 52 KB
+  // the format allows an <svg>.
+  function faceRules() {
+    var out = [];
+    for (var i = 0; i < document.styleSheets.length; i++) {
+      var rules;
+      try { rules = document.styleSheets[i].cssRules; } catch (err) { continue; }
+      if (!rules) continue;
+      for (var j = 0; j < rules.length; j++) {
+        var r = rules[j];
+        if (!r || !r.constructor || r.constructor.name !== "CSSFontFaceRule") continue;
+        var fam = String(r.style.getPropertyValue("font-family") || "");
+        out.push({ family: fam.replace(/["']/g, "").trim().toLowerCase(), css: r.cssText });
+      }
+    }
+    return out;
+  }
+
+  // Which faces this drawing's labels ask for. Inlining only those keeps the
+  // transient data: URL small — a deck can declare four families and a given
+  // diagram use one, and every byte here is spent again on decoding.
+  function facesFor(svg) {
+    var want = {};
+    var texts = svg.querySelectorAll("text, tspan");
+    for (var i = 0; i < texts.length; i++) {
+      var ff = "";
+      try { ff = getComputedStyle(texts[i]).fontFamily || ""; } catch (err) {}
+      var parts = ff.split(",");
+      for (var p = 0; p < parts.length; p++) {
+        want[parts[p].replace(/["']/g, "").trim().toLowerCase()] = true;
+      }
+    }
+    var all = faceRules();
+    var css = [];
+    for (var k = 0; k < all.length; k++) {
+      if (want[all[k].family]) css.push(all[k].css);
+    }
+    return css.join("\\n");
+  }
+
+  function rasteriseLabelled(done) {
+    document.documentElement.style.setProperty("--sdoc-slide-scale", "1");
+    var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+    var wasActive = slides.map(function (s) { return s.classList.contains("active"); });
+    var priorStyle = slides.map(function (s) { return s.getAttribute("style") || ""; });
+    // The same arrangement the measuring pass uses: a drawing in a slide that
+    // is not showing has no size, and one sized against the viewport has a
+    // different one unless the slide is parked.
+    slides.forEach(function (s, i) {
+      s.classList.add("active");
+      s.setAttribute("style", priorStyle[i] + ";position:absolute;top:0;left:0;transform:none;");
+    });
+
+    var targets = [];
+    var all = document.querySelectorAll(".slide svg");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.closest && el.closest(".nav-prev, .nav-next, .nav-vert, .notes")) continue;
+      if (!el.querySelector("text")) continue;
+      targets.push(el);
+    }
+
+    var restore = function () {
+      slides.forEach(function (s, i) {
+        s.setAttribute("style", priorStyle[i]);
+        if (!wasActive[i]) s.classList.remove("active");
+      });
+      done();
+    };
+    if (!targets.length) { restore(); return; }
+
+    var left = targets.length;
+    var one = function () { if (--left <= 0) restore(); };
+
+    targets.forEach(function (el) {
+      try {
+        var rect = el.getBoundingClientRect();
+        var w = Math.max(1, Math.round(rect.width));
+        var h = Math.max(1, Math.round(rect.height));
+        var clone = el.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        clone.setAttribute("width", String(w));
+        clone.setAttribute("height", String(h));
+        var css = facesFor(el);
+        if (css) {
+          var st = document.createElementNS("http://www.w3.org/2000/svg", "style");
+          st.textContent = css;
+          clone.insertBefore(st, clone.firstChild);
+        }
+        var markup = new XMLSerializer().serializeToString(clone);
+        var img = new Image();
+        img.onload = function () {
+          try {
+            // Twice the measured size because the source is vector, capped by
+            // total area so a full-bleed drawing is not an eight-megapixel PNG
+            // to encode — the budget this harvest runs on is spent decoding.
+            var budget = 4000000;
+            var scale = Math.min(2, Math.sqrt(budget / Math.max(1, w * h)));
+            if (!(scale > 0.5)) scale = 0.5;
+            var c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(w * scale));
+            c.height = Math.max(1, Math.round(h * scale));
+            c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+            el.__sdocRaster = c.toDataURL("image/png");
+          } catch (err) {
+            // A tainted canvas: something in the drawing came from a URL the
+            // page may not read back. The markup path still carries it.
+          }
+          one();
+        };
+        img.onerror = function () { one(); };
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(markup);
+      } catch (err) {
+        one();
+      }
+    });
+  }
+
   function slideTree(slide) {
     var origin = slide.getBoundingClientRect();
     var pseudos = [];
@@ -643,6 +844,7 @@ const ARTIFACT_SCRIPT = `
         cls: cls,
         roleCls: cls || inheritedCls || "",
         style: styleOf(cs),
+        anchors: (cs.position === "absolute" || cs.position === "fixed") ? anchorsOf(el) : null,
         box: { x: rect.left - origin.left, y: rect.top - origin.top, w: rect.width, h: rect.height },
         children: []
       };
@@ -689,6 +891,9 @@ const ARTIFACT_SCRIPT = `
       }
       if (tag === "svg") {
         node.svg = svgMarkup(el, rect);
+        // Painted in the pass before this one, when the drawing carries labels.
+        if (el.__sdocRaster) node.svgRaster = el.__sdocRaster;
+        node.svgLabel = el.getAttribute("aria-label") || "diagram";
         return node;
       }
       if (tag === "table") {
@@ -798,7 +1003,9 @@ const ARTIFACT_SCRIPT = `
   }
   // Pictures are painted before anything is measured, because a bake replaces
   // the source and changes the box.
-  function run() { bakeImages(measure); }
+  function run() {
+    bakeImages(function () { rasteriseLabelled(measure); });
+  }
 
   if (document.readyState === "complete") start();
   else window.addEventListener("load", start);
@@ -812,6 +1019,70 @@ function harvestArtifact(htmlPath, options = {}) {
 // ---------------------------------------------------------------------------
 // Translating a harvested tree into the subset
 // ---------------------------------------------------------------------------
+
+// Split on commas that are not inside parentheses. A shadow list separates its
+// shadows with commas and every colour in it holds commas of its own, so a
+// plain split cuts `rgba(0, 0, 0, .5)` into four pieces.
+function splitTop(value) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (c === "," && depth === 0) { out.push(value.slice(start, i)); start = i + 1; }
+  }
+  out.push(value.slice(start));
+  return out.map((p) => p.trim()).filter(Boolean);
+}
+
+// `box-shadow` is in the subset — `[inset] LEN LEN [LEN [LEN]] COLOR`, at most
+// eight, x and y within ±64, blur ≤160, spread ±32 — and was neither harvested
+// nor emitted, so every shadow in every deck was lost in silence. Nothing moves
+// when a shadow goes: a card just stops being raised off the page.
+//
+// The browser serialises the colour FIRST ("rgba(0, 0, 0, 0.1) 0px 4px 8px 0px"
+// and "… inset"), which is the one ordering the grammar refuses. So each shadow
+// is taken apart and put back in the order the format asks for, with its
+// lengths clamped rather than dropped: a shadow at the limit still reads as a
+// shadow, and one rejected for being 2px too soft reads as a missing feature.
+function shadowCss(value, scale, maxBlur) {
+  if (!value || value === "none") return "";
+  const parts = splitTop(value).slice(0, 8);
+  const out = [];
+  for (const part of parts) {
+    let body = part;
+    let inset = false;
+    if (/(^|\s)inset(\s|$)/.test(body)) {
+      inset = true;
+      body = body.replace(/(^|\s)inset(\s|$)/, " ");
+    }
+    // `color(srgb …)` too: a shadow written with color-mix() computes to that,
+    // and a colour pattern that only knew rgb()/hsl()/#hex skipped the whole
+    // shadow rather than the colour — which is how the one shadow in this
+    // repo's own theme stayed invisible after shadows started being exported.
+    // colourOf converts it; the subset has no color() function.
+    const colour = /(rgba?\([^)]*\)|hsla?\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8})/i.exec(body);
+    if (!colour) continue;
+    const lengths = body.replace(colour[0], " ").trim().split(/\s+/).filter(Boolean);
+    if (lengths.length < 2) continue;
+    const n = lengths.map((l) => lenOf(l, scale));
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const bits = [
+      clamp(n[0], -64, 64),
+      clamp(n[1], -64, 64),
+      n.length > 2 ? clamp(n[2], 0, maxBlur || 160) : null,
+      n.length > 3 ? clamp(n[3], -32, 32) : null,
+    ].filter((v) => v !== null);
+    const px = bits.map((v) => `${v}px`).join(" ");
+    out.push(`${inset ? "inset " : ""}${px} ${colourOf(colour[0]) || colour[0]}`);
+  }
+  return out.join(", ");
+}
+
+function r2(n) { return Math.round(n * 100) / 100; }
+function isLen(v) { return v !== undefined && v !== "auto" && isFinite(parseFloat(v)); }
 
 const TEXT_TAGS = new Set(["h1", "h2", "h3", "p"]);
 // The tags the subset refuses to let type inherit into, so everything they use
@@ -914,12 +1185,44 @@ function declarationsFor(node, ctx, inherited) {
       w: ink ? ink.w : node.box.w,
     };
     push("position", "absolute");
-    push("left", `${lenOf(at.x, scale)}px`);
-    push("top", `${lenOf(at.y, scale)}px`);
+    // Anchored on the edge the deck anchored on, where the deck chose one.
+    // The slide footer is held at `bottom: 30px` and contains two navigation
+    // chevrons set much larger than its text. The chevrons are chrome and do
+    // not travel, so the row that arrives is shorter than the one measured —
+    // and pinned by its top it floated 15px up, on every slide of every deck.
+    // Pinned by the same bottom the deck used, it stays put however much the
+    // contents shrink. Tracing is flat by design and keeps top/left.
+    const a = node.anchors;
+    const anchoredBottom = !ctx.pinHere && !!a && a.bottom && !a.top && isLen(s.bottom);
+    const anchoredRight = !ctx.pinHere && !!a && a.right && !a.left && isLen(s.right);
+    if (anchoredRight) push("right", `${lenOf(parseFloat(s.right), scale)}px`);
+    else push("left", `${lenOf(at.x, scale)}px`);
+    if (anchoredBottom) push("bottom", `${lenOf(parseFloat(s.bottom), scale)}px`);
+    else push("top", `${lenOf(at.y, scale)}px`);
     push("width", `${lenOf(at.w, scale)}px`);
+    // Pinned at the ink's width with no headroom, so text that took exactly
+    // one line here is held to one line there rather than being allowed to
+    // wrap on a sub-pixel difference between this browser's face and the
+    // artifact's copy of it. Text that already wrapped keeps wrapping.
+    if (ink && ink.lines === 1) push("white-space", "nowrap");
     // A pinned text box needs a width to wrap; a height would stop it growing
     // when someone edits it, so only painted boxes get one.
-    if (!node.runs) push("height", `${lenOf(node.box.h, scale)}px`);
+    //
+    // And a box held at its bottom edge has to be free to grow upward from it,
+    // or anchoring it there decided nothing: bottom plus a fixed height is the
+    // same box as top plus that height. The height measured here describes
+    // contents that do not all travel — the footer's is set by navigation
+    // chevrons, which are chrome — so a box that paints nothing keeps only its
+    // anchor. One that paints keeps its height, because that is its picture.
+    const paints = colourOf(s.backgroundColor) ||
+      ["Top", "Right", "Bottom", "Left"].some((k) => parseFloat(s[`border${k}Width`]) > 0);
+    if (!node.runs && !(anchoredBottom && !paints)) {
+      push("height", `${lenOf(node.box.h, scale)}px`);
+    }
+  }
+
+  if (s.alignSelf && !["auto", "normal", "stretch"].includes(s.alignSelf)) {
+    push("align-self", alignWord(s.alignSelf));
   }
 
   if (s.display === "flex" || s.display === "grid") {
@@ -952,7 +1255,7 @@ function declarationsFor(node, ctx, inherited) {
         slide: ctx.slide,
         message: `a ::before holds ${Math.round(want)}px of this line open and padding stops at 256px, ` +
           `so the text after it sits about ${Math.round(want - 256)}px left of where the deck has it — ` +
-          `--artifact-pinned places it exactly`,
+          `--artifact-pinned places it where the deck has it`,
       });
     }
   }
@@ -964,12 +1267,23 @@ function declarationsFor(node, ctx, inherited) {
   if (margins.some((m) => Math.abs(m) > 0.5) && !pinned) {
     ctx.warnings.push({
       slide: ctx.slide,
+      // Tagged because this one is a metric, not just a note: the count of
+      // dropped margins is how a theme's readiness for flow is judged, and it
+      // had to be derived by subtracting a traced export's warnings from a
+      // flow one's — tracing never drops a margin — for want of this field.
+      kind: "margin-dropped",
+      px: Math.round(margins.reduce((a, m) => a + Math.abs(m), 0)),
       message: `margin on <${node.tag}>${node.cls ? " ." + node.cls.split(/\s+/)[0] : ""} is dropped; the subset has no margin and the gap of its parent does the spacing`,
     });
   }
 
   const bg = colourOf(s.backgroundColor);
   if (bg) push("background", bg);
+  const shadow = shadowCss(s.boxShadow, scale, 160);
+  if (shadow) push("box-shadow", shadow);
+  // The limits are asymmetric: a box blurs to 160, text to 64.
+  const textShadow = shadowCss(s.textShadow, scale, 64);
+  if (textShadow) push("text-shadow", textShadow);
   if (s.backgroundImage && s.backgroundImage !== "none" && !/^url\(/.test(s.backgroundImage)) {
     // A theme gradient survives: the subset takes linear and radial gradients.
     push("background", s.backgroundImage.replace(/\s+/g, " "));
@@ -1126,17 +1440,37 @@ function emitNode(node, ctx, inherited, depth) {
       : (node.fit === "cover" || node.fit === "contain")
         ? node.fit
         : (node.box.w / node.box.h > (node.natural.w || 1) / (node.natural.h || 1) ? "cover" : "contain");
-    return `<img src="${asset}" alt="${escapeHtml(node.alt)}"${styleFor("img", `object-fit:${fit}`)}>`;
+    // And the size it occupies. Flow wrote none at all: the box an image had
+    // in the deck came from rules the subset drops, so the picture arrived at
+    // whatever size it happens to be — which is the deck's layout decided by
+    // the photographer. Pinned boxes already carry one, so this only fills the
+    // gap, and `object-fit` keeps the crop the deck chose.
+    const sizing = [];
+    if (!decls.some((d) => d.startsWith("width:")) && node.box.w > 0) {
+      sizing.push(`width:${lenOf(node.box.w, ctx.scale)}px`);
+    }
+    if (!decls.some((d) => d.startsWith("height:")) && node.box.h > 0) {
+      sizing.push(`height:${lenOf(node.box.h, ctx.scale)}px`);
+    }
+    return `<img src="${asset}" alt="${escapeHtml(node.alt)}"${styleFor("img", [...sizing, `object-fit:${fit}`].join(";"))}>`;
   }
 
   if (node.svg) {
-    if (/<text[\s>]/i.test(node.svg)) {
+    // A labelled drawing was painted during the harvest, with the faces its
+    // labels ask for inlined into it, and travels as a picture: the format
+    // treats a drawing as one opaque graphic and never loads a font inside
+    // one, so <text> carried as markup arrives in a fallback face.
+    const raster = node.svgRaster ? ctx.addAsset(node.svgRaster) : "";
+    if (!raster && /<text[\s>]/i.test(node.svg)) {
       ctx.warnings.push({
         slide: ctx.slide,
-        message: "an svg diagram uses <text>; fonts never load inside a drawing, so its labels will not render — lift them out or rasterise",
+        message: "an svg diagram uses <text> and could not be painted; fonts never load inside a drawing, so its labels will not render — lift them out",
       });
     }
-    const markup = node.svg.replace(/\sclass="[^"]*"/g, "");
+    // An unlabelled drawing stays markup: that keeps it vector and small.
+    const markup = raster
+      ? `<img src="${raster}" alt="${escapeHtml(node.svgLabel || "diagram")}"${styleFor("img", `width:${lenOf(node.box.w, ctx.scale)}px;height:${lenOf(node.box.h, ctx.scale)}px;object-fit:contain`)}>`
+      : node.svg.replace(/\sclass="[^"]*"/g, "");
     if (!ctx.pinHere) return markup;
     // Traced: a drawing needs placing like everything else, and the <svg>
     // element can itself be the framed box — a border and a radius on the svg
@@ -1187,6 +1521,16 @@ function emitNode(node, ctx, inherited, depth) {
       role: (node.roleCls || node.cls || "").split(/\s+/).filter(Boolean).join(" ") || node.tag,
       tag,
       text: node.runs.map((r) => (r.br ? "\n" : r.text)).join("").replace(/\s+/g, " ").trim(),
+      // Where the build actually put it. These entries are pushed exactly when
+      // a text element is emitted and only when it has something in it, so the
+      // list runs in the same order as <h1>/<h2>/<h3>/<p> do in the slide that
+      // comes out — which is what lets a render of that slide be compared
+      // against the build element by element, with nothing to match on.
+      // Cell and list-item text goes out inside <td>/<li>, never a <p>, so it
+      // is absent from both sides alike.
+      box: node.ink && node.ink.w > 0
+        ? { x: r2(node.ink.x), y: r2(node.ink.y), w: r2(node.ink.w), h: r2(node.ink.h) }
+        : { x: r2(node.box.x), y: r2(node.box.y), w: r2(node.box.w), h: r2(node.box.h) },
     });
     return `<${tag}${textStyle}>${html}</${tag}>`;
   }
@@ -1295,6 +1639,11 @@ function emitPinnedSlide(slide, ctx, inherited) {
 }
 
 function emitTable(node, ctx, style) {
+  // The type the whole table carries, to measure a cell's against.
+  const tableFace = fontStack(node.style.fontFamily);
+  const tableSize = lenOf(node.style.fontSize, ctx.scale);
+  const tableWeight = parseInt(node.style.fontWeight, 10);
+  const differing = new Set();
   const rows = node.rows
     .map((row, r) => {
       const bg = colourOf(row.style.backgroundColor);
@@ -1308,19 +1657,29 @@ function emitTable(node, ctx, style) {
           if (align && !["start", "left"].includes(align)) parts.push(`text-align:${align}`);
           const colour = colourOf(cell.style.color);
           if (colour) parts.push(`color:${colour}`);
-          // A cell carries its own type. Without this a header set in the
-          // deck's mono face inherits the table's instead, and the face is
-          // never declared because nothing asked for it — the column headings
-          // come out in the body face and look like a different table.
+          // A cell takes colour, alignment, a width and the table's one
+          // padding — and not a face or a size. The reference lists
+          // `font-family` and `font-size` against `text table`, and says in
+          // prose to set them on the <table>. Writing them per cell produced
+          // output that validated here and was dropped there: a header in the
+          // deck's mono face came out in the body face anyway, which is the
+          // very thing writing them was meant to prevent. So the difference is
+          // reported instead of being emitted and lost in silence.
           const face = fontStack(cell.style.fontFamily);
-          if (face) {
-            parts.push(`font-family:${face.css}`);
-            if (face.declared) ctx.faces.add(face.declared);
+          if (face && tableFace && face.css !== tableFace.css) {
+            differing.add(`face (${face.css.split(",")[0]})`);
           }
           const cellSize = lenOf(cell.style.fontSize, ctx.scale);
-          if (cellSize) parts.push(`font-size:${cellSize}px`);
+          if (cellSize && tableSize && Math.abs(cellSize - tableSize) > 0.5) {
+            differing.add(`size (${cellSize}px)`);
+          }
+          // Weight is allowed on a <th> and on nothing else in a table.
           const cellWeight = parseInt(cell.style.fontWeight, 10);
-          if (cellWeight) parts.push(`font-weight:${String(Math.round(cellWeight / 100) * 100)}`);
+          if (cellWeight && tag === "th") {
+            parts.push(`font-weight:${String(Math.round(cellWeight / 100) * 100)}`);
+          } else if (cellWeight && tableWeight && cellWeight !== tableWeight) {
+            differing.add(`weight (${cellWeight})`);
+          }
           const cs = parts.length ? ` style="${parts.join(";")}"` : "";
           return `<${tag}${cs}>${runsToHtml(cell.runs, ctx)}</${tag}>`;
         })
@@ -1328,6 +1687,16 @@ function emitTable(node, ctx, style) {
       return `<tr${bg ? ` style="background:${bg}"` : ""}>${cells}</tr>`;
     })
     .join("\n");
+  if (differing.size) {
+    ctx.warnings.push({
+      slide: ctx.slide,
+      kind: "table-cell-type-dropped",
+      message:
+        `a table's cells differ from the table in ${[...differing].join(", ")}; a cell takes ` +
+        "colour, alignment, a width and the table's one padding, so the rest is the table's for " +
+        "every cell — put the distinction in the text or split the table",
+    });
+  }
   return `<table${style}>\n${rows}\n</table>`;
 }
 
@@ -1576,6 +1945,33 @@ function buildArtifact(harvest, options = {}) {
       ])
     ),
     slides: manifestSlides,
+    // Every warning, whole and machine-readable. The console stops at 25 and
+    // says "and N more", which is no use as a measurement — and a manifest
+    // that records none at all means the only way to count what an export
+    // lost was to diff two exports against each other.
+    fidelity: {
+      mode: options.pinAll === true ? "traced" : "flow",
+      total: warnings.length,
+      byKind: warnings.reduce((acc, w) => {
+        const k = w.kind || "other";
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {}),
+      bySlide: warnings.reduce((acc, w) => {
+        acc[w.slide] = (acc[w.slide] || 0) + 1;
+        return acc;
+      }, {}),
+      // Spacing the flow export could not carry, in pixels, per slide. The
+      // slides at the top of this are the ones to fix first.
+      droppedSpacingBySlide: warnings.reduce((acc, w) => {
+        if (w.kind !== "margin-dropped") return acc;
+        acc[w.slide] = (acc[w.slide] || 0) + (w.px || 0);
+        return acc;
+      }, {}),
+      warnings: warnings.map((w) => ({
+        slide: w.slide, kind: w.kind || "other", px: w.px, message: w.message,
+      })),
+    },
   };
 
   return { errors, warnings, files, deck, manifest, assets };

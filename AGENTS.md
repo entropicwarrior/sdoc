@@ -78,7 +78,11 @@ test/               Test files
   test-slides.js      Slide renderer tests (node test/test-slides.js)
   test-slide-artifact.js  Claude Slides export, its validator and the pull diff
                          (node test/test-slide-artifact.js; Chrome-gated tests
-                         skip themselves when it is absent)
+                         skip themselves when it is absent). Also parses both
+                         injected harvest scripts the way the page will see
+                         them — a halved backslash or a stray backtick there
+                         only ever surfaced as "serialised before it reported
+                         its geometry", which names neither file nor character
   test-artifact-conformance.js  The Claude Slides export feature by feature. Knows
                          the feature list from src/slide-layouts.js, so a layout or
                          config key with no deck exercising it fails here. Checks the
@@ -112,6 +116,14 @@ tools/              CLI tools
   artifact-resolve-assets.js  Rewrites sdoc-asset: placeholders to uploaded /_blob/<id> urls
   artifact-diff.js    Compares a pulled artifact against the last export and
                       reports the changes against the .sdoc scopes they came from
+  artifact-fidelity.js  How far the flow export lands from the build it came
+                      from, per slide, as a number (node tools/artifact-fidelity.js
+                      <deck.sdoc> [--json <file>] [--worst N]). Renders the
+                      emitted slides against a modelled viewer and compares the
+                      ink of every text element with the build's. Matches on
+                      text, never by index; resolves sdoc-asset: to real bytes
+                      and carries the deck's @font-face over, because a
+                      collapsed picture or a fallback face buries the signal
   serve_docs.py       CLI to start a local SDOC document server
 ```
 
@@ -154,7 +166,7 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
   `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js`
-  (489 + 24 + 65 + 122 + 72 + 67 + 16 + 9 = 864 as of v0.2.24)
+  (489 + 24 + 65 + 122 + 72 + 83 + 17 + 9 = 881 as of v0.2.24)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

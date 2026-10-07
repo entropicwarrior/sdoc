@@ -409,7 +409,10 @@ img {
 }
 .matrix td strong { display: block; color: #111; margin-bottom: 1.5px; }
 .matrix td em { font-style: normal; color: var(--sdoc-muted); }
-.matrix tr.is-highlight td { background: color-mix(in srgb, var(--sdoc-accent-1) 6%, transparent); }
+/* The wash goes on the row, not its cells. A background on a <th> or <td>
+   is dropped on export — the slide format allows one only on a <tr> — so
+   on a cell this tint renders here and is silently missing there. */
+.matrix tr.is-highlight { background: color-mix(in srgb, var(--sdoc-accent-1) 6%, transparent); }
 .matrix tr.is-highlight td:first-child { box-shadow: inset 4.5px 0 0 var(--sdoc-accent-1); padding-left: 15px; }
 
 /* rows */

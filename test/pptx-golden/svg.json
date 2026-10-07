@@ -11,7 +11,7 @@
       "text": [
         "Simple Shapes",
         "Basic SVG primitives — rectangles, circles, and text:",
-        "1 / 4"
+        "1 / 5"
       ],
       "pptx": {
         "pictures": 1,
@@ -19,7 +19,7 @@
         "runs": [
           "Simple Shapes",
           "Basic SVG primitives — rectangles, circles, and text:",
-          "1 / 4"
+          "1 / 5"
         ]
       },
       "source": {
@@ -38,7 +38,7 @@
       "text": [
         "Architecture Diagram",
         "A service topology with arrows showing data flow:",
-        "2 / 4"
+        "2 / 5"
       ],
       "pptx": {
         "pictures": 1,
@@ -46,7 +46,7 @@
         "runs": [
           "Architecture Diagram",
           "A service topology with arrows showing data flow:",
-          "2 / 4"
+          "2 / 5"
         ]
       },
       "source": {
@@ -65,7 +65,7 @@
       "text": [
         "Status Dashboard",
         "A simple bar chart rendered with SVG:",
-        "3 / 4"
+        "3 / 5"
       ],
       "pptx": {
         "pictures": 1,
@@ -73,7 +73,7 @@
         "runs": [
           "Status Dashboard",
           "A simple bar chart rendered with SVG:",
-          "3 / 4"
+          "3 / 5"
         ]
       },
       "source": {
@@ -95,7 +95,7 @@
         "SVG diagrams work alongside regular SDOC content. Here is a small inline icon-style graphic:",
         "The diagram above is a simple callout box built entirely from SVG primitives. Below is a regular code block for comparison:",
         "const svg = document.querySelector('svg');",
-        "4 / 4"
+        "4 / 5"
       ],
       "pptx": {
         "pictures": 1,
@@ -105,7 +105,34 @@
           "SVG diagrams work alongside regular SDOC content. Here is a small inline icon-style graphic:",
           "The diagram above is a simple callout box built entirely from SVG primitives. Below is a regular code block for comparison:",
           "const svg = document.querySelector('svg');",
-          "4 / 4"
+          "4 / 5"
+        ]
+      },
+      "source": {
+        "svgs": 0,
+        "shapes": 0,
+        "texts": 0
+      }
+    },
+    {
+      "id": "unlabelled",
+      "layout": null,
+      "atoms": {
+        "text": 3,
+        "image": 1
+      },
+      "text": [
+        "Unlabelled Shapes",
+        "A drawing with no text of its own stays vector on the way out. One carrying labels is painted instead, because a drawing travels as a single opaque graphic and nothing loads a font inside one:",
+        "5 / 5"
+      ],
+      "pptx": {
+        "pictures": 1,
+        "shapes": 3,
+        "runs": [
+          "Unlabelled Shapes",
+          "A drawing with no text of its own stays vector on the way out. One carrying labels is painted instead, because a drawing travels as a single opaque graphic and nothing loads a font inside one:",
+          "5 / 5"
         ]
       },
       "source": {
@@ -115,5 +142,5 @@
       }
     }
   ],
-  "media": 4
+  "media": 5
 }

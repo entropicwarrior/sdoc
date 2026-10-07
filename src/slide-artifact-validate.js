@@ -381,8 +381,19 @@ const PROPS_FOR_TAG = {
   img: new Set([...BOX_PROPS, "object-fit"]),
   table: new Set([...BOX_PROPS, ...TYPE_PROPS, "padding"]),
   tr: new Set(["background", "background-color"]),
-  th: new Set([...TYPE_PROPS, "width", "padding", "background", "background-color"]),
-  td: new Set([...TYPE_PROPS, "width", "padding", "background", "background-color"]),
+  // A cell takes far less than a text element. From the reference's own table:
+  // `color · text span td/th`, `text-align · text td/th`, `width · td/th`,
+  // `padding · td/th: one per table`, and `font-weight · text th` — th only.
+  // `font-family` and `font-size` read `· text table`, so they belong to the
+  // <table>, not its cells; the Tables section says as much in prose ("set
+  // font-family, font-size, or color on the <table>, or it inherits them").
+  // And `background` reads `… table x-icon; tr: COLOR` — a row, never a cell.
+  //
+  // This set said TYPE_PROPS plus background for both, which passed output the
+  // page then drops: per-cell faces and sizes that silently become the table's,
+  // and a cell background that silently becomes nothing.
+  th: new Set(["color", "text-align", "width", "padding", "font-weight"]),
+  td: new Set(["color", "text-align", "width", "padding"]),
   svg: new Set([...BOX_PROPS]),
   hr: new Set([...BOX_PROPS, "color"]),
   "x-shape": new Set([...BOX_PROPS]),

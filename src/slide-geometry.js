@@ -281,6 +281,52 @@ const MEASURE_SCRIPT = `
   var rasterFailures = 0;
   var rasterised = 0;
 
+  // An <svg> handed to an <img> is an isolated document: it cannot see this
+  // page's @font-face rules, so a label drawn through one falls back to
+  // another face even though the page itself has the font. Measured: the PNG
+  // of a webfont label came back byte-identical to the fallback. The faces the
+  // labels ask for are copied into the clone first — by then their src is a
+  // data: URL, which travels with it.
+  //
+  // The artifact harvest in src/slide-artifact.js carries the same pair of
+  // helpers for the same reason. A fix to one belongs in the other.
+  function faceRules() {
+    var out = [];
+    for (var i = 0; i < document.styleSheets.length; i++) {
+      var rules;
+      try { rules = document.styleSheets[i].cssRules; } catch (err) { continue; }
+      if (!rules) continue;
+      for (var j = 0; j < rules.length; j++) {
+        var r = rules[j];
+        if (!r || !r.constructor || r.constructor.name !== "CSSFontFaceRule") continue;
+        var fam = String(r.style.getPropertyValue("font-family") || "");
+        out.push({ family: fam.replace(/["']/g, "").trim().toLowerCase(), css: r.cssText });
+      }
+    }
+    return out;
+  }
+
+  // Only the faces this drawing's labels ask for: every byte inlined here is
+  // spent again on decoding, and the budget this harvest runs on is decoding.
+  function facesFor(svg) {
+    var want = {};
+    var texts = svg.querySelectorAll("text, tspan");
+    for (var i = 0; i < texts.length; i++) {
+      var ff = "";
+      try { ff = getComputedStyle(texts[i]).fontFamily || ""; } catch (err) {}
+      var parts = ff.split(",");
+      for (var p = 0; p < parts.length; p++) {
+        want[parts[p].replace(/["']/g, "").trim().toLowerCase()] = true;
+      }
+    }
+    var all = faceRules();
+    var css = [];
+    for (var k = 0; k < all.length; k++) {
+      if (want[all[k].family]) css.push(all[k].css);
+    }
+    return css.join("\\n");
+  }
+
   // Draw every <svg> on the page into a PNG, once, before anything is measured.
   // Async because an image has to decode, and the walk that follows is not — so
   // the result is parked on the element and read back synchronously.
@@ -321,6 +367,12 @@ const MEASURE_SCRIPT = `
         clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
         clone.setAttribute("width", String(w));
         clone.setAttribute("height", String(h));
+        var css = facesFor(el);
+        if (css) {
+          var st = document.createElementNS("http://www.w3.org/2000/svg", "style");
+          st.textContent = css;
+          clone.insertBefore(st, clone.firstChild);
+        }
         var markup = new XMLSerializer().serializeToString(clone);
         var img = new Image();
         img.onload = function () {
@@ -410,7 +462,19 @@ const MEASURE_SCRIPT = `
 // Runs Chrome with --dump-dom, waiting for the sentinel rather than for the
 // process to exit: Chrome flushes the DOM promptly but does not always exit on
 // its own, so waiting on exit adds tens of seconds to every build.
-function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes) {
+// The sentinel is written into the result element by the injected script —
+// but it is also sitting in that script's own source, because that is where
+// the string comes from. So "the page contains the sentinel" was true the
+// instant Chrome serialised anything at all, and the poll below took the first
+// dump for a finished measurement however little had run. The result element
+// is what actually proves it: the script creates it with this id, and the
+// sentinel after that point proves the JSON was written whole.
+function harvestComplete(text, elementId) {
+  const at = text.indexOf('id="' + elementId + '">');
+  return at !== -1 && text.indexOf(SENTINEL, at) !== -1;
+}
+
+function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, attempt, refs) {
   return new Promise((resolve, reject) => {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-geom-"));
     const out = fs.openSync(outPath, "w");
@@ -442,7 +506,13 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes) {
         // per drawing — and a page cut off mid-pass never reports at all,
         // which surfaces as "serialised before it reported its geometry"
         // rather than as anything about time.
-        "--virtual-time-budget=" + Math.round(30000 + megabytes * 4000),
+        // Widened per attempt, exactly as the wall-clock window is. This is
+        // the budget that actually binds on a large deck: when it runs out
+        // Chrome serialises the page as it stands and exits, so a retry on
+        // the same budget fails in the same place every time — three
+        // identical failures that read as contention and are not.
+        "--virtual-time-budget=" +
+          Math.round(Math.max(45000, 30000 + megabytes * 4000 + refs * 1000) * (attempt || 1)),
         "--user-data-dir=" + profile,
         "--dump-dom",
         fileUrl,
@@ -465,7 +535,7 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes) {
     const poll = setInterval(() => {
       let text = "";
       try { text = fs.readFileSync(outPath, "utf-8"); } catch { return; }
-      if (text.includes(SENTINEL)) finish(null, text);
+      if (harvestComplete(text, elementId)) finish(null, text);
     }, 120);
 
     const limit = setTimeout(
@@ -481,7 +551,7 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes) {
       setTimeout(() => {
         let text = "";
         try { text = fs.readFileSync(outPath, "utf-8"); } catch {}
-        if (text.includes(SENTINEL)) finish(null, text);
+        if (harvestComplete(text, elementId)) finish(null, text);
         else finish(new Error("Chrome exited before reporting slide geometry"));
       }, 400);
     });
@@ -512,6 +582,15 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
 
   const resolved = path.resolve(htmlPath);
   const html = fs.readFileSync(resolved, "utf-8");
+  // The script goes in before </body>. A page without that tag takes the
+  // replacement silently, runs nothing, and fails ninety seconds later as
+  // "Chrome did not report" — which names the browser for a fault in the file.
+  if (!/<\/body>/i.test(html)) {
+    throw new Error(
+      `${htmlPath} has no </body>, so the measuring script cannot be injected ` +
+        "(a page assembled by hand usually wants <html><body> around it)"
+    );
+  }
   const injected = html.replace(/<\/body>/i, `<script>${script}</script>\n</body>`);
 
   const dir = path.dirname(resolved);
@@ -533,7 +612,19 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
   // one — a 15MB deck missed a 90-second window on every attempt — and the
   // failure looks like contention, which sends you looking in the wrong place.
   const megabytes = Buffer.byteLength(injected, "utf-8") / 1e6;
-  const baseTimeout = options.timeoutMs || Math.round(30000 + megabytes * 6000);
+  // Bytes are a poor proxy on their own. A page that references its pictures
+  // instead of embedding them can be a few hundred kilobytes and still have to
+  // fetch twenty images off disk, decode them, load eight webfonts and
+  // rasterise every drawing before a single rect is correct — none of which is
+  // in its byte count. Sized by bytes alone such a page got a 32-second first
+  // attempt and failed on a machine with a browser open, which reads as
+  // contention. So the work the page refers to counts too, and there is a
+  // floor under the whole thing.
+  const refs =
+    (injected.match(/<img\b/gi) || []).length + (injected.match(/<svg\b/gi) || []).length;
+  const baseTimeout =
+    options.timeoutMs ||
+    Math.max(60000, Math.round(30000 + megabytes * 6000 + refs * 1500));
   let lastError = null;
 
   try {
@@ -543,7 +634,9 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
         // Give the previous attempt's Chrome time to exit and release the
         // machine before competing with it.
         if (attempt > 1) await new Promise((r) => setTimeout(r, 500 * (attempt - 1)));
-        const dom = await dumpDom(chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt, megabytes);
+        const dom = await dumpDom(
+          chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt, megabytes, elementId, attempt, refs
+        );
         const match = dom.match(
           new RegExp(
             '<script type="application/json" id="' + elementId + '">([\\s\\S]*?)\\n/\\*' + SENTINEL + '\\*/'
@@ -628,4 +721,4 @@ function overflowReport(geometry, options = {}) {
   return findings;
 }
 
-module.exports = { harvestGeometry, runHarvest, overflowReport, MEASURE_SCRIPT, SENTINEL };
+module.exports = { harvestGeometry, runHarvest, overflowReport, harvestComplete, MEASURE_SCRIPT, SENTINEL };

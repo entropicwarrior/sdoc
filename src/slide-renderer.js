@@ -1278,6 +1278,13 @@ function renderSlides(nodes, options = {}) {
   position: absolute; bottom: 30px; left: 48px; right: 48px;
   display: flex; align-items: baseline;
   pointer-events: none;
+  /* The spacing between the footer's parts is a gap on the row, not a margin
+     on each part. Both render the same here, but an export to a format with
+     no margin can carry a gap and cannot carry these — and this is engine
+     chrome, so every deck paid for it on every slide. 0.5em because the parts
+     it separates are set at 0.7em, where the old 0.8em/0.6em margins came to
+     0.56em/0.42em of this row's size. The flex:1 spacer absorbs the rest. */
+  gap: 0.5em;
 }
 .slide-footer-gap { flex: 1; }
 .nav-prev, .nav-next {
@@ -1325,13 +1332,11 @@ function renderSlides(nodes, options = {}) {
 .sdoc-company-footer {
   font-size: 0.7em; color: rgba(0,0,0,0.35);
   letter-spacing: 0.04em;
-  margin-right: 0.8em;
 }
 .sdoc-confidential-notice {
   font-size: 0.65em; font-weight: 600;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: rgba(160, 40, 40, 0.6);
-  margin-left: 0.8em;
 }
 .slide-indicator {
   font-size: 0.7em; color: rgba(0,0,0,0.35);
@@ -1339,7 +1344,6 @@ function renderSlides(nodes, options = {}) {
   letter-spacing: 0.04em;
   pointer-events: none;
   user-select: none;
-  margin-right: 0.6em;
 }
 /* Scale wrapper: invisible to layout in screen mode so existing slide
    styles (flex centering, two-column grid, etc.) work as-is.  In print

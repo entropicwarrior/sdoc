@@ -22,7 +22,9 @@ const {
   buildArtifact,
   fontStack,
   slideIds,
+  ARTIFACT_SCRIPT,
 } = require("../src/slide-artifact.js");
+const { MEASURE_SCRIPT, harvestComplete, SENTINEL } = require("../src/slide-geometry.js");
 
 let pass = 0, fail = 0;
 const asyncTests = [];
@@ -864,8 +866,377 @@ if (findChrome()) {
   });
 }
 
+
+// --- Traced text that fitted on one line is held to one line ---------------
 if (findChrome()) {
-  test("a labelled drawing survives, and its var() is resolved (integration)", async () => {
+  test("traced text that took one line is not left free to wrap (integration)", async () => {
+    // Tracing pins a text box at exactly the ink's measured width, with no
+    // headroom at all. The artifact's copy of a face is never bit-identical to
+    // the harvest browser's, so a fraction of a pixel wider and a line that
+    // fitted in the build wraps in the export. Seen on a published deck: a
+    // wordmark pinned at 88.09px and a heading at 355.53px both arrived on two
+    // lines. Text that was already wrapping must keep wrapping.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-nowrap-"));
+    const long = "This sentence is deliberately long enough that it cannot " +
+      "possibly fit on a single line of a slide, so it must wrap across at " +
+      "least two lines and keep the freedom to do so after it is exported.";
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        ## Short heading\n\n        " + long + "\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const traced = buildArtifact(harvest, {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z", pinAll: true,
+      });
+      const out = Object.entries(traced.files).find(([f]) => f.endsWith(".html"))[1];
+      const h3 = /<h3[^>]*>/.exec(out);
+      assert(h3, "the heading is in the export:\n" + out.slice(0, 400));
+      assert(/white-space:nowrap/.test(h3[0]),
+        "a heading that took one line is held to one line: " + h3[0]);
+
+      const para = (/<p[^>]*>[^<]*This sentence[^<]*/.exec(out) || [""])[0];
+      assert(para, "the paragraph is in the export");
+      assert(!/white-space:nowrap/.test(para),
+        "but a paragraph that already wrapped is left free to wrap: " + para.slice(0, 160));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- An inline mark keeps a colour of its own ------------------------------
+if (findChrome()) {
+  test("an inline mark keeps its own colour (integration)", async () => {
+    // The colour of a run was kept only for <span> and <code>, by tag. A theme
+    // that colours one word with `h3 strong { color: ... }` lost it: <strong>
+    // became a bare <b> and the word inherited the heading's colour. Found by
+    // eye on a published deck, where one cyan word arrived grey.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-markcolour-"));
+    const parsed = parseSdoc("# Deck {\n    # Slide {\n        ## Per-block energy, ours — **simulated**\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const html = renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: ".slide h3 { color: rgb(126, 142, 149); } .slide h3 strong { color: rgb(0, 200, 220); }",
+    });
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, html, "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+      assert(/rgb\(0, 200, 220\)/.test(out),
+        "the marked word keeps the colour the theme gave it:\n" + (/<h3[^>]*>.*?<\/h3>/s.exec(out) || [""])[0]);
+      assert(/<span style="color:rgb\(0, 200, 220\)">simulated<\/span>/.test(out) ||
+             /<b><span style="color:rgb\(0, 200, 220\)">simulated<\/span><\/b>/.test(out) ||
+             /<span style="color:rgb\(0, 200, 220\)"><b>simulated<\/b><\/span>/.test(out),
+        "and it is the word that carries it, not the heading");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- A shadow is paint, and paint was not travelling -----------------------
+if (findChrome()) {
+  test("a box-shadow survives the export, in the order the grammar wants (integration)", async () => {
+    // box-shadow is in the subset — `[inset] LEN LEN [LEN [LEN]] COLOR` on a
+    // div, a text element, an image or a table — and was neither harvested nor
+    // emitted, so every shadow in every deck was lost. Nothing moves when a
+    // shadow goes, so no positional check could ever see it: a raised card
+    // simply stops being raised.
+    //
+    // The browser serialises the colour FIRST, which is the one order the
+    // grammar refuses, so this also pins the reordering.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-shadow-"));
+    const parsed = parseSdoc("# Deck {\n    # One {\n        Body copy.\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      // A painted box so it is certainly emitted, and a shadow past every limit
+      // so the clamping is exercised rather than assumed.
+      // On the heading, not on .slide-head: that wrapper is display:contents in
+      // this theme, so it has no box of its own and emits none.
+      deckCss: ".slide h2 { background: rgb(250, 250, 250); " +
+        "box-shadow: rgba(0, 0, 0, 0.25) 0px 400px 900px 99px; }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+      const shadow = /box-shadow:([^;"]*)/.exec(out);
+      assert(shadow, "the shadow reached the export:\n" + out.slice(0, 500));
+      const v = shadow[1].trim();
+      assert(/rgba?\([^)]*\)$/.test(v), "with its colour last, as the grammar requires: " + v);
+      assert(/^0px 64px 160px 32px /.test(v),
+        "and every length clamped into range rather than dropped: " + v);
+      assert(built.errors.length === 0, "and the result is inside the subset: " + JSON.stringify(built.errors.slice(0, 2)));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- Two more the subset has and the exporter never wrote ------------------
+if (findChrome()) {
+  test("align-self and text-shadow reach the export (integration)", async () => {
+    // Both are in the subset and neither was harvested, so both were lost in
+    // silence. align-self matters beyond its own sake: converting a theme's
+    // `margin-inline: auto` centring to `align-self: center` is the standard
+    // move for making a theme flow-ready, and it was a no-op here — the
+    // replacement for the dropped property was dropped too.
+    //
+    // text-shadow is the box-shadow story again, with a tighter blur ceiling:
+    // 64 for text against 160 for a box.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-selfshadow-"));
+    const parsed = parseSdoc("# Deck {\n    # One {\n        Body copy.\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: ".slide h2 { align-self: center; " +
+        "text-shadow: rgba(0, 0, 0, 0.4) 2px 3px 200px; }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+
+      assert(/align-self:center/.test(out),
+        "the heading places itself:\n" + (/<h2[^>]*>/.exec(out) || [""])[0]);
+
+      const ts = /text-shadow:([^;"]*)/.exec(out);
+      assert(ts, "and carries its text shadow: " + (/<h2[^>]*>/.exec(out) || [""])[0]);
+      assert(/rgba?\([^)]*\)$/.test(ts[1].trim()), "with the colour last: " + ts[1]);
+      assert(/\b64px\b/.test(ts[1]), "and the blur at the 64px text ceiling, not the box's 160: " + ts[1]);
+      assert(built.errors.length === 0, "inside the subset: " + JSON.stringify(built.errors.slice(0, 2)));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- A positioned box keeps the edge it was anchored to --------------------
+if (findChrome()) {
+  test("a box anchored at the bottom is exported anchored at the bottom (integration)", async () => {
+    // getComputedStyle resolves top AND bottom to used lengths on a positioned
+    // element, so neither says which edge the author chose — the cascade does.
+    // It matters because the export removes chrome from inside such a box: the
+    // slide footer holds two navigation chevrons set far larger than its text,
+    // and pinned by the top coordinate it measured with them, the footer rose
+    // 15px on every slide of every deck. It also must not keep its measured
+    // height, or anchoring it to the bottom decides nothing.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-anchor-"));
+    const parsed = parseSdoc("# Deck {\n\n@meta {\n    company: Acme\n}\n\n    # One {\n        Body.\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+      const footer = /<div style="position:absolute[^"]*display:flex[^"]*"/.exec(out);
+      assert(footer, "the footer row is in the export:\n" + out.slice(0, 500));
+      assert(/bottom:30px/.test(footer[0]),
+        "and carries the bottom the deck anchored it with: " + footer[0]);
+      assert(!/top:/.test(footer[0]),
+        "instead of a top measured against contents that do not travel: " + footer[0]);
+      assert(!/height:/.test(footer[0]),
+        "and is free to grow upward from it: " + footer[0]);
+
+      // A box the deck positioned from the top is untouched by any of this.
+      const tops = out.match(/<div style="position:absolute[^"]*top:[^"]*"/g) || [];
+      for (const t of tops) {
+        assert(!/bottom:/.test(t), "a top-anchored box is not also given a bottom: " + t);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- What an export lost, as a number ------------------------------------
+if (findChrome()) {
+  test("the engine's own footer chrome costs a deck no dropped margins (integration)", async () => {
+    // .sdoc-company-footer and .slide-indicator carried margins, and the footer
+    // is on every slide — so every deck paid two dropped margins per slide for
+    // spacing the engine itself asked for. 42 of them on a 21-slide deck, which
+    // a theme author cannot fix from their side. The footer row spaces its
+    // parts with a gap now, which the subset can carry.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-chrome-"));
+    const parsed = parseSdoc(
+      "# Deck {\n\n@meta {\n    company: Acme Corp\n}\n\n    # One {\n        Body.\n    }\n    # Two {\n        Body.\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      // Only dropped spacing. The footer's parts also warn for being under the
+      // 24px the type asks for, which is deliberate — footer chrome is small,
+      // and that floor is advisory in the format's own words.
+      const chrome = built.warnings.filter(
+        (w) => w.kind === "margin-dropped" &&
+          /sdoc-company-footer|slide-indicator|sdoc-confidential-notice/.test(w.message)
+      );
+      assert(chrome.length === 0,
+        "the footer's own parts drop no spacing: " + chrome.map((w) => w.message).join("; "));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the manifest reports what the export lost, per kind and per slide (integration)", async () => {
+    // The console stops at 25 warnings and says "and N more", so it cannot be
+    // measured from. Counting dropped margins meant exporting twice and
+    // subtracting a traced run from a flow one, because tracing never drops
+    // one. The manifest carries the whole list, tagged.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-fidelity-"));
+    const parsed = parseSdoc("# Deck {\n    # One {\n        Body.\n    }\n    # Two {\n        Body.\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const opts = { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" };
+      const flow = buildArtifact(harvest, opts).manifest.fidelity;
+      const traced = buildArtifact(harvest, { ...opts, pinAll: true }).manifest.fidelity;
+
+      assert(flow.mode === "flow" && traced.mode === "traced", "each export says which mode it was");
+      assert(flow.warnings.length === flow.total, "the list is whole, not truncated");
+      assert(flow.byKind["margin-dropped"] > 0, "a flow export drops margins and counts them");
+      // The very arithmetic this field exists to make unnecessary.
+      assert(!traced.byKind["margin-dropped"], "a traced export drops none, so the count is a flow measure");
+
+      const slides = Object.keys(flow.droppedSpacingBySlide);
+      assert(slides.length > 0, "and the spacing lost is totalled per slide");
+      assert(slides.every((k) => flow.droppedSpacingBySlide[k] > 0), "in pixels, so slides can be ranked");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- A labelled drawing is painted, because the viewer will not load its font --
+if (findChrome()) {
+  test("a labelled drawing is painted rather than carried as markup (integration)", async () => {
+    // The format treats a drawing as one opaque graphic and never loads a font
+    // inside one, so a <text> label carried as markup arrives in whatever face
+    // the viewer falls back to. The drawing is painted during the harvest
+    // instead, where the deck's own faces are live.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-svglabel-"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        Body copy.\n\n        ```svg\n" +
+      '        <svg viewBox="0 0 400 100" width="400" height="100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="d">\n' +
+      '        <rect x="10" y="10" width="120" height="60" fill="#0c2238"/>\n' +
+      '        <text x="200" y="50" font-size="20">LABEL</text>\n' +
+      "        </svg>\n        ```\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const html = renderSlides(nodes, { meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig });
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, html, "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+      assert(/<img\b/.test(out), "the drawing is in the export, as a picture:\n" + out.slice(0, 600));
+      assert(!/<text[\s>]/.test(out), "no label is left to fall back to another face");
+      const png = [...built.assets.values()].find((v) => /^data:image\/png/.test(v));
+      assert(png, "and the picture was written out as an asset");
+      assert(png.length > 500, "which holds an actual image, not an empty canvas");
+      assert(!built.warnings.some((w) => /could not be painted/.test(w.message)),
+        "and nothing warns that it could not be painted");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- and the faces its labels ask for travel with it ----------------------
+const PROBE_FONTS = [
+  "/System/Library/Fonts/Supplemental/Georgia.ttf",
+  "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+  "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+  "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+];
+const probeFont = PROBE_FONTS.find((f) => fs.existsSync(f));
+
+if (findChrome() && probeFont) {
+  test("a painted label uses the deck's webfont, not a fallback (integration)", async () => {
+    // Painting alone is not enough, and this is the half that is easy to miss.
+    // An <svg> handed to an <img> is an isolated document: it cannot see the
+    // page's @font-face rules, so the raster falls back exactly as the viewer
+    // would and the defect survives the fix. Measured before this guard
+    // existed: the PNG of a webfont label was byte-identical to the fallback.
+    //
+    // So: two drawings, same string, same size. One asks for a face the deck
+    // loads from a data: URL, the other for a name nothing resolves. If the
+    // faces travel into the drawing the two pictures differ; if they do not,
+    // both fall back and the bytes match.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-svgface-"));
+    const b64 = fs.readFileSync(probeFont).toString("base64");
+    const draw = (family) =>
+      '        <svg viewBox="0 0 400 100" width="400" height="100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="d">\n' +
+      '        <text x="10" y="60" font-size="36" font-family="' + family + '">Hamburgefonstiv</text>\n' +
+      "        </svg>";
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        A.\n\n        ```svg\n" + draw("SdocProbe, sans-serif") +
+      "\n        ```\n    }\n    # Slide {\n        B.\n\n        ```svg\n" + draw("NoSuchFaceXYZ, sans-serif") +
+      "\n        ```\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const html = renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: '@font-face { font-family: "SdocProbe"; src: url(data:font/ttf;base64,' + b64 + ') format("truetype"); }',
+    });
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, html, "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const pngs = [...built.assets.values()].filter((v) => /^data:image\/png/.test(v));
+      assert(pngs.length === 2, "both drawings were painted, got " + pngs.length);
+      assert(pngs[0] !== pngs[1],
+        "the webfont label differs from the fallback label; identical bytes mean the faces never reached the drawing");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+if (findChrome()) {
+  test("an unlabelled drawing stays markup, and its var() is resolved (integration)", async () => {
     // An <svg> is display:inline by default and its own <text> counts towards
     // textContent, so the block holding a labelled diagram looked like a run of
     // text: it was emitted as a <p> of those labels and the drawing was never
@@ -882,7 +1253,6 @@ if (findChrome()) {
       "# Deck {\n    # Slide {\n        Body copy.\n\n        ```svg\n" +
       '        <svg viewBox="0 0 400 100" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="d">\n' +
       '        <rect x="10" y="10" width="120" height="60" fill="var(--probe-fill)" stroke="#333"/>\n' +
-      '        <text x="200" y="50">LABEL</text>\n' +
       "        </svg>\n        ```\n    }\n}"
     );
     assert(parsed.errors.length === 0, "fixture parses: " + JSON.stringify(parsed.errors.slice(0, 2)));
@@ -900,6 +1270,7 @@ if (findChrome()) {
       const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
       assert(/<svg[\s>]/.test(out), "the drawing is in the export:\n" + out.slice(0, 500));
       assert(/<rect\b/.test(out), "and its shapes, not just its labels");
+      assert(!/<img\b/.test(out), "an unlabelled drawing stays markup, which keeps it vector");
       assert(!/var\(/.test(out), "no custom property survives: " + (/var\([^)]*\)/.exec(out) || [""])[0]);
       assert(/rgb\(12, 34, 56\)/.test(out), "resolved to the literal the page computed");
     } finally {
@@ -984,6 +1355,89 @@ test("a color-mix() computed value becomes a colour the subset has", () => {
   );
   assert(!r.errors.some((e) => /colour or a gradient/.test(e.message)),
     "the validator knows the shape too: " + JSON.stringify(r.errors));
+});
+
+// ============================================================
+// Both harvests are written as template literals, so a backslash written once
+// arrives in the page halved: "\\s" becomes a bare "s", and a lone "\\n"
+// inside a string ends the line and the script with it. The browser's only
+// report of that is "the page was serialised before it reported its geometry",
+// which names neither the file nor the character. This parses what actually
+// reaches the page, and needs no browser to do it.
+console.log("\n--- The injected harvests are valid JavaScript ---");
+
+function resolvedScript(script) {
+  // ${SENTINEL} is interpolated before injection; the rest is already resolved.
+  return script.replace(/\$\{SENTINEL\}/g, "SENTINEL");
+}
+
+for (const [name, script] of [
+  ["slide-artifact.js ARTIFACT_SCRIPT", ARTIFACT_SCRIPT],
+  ["slide-geometry.js MEASURE_SCRIPT", MEASURE_SCRIPT],
+]) {
+  test(`${name} parses as the page will see it`, () => {
+    const body = resolvedScript(script);
+    try {
+      new Function(body);
+    } catch (e) {
+      // Point at the damage rather than at the whole script.
+      const line = /position (\d+)/.exec(e.message);
+      const where = line ? body.slice(Math.max(0, +line[1] - 80), +line[1] + 80) : "";
+      throw new Error(`${e.message}${where ? " near: " + JSON.stringify(where) : ""}`);
+    }
+  });
+}
+
+test("a harvest carries no backtick, which would end the script early", () => {
+  for (const [name, script] of [
+    ["ARTIFACT_SCRIPT", ARTIFACT_SCRIPT],
+    ["MEASURE_SCRIPT", MEASURE_SCRIPT],
+  ]) {
+    assert(!script.includes("\u0060"), `${name} holds a backtick`);
+  }
+});
+
+// ============================================================
+console.log("\n--- A harvest is finished only when it has reported ---");
+
+test("the injected script's own source does not count as a finished harvest", () => {
+  // The sentinel string lives in the script that writes it, so a page that had
+  // merely been serialised contained it already. The poll took that for a
+  // finished measurement, returned the DOM, and the caller then failed with
+  // "the page was serialised before it reported its geometry" — which reads as
+  // contention. Worse, it meant the growing retry window was never waited out.
+  const page = "<html><body><script>" + MEASURE_SCRIPT + "</script></body></html>";
+  assert(page.includes(SENTINEL), "the script source does carry the sentinel");
+  assert(!harvestComplete(page, "sdoc-geometry"),
+    "but a page that has only been serialised has not reported");
+});
+
+test("a harvest that did report is recognised", () => {
+  const page = "<html><body><script>" + MEASURE_SCRIPT + "</script>" +
+    '<script type="application/json" id="sdoc-geometry">{"box":{}}\n/*' + SENTINEL + "*/</script></body></html>";
+  assert(harvestComplete(page, "sdoc-geometry"), "the result element is there and complete");
+  assert(!harvestComplete(page, "sdoc-artifact"), "and it is matched by id, not by any result at all");
+});
+
+test("a result element without its sentinel is not finished", () => {
+  // Chrome serialised mid-write: the element exists, the JSON is truncated.
+  const page = '<script type="application/json" id="sdoc-geometry">{"box":{"w":19';
+  assert(!harvestComplete(page, "sdoc-geometry"), "a truncated result is not a result");
+});
+
+test("the virtual-time budget grows with the attempt, as the wall clock does", () => {
+  // Both budgets have to widen or the retry is theatre: when the virtual-time
+  // budget runs out Chrome serialises what it has and exits, so re-running on
+  // the same budget fails in the same place. Three identical failures on a
+  // large deck looked like contention and were not.
+  const src = fs.readFileSync(path.join(__dirname, "..", "src", "slide-geometry.js"), "utf-8");
+  const at = src.indexOf('"--virtual-time-budget="');
+  assert(at >= 0, "the budget is still built in slide-geometry.js");
+  // The expression spans lines and holds commas of its own, so take the whole
+  // argument up to the next line that closes it rather than matching a shape.
+  const expr = src.slice(at, src.indexOf("\n", src.indexOf("),", at)));
+  assert(/attempt/.test(expr),
+    "and it scales with the attempt, not just the page size: " + expr.replace(/\s+/g, " "));
 });
 
 // ============================================================

@@ -238,6 +238,35 @@ test("a cut-out picture is not given a rectangular shadow", () => {
   assert(boxed.length === 0, boxed.join("\n  "));
 });
 
+test("a highlighted table row keeps its wash", () => {
+  // The format allows a background on a <tr> and on nothing inside it: "A <tr>
+  // may carry background:COLOR; no background on cells". A theme that paints
+  // the highlight on `tr.is-highlight td` therefore renders correctly in the
+  // deck and silently loses the paint on export — it is not a dropped
+  // declaration anyone is told about, it is a colour that is simply absent.
+  // This is positional tests' blind spot: nothing moves, it just goes grey.
+  const matrix = goldens.filter((f) => /matrix/.test(f));
+  assert(matrix.length > 0, "the corpus still has a matrix slide");
+  for (const file of matrix) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    const rows = html.match(/<tr[^>]*>/g) || [];
+    const washed = rows.filter((r) => /background/.test(r));
+    assert(washed.length === 1,
+      `${file}: expected exactly one row to carry the highlight wash, found ${washed.length}. ` +
+        "A wash painted on the cells instead of the row is dropped on the way out.");
+    // Not "no cell has a background" — emitTable never writes one, so that
+    // asserts nothing. What can go wrong is a cell carrying type the format
+    // gives only to the table, which validates against a wrong transcription
+    // and is dropped by the page.
+    for (const cell of html.match(/<t[dh][^>]*>/g) || []) {
+      assert(!/font-family|font-size/.test(cell),
+        `${file}: a cell carries a face or a size, which belong to the <table>: ${cell}`);
+      assert(!/<td[^>]*font-weight/.test(cell),
+        `${file}: a <td> carries a weight, which the format allows only on <th>: ${cell}`);
+    }
+  }
+});
+
 test("every drawing carries a size in pixels", () => {
   // The format is explicit that an <svg>'s width and height are its viewBox's,
   // and it is shown as an image. So whatever size it was authored with —
@@ -246,10 +275,18 @@ test("every drawing carries a size in pixels", () => {
   // parent nor a stylesheet. Seven of one deck's eight drawings had no usable
   // size and every one arrived collapsed, which reads as "the drawings are
   // broken" rather than as a missing attribute.
+  //
+  // A drawing leaves by one of two doors: unlabelled it stays markup, and
+  // labelled it is painted and leaves as a picture. Both are checked, and the
+  // corpus is required to still hold one of each — when every example drawing
+  // became a picture this test went on passing over nothing at all.
   const bad = [];
+  let markup = 0;
+  let painted = 0;
   for (const file of goldens) {
     const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
     for (const m of html.matchAll(/<svg\b([^>]*)>/g)) {
+      markup++;
       const w = /\swidth="([^"]*)"/.exec(m[1]);
       const h = /\sheight="([^"]*)"/.exec(m[1]);
       if (!w || !h) { bad.push(`${file}: a drawing has no ${w ? "height" : "width"}`); continue; }
@@ -257,8 +294,20 @@ test("every drawing carries a size in pixels", () => {
         bad.push(`${file}: a drawing is sized "${w[1]}" x "${h[1]}", which needs a stylesheet to mean anything`);
       }
     }
+    // A painted drawing is an <img> whose alt came from the drawing's
+    // aria-label. It needs its size in the style, for the same reason.
+    for (const m of html.matchAll(/<img\b([^>]*)>/g)) {
+      if (!/alt="diagram"/.test(m[1])) continue;
+      painted++;
+      const style = /\sstyle="([^"]*)"/.exec(m[1]);
+      const w = style && /(?:^|;)width:([0-9.]+)px/.exec(style[1]);
+      const h = style && /(?:^|;)height:([0-9.]+)px/.exec(style[1]);
+      if (!w || !h) bad.push(`${file}: a painted drawing has no ${w ? "height" : "width"} in pixels`);
+    }
   }
   assert(bad.length === 0, bad.slice(0, 4).join("\n  "));
+  assert(markup > 0, "no example leaves a drawing as markup any more, so the vector path is unchecked");
+  assert(painted > 0, "no example has a painted drawing, so the picture path is unchecked");
 });
 
 test("every declaration value has balanced parentheses", () => {
@@ -309,6 +358,7 @@ test("a shadow puts its colour last, as the subset's grammar requires", () => {
   // colour first. The subset wants it last. Passing a computed value straight
   // through is out of subset even when it was captured correctly.
   const offenders = [];
+  let seen = 0;
   for (const file of goldens) {
     const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
     eachElement(html, (el) => {
@@ -316,12 +366,16 @@ test("a shadow puts its colour last, as the subset's grammar requires", () => {
         if (!(d.prop in SHADOW_BLUR_MAX)) continue;
         if (/^\s*none\s*$/i.test(d.value)) continue;
         for (const layer of shadowLayers(d.value)) {
+          seen++;
           if (COLOUR_FIRST.test(layer)) offenders.push(`${file}: ${d.prop}: ${layer.trim()}`);
         }
       }
     });
   }
   assert(offenders.length === 0, "colour-first shadow(s):\n  " + offenders.slice(0, 4).join("\n  "));
+  // This ran over nothing for as long as box-shadow went unharvested: zero
+  // shadows in the corpus, and a guard with nothing to guard passes forever.
+  assert(seen > 0, "no exported shadow anywhere in the corpus, so neither this nor the blur limit is checking anything");
 });
 
 test("a shadow's blur is within the limit for the property it lands on", () => {
