@@ -395,7 +395,7 @@ const MEASURE_SCRIPT = `
 // Runs Chrome with --dump-dom, waiting for the sentinel rather than for the
 // process to exit: Chrome flushes the DOM promptly but does not always exit on
 // its own, so waiting on exit adds tens of seconds to every build.
-function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
+function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes) {
   return new Promise((resolve, reject) => {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-geom-"));
     const out = fs.openSync(outPath, "w");
@@ -421,7 +421,13 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
         // decode per drawing — and a page cut off mid-pass never reports at
         // all, which surfaces as "serialised before it reported its geometry"
         // rather than as anything about time.
-        "--virtual-time-budget=30000",
+        // Virtual time, not wall clock: Chrome fast-forwards through idle
+        // periods, so a generous budget costs little on a simple deck. It is
+        // spent decoding images — the SVG rasterising pass waits on one decode
+        // per drawing — and a page cut off mid-pass never reports at all,
+        // which surfaces as "serialised before it reported its geometry"
+        // rather than as anything about time.
+        "--virtual-time-budget=" + Math.round(30000 + megabytes * 4000),
         "--user-data-dir=" + profile,
         "--dump-dom",
         fileUrl,
@@ -505,7 +511,14 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
   // window grows with each attempt rather than staying put — a contended run
   // gets the time it needs, and only a genuinely broken page spends the lot.
   const attempts = options.attempts || 3;
-  const baseTimeout = options.timeoutMs || 30000;
+  // And a big page is slow for a reason that has nothing to do with the
+  // machine being busy: a deck with its images embedded is tens of megabytes
+  // of base64 that has to be parsed and decoded before a single rect can be
+  // read. A fixed deadline tuned on a small deck fails every time on a large
+  // one — a 15MB deck missed a 90-second window on every attempt — and the
+  // failure looks like contention, which sends you looking in the wrong place.
+  const megabytes = Buffer.byteLength(injected, "utf-8") / 1e6;
+  const baseTimeout = options.timeoutMs || Math.round(30000 + megabytes * 6000);
   let lastError = null;
 
   try {
@@ -515,7 +528,7 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
         // Give the previous attempt's Chrome time to exit and release the
         // machine before competing with it.
         if (attempt > 1) await new Promise((r) => setTimeout(r, 500 * (attempt - 1)));
-        const dom = await dumpDom(chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt);
+        const dom = await dumpDom(chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt, megabytes);
         const match = dom.match(
           new RegExp(
             '<script type="application/json" id="' + elementId + '">([\\s\\S]*?)\\n/\\*' + SENTINEL + '\\*/'

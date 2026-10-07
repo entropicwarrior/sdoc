@@ -290,7 +290,11 @@ const ARTIFACT_SCRIPT = `
       if (!fill && !edge && !words) continue;
 
       var w = px(cs.width), h = px(cs.height);
-      var rec = { pseudo: names[i], words: !!words, painted: !!(fill || edge) };
+      var inFlow = cs.position !== "absolute" && cs.position !== "fixed";
+      var rec = {
+        pseudo: names[i], words: !!words, painted: !!(fill || edge),
+        inFlow: inFlow, lead: inFlow && names[i] === "::before" ? px(cs.width) || 0 : 0
+      };
 
       if (w > 0 && h > 0 && (fill || edge)) {
         var x, y;
@@ -623,6 +627,14 @@ const ARTIFACT_SCRIPT = `
       for (var pi = 0; pi < ps.length; pi++) {
         ps[pi].cls = cls;
         ps[pi].tag = tag;
+        // A ::before that was in flow held space open on its host's first
+        // line, and pinning it hands that space back — so whatever shared the
+        // line slides left by its width. The host is told what it is about to
+        // lose. Tracing does not need this: there the host is pinned at its
+        // ink, which already accounts for the shift.
+        if (ps[pi].painted && ps[pi].lead > 0) {
+          node.leadPad = Math.max(node.leadPad || 0, ps[pi].lead);
+        }
         pseudos.push(ps[pi]);
       }
 
@@ -903,6 +915,23 @@ function declarationsFor(node, ctx, inherited) {
   }
 
   const pad = ["Top", "Right", "Bottom", "Left"].map((k) => Math.min(256, lenOf(s[`padding${k}`], scale)));
+  // Plus the width of a leading pseudo-element that used to hold this line
+  // open. Flow only: a traced box is pinned at its ink, which already has it.
+  if (!ctx.pinHere && node.leadPad > 0) {
+    const want = pad[3] + lenOf(node.leadPad, scale);
+    pad[3] = Math.min(256, want);
+    if (want > 256) {
+      // The format caps padding at 256px, so a wider one cannot be given back
+      // at all. Saying which slide, and that tracing does not have the
+      // problem, is more use than a silently half-moved line.
+      ctx.warnings.push({
+        slide: ctx.slide,
+        message: `a ::before holds ${Math.round(want)}px of this line open and padding stops at 256px, ` +
+          `so the text after it sits about ${Math.round(want - 256)}px left of where the deck has it — ` +
+          `--artifact-pinned places it exactly`,
+      });
+    }
+  }
   if (pad.some((p) => p > 0)) push("padding", pad.every((p) => p === pad[0]) ? `${pad[0]}px` : pad.map((p) => `${p}px`).join(" "));
 
   // margin is accepted by the page and then does nothing, so it is converted
@@ -1083,7 +1112,31 @@ function emitNode(node, ctx, inherited, depth) {
         message: "an svg diagram uses <text>; fonts never load inside a drawing, so its labels will not render — lift them out or rasterise",
       });
     }
-    return node.svg.replace(/\sclass="[^"]*"/g, "");
+    const markup = node.svg.replace(/\sclass="[^"]*"/g, "");
+    if (!ctx.pinHere) return markup;
+    // Traced: a drawing needs placing like everything else, and the <svg>
+    // element can itself be the framed box — a border and a radius on the svg
+    // are the frame around a diagram, and emitting the markup alone loses it.
+    const scale = ctx.scale;
+    const box = [
+      "position:absolute",
+      `left:${lenOf(node.box.x, scale)}px`,
+      `top:${lenOf(node.box.y, scale)}px`,
+      `width:${lenOf(node.box.w, scale)}px`,
+      `height:${lenOf(node.box.h, scale)}px`,
+    ];
+    const fill = colourOf(node.style.backgroundColor);
+    if (fill) box.push(`background:${fill}`);
+    const sides = ["Top", "Right", "Bottom", "Left"].map((side) => borderOf(node.style, side, scale));
+    if (sides.every((b) => b && b === sides[0])) {
+      box.push(`border:${sides[0]}`);
+    } else {
+      const names = ["border-top", "border-right", "border-bottom", "border-left"];
+      sides.forEach((b, i) => { if (b) box.push(`${names[i]}:${b}`); });
+    }
+    const radius = lenOf(node.style.borderTopLeftRadius, scale);
+    if (radius > 0) box.push(`border-radius:${radius}px`);
+    return `<div style="${box.join(";")}">${markup}</div>`;
   }
 
   // Each of these filters against the tag it actually emits. `style` is built
