@@ -126,7 +126,13 @@ tools/              CLI tools
                       ink of every text element with the build's. Matches on
                       text, never by index; resolves sdoc-asset: to real bytes
                       and carries the deck's @font-face over, because a
-                      collapsed picture or a fallback face buries the signal
+                      collapsed picture or a fallback face buries the signal.
+                      A CLEAN RUN IS NOT A CORRECT SLIDE: it renders in Chrome,
+                      not the Slides runtime, so anything the viewer does
+                      differently is invisible (an empty div with a width holds
+                      here and collapses there); and it measures geometry, so a
+                      defect that moves nothing — a dropped wash, an undrawn
+                      bar — reads as 0px. A regression detector, not a verdict
   serve_docs.py       CLI to start a local SDOC document server
 ```
 

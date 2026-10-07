@@ -1433,6 +1433,14 @@ function declarationsFor(node, ctx, inherited) {
       // words exactly where the deck has them, and still reflows. The wrapper
       // is built at emit time; here the padding is simply left alone.
       node.leadSpacer = Math.round(want);
+      // The row needs its own width for the spacer to have slack to take, and
+      // the host's gap travels with it: the host is a flex row in the deck and
+      // is emitted as a text tag, which the subset gives no display, so its
+      // gap would otherwise be dropped along with its flex-ness.
+      node.leadRow = Math.round(lenOf(node.box.w, scale));
+      const g = parseFloat(s.columnGap);
+      const g2 = parseFloat(s.gap);
+      node.leadGap = Math.round(isFinite(g) && g > 0 ? g : isFinite(g2) && g2 > 0 ? g2 : 0);
     } else {
       pad[3] = Math.min(256, want);
     }
@@ -1638,11 +1646,29 @@ function emitNode(node, ctx, inherited, depth) {
   // a width are both in the subset, and unlike a pinned box this still reflows
   // when the words change.
   let out = html;
-  if (out && node.leadSpacer && !ctx.pinHere) {
+  if (out && node.leadSpacer && node.leadRow && !ctx.pinHere) {
+    // The spacer GROWS into a bounded row; it is not given a width.
+    //
+    // Measured on the live page, three forms, one variable each: an empty div
+    // at `width:646px` collapses, the same div at `flex:0 0 646px` collapses,
+    // and one at `flex:1 1 auto` inside a row with an explicit width holds.
+    // The format says as much by only ever offering `flex:1` as the spacer
+    // idiom and never a fixed-width one. So the row carries the measured
+    // width, and the spacer takes whatever the words leave — which is the gap,
+    // and which still comes out right when the words change.
+    //
+    // This cost a published cover: the fixed-width form validated, rendered
+    // correctly in a browser, and collapsed in the viewer, putting the words
+    // on top of the rule rather than after it.
+    const gap = node.leadGap ? `;gap:${node.leadGap}px` : "";
+    // The row owns the width now, so the host must not: left on, it fills the
+    // row and the spacer is left with nothing to grow into, which puts the
+    // words back on top of the rule by a different route.
+    const inner = out.replace(/^(<[a-z0-9-]+[^>]*?style=")width:[0-9.]+px;?/i, "$1");
     out =
-      `<div style="display:flex;align-items:baseline">\n` +
-      `<div style="width:${node.leadSpacer}px"></div>\n` +
-      `${out}\n</div>`;
+      `<div style="width:${node.leadRow}px;display:flex;align-items:baseline${gap}">\n` +
+      `<div style="flex:1 1 auto"></div>\n` +
+      `${inner}\n</div>`;
   }
 
   // A painted pseudo-element belongs with its host, not at the top of the

@@ -1057,10 +1057,18 @@ if (findChrome()) {
       const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
       const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
 
-      const spacer = /<div style="width:(\d+)px"><\/div>/.exec(out);
-      assert(spacer, "a sized spacer stands in for the gap:\n" + out.slice(0, 700));
-      assert(parseInt(spacer[1], 10) > 256,
-        "and it is the full width, not the capped one: " + spacer[1]);
+      // The spacer GROWS into a bounded row rather than carrying a width.
+      // Measured on the live page, one variable at a time: an empty div at a
+      // fixed width collapses, the same at flex:0 0 <w> collapses, and one at
+      // flex:1 1 auto inside a row with an explicit width holds. A fixed one
+      // renders correctly in a browser and collapses in the viewer, which is
+      // how it reached a published cover with the words on top of the rule.
+      const row = /<div style="width:(\d+)px;display:flex[^"]*">/.exec(out);
+      assert(row, "the gap becomes a bounded flex row:\n" + out.slice(0, 700));
+      assert(parseInt(row[1], 10) > 256,
+        "wide enough to hold the gap padding could not: " + row[1]);
+      assert(/<div style="flex:1 1 auto"><\/div>/.test(out),
+        "with a spacer that grows, not a width that collapses in the viewer");
       assert(!/padding:0px 0px 0px 256px/.test(out),
         "so the padding is not quietly clipped instead");
       assert(built.errors.length === 0,

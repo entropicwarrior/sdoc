@@ -13,6 +13,28 @@
 // The build is the reference. Its geometry is measured in the same browser, in
 // design pixels, with the deck's own faces loaded.
 //
+// WHAT A CLEAN NUMBER FROM THIS DOES NOT MEAN
+//
+// Two whole classes of defect are outside it, and both have reached a
+// published deck while this reported the slide as fine.
+//
+// 1. It renders the emitted HTML in Chrome, not in the Slides runtime. Where
+//    the two disagree, Chrome wins here and the viewer wins in front of the
+//    reader. An empty div at `width:646px` holds exactly as written in Chrome
+//    and collapses in the viewer — so a spacer built that way measured
+//    perfectly and shipped a cover with the words on top of the rule. Nothing
+//    in this file can see that, and making it see it would mean measuring
+//    inside the published page.
+// 2. It measures geometry. A defect that moves nothing is invisible: a row
+//    that goes grey because its wash was dropped, an accent bar that is not
+//    drawn, a face that silently becomes the table's. The conformance suite
+//    carries guards for the ones that are known; this reports 0px for all of
+//    them.
+//
+// So a clean run means "nothing measurable moved", and a deck is correct when
+// somebody has looked at it. Treat the number as a regression detector, not as
+// a verdict.
+//
 // WHAT THIS MODELS, AND WHAT IT THEREFORE CANNOT TELL YOU
 //
 // The real viewer is not available here, so the page below stands in for it:
