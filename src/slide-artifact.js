@@ -1644,6 +1644,26 @@ function emitTable(node, ctx, style) {
   const tableSize = lenOf(node.style.fontSize, ctx.scale);
   const tableWeight = parseInt(node.style.fontWeight, 10);
   const differing = new Set();
+
+  // One padding for the whole table, which is all the format allows a cell
+  // ("padding · td/th: one per table, ≤64"). Emitting none left every cell on
+  // the subset's own default of 0.35em 0.6em, so a table with roomy rows came
+  // out tighter than the deck's — and on a slide that centres its column, a
+  // table that loses height pulls everything above it down and everything
+  // below it up. That showed as the heading and the footnote moving in
+  // opposite directions by the same amount, which reads as two defects.
+  //
+  // Taken from a body cell, because body rows outnumber the header and carry
+  // the row rhythm. A header that pads differently cannot be expressed and is
+  // reported with the rest.
+  const body = node.rows.flatMap((r) => r.cells).find((c) => c.tag !== "th") ||
+    node.rows.flatMap((r) => r.cells)[0];
+  let cellPad = "";
+  if (body && body.style) {
+    const sides = ["Top", "Right", "Bottom", "Left"]
+      .map((k) => Math.max(0, Math.min(64, lenOf(body.style[`padding${k}`], ctx.scale))));
+    if (sides.some((v) => v > 0)) cellPad = sides.map((v) => `${v}px`).join(" ");
+  }
   const rows = node.rows
     .map((row, r) => {
       const bg = colourOf(row.style.backgroundColor);
@@ -1653,6 +1673,14 @@ function emitTable(node, ctx, style) {
           const parts = [];
           // Column widths are set on the first row's cells, as a share.
           if (r === 0 && node.box.w) parts.push(`width:${Math.round((cell.box.w / node.box.w) * 1000) / 10}%`);
+          if (cellPad) {
+            parts.push(`padding:${cellPad}`);
+            const own = ["Top", "Right", "Bottom", "Left"]
+              .map((k) => Math.max(0, Math.min(64, lenOf(cell.style[`padding${k}`], ctx.scale))))
+              .map((v) => `${v}px`)
+              .join(" ");
+            if (own !== cellPad) differing.add(`padding (${own})`);
+          }
           const align = cell.style.textAlign;
           if (align && !["start", "left"].includes(align)) parts.push(`text-align:${align}`);
           const colour = colourOf(cell.style.color);

@@ -118,7 +118,10 @@ tools/              CLI tools
                       reports the changes against the .sdoc scopes they came from
   artifact-fidelity.js  How far the flow export lands from the build it came
                       from, per slide, as a number (node tools/artifact-fidelity.js
-                      <deck.sdoc> [--json <file>] [--worst N]). Renders the
+                      <deck.sdoc> [--theme <dir>] [--slides a,b,c] [--json <file>]
+                      [--worst N]). --slides narrows the build as well as the
+                      measurement, which is where the time goes; an id no slide
+                      has is refused rather than measured as nothing. Renders the
                       emitted slides against a modelled viewer and compares the
                       ink of every text element with the build's. Matches on
                       text, never by index; resolves sdoc-asset: to real bytes
@@ -166,7 +169,7 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
   `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js`
-  (489 + 24 + 65 + 122 + 72 + 83 + 17 + 9 = 881 as of v0.2.24)
+  (489 + 24 + 65 + 122 + 72 + 85 + 18 + 9 = 884 as of v0.2.24)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

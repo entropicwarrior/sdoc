@@ -164,6 +164,47 @@ ${frames}
 </body></html>`;
 }
 
+// Keep only the named slides, before anything is rendered. Narrowing the
+// measurement alone would save almost nothing: the cost is the build — a deck
+// with its images inlined is twenty megabytes that Chrome has to parse, decode
+// and rasterise, twice over. Cutting it to five scopes cuts both passes.
+//
+// An id nothing matches is refused, with the deck's own ids listed. A filter
+// that silently matches nothing is the same empty-set trap as a guard that
+// cannot fail, and it would report a flawless deck.
+function narrowToSlides(nodes, wanted) {
+  const RESERVED = new Set(["meta", "about"]);
+  const slug = (v) =>
+    String(v || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  const wrapped = nodes.length === 1 && nodes[0].type === "scope" && nodes[0].children;
+  const scopes = wrapped ? nodes[0].children : nodes;
+
+  const available = [];
+  const kept = [];
+  const matched = new Set();
+  for (const n of scopes) {
+    const isSlide =
+      n.type === "scope" &&
+      n.scopeType !== "comment" &&
+      !(n.id && RESERVED.has(n.id.toLowerCase()));
+    if (!isSlide) { kept.push(n); continue; }
+    const id = n.id || "";
+    if (id) available.push(id);
+    for (const w of wanted) {
+      if (w === id || w === slug(id)) { kept.push(n); matched.add(w); break; }
+    }
+  }
+
+  const unknown = [...wanted].filter((w) => !matched.has(w));
+  if (unknown.length) {
+    throw new Error(
+      `no slide in this deck has the id ${unknown.map((u) => JSON.stringify(u)).join(", ")}.\n` +
+        `This deck's slides are: ${available.join(", ") || "(none carry an @id)"}`
+    );
+  }
+  return wrapped ? [{ ...nodes[0], children: kept }] : kept;
+}
+
 function median(xs) {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
@@ -176,8 +217,13 @@ async function main() {
   const deckPath = args.find((a) => !a.startsWith("-"));
   if (!deckPath) {
     console.log(
-      "Usage: artifact-fidelity <deck.sdoc> [--json <file>] [--worst N]\n\n" +
-        "  Reports how far the flow export lands from the build, per slide."
+      "Usage: artifact-fidelity <deck.sdoc> [--theme <dir>] [--slides a,b,c]\n" +
+        "                        [--json <file>] [--worst N]\n\n" +
+        "  Reports how far the flow export lands from the build, per slide.\n\n" +
+        "  --slides narrows the BUILD as well as the measurement, which is where\n" +
+        "  the time goes: a deck with its images inlined is tens of megabytes to\n" +
+        "  parse, decode and rasterise, and both passes pay it. An id that matches\n" +
+        "  no slide is refused rather than measured as nothing."
     );
     process.exit(deckPath ? 0 : 1);
   }
@@ -201,6 +247,16 @@ async function main() {
 
   const jsonAt = args.indexOf("--json");
   const jsonOut = jsonAt >= 0 ? args[jsonAt + 1] : null;
+  const slidesAt = args.indexOf("--slides");
+  if (slidesAt >= 0 && !args[slidesAt + 1]) {
+    console.error("--slides needs a comma-separated list of slide ids");
+    process.exit(1);
+  }
+  const wanted =
+    slidesAt >= 0
+      ? new Set(args[slidesAt + 1].split(",").map((x) => x.trim()).filter(Boolean))
+      : null;
+
   const worstAt = args.indexOf("--worst");
   const worstN = worstAt >= 0 ? parseInt(args[worstAt + 1], 10) || 5 : 5;
 
@@ -211,7 +267,8 @@ async function main() {
     for (const e of parsed.errors.slice(0, 5)) console.error("  " + JSON.stringify(e));
     process.exit(1);
   }
-  const { nodes, meta } = extractMeta(parsed.nodes);
+  let { nodes, meta } = extractMeta(parsed.nodes);
+  if (wanted) nodes = narrowToSlides(nodes, wanted);
   const theme = loadTheme(themeDir);
   if (!theme || !theme.themeCss) {
     console.error(`the theme at ${themeDir} loaded nothing; refusing to report numbers for it`);
@@ -411,7 +468,7 @@ async function main() {
   }
   const empty = report.slides.filter((x) => !x.elements).map((x) => x.id);
 
-  console.log(`\n  deck   ${path.basename(resolved)}`);
+  console.log(`\n  deck   ${path.basename(resolved)}${wanted ? ` (${report.slides.length} of its slides)` : ""}`);
   console.log(`  theme  ${themeDir}`);
   console.log(
     `\nflow vs build — ${report.slides.length} slides, ${t.elements} text elements\n` +
@@ -448,4 +505,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { measurePage, resolveAssets, faceCssFrom, median, MEASURE_SCRIPT };
+module.exports = { measurePage, resolveAssets, faceCssFrom, median, narrowToSlides, MEASURE_SCRIPT };

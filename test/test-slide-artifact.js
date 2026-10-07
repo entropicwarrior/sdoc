@@ -1398,6 +1398,46 @@ test("a harvest carries no backtick, which would end the script early", () => {
 });
 
 // ============================================================
+console.log("\n--- Measuring a named subset of a deck ---");
+
+const { narrowToSlides } = require("../tools/artifact-fidelity.js");
+
+function deckNodes(src) {
+  const parsed = parseSdoc(src);
+  assert(parsed.errors.length === 0, "fixture parses");
+  return extractMeta(parsed.nodes).nodes;
+}
+
+const SUBSET_DECK =
+  "# Deck {\n    # One @alpha {\n        A.\n    }\n    # Two @beta {\n        B.\n    }\n" +
+  "    # Three @gamma {\n        C.\n    }\n}";
+
+test("narrowing a deck keeps the slides asked for and drops the rest", () => {
+  // A deck with its images inlined is tens of megabytes, and the harness builds
+  // it twice. Narrowing the measurement alone would save almost nothing — the
+  // cost is the build — so the slides are cut before anything is rendered.
+  const out = narrowToSlides(deckNodes(SUBSET_DECK), new Set(["alpha", "gamma"]));
+  const ids = out[0].children.filter((n) => n.type === "scope").map((n) => n.id);
+  assert(ids.includes("alpha") && ids.includes("gamma"), "the named slides are kept: " + ids.join(","));
+  assert(!ids.includes("beta"), "and the others are not: " + ids.join(","));
+});
+
+test("narrowing refuses an id no slide has, and says what the deck does have", () => {
+  // A filter that matches nothing measures nothing and reports a flawless
+  // deck. Same empty-set trap as a guard that cannot fail.
+  let err = null;
+  try {
+    narrowToSlides(deckNodes(SUBSET_DECK), new Set(["alpha", "delta"]));
+  } catch (e) {
+    err = e;
+  }
+  assert(err, "an unknown id is refused rather than silently matching nothing");
+  assert(/"delta"/.test(err.message), "naming the one that is wrong: " + err.message);
+  assert(!/"alpha"/.test(err.message), "and not the one that is right: " + err.message);
+  assert(/alpha, beta, gamma/.test(err.message), "and listing the deck's own: " + err.message);
+});
+
+// ============================================================
 console.log("\n--- A harvest is finished only when it has reported ---");
 
 test("the injected script's own source does not count as a finished harvest", () => {

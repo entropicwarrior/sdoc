@@ -238,6 +238,34 @@ test("a cut-out picture is not given a rectangular shadow", () => {
   assert(boxed.length === 0, boxed.join("\n  "));
 });
 
+test("a table's cells carry one padding, and it is the deck's", () => {
+  // The format gives a table one padding for all its cells ("padding · td/th:
+  // one per table, ≤64"). Emitting none left every cell on the subset's own
+  // 0.35em 0.6em default, so a table with roomy rows arrived tighter than the
+  // deck's. On a slide that centres its column that is not a local error: the
+  // table loses height, so everything above it moves down and everything below
+  // it moves up by the same amount, which reads as two separate defects.
+  // Measured on this corpus: it was the whole of the matrix slide's error.
+  const tables = goldens.filter((f) => /matrix/.test(f));
+  assert(tables.length > 0, "the corpus still has a table");
+  for (const file of tables) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    const cells = html.match(/<t[dh][^>]*>/g) || [];
+    assert(cells.length > 0, `${file}: no cells to check`);
+    const pads = new Set();
+    for (const cell of cells) {
+      const m = /padding:([^;"]*)/.exec(cell);
+      assert(m, `${file}: a cell carries no padding, so it falls back to the subset's default: ${cell}`);
+      pads.add(m[1].trim());
+      for (const len of m[1].match(/[0-9.]+/g) || []) {
+        assert(parseFloat(len) <= 64, `${file}: a cell pads ${len}px, past the 64px the format allows: ${cell}`);
+      }
+    }
+    assert(pads.size === 1,
+      `${file}: cells carry ${pads.size} different paddings; the format allows one per table: ${[...pads].join(" | ")}`);
+  }
+});
+
 test("a highlighted table row keeps its wash", () => {
   // The format allows a background on a <tr> and on nothing inside it: "A <tr>
   // may carry background:COLOR; no background on cells". A theme that paints
