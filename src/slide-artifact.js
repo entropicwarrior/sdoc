@@ -607,12 +607,54 @@ const ARTIFACT_SCRIPT = `
     return isFinite(v) ? v : free / 2;
   }
 
+  // Does the picture have any transparency? It decides how its shadow travels.
+  // A filter follows the alpha channel, so a cut-out casts a shadow in its own
+  // shape and only a bake reproduces that. A rectangle with no transparency
+  // casts exactly the rectangle a box-shadow casts — and a box-shadow paints
+  // outside the box and costs no layout, which is what the deck had.
+  //
+  // Sampled small: a 48px thumbnail is enough to find transparency and costs
+  // nothing. A canvas that cannot be read back is treated as transparent, so
+  // the safe path (baking) is the fallback.
+  function imageIsOpaque(el) {
+    try {
+      var c = document.createElement("canvas");
+      c.width = 48; c.height = 48;
+      var g = c.getContext("2d");
+      g.drawImage(el, 0, 0, 48, 48);
+      var data = g.getImageData(0, 0, 48, 48).data;
+      for (var i = 3; i < data.length; i += 4) {
+        if (data[i] < 250) return false;
+      }
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
   function imageNeedsBake(el, cs) {
     var fit = cs.objectFit || "fill";
     if (fit !== "cover" && fit !== "contain") return true;
-    if (String(cs.filter || "").indexOf("drop-shadow") >= 0) return true;
     var m = mirrorOf(el, el.closest(".slide"));
-    return m.x < 0 || m.y < 0;
+    if (m.x < 0 || m.y < 0) return true;
+    if (String(cs.filter || "").indexOf("drop-shadow") >= 0) {
+      // Baking a shadow grows the element by the bleed, and the deck never had
+      // that size: on one real slide each picture took 220px more layout than
+      // it was given, and everything below and beside it sat low. An opaque
+      // rectangle does not need the bake at all — its shadow is expressible.
+      if (!imageIsOpaque(el)) return true;
+      var shadows = parseDropShadows(cs.filter);
+      var parts = [];
+      for (var i = 0; i < shadows.length; i++) {
+        var sh = shadows[i];
+        parts.push(sh.colour + " " + sh.dx + "px " + sh.dy + "px " + sh.blur + "px");
+      }
+      // Handed to the walk as a box-shadow, in the order the browser would
+      // have serialised one, so the emitter's own converter does the rest.
+      if (parts.length) el.__sdocShadowCss = parts.join(", ");
+      return false;
+    }
+    return false;
   }
 
   function bakeOne(el, cs, done) {
@@ -633,13 +675,25 @@ const ARTIFACT_SCRIPT = `
         pad.r = Math.max(pad.r, Math.ceil(Math.max(0, sh.blur + sh.dx)));
         pad.b = Math.max(pad.b, Math.ceil(Math.max(0, sh.blur + sh.dy)));
       }
-      // The padded picture becomes its own box, and the page clamps a negative
-      // offset to 0 — which would slide the picture inwards rather than place
-      // the shadow. Lose shadow at an edge instead of moving what casts it.
-      pad.l = Math.min(pad.l, Math.max(0, Math.floor(rect.left - sRect.left)));
-      pad.t = Math.min(pad.t, Math.max(0, Math.floor(rect.top - sRect.top)));
-      pad.r = Math.min(pad.r, Math.max(0, Math.floor(sRect.right - rect.right)));
-      pad.b = Math.min(pad.b, Math.max(0, Math.floor(sRect.bottom - rect.bottom)));
+      // The shadow is painted inside the picture's own box, and nowhere else.
+      //
+      // A drop-shadow filter paints outside the element and costs no layout,
+      // so growing the baked picture by the bleed gives it a size the deck
+      // never gave it. Traced mode hid that — the box is pinned at the offset
+      // origin and the growth cancels exactly — but flow has no offset to
+      // cancel it, so each picture took 220px more than it was given and
+      // everything below and beside it sat low. Measured on a real slide:
+      // 150px of displaced text from two images.
+      //
+      // What is lost instead is shadow that would have fallen outside the box.
+      // For the pictures this path is for, that is a small loss: an opaque
+      // rectangle never reaches here, because its shadow is a box-shadow and
+      // is emitted as one, and a cut-out sits inset in a transparent box with
+      // most of its shadow inside that box too. The same trade the clamp above
+      // already made at a slide's edge, now made everywhere.
+      var spilled = pad.l + pad.t + pad.r + pad.b;
+      pad.l = 0; pad.t = 0; pad.r = 0; pad.b = 0;
+      if (spilled > 0) el.__sdocShadowClipped = true;
 
       var cw = w + pad.l + pad.r;
       var chh = h + pad.t + pad.b;
@@ -905,6 +959,10 @@ const ARTIFACT_SCRIPT = `
           node.exactFit = true;
         } else {
           node.src = el.getAttribute("src") || "";
+          // A drop-shadow that was not baked travels as the box-shadow it is
+          // equivalent to, costing no layout, as it cost none in the deck.
+          if (el.__sdocShadowCss) node.style.boxShadow = el.__sdocShadowCss;
+          if (el.__sdocShadowClipped) node.shadowClipped = true;
           node.natural = { w: el.naturalWidth, h: el.naturalHeight };
           // The value CSS actually resolved, rather than a guess from the
           // aspect ratios — which crops a picture the theme asked to fill.
@@ -1501,7 +1559,35 @@ function runsToHtml(runs, ctx) {
 // Emitting a slide
 // ---------------------------------------------------------------------------
 
+// Measurement only. Every element the export emits is tagged with the box the
+// exporter believed it was placing, so a render of the slide can be compared
+// element for element — not just the ones with words in them.
+//
+// Text could be paired on its own content; an image, a drawing, a pinned
+// caption or a painted box cannot, and those are exactly what a reader notices
+// missing. Every defect found by eye on one morning's review was one of them,
+// and all three measured clean.
+//
+// `data-*` is ignored by the page (a NOTE heal, never an error), and this is
+// never on for a real export.
 function emitNode(node, ctx, inherited, depth) {
+  const html = emitNodeInner(node, ctx, inherited, depth);
+  if (!ctx.probes || !html || node.transparent) return html;
+  // Only when the result is one element: a flattened container returns its
+  // children, and tagging the first would attribute the parent's box to it.
+  const m = /^<([a-z0-9-]+)(?=[\s>])/i.exec(html);
+  if (!m) return html;
+  const id = ctx.probes.length;
+  ctx.probes.push({
+    id,
+    tag: node.tag,
+    role: (node.roleCls || node.cls || "").split(/\s+/).filter(Boolean).join(" ") || node.tag,
+    box: { x: r2(node.box.x), y: r2(node.box.y), w: r2(node.box.w), h: r2(node.box.h) },
+  });
+  return html.slice(0, m[0].length) + ` data-sdoc-probe="${id}"` + html.slice(m[0].length);
+}
+
+function emitNodeInner(node, ctx, inherited, depth) {
   if (node.transparent) {
     // display:contents — the element has no box, so its children belong to the
     // parent. Emitting a div here would add a box the theme deliberately removed.
@@ -1994,6 +2080,7 @@ function buildArtifact(harvest, options = {}) {
       // down to 8.67px renders every one at its authored size. Raising them
       // changed the design for a rule nothing enforces.
       minFont: options.minFontSize === true,
+      probes: options.probe === true ? [] : null,
       // Trace the layout instead of rebuilding it. Exact, and not editable.
       pinAll: options.pinAll === true,
       addAsset(src) {
@@ -2028,6 +2115,7 @@ function buildArtifact(harvest, options = {}) {
       htmlSha256: sha256(html),
       notes: slide.notes || "",
       texts: ctx.texts,
+      probes: ctx.probes || undefined,
     });
   });
 

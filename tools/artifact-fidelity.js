@@ -70,7 +70,23 @@ const MEASURE_SCRIPT = `
           h: r.height
         });
       }
-      out.push({ id: frame.getAttribute("data-slide"), items: items });
+      // Every emitted element, not only the ones holding words. An image, a
+      // drawing, a pinned caption and a painted box are what a reader notices
+      // missing, and none of them can be paired on text.
+      var probes = [];
+      var tagged = frame.querySelectorAll("[data-sdoc-probe]");
+      for (var k = 0; k < tagged.length; k++) {
+        var pe = tagged[k];
+        var pr = pe.getBoundingClientRect();
+        probes.push({
+          id: parseInt(pe.getAttribute("data-sdoc-probe"), 10),
+          x: pr.left - origin.left,
+          y: pr.top - origin.top,
+          w: pr.width,
+          h: pr.height
+        });
+      }
+      out.push({ id: frame.getAttribute("data-slide"), items: items, probes: probes });
     }
     var holder = document.createElement("script");
     holder.type = "application/json";
@@ -305,7 +321,13 @@ async function main() {
   }
 
   // Beside the source, so relative images resolve exactly as they do in a build.
-  const buildPath = path.join(path.dirname(resolved), `.fidelity-build-${Date.now()}.html`);
+  // Both temp pages go to a private scratch directory, never beside the deck.
+  // They used to live next to the .sdoc so relative images resolved, which
+  // stopped being true once the pictures are embedded below — and meanwhile a
+  // leftover from a crashed run sat in somebody else's working directory and
+  // was picked up as if it were their build.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-fidelity-"));
+  const buildPath = path.join(scratch, "build.html");
   const deck = loadDeckCss(resolved, meta);
   let buildHtml = renderSlides(nodes, {
     meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig, deckCss: deck.css,
@@ -345,11 +367,15 @@ async function main() {
       script: "window.__sdocNoBake = true;\n" + ARTIFACT_SCRIPT,
     });
   } finally {
-    try { fs.unlinkSync(buildPath); } catch {}
+    // buildPath is removed with the whole scratch directory at the end.
   }
 
   const opts = { title: meta.title || "deck", theme: theme.themeConfig, now: new Date().toISOString() };
-  const built = buildArtifact(harvest, opts);
+  // Tagged for measurement. `data-*` is ignored by the page, and a real export
+  // never carries these — but the geometry each one records is what the
+  // exporter believed it was placing, which is the only way to pair an element
+  // that holds no text.
+  const built = buildArtifact(harvest, { ...opts, probe: true });
   // Same slides, same text, measured before the bake: the boxes to judge against.
   const truth = buildArtifact(reference, opts);
   const truthBySlide = new Map(truth.manifest.slides.map((x) => [x.id, x.texts || []]));
@@ -383,7 +409,7 @@ async function main() {
       unresolved += (withBytes.match(/sdoc-asset:/g) || []).length;
       return withBytes;
     });
-    return { id: s.id, html, texts: truthBySlide.get(s.id) || s.texts || [] };
+    return { id: s.id, html, texts: truthBySlide.get(s.id) || s.texts || [], probes: s.probes || [] };
   });
   if (unresolved) {
     console.error(
@@ -394,14 +420,14 @@ async function main() {
     process.exit(1);
   }
 
-  const pagePath = path.join(path.dirname(resolved), `.fidelity-measure-${Date.now()}.html`);
+  const pagePath = path.join(scratch, "measure.html");
   fs.writeFileSync(pagePath, measurePage(slides, faceCssFrom(buildHtml)), "utf-8");
 
   let measured;
   try {
     measured = await runHarvest(pagePath, MEASURE_SCRIPT, "sdoc-fidelity");
   } finally {
-    try { fs.unlinkSync(pagePath); } catch {}
+    try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
   }
 
   // Matched on text, never zipped by index. The two sides do not always hold
@@ -500,6 +526,28 @@ async function main() {
     });
   }
 
+  // Second question, and the one the text comparison cannot ask: did every
+  // emitted element land where the exporter put it? A box pinned with slide
+  // coordinates inside a position:relative ancestor renders somewhere else
+  // entirely, and nothing about that involves text.
+  const misplaced = [];
+  for (const slide of slides) {
+    const got = bySlide.get(slide.id);
+    const want = new Map((slide.probes || []).map((p) => [p.id, p]));
+    for (const g of (got && got.probes) || []) {
+      const w = want.get(g.id);
+      if (!w) continue;
+      const dx = Math.round((g.x - w.box.x) * 10) / 10;
+      const dy = Math.round((g.y - w.box.y) * 10) / 10;
+      const dw = Math.round((g.w - w.box.w) * 10) / 10;
+      const dh = Math.round((g.h - w.box.h) * 10) / 10;
+      if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2 && Math.abs(dw) <= 2 && Math.abs(dh) <= 2) continue;
+      misplaced.push({ slide: slide.id, tag: w.tag, role: w.role, dx, dy, dw, dh });
+    }
+  }
+  misplaced.sort((a, b) => Math.max(Math.abs(b.dx), Math.abs(b.dy)) - Math.max(Math.abs(a.dx), Math.abs(a.dy)));
+  report.misplaced = misplaced;
+
   report.totals = {
     elements: allDy.length,
     unmatched,
@@ -541,6 +589,17 @@ async function main() {
       (empty.length ? `\n  SLIDES WITH NOTHING PAIRED: ${empty.length} (${empty.slice(0, 5).join(", ")}) — not measured, not perfect` : "") +
       (unsizedImages ? `\n  ${unsizedImages} of ${images} images carry no pixel size; until one decodes its box is empty, so error near a picture may be the measurement` : "")
   );
+  if (misplaced.length) {
+    console.log(`\n  ${misplaced.length} element(s) did not land where the exporter placed them:`);
+    for (const m of misplaced.slice(0, worstN)) {
+      console.log(
+        `    ${m.slide}  ${m.tag}.${m.role}  dx=${m.dx} dy=${m.dy} dw=${m.dw} dh=${m.dh}`
+      );
+    }
+  } else {
+    console.log("\n  every emitted element landed where the exporter placed it");
+  }
+
   const ranked = [...report.slides].sort((a, b) => b.medianDy - a.medianDy);
   console.log("\n  worst slides by median vertical error:");
   for (const s of ranked.slice(0, worstN)) {
