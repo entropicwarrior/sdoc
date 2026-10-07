@@ -1029,6 +1029,64 @@ if (findChrome()) {
   });
 }
 
+// --- A pinned box is lifted out of the flow it was nested in ---------------
+if (findChrome()) {
+  test("a pinned box is emitted as a direct child of the section (integration)", async () => {
+    // The page does not place a pinned box the way CSS does. Measured on a
+    // live artifact, one variable at a time: the same box directly under the
+    // section lands where its coordinates say, and buried in two flow divs it
+    // lands near the bottom of the slide — the page adds the offset its flow
+    // parent would have had. The coordinates are already the slide's, so the
+    // nesting is the whole error.
+    //
+    // The same nesting also made the box change its parent's size and stop a
+    // sibling centring, so this is one cause behind two symptoms.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-hoist-"));
+    // A columns layout, so there is real nesting to be buried in: the slide
+    // holds .columns, which holds a .column, which holds the paragraph. A
+    // pseudo-element would not do — those are emitted at the top of the slide
+    // already, so a fixture built from one passes whether or not this works.
+    const parsed = parseSdoc(
+      "# Deck {\n    # One {\n        config: columns\n\n" +
+      "        # A {\n            Text one.\n        }\n" +
+      "        # B {\n            Text two.\n        }\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses: " + JSON.stringify(parsed.errors.slice(0, 2)));
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: ".column p { position: absolute; left: 40px; top: 20px; " +
+        "width: 200px; height: 16px; background: rgb(10, 20, 30); }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+
+      // Every pinned box must sit at the top level of the section: one line,
+      // not indented inside another element's subtree.
+      const lines = out.split("\n");
+      let depth = 0;
+      const nested = [];
+      for (const line of lines) {
+        const isPinned = /^<\w+[^>]*position:absolute/.test(line.trim());
+        if (isPinned && depth > 0) nested.push(line.trim().slice(0, 90));
+        const opens = (line.match(/<div\b[^>]*>/g) || []).length;
+        const closes = (line.match(/<\/div>/g) || []).length;
+        depth += opens - closes;
+      }
+      assert(nested.length === 0,
+        "a pinned box is still nested in flow content, where the page offsets it:\n  " +
+          nested.join("\n  "));
+      assert(built.errors.length === 0, "and the slide is inside the subset");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 // --- A positioned box keeps the edge it was anchored to --------------------
 if (findChrome()) {
   test("a box anchored at the bottom is exported anchored at the bottom (integration)", async () => {

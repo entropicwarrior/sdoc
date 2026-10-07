@@ -1173,6 +1173,22 @@ function shadowCss(value, scale, maxBlur) {
   return out.join(", ");
 }
 
+// Does anything inside this box read? A box with words in it gets its height
+// from them; one without has only what CSS gives it.
+function hasText(node) {
+  if (node.runs && node.runs.some((r) => r.text && r.text.trim())) return true;
+  if (node.rows || node.items || node.svg || node.tag === "img") return true;
+  // A pinned child is out of flow and gives its parent no height, so it does
+  // not count towards content — the scatter axes hold every plotted point and
+  // are still an empty box. This is the same mistake the conformance guard
+  // made, and it is why those axes went unrendered for so long.
+  return (node.children || []).some((c) => {
+    const pos = (c.style || {}).position;
+    if (pos === "absolute" || pos === "fixed") return false;
+    return hasText(c);
+  });
+}
+
 function r2(n) { return Math.round(n * 100) / 100; }
 function isLen(v) { return v !== undefined && v !== "auto" && isFinite(parseFloat(v)); }
 
@@ -1320,8 +1336,22 @@ function declarationsFor(node, ctx, inherited) {
   // is `height: 8px` and holds nothing, so with the height gone it is invisible
   // and so is the chart it is part of. Authored is the line between the two.
   if (!pinned && node.anchors) {
-    if (node.anchors.width && node.box.w > 0) push("width", `${lenOf(node.box.w, scale)}px`);
-    if (node.anchors.height && node.box.h > 0) push("height", `${lenOf(node.box.h, scale)}px`);
+    // A painted box that holds nothing readable has no content to take a size
+    // from, so if the deck did not write one it needs the one it was measured
+    // at — a flex child that stretches in the build collapses to nothing here.
+    // The scatter layout's axes are two borders on such a box and had never
+    // rendered in any export; a pinned child inside it gives it no height, so
+    // nothing about the markup said so.
+    const paints =
+      colourOf(s.backgroundColor) ||
+      ["Top", "Right", "Bottom", "Left"].some((k) => parseFloat(s[`border${k}Width`]) > 0);
+    const needsOwnBox = paints && !hasText(node);
+    if ((node.anchors.width || needsOwnBox) && node.box.w > 0) {
+      push("width", `${lenOf(node.box.w, scale)}px`);
+    }
+    if ((node.anchors.height || needsOwnBox) && node.box.h > 0) {
+      push("height", `${lenOf(node.box.h, scale)}px`);
+    }
   }
 
   if (s.alignSelf && !["auto", "normal", "stretch"].includes(s.alignSelf)) {
@@ -1571,7 +1601,37 @@ function runsToHtml(runs, ctx) {
 // `data-*` is ignored by the page (a NOTE heal, never an error), and this is
 // never on for a real export.
 function emitNode(node, ctx, inherited, depth) {
-  const html = emitNodeInner(node, ctx, inherited, depth);
+  const html = probed(emitNodeInner(node, ctx, inherited, depth), node, ctx);
+  // A pinned box is lifted to be a direct child of the section.
+  //
+  // The page does not place a pinned box the way CSS does. Measured on a live
+  // artifact, one variable at a time: a pinned box directly under the section
+  // lands where its coordinates say, and the same box buried in two flow divs
+  // lands near the bottom of the slide — the page adds the offset its flow
+  // parent would have had. Its coordinates are already the slide's, so the
+  // nesting is the whole error, and removing it makes them mean what they say.
+  //
+  // It is also what made a nested pinned box change its parent's size and stop
+  // a sibling centring. One cause, two symptoms, and the format says as much:
+  // a pinned div inside a host is flattened and its children re-pin to the
+  // host. Tracing already emits flat, so this is for flow.
+  //
+  // Not one nested in another pinned box, though. Its coordinates are its
+  // parent's, not the slide's — a scatter point is placed, and its dot sits at
+  // `bottom: 0` of that point — so lifting it out resolves those against the
+  // slide and scatters the dots along its bottom edge. Only a box whose
+  // containing block is already the section has slide coordinates to keep.
+  const pinnedHere =
+    !ctx.pinHere && (node.style.position === "absolute" || node.style.position === "fixed");
+  if (pinnedHere && depth > 1 && !ctx.insidePinned && html && ctx.hoisted) {
+    ctx.hoisted.push(html);
+    return "";
+  }
+  return html;
+}
+
+// Tagged with the box the exporter believed it was placing, for measurement.
+function probed(html, node, ctx) {
   if (!ctx.probes || !html || node.transparent) return html;
   // Only when the result is one element: a flattened container returns its
   // children, and tagging the first would attribute the parent's box to it.
@@ -1745,7 +1805,12 @@ function emitNodeInner(node, ctx, inherited, depth) {
     return paints ? `<div${style}></div>` : "";
   }
 
-  const inner = node.children.map((c) => emitNode(c, ctx, next, depth + 1)).join("\n");
+  // Children of a pinned box are measured against it, so they stay inside it.
+  const childCtx =
+    node.style.position === "absolute" || node.style.position === "fixed"
+      ? { ...ctx, insidePinned: true }
+      : ctx;
+  const inner = node.children.map((c) => emitNode(c, childCtx, next, depth + 1)).join("\n");
   if (!inner.trim() && !decls.some((d) => /^(background|border|flex)/.test(d))) return "";
   if (depth >= 14) {
     ctx.warnings.push({ slide: ctx.slide, message: "container nesting reached the 15-deep limit; some wrappers were flattened" });
@@ -1967,7 +2032,18 @@ function emitSlide(slide, ctx) {
 
   const body = ctx.pinAll
     ? emitPinnedSlide(slide, ctx, inherited)
-    : slide.children.map((c) => emitNode(c, ctx, inherited, 1)).filter(Boolean).join("\n");
+    : slide.children
+        .map((c) => {
+          const piece = emitNode(c, ctx, inherited, 1);
+          // Paint order is source order, so a box lifted out of this subtree is
+          // placed straight after it rather than at the end of the slide: a
+          // backdrop pinned before the text stays behind it, an overlay pinned
+          // after it stays in front.
+          const lifted = ctx.hoisted.splice(0).join("\n");
+          return [piece, lifted].filter(Boolean).join("\n");
+        })
+        .filter(Boolean)
+        .join("\n");
 
   let notes = "";
   if (slide.notes) {
@@ -2081,6 +2157,7 @@ function buildArtifact(harvest, options = {}) {
       // changed the design for a rule nothing enforces.
       minFont: options.minFontSize === true,
       probes: options.probe === true ? [] : null,
+      hoisted: [],
       // Trace the layout instead of rebuilding it. Exact, and not editable.
       pinAll: options.pinAll === true,
       addAsset(src) {

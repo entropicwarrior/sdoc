@@ -273,7 +273,10 @@ test("a painted box that holds no text carries its own size", () => {
       // Nothing inside it reads. It is visible only if something in here has a
       // size — itself, or a painted child it holds.
       if (/(?:^|;)(?:width|height|aspect-ratio|flex):/.test(attrs)) continue;
-      if (/(?:^|;|")(?:width|height):/.test(inner)) continue;
+      // Deliberately NOT "something inside it has a size". A pinned child is
+      // out of flow and gives its parent no height at all, so counting it let
+      // the scatter layout's axes — two borders on a box with no size — pass
+      // as visible through every export in which they had never rendered.
       offenders.push(`${file}: ${m[0].slice(0, 110)}`);
     }
   }
