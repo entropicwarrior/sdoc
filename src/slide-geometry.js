@@ -199,7 +199,16 @@ const MEASURE_SCRIPT = `
       // element itself, and returning before that check loses it.
       if (String(el.tagName).toLowerCase() === "svg") {
         if (el.__sdocRaster) {
-          push({ kind: "image", box: box, src: el.__sdocRaster, alt: el.getAttribute("aria-label") || "" });
+          // A drawing the author marked aria-hidden is decoration — a full-bleed
+          // overlay of connector lines, say. It is exported like anything else,
+          // but counting it towards the content extent makes a slide-sized atom
+          // out of it and every side then reports an overflow by exactly the
+          // padding. Same reasoning as .slide-bg and the footer, except the
+          // declaration comes from the drawing rather than from a class name.
+          var decorative = el.getAttribute("aria-hidden") === "true";
+          var atom = { kind: "image", box: box, src: el.__sdocRaster, alt: el.getAttribute("aria-label") || "" };
+          push(atom);
+          if (decorative) atom.chrome = true;
           return;
         }
         // Rasterising failed. Falling through loses less than an empty box
@@ -316,11 +325,17 @@ const MEASURE_SCRIPT = `
         var img = new Image();
         img.onload = function () {
           try {
-            // Twice the measured size: the source is vector and the export is
-            // printed, so the raster wants room the screen never needed.
+            // Twice the measured size, because the source is vector and the
+            // export is printed — but capped by total area. A full-bleed
+            // overlay at 2x is an eight-megapixel PNG to encode, and eight of
+            // those on one deck is the difference between a harvest that
+            // reports and one that is cut off before it does.
+            var budget = 4000000;
+            var scale = Math.min(2, Math.sqrt(budget / Math.max(1, w * h)));
+            if (!(scale > 0.5)) scale = 0.5;
             var c = document.createElement("canvas");
-            c.width = w * 2;
-            c.height = h * 2;
+            c.width = Math.max(1, Math.round(w * scale));
+            c.height = Math.max(1, Math.round(h * scale));
             var ctx2 = c.getContext("2d");
             ctx2.drawImage(img, 0, 0, c.width, c.height);
             el.__sdocRaster = c.toDataURL("image/png");

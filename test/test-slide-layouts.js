@@ -1432,6 +1432,50 @@ if (!findChrome()) {
 }
 
 // ============================================================
+console.log("\n--- A decorative drawing is not content ---");
+
+if (!findChrome()) {
+  console.log("  SKIP: Chrome not found");
+} else {
+  test("a full-bleed aria-hidden drawing does not report an overflow", async () => {
+    // Rasterising an <svg> so it survives the export turned a theme's
+    // decorative overlay — connector lines drawn across the whole slide — into
+    // a slide-sized content atom. The content extent then became the whole
+    // slide, and every side reported an overflow by exactly the padding, on a
+    // deck whose layout had not changed by a byte. Same reasoning as the
+    // footer and the background: exported, but not counted.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-decor-"));
+    writeTestTheme(dir);
+    const theme = loadTheme(path.join(dir, "theme"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        Body copy well inside the margins.\n\n        ```svg\n" +
+      '        <svg viewBox="0 0 1920 1080" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">\n' +
+      '        <line x1="0" y1="0" x2="1920" y2="1080" stroke="#888" stroke-width="2"/>\n' +
+      "        </svg>\n        ```\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeJs: theme.themeJs, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const geometry = await harvestGeometry(htmlPath);
+      const findings = overflowReport(geometry);
+      assert(findings.length === 0,
+        "a decoration should not overflow: " + JSON.stringify(findings));
+      // And it is still exported — not counted is not the same as not carried.
+      const atoms = geometry.slides[0].atoms || [];
+      const pictures = atoms.filter((a) => a.kind === "image");
+      assert(pictures.length >= 1, "the drawing still reaches the export");
+      assert(pictures.every((a) => a.chrome === true), "and is marked as chrome");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// ============================================================
 Promise.all(asyncTests).then(() => {
   console.log("\n" + "=".repeat(40));
   console.log(`Results: ${pass} passed, ${fail} failed`);

@@ -115,6 +115,30 @@ const ARTIFACT_SCRIPT = `
     );
   }
 
+  // A drawing is shown as an image, and the format is explicit that its width
+  // and height are the viewBox's. So the size it was authored with — "100%",
+  // "84%", or nothing at all — means nothing here: a percentage resolves
+  // against a parent in a page, and there is no parent and no stylesheet on
+  // the other side. Seven of one deck's eight drawings had no usable size and
+  // every one of them arrived collapsed or in a default box, which reads as
+  // "the drawings are broken" rather than as a missing attribute.
+  //
+  // So the size it actually occupies is measured here and written onto the
+  // copy. The one drawing in that deck that did survive was the only one the
+  // theme had sized in absolute units.
+  function svgMarkup(el, rect) {
+    var clone;
+    try { clone = el.cloneNode(true); } catch (err) { return resolveSvgVars(el.outerHTML, el); }
+    var w = Math.round(rect.width * 100) / 100;
+    var h = Math.round(rect.height * 100) / 100;
+    if (w > 0) clone.setAttribute("width", String(w));
+    if (h > 0) clone.setAttribute("height", String(h));
+    if (!clone.getAttribute("aria-label")) {
+      clone.setAttribute("aria-label", el.getAttribute("aria-label") || "diagram");
+    }
+    return resolveSvgVars(clone.outerHTML, el);
+  }
+
   function isTextLeaf(el) {
     if (!el.textContent || !el.textContent.trim()) return false;
     var own = getComputedStyle(el);
@@ -664,7 +688,7 @@ const ARTIFACT_SCRIPT = `
         return node;
       }
       if (tag === "svg") {
-        node.svg = resolveSvgVars(el.outerHTML, el);
+        node.svg = svgMarkup(el, rect);
         return node;
       }
       if (tag === "table") {

@@ -69,6 +69,8 @@ const NOW = "2026-01-01T00:00:00Z";
 const CORPUS = [
   { deck: "examples/layouts-example.sdoc", title: "SDOC Slide Layouts", prefix: "layouts" },
   { deck: "examples/background-example.sdoc", title: "Slide Backgrounds", prefix: "background" },
+  // Carries the drawings, which have their own rules in this format.
+  { deck: "examples/svg-example.sdoc", title: "SVG", prefix: "svg" },
 ];
 
 // A feature the corpus does not exercise has to be written down here, with the
@@ -234,6 +236,29 @@ test("a cut-out picture is not given a rectangular shadow", () => {
     }
   }
   assert(boxed.length === 0, boxed.join("\n  "));
+});
+
+test("every drawing carries a size in pixels", () => {
+  // The format is explicit that an <svg>'s width and height are its viewBox's,
+  // and it is shown as an image. So whatever size it was authored with —
+  // "100%", "84%", or nothing — means nothing here: a percentage resolves
+  // against a parent in a page, and on the other side there is neither a
+  // parent nor a stylesheet. Seven of one deck's eight drawings had no usable
+  // size and every one arrived collapsed, which reads as "the drawings are
+  // broken" rather than as a missing attribute.
+  const bad = [];
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    for (const m of html.matchAll(/<svg\b([^>]*)>/g)) {
+      const w = /\swidth="([^"]*)"/.exec(m[1]);
+      const h = /\sheight="([^"]*)"/.exec(m[1]);
+      if (!w || !h) { bad.push(`${file}: a drawing has no ${w ? "height" : "width"}`); continue; }
+      if (!/^[0-9.]+$/.test(w[1]) || !/^[0-9.]+$/.test(h[1])) {
+        bad.push(`${file}: a drawing is sized "${w[1]}" x "${h[1]}", which needs a stylesheet to mean anything`);
+      }
+    }
+  }
+  assert(bad.length === 0, bad.slice(0, 4).join("\n  "));
 });
 
 test("every declaration value has balanced parentheses", () => {
