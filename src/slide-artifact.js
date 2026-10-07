@@ -922,6 +922,32 @@ const ARTIFACT_SCRIPT = `
         roleCls: cls || inheritedCls || "",
         style: styleOf(cs),
         anchors: anchorsOf(el),
+        // Does this box hold less than it contains? A flex parent set to
+        // shrink can end up shorter than its own content, which then overflows
+        // it visibly — and whatever follows is laid out after the SHRUNK box,
+        // not after the content. Re-derived from content in the export the
+        // parent grows instead, and everything after it drops by the overflow.
+        // scrollHeight against clientHeight says so directly rather than being
+        // inferred from the children.
+        overflows: el.scrollHeight > el.clientHeight + 1,
+        // An image laid out as inline content sits on a line box, and the line
+        // box reserves room under the baseline for descenders — so the block
+        // holding it is a few pixels taller than the picture. The export emits
+        // the picture as a flex child, where there is no line box and no such
+        // room, so everything below it rises by that much.
+        // A drawing counts as well as a picture: an inline <svg> sits on a
+        // line box exactly as an <img> does, and the one this was found on is
+        // a drawing that the export rasterises.
+        inlineImage: (function () {
+          for (var ci = 0; ci < el.children.length; ci++) {
+            var kid = el.children[ci];
+            var kt = kid.tagName.toLowerCase();
+            if (kt !== "img" && kt !== "svg") continue;
+            var kd = getComputedStyle(kid).display;
+            if (kd === "inline" || kd === "inline-block") return true;
+          }
+          return false;
+        })(),
         box: { x: rect.left - origin.left, y: rect.top - origin.top, w: rect.width, h: rect.height },
         children: []
       };
@@ -1351,11 +1377,28 @@ function declarationsFor(node, ctx, inherited) {
     const paints =
       colourOf(s.backgroundColor) ||
       ["Top", "Right", "Bottom", "Left"].some((k) => parseFloat(s[`border${k}Width`]) > 0);
+    // A box its content overflows has to keep the height it was measured at.
+    // Let the export re-derive it and it grows to fit, which is a different
+    // slide: on one deck the footnote under an overflowing stack sat 58px
+    // lower, and nothing had collided in the build because the overflow was
+    // empty space.
     const needsOwnBox = paints && !hasText(node);
+    // Height only, these two: the box is the right width already, and pinning
+    // a width it did not ask for would stop it stretching.
+    //
+    //   overflows   — a box its content overflows has to keep the height it
+    //                 was measured at; re-derived it grows to fit, which is a
+    //                 different slide. One deck's footnote under an
+    //                 overflowing stack sat 58px lower, and nothing collided
+    //                 in the build because the overflow was empty space.
+    //   inlineImage — a picture on a line box leaves room under the baseline
+    //                 for descenders, and a flex child has no line box, so
+    //                 everything under it rose about 5px.
+    const needsOwnHeight = needsOwnBox || node.overflows || node.inlineImage;
     if ((node.anchors.width || needsOwnBox) && node.box.w > 0) {
       push("width", `${lenOf(node.box.w, scale)}px`);
     }
-    if ((node.anchors.height || needsOwnBox) && node.box.h > 0) {
+    if ((node.anchors.height || needsOwnHeight) && node.box.h > 0) {
       push("height", `${lenOf(node.box.h, scale)}px`);
     }
   }
