@@ -14,7 +14,7 @@
 //   {
 //       {
 //           from: @ingest bottom-center
-//           to: @card-core top-center
+//           to: @store top-center
 //           shape: vh
 //           node: both
 //       }

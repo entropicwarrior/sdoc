@@ -313,6 +313,15 @@ img {
   margin-top: 0.5em;
 }
 
+/* A card is a box. It carried only a rule under its heading, so a column in
+   this variant had no edge of its own — which reads as a list with headings
+   rather than as cards, and gives a connector nothing to start or end on. */
+.columns.variant-card .column {
+  background: #fff;
+  border: 1.5px solid var(--sdoc-rule);
+  border-radius: 12px;
+  padding: 24px 27px;
+}
 .columns.variant-card .column img { margin-bottom: 0.6em; }
 .columns.variant-card h3 { border-bottom: 3px solid var(--sdoc-accent); padding-bottom: 0.3em; }
 

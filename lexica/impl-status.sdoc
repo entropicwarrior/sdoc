@@ -104,7 +104,7 @@
             - [ ] \`<br>\` line breaks are still dropped by the harvest
             - [ ] No CI runs the test suites; the geometry and PPTX tests skip themselves when Chrome is absent
             - [ ] The geometry harvest and the fade bake both run in *screen* media, where a deck carries a fit-to-window scale on \`.slide\`. Anything print-only is unguarded by \`--check\`, which is how the print-layout bug above survived a release; and a \`getBoundingClientRect\` in a harvest returns scaled pixels, which is a live trap for the next script written against one
-            - [ ] A blurred \`text-shadow\` does not survive a PDF on macOS either (filled grey box behind the text), while \`filter: drop-shadow\` does. Reported by \`a peer repo\` against their own deck's CSS, so it is not an engine bug, but it belongs in the authoring guidance on what survives an export
+            - [ ] A blurred \`text-shadow\` does not survive a PDF on macOS either (filled grey box behind the text), while \`filter: drop-shadow\` does. Reported against a deck's own CSS rather than the engine's, so it is not an engine bug, but it belongs in the authoring guidance on what survives an export
             - [ ] Chrome's PDF export declares no output intent, so text and vector fills are untagged \`/DeviceRGB\` while images carry ICC profiles. On a wide-gamut display the same colour renders differently in text and in a picture. An sRGB output intent in the export path would fix it for every deck
         }
 

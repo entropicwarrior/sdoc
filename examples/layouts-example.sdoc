@@ -592,7 +592,7 @@
         {
             config: columns
 
-            variant: panel
+            variant: card
 
             # One store @conn-sink
             {
@@ -604,41 +604,41 @@
         # @connectors
         {
             {
-                from: @conn-ingest bottom-center
+                from: @conn-ingest right-center
 
-                to: @conn-sink top-left
-
-                shape: vh
-
-                node: start
-            }
-
-            {
-                from: @conn-index bottom-right
-
-                to: @conn-sink top-center
+                to: @conn-index left-center
 
                 shape: straight
             }
 
             {
-                from: @conn-enrich bottom-center
+                from: @conn-index right-center
 
-                to: @conn-sink top-right
+                to: @conn-enrich left-center
 
-                shape: hv
-
-                node: start
-
-                accent: secondary
+                shape: straight
             }
 
             {
-                from: @conn-ingest right
+                from: @conn-ingest bottom-center
 
-                to: @conn-index left
+                to: @conn-sink top-center
 
                 shape: elbow
+
+                node: end
+            }
+
+            {
+                from: @conn-enrich bottom-center
+
+                to: @conn-sink top-center
+
+                shape: elbow
+
+                node: end
+
+                accent: secondary
             }
         }
     }
