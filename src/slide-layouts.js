@@ -16,6 +16,8 @@
 // The renderer injects its own callbacks (renderChildren, renderInline,
 // escapeHtml) so this module stays free of parser and KaTeX dependencies.
 
+const { RE_ENDPOINT } = require("./slide-connectors");
+
 // Configuration is a leading run of `key: value` paragraphs. Which keys a
 // scope actually understands depends on where it sits, and a key it does not
 // understand stays content rather than disappearing — a slide opening with
@@ -60,6 +62,11 @@ const LAYOUT_KEYS = {
 
 const CELL_KEYS = {
   columns: ["caption"],
+  // A connector, which is a cell of the reserved @connectors scope. That scope
+  // names no layout of its own, so the renderer reads its children with
+  // "connectors" as the parent layout and these keys are understood there and
+  // nowhere else — a slide opening "To: the board" is still prose.
+  connectors: ["from", "to", "shape", "node"],
   "two-column": ["caption"],
   rows: ["value"],
   bars: ["value", "fill"],
@@ -92,10 +99,18 @@ const BOOLEAN_WORDS = new Set([
 // an image: a file with a picture extension, a data: URI, or a URL.
 const ENUM_KEYS = {
   label: new Set(["above", "below", "left", "right"]),
+  shape: new Set(["vh", "hv", "elbow", "straight"]),
+  node: new Set(["none", "start", "end", "both"]),
   "background-flip": new Set(["horizontal", "vertical", "both", "none"]),
 };
 
 const VALUE_SHAPES = {
+  // "From:" and "To:" are ordinary English sentence openers, so they take the
+  // line only when the value is an element and a point rather than a phrase.
+  // The pattern is the connector module's own rather than a copy of it: two
+  // readings of what an endpoint looks like would be one to get wrong.
+  from: RE_ENDPOINT,
+  to: RE_ENDPOINT,
   background: /(?:\.(?:png|jpe?g|gif|svg|webp|avif|bmp|ico)(?:[?#].*)?$)|^data:image\/|^(?:https?:)?\/\//i,
   "background-scale": /^\d*\.?\d+%?$/,
 };
@@ -130,6 +145,14 @@ function escapeAttrValue(value) {
 function slug(value) {
   if (!value) return "";
   return String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+}
+
+// The id an author declared on a cell scope, as an attribute, or "" when they
+// declared none. This is what makes a cell addressable: a connector names its
+// ends by id, and before this the only id in a built deck was the slide's.
+function idAttr(cell) {
+  const id = cell && cell.scope && cell.scope.id ? String(cell.scope.id).trim() : "";
+  return id ? ` id="${escapeAttrValue(id)}"` : "";
 }
 
 // The class for a named variant of a layout, or "" when none was named.
@@ -278,7 +301,7 @@ function buildColumns({ config, contentNodes }, ctx) {
       if (cell.config.caption) {
         parts.push(`<div class="col-caption">${ctx.renderInline(cell.config.caption)}</div>`);
       }
-      return `<div class="column${accentClass(cell.config.accent)}">${parts.join("\n")}</div>`;
+      return `<div class="column${accentClass(cell.config.accent)}"${idAttr(cell)}>${parts.join("\n")}</div>`;
     })
     .join("\n");
 
@@ -300,7 +323,7 @@ function buildStats({ config, contentNodes }, ctx) {
       }
       const caption = ctx.renderChildren(cell.contentNodes);
       if (caption) parts.push(`<div class="stat-label">${caption}</div>`);
-      return `<div class="stat${accentClass(cell.config.accent)}">${parts.join("\n")}</div>`;
+      return `<div class="stat${accentClass(cell.config.accent)}"${idAttr(cell)}>${parts.join("\n")}</div>`;
     })
     .join("\n");
 
@@ -360,7 +383,7 @@ function buildPipeline({ config, contentNodes }, ctx) {
       // Content other than the step list (a note under the row, say) follows.
       const rest = ctx.renderChildren(cell.contentNodes.filter((n) => n.type !== "list"));
       const restHtml = rest ? `\n<div class="pipe-note">${rest}</div>` : "";
-      return `<div class="pipe-row${accentClass(cell.config.accent)}">${label}\n<div class="pipe-steps">${pieces.join("")}</div>${restHtml}</div>`;
+      return `<div class="pipe-row${accentClass(cell.config.accent)}"${idAttr(cell)}>${label}\n<div class="pipe-steps">${pieces.join("")}</div>${restHtml}</div>`;
     })
     .join("\n");
 
@@ -425,7 +448,7 @@ function buildRows({ config, contentNodes }, ctx) {
       if (cell.config.value) {
         parts.push(`<div class="row-value">${ctx.renderInline(cell.config.value)}</div>`);
       }
-      return `<div class="row${accentClass(cell.config.accent)}">${parts.join("\n")}</div>`;
+      return `<div class="row${accentClass(cell.config.accent)}"${idAttr(cell)}>${parts.join("\n")}</div>`;
     })
     .join("\n");
 
@@ -463,7 +486,7 @@ function buildBars({ config, contentNodes }, ctx) {
       if (cell.config.value) head.push(`<div class="bar-value">${ctx.renderInline(cell.config.value)}</div>`);
       const note = ctx.renderChildren(cell.contentNodes);
       return [
-        `<div class="bar${accentClass(cell.config.accent)}">`,
+        `<div class="bar${accentClass(cell.config.accent)}"${idAttr(cell)}>`,
         `<div class="bar-head">${head.join("")}</div>`,
         `<div class="bar-track"><div class="bar-fill" style="width:${fill.toFixed(2)}%"></div></div>`,
         note ? `<div class="bar-note">${note}</div>` : "",
@@ -555,7 +578,7 @@ function buildScatter({ config, contentNodes }, ctx) {
       if (rest) text.push(`<div class="scatter-note">${rest}</div>`);
 
       return (
-        `<div class="${classes.join(" ")}" style="left:${x.toFixed(2)}%;bottom:${y.toFixed(2)}%">` +
+        `<div class="${classes.join(" ")}"${idAttr(cell)} style="left:${x.toFixed(2)}%;bottom:${y.toFixed(2)}%">` +
         `<div class="scatter-dot"></div>` +
         (text.length ? `<div class="scatter-text">${text.join("")}</div>` : "") +
         `</div>`
@@ -606,7 +629,7 @@ function buildSplit({ config, contentNodes }, ctx) {
   const panes = cells
     .map((cell, i) => {
       const weight = weights[i] || 1;
-      return `<div class="pane" style="flex:${weight} 1 0">${renderBlock(cell, ctx)}</div>`;
+      return `<div class="pane"${idAttr(cell)} style="flex:${weight} 1 0">${renderBlock(cell, ctx)}</div>`;
     })
     .join("\n");
 
@@ -622,7 +645,7 @@ function buildStack({ config, contentNodes }, ctx) {
   const ruled = truthy(config.rule) ? " is-ruled" : "";
 
   const blocks = cells
-    .map((cell) => `<div class="stack-block">${renderBlock(cell, ctx)}</div>`)
+    .map((cell) => `<div class="stack-block"${idAttr(cell)}>${renderBlock(cell, ctx)}</div>`)
     .join("\n");
 
   const body = `<div class="stack${ruled}" data-count="${cells.length}">\n${blocks}\n</div>`;

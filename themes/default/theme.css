@@ -313,6 +313,15 @@ img {
   margin-top: 0.5em;
 }
 
+/* A card is a box. It carried only a rule under its heading, so a column in
+   this variant had no edge of its own — which reads as a list with headings
+   rather than as cards, and gives a connector nothing to start or end on. */
+.columns.variant-card .column {
+  background: #fff;
+  border: 1.5px solid var(--sdoc-rule);
+  border-radius: 12px;
+  padding: 24px 27px;
+}
 .columns.variant-card .column img { margin-bottom: 0.6em; }
 .columns.variant-card h3 { border-bottom: 3px solid var(--sdoc-accent); padding-bottom: 0.3em; }
 
@@ -409,7 +418,10 @@ img {
 }
 .matrix td strong { display: block; color: #111; margin-bottom: 1.5px; }
 .matrix td em { font-style: normal; color: var(--sdoc-muted); }
-.matrix tr.is-highlight td { background: color-mix(in srgb, var(--sdoc-accent-1) 6%, transparent); }
+/* The wash goes on the row, not its cells. A background on a <th> or <td>
+   is dropped on export — the slide format allows one only on a <tr> — so
+   on a cell this tint renders here and is silently missing there. */
+.matrix tr.is-highlight { background: color-mix(in srgb, var(--sdoc-accent-1) 6%, transparent); }
 .matrix tr.is-highlight td:first-child { box-shadow: inset 4.5px 0 0 var(--sdoc-accent-1); padding-left: 15px; }
 
 /* rows */
