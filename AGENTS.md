@@ -132,7 +132,8 @@ tools/              CLI tools
                       differently is invisible (an empty div with a width holds
                       here and collapses there); and it measures geometry, so a
                       defect that moves nothing — a dropped wash, an undrawn
-                      bar — reads as 0px. A regression detector, not a verdict
+                      bar, a mark that loses its colour — reads as 0px.
+                      A regression detector, not a verdict
   serve_docs.py       CLI to start a local SDOC document server
 ```
 
@@ -196,6 +197,24 @@ This project uses **Git Flow**:
 - `feat/*`, `fix/*` — short-lived branches off `develop`
 
 Branch from `develop`, open PRs targeting `develop`. No direct pushes to `main` or `develop`.
+
+## Claude Slides limits found by publishing
+
+Things the format or the viewer will not carry, each confirmed on a live
+artifact rather than inferred. They have in common that nothing moves, so
+`artifact-fidelity.js` reports the slide clean and only a person looking at it
+can tell:
+
+- **A colour on a mark inside a table cell is lost.** `<b><span style="color">`
+  and `<span style="color"><b>` both render in the CELL's colour. Put the
+  colour on the cell and drop the override. The exporter warns.
+- **Cells are ruled by the viewer and cannot be unruled.** `border` applies to
+  `div text img table x-icon` and not to a cell, so the rules are drawn whether
+  or not the deck wants them.
+- **An empty box with a width collapses**, though it holds in a browser. A
+  spacer has to grow — `flex:1 1 auto` inside a row with an explicit width.
+- **A pinned box nested in flow containers is offset by its flow parent**, so
+  the exporter lifts every one to be a direct child of the `<section>`.
 
 ## SDOC Format
 

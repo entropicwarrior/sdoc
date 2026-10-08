@@ -2083,6 +2083,23 @@ function emitTable(node, ctx, style) {
           } else if (cellWeight && tableWeight && cellWeight !== tableWeight) {
             differing.add(`weight (${cellWeight})`);
           }
+          // A colour on a mark inside a cell does not survive. Tested on the
+          // live page, both nestings, one variable: <b><span style="color">
+          // and <span style="color"><b> both come out in the CELL's colour.
+          // So the override is lost and the cell wins, whichever way round it
+          // is written — a format limit, not something to emit differently.
+          //
+          // It moves nothing, so no measurement finds it: the figure is simply
+          // the wrong colour. Worth telling the author, because the fix is in
+          // their stylesheet — put the colour on the cell and drop the
+          // override — and nothing else would tell them.
+          const cellColour = colourOf(cell.style.color);
+          for (const r of cell.runs || []) {
+            if (r.color && cellColour && colourOf(r.color) !== cellColour) {
+              differing.add(`a mark coloured ${colourOf(r.color)} inside a cell coloured ${cellColour}`);
+              break;
+            }
+          }
           const cs = parts.length ? ` style="${parts.join(";")}"` : "";
           return `<${tag}${cs}>${runsToHtml(cell.runs, ctx)}</${tag}>`;
         })
