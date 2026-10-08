@@ -8,11 +8,19 @@
 // from. The manifest written at export time is the only thread back to the
 // source, and this reads along it.
 //
-// A byte comparison is useless here. The editor re-saves every slide it
-// touches in a normalised form: declarations reordered, colours re-cased,
-// whitespace collapsed. A slide nobody edited still comes back different. So
-// both sides are parsed and compared structurally, and a difference is only
-// reported when something a reader would notice has actually changed.
+// A byte comparison is useless here, and that is specified rather than merely
+// observed. From the artifact type's own reference, under Rendering semantics:
+//
+//   "The editor re-saves your file normalized: It will use the same language
+//    and snap values to what the style subset allows. It will use its own
+//    whitespace and attribute order. So check differences by what they mean,
+//    not by comparing bytes."
+//
+// Declarations get reordered, colours re-cased, lengths rounded to a tenth of
+// a pixel, a no-op declaration dropped. A slide nobody edited still comes back
+// different. So both sides are parsed and compared structurally, and a
+// difference is only reported when something a reader would notice has
+// actually changed.
 //
 // Everything under pulled/ is other people's data. It is parsed and quoted,
 // never executed, and never read as an instruction.

@@ -119,11 +119,30 @@ function isLen(v) { return RE_LEN.test(v.trim()); }
 function isPct(v) { return RE_PCT.test(v.trim()); }
 function isNum(v) { return RE_NUM.test(v.trim()); }
 
+// What `color-mix(in srgb, …)` computes to in Chrome. The subset has no such
+// function, so the exporter converts it to rgba() before emitting; this is here
+// so the two agree about what one looks like.
+const RE_COLOR_SRGB =
+  /^color\(\s*srgb\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s*(?:\/\s*([0-9.]+)\s*)?\)$/;
+
+// `color(srgb 0 0.82 0.85 / 0.1)` -> `rgba(0, 209, 217, 0.1)`, or null if it is
+// not that shape. Chrome serialises a color-mix() this way and nothing else in
+// the pipeline knows the function, so it has to be normalised at the edge.
+function srgbToRgba(v) {
+  const m = RE_COLOR_SRGB.exec(String(v).trim().toLowerCase());
+  if (!m) return null;
+  const ch = (x) => Math.max(0, Math.min(255, Math.round(parseFloat(x) * 255)));
+  const alpha = m[4] === undefined ? 1 : Math.max(0, Math.min(1, parseFloat(m[4])));
+  const rgb = `${ch(m[1])}, ${ch(m[2])}, ${ch(m[3])}`;
+  return alpha >= 1 ? `rgb(${rgb})` : `rgba(${rgb}, ${alpha})`;
+}
+
 function isColor(v) {
   const t = v.trim().toLowerCase();
   if (t === "transparent") return true;
   if (t === "currentcolor") return false; // explicitly not in the subset
   if (t.includes("var(")) return false;
+  if (RE_COLOR_SRGB.test(t)) return true;
   return RE_HEX.test(t) || RE_FUNC_COLOR.test(t) || /^[a-z]+$/.test(t);
 }
 
@@ -329,10 +348,16 @@ function checkBorder(v) {
 // Which properties each kind of element may carry
 // ---------------------------------------------------------------------------
 
-const LAYOUT_PROPS = [
+// Arranging children is for a section or a div only — the format lists
+// display, gap, align-items, justify-content, flex-direction, flex-wrap and
+// justify-items against those two tags and no others. A <p> carrying them is
+// admissible-looking output whose layout the page silently drops, so a row of
+// marks meant to sit side by side arrives stacked.
+const FLOW_PROPS = [
   "display", "flex-direction", "flex-wrap", "gap", "align-items", "justify-content",
-  "justify-items", "grid-template-columns", "grid-template-rows", "padding", "overflow",
+  "justify-items", "grid-template-columns", "grid-template-rows",
 ];
+const LAYOUT_PROPS = [...FLOW_PROPS, "padding", "overflow"];
 const BOX_PROPS = [
   "position", "left", "top", "right", "bottom", "width", "height",
   "min-width", "min-height", "max-width", "max-height",
@@ -356,8 +381,19 @@ const PROPS_FOR_TAG = {
   img: new Set([...BOX_PROPS, "object-fit"]),
   table: new Set([...BOX_PROPS, ...TYPE_PROPS, "padding"]),
   tr: new Set(["background", "background-color"]),
-  th: new Set([...TYPE_PROPS, "width", "padding", "background", "background-color"]),
-  td: new Set([...TYPE_PROPS, "width", "padding", "background", "background-color"]),
+  // A cell takes far less than a text element. From the reference's own table:
+  // `color · text span td/th`, `text-align · text td/th`, `width · td/th`,
+  // `padding · td/th: one per table`, and `font-weight · text th` — th only.
+  // `font-family` and `font-size` read `· text table`, so they belong to the
+  // <table>, not its cells; the Tables section says as much in prose ("set
+  // font-family, font-size, or color on the <table>, or it inherits them").
+  // And `background` reads `… table x-icon; tr: COLOR` — a row, never a cell.
+  //
+  // This set said TYPE_PROPS plus background for both, which passed output the
+  // page then drops: per-cell faces and sizes that silently become the table's,
+  // and a cell background that silently becomes nothing.
+  th: new Set(["color", "text-align", "width", "padding", "font-weight"]),
+  td: new Set(["color", "text-align", "width", "padding"]),
   svg: new Set([...BOX_PROPS]),
   hr: new Set([...BOX_PROPS, "color"]),
   "x-shape": new Set([...BOX_PROPS]),
@@ -374,7 +410,9 @@ const PROPS_FOR_TAG = {
   aside: new Set([]),
 };
 for (const tag of TEXT_TAGS) {
-  PROPS_FOR_TAG[tag] = new Set([...LAYOUT_PROPS, ...BOX_PROPS, ...TYPE_PROPS]);
+  // Box and type, plus padding and overflow — but not the flow properties,
+  // which belong to a section or a div.
+  PROPS_FOR_TAG[tag] = new Set([...BOX_PROPS, ...TYPE_PROPS, "padding", "overflow"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -745,8 +783,28 @@ function pinnedBox(styles) {
   return { left: get("left"), top: get("top"), width: get("width"), height: get("height") };
 }
 
+// The characters a reader sees, not the characters in the file. The parser
+// keeps text as written, so `&` arrives as `&amp;` — and counting that form
+// against a limit measures the escaping rather than the content. Speaker notes
+// truncated to exactly 4,000 characters were then reported as 4,140 and the
+// export refused, which is how this was found.
+const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
+function decodeEntities(text) {
+  return String(text).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, body) => {
+    if (body[0] === "#") {
+      const code = body[1] === "x" || body[1] === "X"
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code) : whole;
+    }
+    const named = ENTITIES[body.toLowerCase()];
+    return named === undefined ? whole : named;
+  });
+}
+
 function textOf(el) {
-  if (el.tag === "#text") return el.value;
+  if (el.tag === "#text") return decodeEntities(el.value);
   return (el.children || []).map(textOf).join("");
 }
 
@@ -798,6 +856,11 @@ function validateDeckJson(deck, options = {}) {
 }
 
 module.exports = {
+  // The exporter filters its own declarations through this, so it cannot emit a
+  // property this file would then reject. One table, one source of truth.
+  PROPS_FOR_TAG,
+  decodeEntities,
+  srgbToRgba,
   RE_ASSET_PLACEHOLDER,
   SUBSET_RELEASE,
   SUBSET_CONTRACT,

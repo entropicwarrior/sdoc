@@ -36,6 +36,55 @@ const MEASURE_SCRIPT = `
     return { hex: (hex(parts[0]) + hex(parts[1]) + hex(parts[2])).toUpperCase(), alpha: a };
   }
 
+  // A border radius in px, whatever the deck wrote it in.
+  function radiusPx(value, box) {
+    var text = String(value || "").trim();
+    var n = parseFloat(text);
+    if (!isFinite(n) || n <= 0) return 0;
+    if (text.charAt(text.length - 1) === "%") {
+      return (n / 100) * Math.min(box.w, box.h);
+    }
+    return n;
+  }
+
+  // A pure rotation, in degrees, or null for a transform that is anything
+  // else. getBoundingClientRect reports the AXIS-ALIGNED box a rotated element
+  // occupies — for a thin bar at 45 degrees that is a square as wide as the
+  // bar is long — so a rotated box measured naively is exported as that square,
+  // painted, with the rotation gone. A connector drawn straight between two
+  // corners arrived as a block covering most of the slide.
+  //
+  // matrix(a,b,c,d,e,f) is a rotation when it is orthonormal, has no
+  // translation, and a === d with b === -c. Anything else (a scale, a skew, a
+  // mirror, a translate) is left alone and measured as it always was.
+  function rotationOf(cs) {
+    var text = String(cs.transform || "none");
+    if (text === "none") return 0;
+    if (text.indexOf("matrix(") !== 0) return null;
+    var m = text.slice(7, -1).split(",");
+    if (m.length !== 6) return null;
+    var a = parseFloat(m[0]), b = parseFloat(m[1]), c = parseFloat(m[2]);
+    var d = parseFloat(m[3]), e = parseFloat(m[4]), f = parseFloat(m[5]);
+    if (!isFinite(a) || !isFinite(b) || !isFinite(c) || !isFinite(d)) return null;
+    if (Math.abs(e) > 0.01 || Math.abs(f) > 0.01) return null;
+    if (Math.abs(a * a + b * b - 1) > 0.001) return null;
+    if (Math.abs(c * c + d * d - 1) > 0.001) return null;
+    if (Math.abs(a - d) > 0.001 || Math.abs(b + c) > 0.001) return null;
+    return Math.round((Math.atan2(b, a) * 180) / Math.PI * 100) / 100;
+  }
+
+  // The box the element would occupy unrotated, which is the one a rotation
+  // has to be applied to. Measured by switching the transform off and back —
+  // the element is out of flow in every case this fires on, so nothing else
+  // moves while it is off.
+  function uprightRect(el) {
+    var prior = el.style.transform;
+    el.style.transform = "none";
+    var rect = el.getBoundingClientRect();
+    el.style.transform = prior;
+    return rect;
+  }
+
   function firstFamily(stack) {
     if (!stack) return null;
     var first = stack.split(",")[0].trim();
@@ -90,6 +139,12 @@ const MEASURE_SCRIPT = `
     if (!el.textContent || !el.textContent.trim()) return false;
     for (var i = 0; i < el.children.length; i++) {
       var child = el.children[i];
+      // A drawing is not an inline word, whatever its display says. An <svg>
+      // is display:inline by default, so a box holding one used to qualify as
+      // a text leaf — and since textContent includes the drawing's own <text>,
+      // a diagram with labels came out as a text atom of its labels and the
+      // shapes were never visited at all. That is the whole bug.
+      if (String(child.tagName).toLowerCase() === "svg") return false;
       var display = getComputedStyle(child).display;
       if (display !== "inline" && display !== "inline-block" && display !== "contents") return false;
       if (display === "contents" && !isTextLeaf(child)) return false;
@@ -153,18 +208,21 @@ const MEASURE_SCRIPT = `
       var cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) return;
 
-      var rect = el.getBoundingClientRect();
+      var spin = rotationOf(cs);
+      var rect = spin ? uprightRect(el) : el.getBoundingClientRect();
       var box = {
         x: rect.left - origin.left,
         y: rect.top - origin.top,
         w: rect.width,
         h: rect.height
       };
+      if (spin) box.rot = spin;
 
       if (el.tagName === "IMG") {
         push({ kind: "image", box: box, src: el.getAttribute("src"), alt: el.getAttribute("alt") || "" });
         return;
       }
+
 
       // A painted box: a background, a border, or both.
       var fill = rgba(cs.backgroundColor);
@@ -176,9 +234,42 @@ const MEASURE_SCRIPT = `
           fill: fill ? fill.hex : null,
           fillAlpha: fill ? fill.alpha : 0,
           border: border,
-          radius: parseFloat(cs.borderTopLeftRadius) || 0,
+          // Resolved against the box, because PowerPoint's corner adjustment
+          // is a fraction of the shorter side and a percentage read as a
+          // px length is a different corner on every box it is not 100px
+          // wide. The same halving is in the artifact harvest, which keeps
+          // the percentage instead because its subset has one.
+          radius: radiusPx(cs.borderTopLeftRadius, box),
           cls: el.className || ""
         });
+      }
+
+      // A drawing is one picture, not a tree of atoms. Nothing here has a case
+      // for <path>, <circle>, <rect> or <line>, so recursing into an <svg> drops
+      // every shape — while <text> inside it does look like a text leaf and
+      // survives, which is worse than losing the drawing outright: the labels
+      // arrive with nothing under them. Rasterised in the pass before this one,
+      // so it is already an image here, with its fonts baked in.
+      //
+      // Placed after the painted box on purpose: the frame can be on the <svg>
+      // element itself, and returning before that check loses it.
+      if (String(el.tagName).toLowerCase() === "svg") {
+        if (el.__sdocRaster) {
+          // A drawing the author marked aria-hidden is decoration — a full-bleed
+          // overlay of connector lines, say. It is exported like anything else,
+          // but counting it towards the content extent makes a slide-sized atom
+          // out of it and every side then reports an overflow by exactly the
+          // padding. Same reasoning as .slide-bg and the footer, except the
+          // declaration comes from the drawing rather than from a class name.
+          var decorative = el.getAttribute("aria-hidden") === "true";
+          var atom = { kind: "image", box: box, src: el.__sdocRaster, alt: el.getAttribute("aria-label") || "" };
+          push(atom);
+          if (decorative) atom.chrome = true;
+          return;
+        }
+        // Rasterising failed. Falling through loses less than an empty box
+        // would, and the count is reported so the build can say so.
+        rasterFailures++;
       }
 
       if (isTextLeaf(el)) {
@@ -243,6 +334,134 @@ const MEASURE_SCRIPT = `
     };
   }
 
+  var rasterFailures = 0;
+  var rasterised = 0;
+
+  // An <svg> handed to an <img> is an isolated document: it cannot see this
+  // page's @font-face rules, so a label drawn through one falls back to
+  // another face even though the page itself has the font. Measured: the PNG
+  // of a webfont label came back byte-identical to the fallback. The faces the
+  // labels ask for are copied into the clone first — by then their src is a
+  // data: URL, which travels with it.
+  //
+  // The artifact harvest in src/slide-artifact.js carries the same pair of
+  // helpers for the same reason. A fix to one belongs in the other.
+  function faceRules() {
+    var out = [];
+    for (var i = 0; i < document.styleSheets.length; i++) {
+      var rules;
+      try { rules = document.styleSheets[i].cssRules; } catch (err) { continue; }
+      if (!rules) continue;
+      for (var j = 0; j < rules.length; j++) {
+        var r = rules[j];
+        if (!r || !r.constructor || r.constructor.name !== "CSSFontFaceRule") continue;
+        var fam = String(r.style.getPropertyValue("font-family") || "");
+        out.push({ family: fam.replace(/["']/g, "").trim().toLowerCase(), css: r.cssText });
+      }
+    }
+    return out;
+  }
+
+  // Only the faces this drawing's labels ask for: every byte inlined here is
+  // spent again on decoding, and the budget this harvest runs on is decoding.
+  function facesFor(svg) {
+    var want = {};
+    var texts = svg.querySelectorAll("text, tspan");
+    for (var i = 0; i < texts.length; i++) {
+      var ff = "";
+      try { ff = getComputedStyle(texts[i]).fontFamily || ""; } catch (err) {}
+      var parts = ff.split(",");
+      for (var p = 0; p < parts.length; p++) {
+        want[parts[p].replace(/["']/g, "").trim().toLowerCase()] = true;
+      }
+    }
+    var all = faceRules();
+    var css = [];
+    for (var k = 0; k < all.length; k++) {
+      if (want[all[k].family]) css.push(all[k].css);
+    }
+    return css.join("\\n");
+  }
+
+  // Draw every <svg> on the page into a PNG, once, before anything is measured.
+  // Async because an image has to decode, and the walk that follows is not — so
+  // the result is parked on the element and read back synchronously.
+  function rasteriseSvgs(done) {
+    var docEl = document.documentElement;
+    docEl.style.setProperty("--sdoc-slide-scale", "1");
+
+    // A drawing in a slide that is not showing has no size, so every slide is
+    // switched on for the duration and put back afterwards.
+    var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+    var wasActive = slides.map(function (s) { return s.classList.contains("active"); });
+    slides.forEach(function (s) { s.classList.add("active"); });
+
+    var targets = [];
+    var all = document.querySelectorAll(".slide svg");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      // The navigation chevrons are chrome; the walk skips them anyway.
+      if (el.closest && el.closest(".nav-prev, .nav-next, .nav-vert, .notes")) continue;
+      targets.push(el);
+    }
+
+    var restore = function () {
+      slides.forEach(function (s, i) { if (!wasActive[i]) s.classList.remove("active"); });
+      done();
+    };
+    if (!targets.length) { restore(); return; }
+
+    var left = targets.length;
+    var one = function () { if (--left <= 0) restore(); };
+
+    targets.forEach(function (el) {
+      try {
+        var rect = el.getBoundingClientRect();
+        var w = Math.max(1, Math.round(rect.width));
+        var h = Math.max(1, Math.round(rect.height));
+        var clone = el.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        clone.setAttribute("width", String(w));
+        clone.setAttribute("height", String(h));
+        var css = facesFor(el);
+        if (css) {
+          var st = document.createElementNS("http://www.w3.org/2000/svg", "style");
+          st.textContent = css;
+          clone.insertBefore(st, clone.firstChild);
+        }
+        var markup = new XMLSerializer().serializeToString(clone);
+        var img = new Image();
+        img.onload = function () {
+          try {
+            // Twice the measured size, because the source is vector and the
+            // export is printed — but capped by total area. A full-bleed
+            // overlay at 2x is an eight-megapixel PNG to encode, and eight of
+            // those on one deck is the difference between a harvest that
+            // reports and one that is cut off before it does.
+            var budget = 4000000;
+            var scale = Math.min(2, Math.sqrt(budget / Math.max(1, w * h)));
+            if (!(scale > 0.5)) scale = 0.5;
+            var c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(w * scale));
+            c.height = Math.max(1, Math.round(h * scale));
+            var ctx2 = c.getContext("2d");
+            ctx2.drawImage(img, 0, 0, c.width, c.height);
+            el.__sdocRaster = c.toDataURL("image/png");
+            rasterised++;
+          } catch (err) {
+            // A tainted canvas, usually: something inside the drawing came
+            // from a URL the page may not read back.
+          }
+          one();
+        };
+        img.onerror = function () { one(); };
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(markup);
+      } catch (err) {
+        one();
+      }
+    });
+  }
+
   function run() {
     var docEl = document.documentElement;
     // Measure at the design size, not at whatever the window happens to be.
@@ -258,6 +477,12 @@ const MEASURE_SCRIPT = `
       // Park the slide at the origin, unscaled, so measurement is in design px.
       var prior = slide.getAttribute("style") || "";
       slide.setAttribute("style", prior + ";position:absolute;top:0;left:0;transform:none;");
+      // A connector is drawn by the deck's own runtime against the boxes the
+      // browser laid out, and a slide that is display:none has no boxes. So it
+      // is asked for here, once the slide is up and parked at the origin, and
+      // the painted rectangles it adds are harvested like any others. The same
+      // call is in the other harvest, for the same reason.
+      if (window.sdocConnectors) window.sdocConnectors.resolve(slide);
       box.w = Math.max(box.w, slide.offsetWidth);
       box.h = Math.max(box.h, slide.offsetHeight);
       out.push(measureSlide(slide));
@@ -265,7 +490,10 @@ const MEASURE_SCRIPT = `
       if (!wasActive) slide.classList.remove("active");
     });
 
-    var payload = { box: box, slides: out };
+    var payload = {
+      box: box, slides: out,
+      rasterised: rasterised, rasterFailures: rasterFailures
+    };
     var el = document.createElement("script");
     el.type = "application/json";
     el.id = "sdoc-geometry";
@@ -274,10 +502,17 @@ const MEASURE_SCRIPT = `
   }
 
   function start() {
+    // Fonts first: a drawing's labels are rasterised with whatever face has
+    // loaded, and measuring before they settle moves everything.
+    var go = function () {
+      requestAnimationFrame(function () {
+        rasteriseSvgs(function () { requestAnimationFrame(run); });
+      });
+    };
     if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
-      document.fonts.ready.then(function () { requestAnimationFrame(run); });
+      document.fonts.ready.then(go);
     } else {
-      requestAnimationFrame(run);
+      go();
     }
   }
 
@@ -289,7 +524,19 @@ const MEASURE_SCRIPT = `
 // Runs Chrome with --dump-dom, waiting for the sentinel rather than for the
 // process to exit: Chrome flushes the DOM promptly but does not always exit on
 // its own, so waiting on exit adds tens of seconds to every build.
-function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
+// The sentinel is written into the result element by the injected script —
+// but it is also sitting in that script's own source, because that is where
+// the string comes from. So "the page contains the sentinel" was true the
+// instant Chrome serialised anything at all, and the poll below took the first
+// dump for a finished measurement however little had run. The result element
+// is what actually proves it: the script creates it with this id, and the
+// sentinel after that point proves the JSON was written whole.
+function harvestComplete(text, elementId) {
+  const at = text.indexOf('id="' + elementId + '">');
+  return at !== -1 && text.indexOf(SENTINEL, at) !== -1;
+}
+
+function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, attempt, refs) {
   return new Promise((resolve, reject) => {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-geom-"));
     const out = fs.openSync(outPath, "w");
@@ -308,7 +555,26 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
         // a fallback face is the wrong size, so the page must be held open
         // past that: a virtual-time budget fast-forwards timers and delays
         // the dump until the budget is spent.
-        "--virtual-time-budget=8000",
+        // Virtual time, not wall clock: Chrome fast-forwards through idle
+        // periods, so a generous budget costs little on a simple deck and is
+        // the difference between reporting and being cut off on a busy one.
+        // Decoding images spends it — the SVG rasterising pass waits on one
+        // decode per drawing — and a page cut off mid-pass never reports at
+        // all, which surfaces as "serialised before it reported its geometry"
+        // rather than as anything about time.
+        // Virtual time, not wall clock: Chrome fast-forwards through idle
+        // periods, so a generous budget costs little on a simple deck. It is
+        // spent decoding images — the SVG rasterising pass waits on one decode
+        // per drawing — and a page cut off mid-pass never reports at all,
+        // which surfaces as "serialised before it reported its geometry"
+        // rather than as anything about time.
+        // Widened per attempt, exactly as the wall-clock window is. This is
+        // the budget that actually binds on a large deck: when it runs out
+        // Chrome serialises the page as it stands and exits, so a retry on
+        // the same budget fails in the same place every time — three
+        // identical failures that read as contention and are not.
+        "--virtual-time-budget=" +
+          Math.round(Math.max(45000, 30000 + megabytes * 4000 + refs * 1000) * (attempt || 1)),
         "--user-data-dir=" + profile,
         "--dump-dom",
         fileUrl,
@@ -331,7 +597,7 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
     const poll = setInterval(() => {
       let text = "";
       try { text = fs.readFileSync(outPath, "utf-8"); } catch { return; }
-      if (text.includes(SENTINEL)) finish(null, text);
+      if (harvestComplete(text, elementId)) finish(null, text);
     }, 120);
 
     const limit = setTimeout(
@@ -347,7 +613,7 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs) {
       setTimeout(() => {
         let text = "";
         try { text = fs.readFileSync(outPath, "utf-8"); } catch {}
-        if (text.includes(SENTINEL)) finish(null, text);
+        if (harvestComplete(text, elementId)) finish(null, text);
         else finish(new Error("Chrome exited before reporting slide geometry"));
       }, 400);
     });
@@ -378,6 +644,15 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
 
   const resolved = path.resolve(htmlPath);
   const html = fs.readFileSync(resolved, "utf-8");
+  // The script goes in before </body>. A page without that tag takes the
+  // replacement silently, runs nothing, and fails ninety seconds later as
+  // "Chrome did not report" — which names the browser for a fault in the file.
+  if (!/<\/body>/i.test(html)) {
+    throw new Error(
+      `${htmlPath} has no </body>, so the measuring script cannot be injected ` +
+        "(a page assembled by hand usually wants <html><body> around it)"
+    );
+  }
   const injected = html.replace(/<\/body>/i, `<script>${script}</script>\n</body>`);
 
   const dir = path.dirname(resolved);
@@ -392,7 +667,26 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
   // window grows with each attempt rather than staying put — a contended run
   // gets the time it needs, and only a genuinely broken page spends the lot.
   const attempts = options.attempts || 3;
-  const baseTimeout = options.timeoutMs || 30000;
+  // And a big page is slow for a reason that has nothing to do with the
+  // machine being busy: a deck with its images embedded is tens of megabytes
+  // of base64 that has to be parsed and decoded before a single rect can be
+  // read. A fixed deadline tuned on a small deck fails every time on a large
+  // one — a 15MB deck missed a 90-second window on every attempt — and the
+  // failure looks like contention, which sends you looking in the wrong place.
+  const megabytes = Buffer.byteLength(injected, "utf-8") / 1e6;
+  // Bytes are a poor proxy on their own. A page that references its pictures
+  // instead of embedding them can be a few hundred kilobytes and still have to
+  // fetch twenty images off disk, decode them, load eight webfonts and
+  // rasterise every drawing before a single rect is correct — none of which is
+  // in its byte count. Sized by bytes alone such a page got a 32-second first
+  // attempt and failed on a machine with a browser open, which reads as
+  // contention. So the work the page refers to counts too, and there is a
+  // floor under the whole thing.
+  const refs =
+    (injected.match(/<img\b/gi) || []).length + (injected.match(/<svg\b/gi) || []).length;
+  const baseTimeout =
+    options.timeoutMs ||
+    Math.max(60000, Math.round(30000 + megabytes * 6000 + refs * 1500));
   let lastError = null;
 
   try {
@@ -402,7 +696,9 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
         // Give the previous attempt's Chrome time to exit and release the
         // machine before competing with it.
         if (attempt > 1) await new Promise((r) => setTimeout(r, 500 * (attempt - 1)));
-        const dom = await dumpDom(chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt);
+        const dom = await dumpDom(
+          chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt, megabytes, elementId, attempt, refs
+        );
         const match = dom.match(
           new RegExp(
             '<script type="application/json" id="' + elementId + '">([\\s\\S]*?)\\n/\\*' + SENTINEL + '\\*/'
@@ -487,4 +783,4 @@ function overflowReport(geometry, options = {}) {
   return findings;
 }
 
-module.exports = { harvestGeometry, runHarvest, overflowReport, MEASURE_SCRIPT, SENTINEL };
+module.exports = { harvestGeometry, runHarvest, overflowReport, harvestComplete, MEASURE_SCRIPT, SENTINEL };

@@ -60,7 +60,8 @@ function usage() {
   console.error(
     "Usage: build-slides <input.sdoc> [-o output] [--theme path/to/theme]\n" +
     "                    [--css path/to/deck.css]\n" +
-    "                    [--pdf] [--pptx] [--artifact] [--artifact-keep-small-text]\n" +
+    "                    [--pdf] [--pptx] [--artifact] [--artifact-raise-small-text]\n" +
+    "                    [--artifact-pinned]\n" +
     "                    [--check]\n" +
     "                    [--fit contain|cover|stretch] [--dark]\n" +
     "                    [--with-optional | --no-optional]"
@@ -77,7 +78,8 @@ async function main() {
   let pdfMode = false;
   let pptxMode = false;
   let artifactMode = false;
-  let keepSmallText = false;
+  let raiseSmallText = false;
+  let pinAll = false;
   let checkMode = false;
   let darkMode = false;
   // null means "whatever this output format defaults to"; the flags force it.
@@ -97,8 +99,10 @@ async function main() {
       pptxMode = true;
     } else if (args[i] === "--artifact") {
       artifactMode = true;
-    } else if (args[i] === "--artifact-keep-small-text") {
-      keepSmallText = true;
+    } else if (args[i] === "--artifact-pinned") {
+      pinAll = true;
+    } else if (args[i] === "--artifact-raise-small-text") {
+      raiseSmallText = true;
     } else if (args[i] === "--check") {
       checkMode = true;
     } else if (args[i] === "--fit" && i + 1 < args.length) {
@@ -201,9 +205,18 @@ async function main() {
     console.error(`Warning: ${warning}`);
   }
 
+  // What the deck asked for and did not get. A connector pointing at an id no
+  // scope on its slide declares is the one this exists for: the line simply
+  // would not appear, which is exactly the silent failure connectors were
+  // added to stop, so it is said here rather than discovered by looking.
+  const slideWarnings = [];
   let html = renderSlides(nodes, {
-    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional
+    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional,
+    warnings: slideWarnings
   });
+  for (const warning of slideWarnings) {
+    console.error(`Warning: ${warning.slide ? warning.slide + ": " : ""}${warning.message}`);
+  }
 
   // Image paths in a .sdoc are relative to the .sdoc, which stops being true
   // the moment the built file is written somewhere else. Resolve them here,
@@ -271,11 +284,12 @@ async function main() {
   // the mask into a PDF soft mask, and macOS Preview draws that as a hard edge.
   // Only an export pays for this; the HTML build keeps the real mask, which a
   // browser renders correctly. See src/slide-fade-bake.js.
-  // --pdf and --pptx only. The Claude Slides artifact is a web page, where the
-  // mask renders correctly; whether its own subset can carry a fade is a
-  // separate question, open in impl-status.
+  // Every format that leaves the browser. The Claude Slides subset has no
+  // mask-image either — it was left out of this at first on the grounds that
+  // an artifact is a web page, and a published deck then arrived with its
+  // backgrounds unfaded.
   const { bakeFades, hasFades } = require("../src/slide-fade-bake");
-  if ((pdfMode || pptxMode) && hasFades(html)) {
+  if ((pdfMode || pptxMode || artifactMode) && hasFades(html)) {
     try {
       const { baked, warnings } = await bakeFades(tmpHtml);
       for (const warning of warnings) {
@@ -350,7 +364,14 @@ async function main() {
         sdocVersion: require("../package.json").version,
         source: { path: path.basename(resolvedInput), theme: themePath || "default" },
         previousManifest: readPreviousManifest(outDir),
-        minFontSize: !keepSmallText,
+        minFontSize: raiseSmallText,
+        // The viewer styles a real table its own way — it rules every cell,
+        // backs the header row, and loses a colour on a mark inside a cell —
+        // and none of that is reachable from the deck. A deck that wants its
+        // tables to look as it drew them asks for boxes instead.
+        tablesAsBoxes: String(meta.properties?.["artifact-tables"] || "").trim() === "boxes",
+        listsAsBoxes: String(meta.properties?.["artifact-lists"] || "").trim() === "boxes",
+        pinAll,
       });
 
       // Nothing checks these files once they are published: the page drops
@@ -366,7 +387,22 @@ async function main() {
       }
 
       const { missing } = writeArtifact(outDir, built, { baseDir: path.dirname(resolvedInput) });
-      console.log(`Artifact: ${outDir} (${built.manifest.slides.length} slides)`);
+
+      // An export that reports success and wrote nothing is the worst shape
+      // this can fail in: a before/after check run against the output folder
+      // reads an empty directory as a clean result. Whatever went wrong
+      // upstream, saying so here costs one stat and makes that misreading
+      // impossible.
+      const manifestPath = path.join(outDir, "sdoc-artifact.json");
+      const slideCount = built.manifest.slides.length;
+      if (!fs.existsSync(manifestPath) || slideCount === 0) {
+        console.error(
+          `Artifact export: ${outDir} has no manifest or no slides. Nothing usable\n` +
+          `         was written, so this is a failure rather than an empty deck.`
+        );
+        process.exit(1);
+      }
+      console.log(`Artifact: ${outDir} (${slideCount} slides)`);
       if (built.manifest.scale !== 1) {
         console.log(
           `  scaled ${built.manifest.scale}x from the theme's ` +

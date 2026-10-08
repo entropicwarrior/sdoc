@@ -5,9 +5,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
-const { overflowReport } = require("../src/slide-geometry.js");
+const { overflowReport, SENTINEL } = require("../src/slide-geometry.js");
 const { renderSlides } = require("../src/slide-renderer.js");
 const { extractConfig } = require("../src/slide-layouts.js");
+const { planConnector, parseEndpoint } = require("../src/slide-connectors.js");
 const { inlineCssAssets, readThemeConfig } = require("../src/theme.js");
 
 let pass = 0, fail = 0;
@@ -183,7 +184,7 @@ test("a title slide puts the kicker after the statement and uses h1", () => {
     # Northwind {
         config: title
 
-        kicker: SEED ROUND
+        kicker: FUNDING
 
         A subtitle.
     }
@@ -296,7 +297,7 @@ test("stats uses the scope title as the figure", () => {
         config: stats
 
         # 10µW {
-            A bumble bee brain
+            Idle draw per module
         }
     }
 }
@@ -307,7 +308,7 @@ test("stats uses the scope title as the figure", () => {
     html.includes('<div class="stat-value">10<span class="sdoc-unit">µW</span></div>'),
     "figure, with the unit protected from case folding"
   );
-  assert(html.includes('<div class="stat-label"><p>A bumble bee brain</p></div>'), "caption");
+  assert(html.includes('<div class="stat-label"><p>Idle draw per module</p></div>'), "caption");
 });
 
 test("a pipeline marks bold steps and leaves the rest neutral", () => {
@@ -863,6 +864,244 @@ test("an unknown layout falls back to plain content", () => {
 });
 
 // ============================================================
+console.log("\n--- Connectors ---");
+
+// A connector is the one thing on a slide whose geometry is not the browser's
+// own doing, so these check the arithmetic directly rather than through a
+// render: planConnector is pure, takes two boxes and returns rectangles, and
+// is the same function the page runs (it is serialised into the deck with
+// toString(), so there is one implementation, not two).
+//
+// Two boxes 100 wide and 50 high, one above the other and offset, used by most
+// of what follows. Centres: A (150, 125), B (450, 425).
+const BOX_A = { x: 100, y: 100, w: 100, h: 50 };
+const BOX_B = { x: 400, y: 400, w: 100, h: 50 };
+
+const near = (a, b, tol = 0.01) => Math.abs(a - b) <= tol;
+function sameBox(got, want, what) {
+  assert(
+    got && near(got.x, want.x) && near(got.y, want.y) && near(got.w, want.w) && near(got.h, want.h),
+    `${what}: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`
+  );
+}
+
+test("an endpoint is read with or without a sigil, and with either separator", () => {
+  for (const written of ["@card-core bottom-center", "#card-core:bottom-center", "card-core bottom-center"]) {
+    const end = parseEndpoint(written);
+    assert(end && end.id === "card-core" && end.point === "bottom-center",
+      `"${written}" -> ${JSON.stringify(end)}`);
+  }
+  assert(parseEndpoint("@card-core").point === "auto", "no point named means auto");
+  assert(parseEndpoint("the customer keeps their data") === null, "a sentence is not an endpoint");
+});
+
+test("vh leaves vertically and arrives horizontally, with a mitred corner", () => {
+  // A bottom-centre (150, 150) to a top-centre (450, 400): down the x of the
+  // start, then across at the y of the end.
+  const plan = planConnector(BOX_A, BOX_B, "bottom-center", "top-center", "vh", 4, 0, "none");
+  assert(plan.segments.length === 2, "two runs: " + JSON.stringify(plan.segments));
+  // The upright starts exactly at the anchor and is extended by half a stroke
+  // at the bend only — an end that overshot would miss the box it names.
+  sameBox(plan.segments[0], { x: 148, y: 150, w: 4, h: 252 }, "the upright");
+  // 302, not 304: the far end stops exactly on the anchor. Only the bend is
+  // mitred, because an end that overshot would miss the box it names.
+  sameBox(plan.segments[1], { x: 148, y: 398, w: 302, h: 4 }, "the crossing");
+});
+
+test("hv is the same route the other way round", () => {
+  const plan = planConnector(BOX_A, BOX_B, "bottom-center", "top-center", "hv", 4, 0, "none");
+  assert(plan.segments.length === 2, "two runs");
+  sameBox(plan.segments[0], { x: 150, y: 148, w: 302, h: 4 }, "the crossing");
+  sameBox(plan.segments[1], { x: 448, y: 148, w: 4, h: 252 }, "the upright");
+});
+
+test("an elbow leaves on the side the author anchored to", () => {
+  // Anchored on a bottom edge, so it leaves downward and crosses at the
+  // midpoint — three runs, not two.
+  const plan = planConnector(BOX_A, BOX_B, "bottom-center", "top-center", "elbow", 4, 0, "none");
+  assert(plan.segments.length === 3, "three runs: " + JSON.stringify(plan.segments));
+  const mid = (150 + 400) / 2;
+  sameBox(plan.segments[0], { x: 148, y: 150, w: 4, h: mid - 150 + 2 }, "down to the midline");
+  sameBox(plan.segments[1], { x: 148, y: mid - 2, w: 304, h: 4 }, "across the midline");
+  sameBox(plan.segments[2], { x: 448, y: mid - 2, w: 4, h: 400 - mid + 2 }, "down to the end");
+});
+
+test("an elbow anchored on a side leaves sideways instead", () => {
+  const plan = planConnector(BOX_A, BOX_B, "right", "left", "elbow", 4, 0, "none");
+  assert(plan.segments.length === 3, "three runs");
+  // First run is horizontal: it has the stroke for its height, not its width.
+  assert(plan.segments[0].h === 4 && plan.segments[0].w > 4,
+    "it should leave horizontally: " + JSON.stringify(plan.segments[0]));
+});
+
+test("a bend that does not bend is one rectangle, not three", () => {
+  // Two boxes in a column with their centres aligned. Drawn literally an elbow
+  // here is a zero-length crossing between two collinear uprights, and the two
+  // mitres at the ends of that crossing overhang it.
+  const below = { x: 100, y: 400, w: 100, h: 50 };
+  const plan = planConnector(BOX_A, below, "bottom-center", "top-center", "elbow", 4, 0, "none");
+  assert(plan.segments.length === 1, "one run: " + JSON.stringify(plan.segments));
+  sameBox(plan.segments[0], { x: 148, y: 150, w: 4, h: 250 }, "the whole run");
+});
+
+test("straight between aligned anchors is one rectangle and no rotation", () => {
+  const right = { x: 400, y: 100, w: 100, h: 50 };
+  const plan = planConnector(BOX_A, right, "right", "left", "straight", 4, 0, "none");
+  assert(plan.segments.length === 1, "one run");
+  assert(plan.segments[0].angle === undefined, "nothing to rotate");
+  sameBox(plan.segments[0], { x: 200, y: 123, w: 200, h: 4 }, "the run");
+});
+
+test("straight between anchors that are not aligned is a rotated rectangle", () => {
+  // (150, 150) to (450, 400): 300 across, 250 down.
+  const plan = planConnector(BOX_A, BOX_B, "bottom-center", "top-center", "straight", 4, 0, "none");
+  assert(plan.segments.length === 1, "one run");
+  const seg = plan.segments[0];
+  const len = Math.sqrt(300 * 300 + 250 * 250);
+  assert(near(seg.w, Math.round(len * 100) / 100, 0.02), `length ${seg.w} vs ${len}`);
+  assert(seg.h === 4, "the stroke is the height");
+  assert(near(seg.angle, (Math.atan2(250, 300) * 180) / Math.PI, 0.02), "the angle: " + seg.angle);
+  // Rotated about its own centre, which is the subset's only origin — so the
+  // unrotated box has to be centred on the run's midpoint.
+  assert(near(seg.x + seg.w / 2, 300) && near(seg.y + seg.h / 2, 275),
+    "centred on the midpoint of the run: " + JSON.stringify(seg));
+});
+
+test("an unnamed point picks the edges the two boxes face each other across", () => {
+  // Nearly under A, so they face each other top to bottom.
+  const under = { x: 120, y: 400, w: 100, h: 50 };
+  const plan = planConnector(BOX_A, under, "auto", "auto", "vh", 4, 0, "none");
+  assert(plan.from.point === "bottom" && plan.to.point === "top",
+    `facing edges: ${plan.from.point} -> ${plan.to.point}`);
+  // Side by side, they face each other left to right.
+  const beside = { x: 400, y: 100, w: 100, h: 50 };
+  const across = planConnector(BOX_A, beside, "auto", "auto", "vh", 4, 0, "none");
+  assert(across.from.point === "right" && across.to.point === "left",
+    `facing edges: ${across.from.point} -> ${across.to.point}`);
+  // A dead heat goes to the horizontal. Stated because it is a rule somebody
+  // will meet on a square arrangement, and an undecided one would wander.
+  const corner = { x: 400, y: 400, w: 100, h: 50 };
+  const tie = planConnector(BOX_A, corner, "auto", "auto", "vh", 4, 0, "none");
+  assert(tie.from.point === "right", "an exact tie leaves sideways: " + tie.from.point);
+});
+
+test("a node is a dot centred exactly on the end it marks", () => {
+  const plan = planConnector(BOX_A, BOX_B, "bottom-center", "top-center", "vh", 4, 10, "both");
+  assert(plan.dots.length === 2, "two dots");
+  sameBox(plan.dots[0], { x: 145, y: 145, w: 10, h: 10 }, "the start dot");
+  sameBox(plan.dots[1], { x: 445, y: 395, w: 10, h: 10 }, "the end dot");
+  const one = planConnector(BOX_A, BOX_B, "bottom-center", "top-center", "vh", 4, 10, "end");
+  assert(one.dots.length === 1, "one dot");
+  sameBox(one.dots[0], { x: 445, y: 395, w: 10, h: 10 }, "at the end it names");
+  assert(planConnector(BOX_A, BOX_B, "bottom-center", "top-center", "vh", 4, 10, "none").dots.length === 0,
+    "none means none");
+});
+
+// ---------------------------------------------------------------------------
+// What the renderer does with a connectors scope
+// ---------------------------------------------------------------------------
+
+const CONNECTOR_DECK = `# Deck
+{
+    # Wired @wired
+    {
+        config: columns
+
+        # Alpha @alpha
+        {
+            One.
+        }
+
+        # Beta @beta
+        {
+            Two.
+        }
+
+        # @connectors
+        {
+            {
+                from: @alpha right
+
+                to: @beta left
+
+                shape: straight
+
+                node: both
+            }
+        }
+    }
+}`;
+
+test("a cell scope's id reaches the HTML, which is what a connector names", () => {
+  const html = render(CONNECTOR_DECK);
+  assert(/<div class="column"[^>]*\bid="alpha"/.test(html), "the first column carries its id: " + html.slice(0, 400));
+  assert(html.includes('id="beta"'), "and so does the second");
+});
+
+test("a connectors scope becomes data on the slide, not a column", () => {
+  const html = render(CONNECTOR_DECK);
+  const m = /data-sdoc-connectors="([^"]*)"/.exec(html);
+  assert(m, "the slide carries the connectors");
+  const specs = JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+  assert(specs.length === 1, "one connector");
+  assert(specs[0].from.id === "alpha" && specs[0].from.point === "right", "its start");
+  assert(specs[0].to.id === "beta" && specs[0].to.point === "left", "its end");
+  assert(specs[0].shape === "straight" && specs[0].node === "both", "its shape and node");
+  // data-count is the layout's own count of cells, and the connectors scope
+  // must not be one of them.
+  assert(/class="columns cols-2[^"]*" data-count="2"/.test(html),
+    "the connectors scope is not a third column: " + (/data-count="\d+"/.exec(html) || [])[0]);
+});
+
+test("a deck with no connectors carries neither the runtime nor its styles", () => {
+  const html = render("# Deck\n{\n    # Plain @plain\n    {\n        Words.\n    }\n}");
+  assert(!html.includes("sdocPlanConnector"), "no runtime");
+  assert(!html.includes("sdoc-conn"), "no styles");
+  assert(!html.includes("data-sdoc-connectors"), "nothing to resolve");
+});
+
+test("a connector pointing at an id the slide has not got is reported, not drawn", () => {
+  const warnings = [];
+  const html = render(CONNECTOR_DECK.replace("to: @beta left", "to: @gamma left"), { warnings });
+  assert(!html.includes("data-sdoc-connectors"), "nothing is emitted for it");
+  assert(warnings.some((w) => w.message.includes("@gamma") && w.message.includes("no scope on this slide")),
+    "and it is said out loud: " + JSON.stringify(warnings));
+  // The ids it DOES have are named, because the usual cause is a typo.
+  assert(warnings.some((w) => w.message.includes("@alpha")), "the slide's own ids are listed");
+});
+
+test("a line a connector does not understand is reported rather than deleted", () => {
+  // A connector scope is pulled out of the slide whole, so anything in it that
+  // is not understood would vanish with it — including a misspelt key and a
+  // shape that does not exist.
+  for (const [bad, needle] of [
+    ["shape: straight", "shape: squiggle"],
+    ["node: both", "nodes: both"],
+  ]) {
+    const warnings = [];
+    render(CONNECTOR_DECK.replace(bad, needle), { warnings });
+    assert(warnings.some((w) => w.message.includes("does not understand")),
+      `"${needle}" should be reported: ` + JSON.stringify(warnings));
+  }
+});
+
+test("a connector joining an element to itself is reported", () => {
+  // Both anchors resolve on one box, so the run has no length and nothing is
+  // drawn — the silent absence this feature exists to remove, arrived at by a
+  // different route.
+  const warnings = [];
+  const html = render(CONNECTOR_DECK.replace("to: @beta left", "to: @alpha left"), { warnings });
+  assert(!html.includes("data-sdoc-connectors"), "nothing is emitted for it");
+  assert(warnings.some((w) => w.message.includes("to itself")), JSON.stringify(warnings));
+});
+
+test("a connector with no from or no to is reported", () => {
+  const warnings = [];
+  render(CONNECTOR_DECK.replace("from: @alpha right\n\n                ", ""), { warnings });
+  assert(warnings.some((w) => w.message.includes('has no "from:"')), JSON.stringify(warnings));
+});
+
+// ============================================================
 console.log("\n--- Theme loading ---");
 
 test("relative url() in theme CSS is inlined as a data: URI", () => {
@@ -1396,6 +1635,281 @@ if (!findChrome()) {
     fs.rmSync(accentDeck.dir, { recursive: true, force: true });
   });
 
+  test("a connector is drawn for a slide that was hidden until the harvest asked", async () => {
+    // The connectors slide is not the one that is up when the page loads, and
+    // a display:none slide has no boxes to measure against — so these exist
+    // only because the harvest makes each slide visible and then calls for the
+    // lines. A fixture whose connector slide happened to be the active one
+    // would pass with the call removed.
+    const geometry = await geometryPromise;
+    const slide = geometry.slides.find((sl) => sl.id === "connectors-slide");
+    assert(slide, "the example deck has a connectors slide");
+    const runs = slide.atoms.filter((a) => a.kind === "box" && /\bsdoc-conn\b/.test(a.cls || ""));
+    // Not a count of runs. How many a connector becomes is a function of the
+    // theme and the example's own layout — under this harness's theme the
+    // cards are not columns, so the two neighbour links span the slide and the
+    // two elbows collapse to one upright. What this test is for is that
+    // resolution ran at all for a slide that was never the active one, so: any
+    // run, and one dot per declared node, which routing cannot collapse away.
+    const dots = runs.filter((a) => /\bsdoc-conn-dot\b/.test(a.cls || ""));
+    assert(runs.length >= 1, `the runs reach the harvest, got ${runs.length}`);
+    assert(dots.length === 2, `one dot per declared node, got ${dots.length}`);
+    assert(runs.every((a) => a.fill), "each one is painted: " + JSON.stringify(runs.map((a) => a.fill)));
+    // Every run is a stroke: thin on one axis, long on the other. A routing
+    // failure shows up here as a box that is large both ways.
+    assert(
+      runs.every((a) => Math.min(a.box.w, a.box.h) <= 12),
+      "none of them is a block: " + JSON.stringify(runs.map((a) => [a.box.w, a.box.h]))
+    );
+    // The colour is the theme's, resolved. This harness's theme declares no
+    // accent, so every run falls back through --sdoc-connector-color and
+    // --sdoc-accent to the slide's own text colour — which is the chain
+    // working, and what a theme that does declare one overrides.
+    assert(runs.every((a) => a.fill === "C0C0C0"),
+      "the theme's colour reached the runs: " + [...new Set(runs.map((a) => a.fill))].join(", "));
+  });
+
+  test("a connector is placed in design pixels whatever the window scale", async () => {
+    // A deck is scaled to the window with a transform on .slide, so a client
+    // rect is in WINDOW pixels while the boxes an absolutely positioned child
+    // is placed with are in design pixels. Reading one as the other is the
+    // standing trap in this repo — it is written down against the harvests —
+    // and here it would put every connector at a fraction of where it belongs,
+    // correctly on a maximised window and wrongly on any other.
+    //
+    // So the same slide is resolved at three scales and the inline geometry
+    // the runtime writes has to come out identical.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-connscale-"));
+    const file = path.join(dir, "scale.html");
+    const defaultTheme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const src = `
+# Scaled {
+    @meta {
+        type: slides
+    }
+
+    # Pair @pair {
+        config: columns
+
+        # Alpha @s-alpha {
+            One.
+        }
+
+        # Beta @s-beta {
+            Two.
+        }
+
+        # @connectors {
+            {
+                from: @s-alpha right
+
+                to: @s-beta left
+
+                shape: straight
+
+                node: both
+            }
+        }
+    }
+}`;
+    const parsedScale = parseSdoc(src);
+    assert(parsedScale.errors.length === 0, "fixture parses");
+    const metaScale = extractMeta(parsedScale.nodes);
+    fs.writeFileSync(file, renderSlides(metaScale.nodes, {
+      meta: metaScale.meta,
+      themeCss: defaultTheme.themeCss,
+      themeJs: defaultTheme.themeJs,
+      themeConfig: defaultTheme.themeConfig,
+    }), "utf-8");
+
+    const SCRIPT = `
+(function () {
+  function run() {
+    var slide = document.querySelector(".slide");
+    slide.classList.add("active");
+    var out = [];
+    var scales = ["1", "0.5", "0.37"];
+    for (var i = 0; i < scales.length; i++) {
+      document.documentElement.style.setProperty("--sdoc-slide-scale", scales[i]);
+      document.documentElement.style.setProperty("--sdoc-slide-scale-y", scales[i]);
+      window.sdocConnectors.resolve(slide);
+      var segs = slide.querySelectorAll(".sdoc-conn");
+      var styles = [];
+      for (var j = 0; j < segs.length; j++) styles.push(segs[j].getAttribute("style"));
+      out.push({ scale: scales[i], styles: styles });
+    }
+    var el = document.createElement("script");
+    el.type = "application/json";
+    el.id = "connscale";
+    el.textContent = JSON.stringify({ runs: out }) + "\\n/*${SENTINEL}*/";
+    document.body.appendChild(el);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { requestAnimationFrame(run); });
+  else requestAnimationFrame(run);
+})();
+`;
+    try {
+      const { runHarvest } = require("../src/slide-geometry.js");
+      const data = await runHarvest(file, SCRIPT, "connscale", {});
+      const runs = data.runs;
+      assert(runs.length === 3, "three scales measured");
+      assert(runs[0].styles.length >= 3, "the run and its two nodes were drawn: " + runs[0].styles.length);
+      for (let i = 1; i < runs.length; i++) {
+        assert(
+          JSON.stringify(runs[i].styles) === JSON.stringify(runs[0].styles),
+          `scale ${runs[i].scale} moved the connector:\n  at 1:   ${runs[0].styles.join(" | ")}\n  at ${runs[i].scale}: ${runs[i].styles.join(" | ")}`
+        );
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an accent on a connector beats the theme's default, as it does elsewhere", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-connaccent-"));
+    const file = path.join(dir, "accent.html");
+    const defaultTheme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const src = `
+# Accented {
+    @meta {
+        type: slides
+    }
+
+    # Two lines @pair {
+        config: columns
+
+        # Alpha @a-alpha {
+            One.
+        }
+
+        # Beta @a-beta {
+            Two.
+        }
+
+        # @connectors {
+            {
+                from: @a-alpha right
+
+                to: @a-beta left
+
+                shape: straight
+            }
+
+            {
+                from: @a-alpha bottom-center
+
+                to: @a-beta bottom-center
+
+                shape: vh
+
+                accent: secondary
+            }
+        }
+    }
+}`;
+    const parsedAcc = parseSdoc(src);
+    assert(parsedAcc.errors.length === 0, "fixture parses");
+    const metaAcc = extractMeta(parsedAcc.nodes);
+    fs.writeFileSync(file, renderSlides(metaAcc.nodes, {
+      meta: metaAcc.meta,
+      themeCss: defaultTheme.themeCss,
+      themeJs: defaultTheme.themeJs,
+      themeConfig: defaultTheme.themeConfig,
+    }), "utf-8");
+    try {
+      const geometry = await harvestGeometry(file);
+      const runs = (geometry.slides[0].atoms || [])
+        .filter((a) => a.kind === "box" && /\bsdoc-conn\b/.test(a.cls || ""));
+      assert(runs.length >= 2, "both connectors drew: " + runs.length);
+      const plain = runs.filter((a) => !/accent-secondary/.test(a.cls || ""));
+      const accented = runs.filter((a) => /accent-secondary/.test(a.cls || ""));
+      assert(plain.length && accented.length, "one of each: " + JSON.stringify(runs.map((a) => a.cls)));
+      assert(plain.every((a) => a.fill === plain[0].fill), "the unaccented ones agree");
+      assert(accented.every((a) => a.fill === accented[0].fill), "the accented ones agree");
+      assert(plain[0].fill !== accented[0].fill,
+        `the accent changes the colour: ${plain[0].fill} vs ${accented[0].fill}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a rotated box carries its angle into the PPTX instead of its bounding box", async () => {
+    // A diagonal connector is one rectangle rotated about its centre. Measured
+    // with getBoundingClientRect it is the axis-aligned box it occupies, which
+    // for a long thin bar is most of the slide — and PowerPoint would then be
+    // handed a solid block with no rotation and nothing to say so.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-rot-"));
+    const file = path.join(dir, "rot.html");
+    const defaultTheme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const src = `
+# Rot {
+    @meta {
+        type: slides
+    }
+
+    # Diagonal @diag {
+        config: columns
+
+        # Alpha @r-alpha {
+            One.
+        }
+
+        # Beta @r-beta {
+            Two.
+        }
+
+        # @connectors {
+            {
+                from: @r-alpha bottom-center
+
+                to: @r-beta top-left
+
+                shape: straight
+            }
+        }
+    }
+}`;
+    const parsedRot = parseSdoc(src);
+    assert(parsedRot.errors.length === 0, "fixture parses");
+    const metaRot = extractMeta(parsedRot.nodes);
+    fs.writeFileSync(file, renderSlides(metaRot.nodes, {
+      meta: metaRot.meta,
+      themeCss: defaultTheme.themeCss,
+      themeJs: defaultTheme.themeJs,
+      themeConfig: defaultTheme.themeConfig,
+    }), "utf-8");
+    try {
+      const geometry = await harvestGeometry(file);
+      const runs = (geometry.slides[0].atoms || [])
+        .filter((a) => a.kind === "box" && /\bsdoc-conn\b/.test(a.cls || ""));
+      assert(runs.length === 1, "one run: " + JSON.stringify(runs.map((a) => a.box)));
+      const bar = runs[0];
+      assert(bar.box.rot !== undefined && Math.abs(bar.box.rot) > 0.5,
+        "the angle is measured: " + JSON.stringify(bar.box));
+      assert(bar.box.h <= 6, "and the box is the upright stroke, not what it covers: " + bar.box.h);
+
+      const { buffer } = buildPptx(geometry, { baseDir: dir, title: "Rot" });
+      const zlib = require("zlib");
+      const text = buffer.toString("latin1");
+      const at = text.indexOf("ppt/slides/slide1.xml");
+      assert(at > 0, "slide1 entry found");
+      const start = at - 30;
+      const size = buffer.readUInt32LE(start + 18);
+      const nameLen = buffer.readUInt16LE(start + 26);
+      const extraLen = buffer.readUInt16LE(start + 28);
+      const body = buffer.slice(start + 30 + nameLen + extraLen, start + 30 + nameLen + extraLen + size);
+      const xml = zlib.inflateRawSync(body).toString("utf-8");
+      // PowerPoint measures rotation in sixtieth-thousandths of a degree.
+      const spun = /<a:xfrm rot="(\d+)"/.exec(xml);
+      assert(spun, "a rotated shape reaches the package: " + xml.slice(0, 300));
+      const degrees = parseInt(spun[1], 10) / 60000;
+      const want = ((bar.box.rot % 360) + 360) % 360;
+      assert(Math.abs(degrees - want) < 0.5, `at the measured angle (${want}): ${degrees}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("PPTX export produces a package with one slide part per slide", async () => {
     const geometry = await geometryPromise;
     const { buffer } = buildPptx(geometry, { baseDir: tmpDir, title: "Test" });
@@ -1428,6 +1942,50 @@ if (!findChrome()) {
     assert(xml.includes("<p:sld "), "a slide part");
     assert(xml.includes('<a:off x="952500"'), "100px gutter is 952500 EMU");
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+}
+
+// ============================================================
+console.log("\n--- A decorative drawing is not content ---");
+
+if (!findChrome()) {
+  console.log("  SKIP: Chrome not found");
+} else {
+  test("a full-bleed aria-hidden drawing does not report an overflow", async () => {
+    // Rasterising an <svg> so it survives the export turned a theme's
+    // decorative overlay — connector lines drawn across the whole slide — into
+    // a slide-sized content atom. The content extent then became the whole
+    // slide, and every side reported an overflow by exactly the padding, on a
+    // deck whose layout had not changed by a byte. Same reasoning as the
+    // footer and the background: exported, but not counted.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-decor-"));
+    writeTestTheme(dir);
+    const theme = loadTheme(path.join(dir, "theme"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # Slide {\n        Body copy well inside the margins.\n\n        ```svg\n" +
+      '        <svg viewBox="0 0 1920 1080" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">\n' +
+      '        <line x1="0" y1="0" x2="1920" y2="1080" stroke="#888" stroke-width="2"/>\n' +
+      "        </svg>\n        ```\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeJs: theme.themeJs, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const geometry = await harvestGeometry(htmlPath);
+      const findings = overflowReport(geometry);
+      assert(findings.length === 0,
+        "a decoration should not overflow: " + JSON.stringify(findings));
+      // And it is still exported — not counted is not the same as not carried.
+      const atoms = geometry.slides[0].atoms || [];
+      const pictures = atoms.filter((a) => a.kind === "image");
+      assert(pictures.length >= 1, "the drawing still reaches the export");
+      assert(pictures.every((a) => a.chrome === true), "and is marked as chrome");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 }
 
