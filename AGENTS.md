@@ -228,8 +228,11 @@ can tell:
 - **Cells are ruled by the viewer and cannot be unruled.** `border` applies to
   `div text img table x-icon` and not to a cell, so the rules are drawn whether
   or not the deck wants them.
-- **An empty box with a width collapses**, though it holds in a browser. A
-  spacer has to grow — `flex:1 1 auto` inside a row with an explicit width.
+- **An empty box with a width collapses *as a flex item*,** though it holds in
+  a browser. A spacer has to grow — `flex:1 1 auto` inside a row with an
+  explicit width. This is about flex sizing, not about empty boxes: an empty
+  PINNED box with a width, a height and a background paints correctly, which
+  the pipeline spine relies on — sixteen of them, confirmed on screen.
 - **A pinned box nested in flow containers is offset by its flow parent**, so
   the exporter lifts every one to be a direct child of the `<section>`.
 - **`object-fit` is stripped from an `<img>` when the page normalises it.**

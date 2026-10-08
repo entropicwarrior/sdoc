@@ -573,6 +573,15 @@ async function main() {
   // emitted element land where the exporter put it?
   const misplaced = misplacedElements(slides, measured.slides);
   report.misplaced = misplaced;
+  report.compared = misplaced.compared;
+  const probed = slides.reduce((n, sl) => n + (sl.probes || []).length, 0);
+  if (probed > 0 && !misplaced.compared) {
+    console.error(
+      `${probed} element(s) carry a probe and not one was compared. The placement ` +
+        "check is not running, so a clean result from it would mean nothing."
+    );
+    process.exit(1);
+  }
 
   report.totals = {
     elements: allDy.length,
@@ -623,7 +632,10 @@ async function main() {
       );
     }
   } else {
-    console.log("\n  every emitted element landed where the exporter placed it");
+    // The count is part of the sentence on purpose. "Every element landed
+    // correctly" reads exactly the same whether it checked them all or none,
+    // and for every run before this one it was the latter.
+    console.log(`\n  all ${misplaced.compared} emitted elements landed where the exporter placed them`);
   }
 
   const ranked = [...report.slides].sort((a, b) => b.medianDy - a.medianDy);
@@ -667,9 +679,12 @@ if (require.main === module) {
 // way to know this one can is to make it fail on purpose.
 const PLACEMENT_TOLERANCE = 2;
 
+// Returns the elements that moved, and HOW MANY IT LOOKED AT — the count is
+// the point. See the note on `bySlide` above for what went wrong without it.
 function misplacedElements(built, measured) {
   const bySlide = new Map((measured || []).map((s) => [s.id, s]));
   const out = [];
+  out.compared = 0;
   for (const slide of built) {
     const got = bySlide.get(slide.id);
     const want = new Map((slide.probes || []).map((p) => [p.id, p]));
@@ -680,6 +695,7 @@ function misplacedElements(built, measured) {
       const dy = Math.round((g.y - w.box.y) * 10) / 10;
       const dw = Math.round((g.w - w.box.w) * 10) / 10;
       const dh = Math.round((g.h - w.box.h) * 10) / 10;
+      out.compared++;
       const t = PLACEMENT_TOLERANCE;
       if (Math.abs(dx) <= t && Math.abs(dy) <= t && Math.abs(dw) <= t && Math.abs(dh) <= t) continue;
       out.push({ slide: slide.id, tag: w.tag, role: w.role, dx, dy, dw, dh });
