@@ -2,22 +2,55 @@
 
 # Handover @handover
 {
-    Where this is as of 8 Oct 2026, written because a session's context ran
-    out mid-flight and the next one should not have to reconstruct it.
+    Where this is as of 8 Oct 2026, after v0.3.0 was released, half-failed to
+    publish, and was finished by hand.
 
     ## State @handover-state
     {
-        - Branch \`fix/artifact-subset-conformance\`, PR #73 against \`develop\`,
-          31 commits. Michael reviewed and approved it, then the branch was
-          force-pushed to scrub company-specific words out of its history, which
-          **dismissed the approval** — it needs re-approving before it can merge
-        - \`origin/main\` and \`origin/develop\` trees were identical beforehand,
-          so there is no drift to clean up first
-        - All eight suites green: 918 tests, 0 failures
-        - Next after merge: a version bump (0.2.24 is a feature release behind —
-          connectors and two new @meta keys argue for 0.3.0), a release branch,
-          a tag, and a GitHub release, which is what starts the package being
-          published
+        - **v0.3.0 is released and live on both registries**: npm as
+          \`@entropicwarrior/sdoc@0.3.0\`, published over OIDC with a signed
+          provenance statement, and the VS Code Marketplace as
+          \`entropicwarrior-msenfin.vscode-sdoc\`
+        - PRs #73 and #74 are merged. \`origin/develop\` carries one commit
+          \`origin/main\` does not — the release-workflow split — which reaches
+          \`main\` at the next release. That is the only drift
+        - All eight suites green as of the v0.3.0 cut: 918 tests, 0 failures
+        - The next tag is the first that will exercise the split workflow, so
+          cut it from \`develop\` and watch both jobs rather than the run's
+          overall result
+
+    }
+
+    ## What the v0.3.0 release cost, and why @handover-release
+    {
+        Read this before touching anything that publishes. Every item was
+        confirmed against a real run, not inferred from the docs.
+
+        - **One job meant one outage stopped both registries.** The Marketplace
+          answered \`HTTP 503\`, the job stopped there, and the npm step later in
+          the same job never ran — so a transient outage at one registry held
+          back a package that had nothing to do with it. They are two jobs with
+          no dependency now (PR #74)
+        - **A \`release\` event runs the workflow stored at the tagged commit**,
+          not the one on \`main\` or \`develop\`. So a fix to \`release.yml\` cannot
+          rescue a release that is already tagged — re-publishing that release
+          re-runs the old file. The fix applies from the next tag
+        - **A trusted publisher listed by \`npm trust list\` can be dead.** The
+          rescue path \`npm-publish.yml\` failed four times with \`E404\` while its
+          connection was listed with the right repository, the right filename
+          and both permissions. Revoking it and creating an identical one fixed
+          it at once. Nothing in the listing told the dead one from the live one
+        - **npm's \`E404\` on a publish is not about the package.** It is the
+          registry's answer to an unauthenticated write: when the OIDC exchange
+          fails, npm falls back to the placeholder token \`setup-node\` writes,
+          and the 404 you see is that fallback failing. The real cause appears
+          only under \`--loglevel verbose\`, which \`npm-publish.yml\` now carries
+          permanently
+        - **A publish that reports success may not be visible yet.** The PUT
+          returns \`202 Accepted\` and npm processes it asynchronously — 0.3.0
+          took about seven minutes to appear. \`npm view\` reads a local cache
+          too, so query \`registry.npmjs.org\` directly before concluding that a
+          publish failed and re-running one
 
     }
 
@@ -63,7 +96,7 @@
 
     # Current State @current-state
     {
-        SDOC v0.2.24 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.3.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
