@@ -547,7 +547,7 @@ Content of Section B.
                 - A reference is `@id` in text (unescaped)
                 - References are document-local: `@id` resolves to a scope within the same file only. Cross-document reference syntax may be introduced in a future version but is not part of v0.2
                 - To link to a section in another file, use a standard link with a fragment: `[Label](./other-file.sdoc#section-id)`
-                - References link to the scope with that ID
+                - References link to the scope with that ID. Only an explicit `@id` is a reference target: a scope's title, or the slug derived from it, never is, so a reference does not break when a title changes. A reference that matches only a title slug is broken; validation names the heading so the `@id` can be added to it. Tools may still address a section by its derived slug (`listSections`' `derivedId`, `extractSection`), which is not a reference
                 - ID uniqueness is strongly recommended; tooling may warn on duplicates
                 - References are parsed inside link labels — use `\@` to include a literal `@` in a link label without triggering a reference
             }
@@ -1005,26 +1005,154 @@ Content of Section B.
             }
         }
 
-        # About Scope @about-scope
+        # Signposts @signposts
         {
-            A reserved \`@about\` scope holds a short discovery summary for the document — what it covers, who it is for, and when to reach for it. The bare form is preferred:
+            A signpost is an optional reserved scope that describes the document itself rather than its subject. `@meta` is a reserved scope too, but not a signpost: it is configuration and is never rendered, while signposts are prose and data about the document, rendered as labelled boxes. Each signpost answers one question for one audience and has a fixed content model.
 
-            ```sdoc
-            @about {
-                How to write correct SDOC files. Covers document structure,
-                inline formatting, block types, and common mistakes.
+            {[table]
+                Id | Default label | Content model | Kept in exports by default
+                `about` | About | prose, no section references | no
+                `not-about` | Not About | prose, no links | no
+                `related-resources` | Related Resources | table `Resource`, `Relation` | no
+                `reading-guide` | Reading Guide | prose, then table `Sections`, `Note` | yes
+                `edit-guide` | Edit Guide | prose | no
             }
-            ```
-
-            The heading form `# Title @about { }` is also accepted; the title given there overrides the default `About` label when the section is rendered.
 
             {[.]
-                - The `@about` id is reserved and must not be used for normal references
-                - The scope is consumed by discovery tooling (e.g. `list_knowledge` and related agent-facing helpers) to describe a document without loading the full body
-                - In the VS Code live preview, `@about` renders as a meta-section — distinct background, dashed border, subdued typography — so readers can tell it apart from regular body content
-                - **HTML and PDF export hide `@about` by default**, on the principle that an exported file is normally sent to a recipient who has already been asked to read it, so the "should I read this?" framing is redundant. Renderers expose an `includeAbout` opt-in (`--include-about` for the CLI; `{ includeAbout: true }` for the VS Code export commands)
-                - When rendered, a bare `@about { ... }` (no heading line) is given a synthesized `About` heading so the meta-section is always labelled. The heading form preserves any custom title the author wrote
-                - An empty or whitespace-only `@about` scope is never rendered, regardless of the `includeAbout` setting — the meta-section box is suppressed entirely
+                - All five ids, and `meta`, are reserved. They must not be used as ids of ordinary scopes or as reference targets
+                - Each is optional. A document has at most one of each, as a direct child of the root scope. Scopes written beside a single root scope (such as a `# Meta @meta` above `# Title { }`) count as direct children of it. In a document without a single root scope, the top-level nodes take the root's place. This top level is the reserved level
+                - A scope with a reserved id anywhere below the reserved level is not a signpost, and a nested `@meta` is not configuration. It is reported as `reserved-scope-placement`, and is otherwise an ordinary scope: rendered with its content and no signpost styling, kept in exports, listed by `listSections` and matched by `extractSection`. Export tools warn about it. Nothing is dropped because of its id
+                - The single root scope is the only top-level scope left once the reserved scopes and the `:comment` scopes are set aside. Any other top-level content, a paragraph or a second ordinary scope, means there is no single root. Renderers treat the scopes beside the root as its children, in source order: those written before it come first, those after it last
+                - The conventional order is `@meta`, `@about`, `@not-about`, `@related-resources`, `@reading-guide`, `@edit-guide`, then the body. `:comment` scopes may sit anywhere among them. Breaking the order is a warning, not an error: every scope still works where it is written
+                - The bare form `@id { ... }` is preferred. The heading form `# Title @id { }` is accepted, and its title replaces the default label when the section is rendered. A bare section, or a heading form with an empty title, is given the default label
+                - An empty or whitespace-only signpost is never rendered
+                - Id matching is case-insensitive when rendering and extracting. The bare form is recognised only in lowercase
+                - In the VS Code live preview every signpost renders as a signpost box (distinct background, dashed border, subdued typography), with class `sdoc-meta-section sdoc-signpost sdoc-signpost-<id>`. `sdoc-meta-section` is the class `@about` had on its own, kept so stylesheets that target it keep working. The Notion renderer emits a callout; every section but `@about` opens with its label in bold. The slide renderer skips them
+                - `listSections` and `extractSection` exclude them, with everything inside them. `extractAbout` reads `@about`; `extractSignpost` and `extractSignposts` read any signpost as plain text; `extractRelatedResources` and `extractReadingGuide` read the two structured sections as data
+            }
+
+            # About Scope @about-scope
+            {
+                `@about` holds a short discovery summary for the document: what it covers, who it is for, and when to reach for it. It answers "should I read this?" for someone who has not opened the document. It does not say how to read it (`@reading-guide`), and it carries no pointers to other resources, which belong in `@related-resources`. Content model: prose, with no section references. An `@id` reference in `@about` is reported as `signpost-content`: discovery tools show the section without the body it would point into, and pointing a reader to sections is the job of `@reading-guide`. Links are allowed.
+
+                ```sdoc
+                @about {
+                    How to write correct SDOC files. Covers document structure,
+                    inline formatting, block types, and common mistakes.
+                }
+                ```
+
+                The scope is consumed by discovery tooling (e.g. `list_knowledge` and related agent-facing helpers) to describe a document without loading the full body. `extractAbout` returns its paragraphs joined with a space.
+            }
+
+            # Not About @not-about-scope
+            {
+                `@not-about` names topics a reader could plausibly expect in this document that it deliberately leaves out, and gives the reason each is left out. It answers "why is this not here?" for someone who opened the document looking for something. One list item per topic is recommended: the topic, then the reason in one clause. It does not redirect: the resources that cover a left-out topic are listed in `@related-resources`, whose `Relation` says what each covers. It does not restate what the document covers (`@about`), and a longer argument for the boundary belongs in the body, or in `@edit-guide` when it binds editors.
+
+                Content model: prose, with no links. A link in `@not-about` is reported as `signpost-content`. The rule keeps every resource the document points to linked in exactly one place, `@related-resources`: a target cannot drift between two copies, and that table is the complete list a tool reads.
+            }
+
+            # Related Resources @related-resources-scope
+            {
+                `@related-resources` lists the resources that go with this document: what to read or use alongside it, and what covers the topics it leaves out. It answers "what else is there?" for someone who will read, or has read, the document. A resource is anything outside this document that can be linked: another SDOC document, any other file of the project, or an external resource such as a repository, an issue tracker or a web page.
+
+                Content model: exactly one table whose header is `Resource | Relation`, and no other content. Each row has two non-empty cells. `Resource` is exactly one link and nothing else, written `[label](target)` or as a bare URL. Its target is one of:
+
+                {[.]
+                    - a path relative to this document, to another `.sdoc` file or to any other file of the project; a fragment is allowed (`spec.sdoc#grammar`)
+                    - a URL with a scheme, such as `https:` or `mailto:`
+                }
+
+                A target that is a `#fragment` of this document, an absolute filesystem path or a `file:` URL is reported as `signpost-table`; the sections of this document belong in `@reading-guide`. `Relation` is free text saying how the resource relates to this document. `extractRelatedResources` classifies each target as `sdoc`, `file` or `external`.
+
+                ```sdoc
+                @related-resources {
+                    {[table]
+                        Resource | Relation
+                        [Specification](specification.sdoc) | Normative source for this guide
+                        [Overrides](example-overrides.css) | The stylesheet the examples load
+                        https://github.com/entropicwarrior/sdoc | Upstream repository
+                    }
+                }
+                ```
+            }
+
+            # Not About and Related Resources @not-about-vs-related-resources
+            {
+                The two sections answer different questions, so an entry belongs in exactly one of them. `@not-about` says what this document leaves out, and why. `@related-resources` says what a reader can open: a document, a file or a URL. Redirecting is the job of `@related-resources`: among the signposts, every link to a resource lives there, and `@not-about` holds no links and no pointers.
+
+                A topic left out of this document and covered by another resource appears in both, each answering its own question. `@not-about` gives the reason the topic is left out. `@related-resources` lists the resource, with a `Relation` saying what it covers.
+
+                ```sdoc
+                @not-about {
+                    - Slide decks: they follow their own layout rules, which would double the length of this guide.
+                }
+
+                @related-resources {
+                    {[table]
+                        Resource | Relation
+                        [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+                    }
+                }
+                ```
+            }
+
+            # Reading Guide @reading-guide-scope
+            {
+                `@reading-guide` tells a reader who has decided to read how to read: where to start, in what order, what to skip. It refers only to sections of this document, and it does not summarise the content (`@about`).
+
+                Content model: optional prose, then exactly one table whose header is `Sections | Note`, and nothing after the table. Each row has two non-empty cells. `Sections` is a comma-separated list of `@id` references, each resolving to an explicit scope `@id` in this document and none naming a reserved scope. `Note` is free text saying when or why to read them.
+
+                ```sdoc
+                @reading-guide {
+                    Read the Quick Reference once, then keep Common Mistakes open.
+
+                    {[table]
+                        Sections | Note
+                        @quick-reference | Everyday authoring
+                        @common-mistakes | Before generating SDOC for the first time
+                    }
+                }
+                ```
+
+                A block that follows a `- item` line belongs to that item, so a free part that ends in an implicit list must close it with an explicit `{[.]` block or a paragraph before the table.
+            }
+
+            # Edit Guide @edit-guide-scope
+            {
+                `@edit-guide` tells someone about to change this file how to do it: what belongs where, conventions to keep, what must change together, which parts are normative, who owns the file. Its audience is the editor of this document; instructions about changing the subject (code, product) are body content. Content model: prose.
+            }
+
+            # Content Model and Validation @signpost-validation
+            {
+                **Prose** means paragraph nodes and list nodes only, where every list item contains only paragraphs and lists, to any depth. Inline content is unrestricted. Tables, code and data blocks, math blocks, blockquotes, horizontal rules, citation blocks and sub-scopes are not prose.
+
+                Table headers are compared case-insensitively after trimming. A `headerless` table never matches.
+
+                The parser accepts any content in a signpost and does not report content-model violations as parse errors. `validateSignposts(nodes)` reports them, in the same shape as `validateRefs`, with a `severity` of `error` or `warning`:
+
+                {[table]
+                    Type | Severity | Reported when
+                    `reserved-scope-placement` | error | a reserved scope is not a direct child of the root scope. It is then an ordinary scope, and its content is checked like any other
+                    `reserved-scope-duplicate` | error | a reserved scope appears a second time at the top level (reported on the second)
+                    `signpost-content` | error | a section contains a block its content model does not allow, including anything after the `@reading-guide` table, `@not-about` contains a link, or `@about` contains an `@id` reference
+                    `signpost-table` | error | the table is missing, `@related-resources` has more than one, the header is wrong, a row has the wrong number of cells or an empty cell, a `Resource` cell is not one link or links into this document or to an absolute path, or a `Sections` token is not an `@id` reference
+                    `signpost-ref` | error | a `Sections` reference names a reserved scope. One that does not resolve is reported by `validateRefs` as `broken-ref`, like any other reference, so it is reported once
+                    `signpost-order` | warning | a reserved scope at the top level comes after the body, or after a reserved scope ranked later in the conventional order (reported on the scope that is out of place)
+                }
+
+                `fixSignpostOrder(text)` restores the conventional order. It moves the reserved scopes as source text, each with the `//` comment lines directly above it, and re-indents them to their new place. A scope written beside the root stays there when its rank allows, and moves into the root's children otherwise. The fix is applied only when the result reparses to the same tree with just those scopes moved, keeps every non-blank line, and leaves no order warning. A braceless scope next to body content can fail that test; the fix then reports why and changes nothing.
+
+                An empty `@related-resources` or `@reading-guide` is not reported. Rendering does not depend on validation: a section that fails it renders whatever it contains.
+
+                Not validated, and left to authoring guidance: length, links and other pointers to resources inside `@about`, and the vocabulary used in `Relation`.
+            }
+
+            # Export Visibility @signpost-visibility
+            {
+                HTML and PDF export drop `@about`, `@not-about`, `@related-resources` and `@edit-guide` by default, and keep `@reading-guide`. Only the signposts at the reserved level are dropped: a scope with one of these ids deeper down is an ordinary scope and is exported, and `build-doc` and the VS Code export commands print a warning for it. An exported file is normally sent to a recipient who has already been asked to read it and will not edit it: the discovery and editing sections are noise for that reader, and the reading guide is written for them.
+
+                Renderers take three options, resolved in order. `includeSignposts: true` keeps every signpost. Otherwise `includeAbout: true` keeps `@about` as well as the default; an explicit `includeSignposts: false` overrides it. Finally `signposts`, a map from id to `true` or `false`, keeps or drops single sections; unknown ids and non-boolean values are ignored. The CLI spells these `--include-signposts`, `--include-about` and `--signposts <list>`, and the VS Code export commands take the same option object. The live preview and the document browser (**SDOC: Browse Documents** and `tools/serve_docs.py`) always pass `includeSignposts: true`. Notion pages are living documents like the preview and keep every signpost.
             }
         }
     }
@@ -1144,6 +1272,7 @@ Content of Section A.
             - `---` / `***` / `___` horizontal rule
             - `` ``` `` code fence
             - `//` line comment (discarded, not in AST)
+            - `@` followed by a reserved id (`meta`, `about`, `not-about`, `related-resources`, `reading-guide`, `edit-guide`), alone on the line or followed only by `{`: a bare reserved scope ([Signposts](#signposts)). Any other line starting with `@` is a paragraph
         }
 
         Blank lines are allowed anywhere and are ignored.
@@ -1175,7 +1304,9 @@ Content of Section A.
                          | list_scope | table_scope | citations_scope
                          | bare_directive | line_comment | blank } ;
 
-        bare_directive = "@" ("meta" | "about") (ws block | braceless_body) ;
+        bare_directive = "@" reserved_id (ws block | braceless_body) ;
+        reserved_id   = "meta" | "about" | "not-about" | "related-resources"
+                      | "reading-guide" | "edit-guide" ;
         block_body    = { blank | line_comment | paragraph | scope
                         | headingless_scope | list_scope | table_scope
                         | citations_scope | implicit_list | blockquote

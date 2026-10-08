@@ -122,6 +122,36 @@ test("meta scope is excluded from slides", () => {
   assert(slideCount === 1, "meta should not become a slide, got " + slideCount);
 });
 
+test("signposts are excluded from slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    @about {
+        Summary.
+    }
+    @not-about {
+        - Not this.
+    }
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Other](other.sdoc) | Sibling
+        }
+    }
+    @reading-guide {
+        Start here.
+    }
+    @edit-guide {
+        - Rules.
+    }
+    # Slide {
+        Hello.
+    }
+}
+`);
+  const slideCount = (html.match(/<div class="slide"/g) || []).length;
+  assert(slideCount === 1, "signposts should not become slides, got " + slideCount);
+});
+
 test("title falls back to document scope title", () => {
   const html = parseAndRender(`
 # My Deck Title {
@@ -131,6 +161,34 @@ test("title falls back to document scope title", () => {
 }
 `);
   assert(html.includes("<title>My Deck Title</title>"), "should fall back to doc title");
+});
+
+test("signposts and :comment scopes beside the deck root do not merge the slides", () => {
+  const html = parseAndRender(`
+# Notes :comment {
+    Draft.
+}
+@about {
+    Summary.
+}
+# My Deck Title {
+    # Slide 1 {
+        One.
+    }
+    # Slide 2 {
+        Two.
+    }
+}
+`);
+  const slideCount = (html.match(/<div class="slide"/g) || []).length;
+  assert(slideCount === 2, "two slides, got " + slideCount);
+  assert(html.includes("<title>My Deck Title</title>"), "the deck title is found");
+});
+
+test("a deck root beside a signpost is unwrapped without extractMeta too", () => {
+  const nodes = parseSdoc("@about {\n    Summary.\n}\n# Deck {\n    # Slide 1 {\n        One.\n    }\n    # Slide 2 {\n        Two.\n    }\n}").nodes;
+  const slideCount = (renderSlides(nodes).match(/<div class="slide"/g) || []).length;
+  assert(slideCount === 2, "two slides, got " + slideCount);
 });
 
 // ============================================================

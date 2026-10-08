@@ -17,6 +17,44 @@
 
 # Example Simple/Smart Document
 {
+    @about {
+        Quick reference showing every SDOC feature in one file. Read it when you need to see a construct in context rather than in the specification.
+    }
+
+    @not-about {
+        - Slide decks: a deck uses its own layouts and renderer, so it has an example file of its own.
+        - The formal grammar and parser behaviour: this file shows constructs in use, and their exact rules would bury the examples.
+        - Styling a rendered document: styling is configuration, not content; this file loads one override only to show the mechanism.
+        - Exporting to Word: no exporter exists yet.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Authoring Guide](../docs/reference/sdoc-authoring.sdoc) | Prerequisite; explains the rules this file only shows
+            [Specification](../lexica/specification.sdoc) | Normative source for every construct used here, and the grammar this file leaves out
+            [Slide Authoring](../docs/reference/slide-authoring.sdoc) | Covers slide decks, which this file leaves out
+            [Overrides Stylesheet](example-overrides.css) | The stylesheet this file loads through `@meta`; an example of restyling a document
+            https://github.com/entropicwarrior/sdoc | Upstream repository, for issues and releases
+        }
+    }
+
+    @reading-guide {
+        Skim it top to bottom once. After that, every section stands on its own.
+
+        {[table]
+            Sections | Note
+            @overview, @lists | Start here for everyday prose and lists
+            @table, @table-formulas | Only when you need column directives or formulas
+            @math | Only when the document carries equations
+        }
+    }
+
+    @edit-guide {
+        - Every construct the parser supports appears here once; add a new one next to its nearest relative.
+        - Keep each section self-contained so it can be copied out as a snippet.
+    }
+
     # Overview @overview
     {
         This is an example document. Scopes are explicit.
@@ -33,7 +71,7 @@
     {
         There can be multiple scoped entities at a particular level.
 
-        # Lists
+        # Lists @lists
         {
             It is very very easy to create numbered lists.
 
@@ -116,7 +154,7 @@
                 - [x] Wire up the preview
             }
 
-            # Table
+            # Table @table
             {[table]
                 Name | Age | City
                 Alice | 30 | New York
@@ -407,7 +445,7 @@
                 Back to the outer level.
             }
 
-            # Math
+            # Math @math
             {
                 Inline math blends with text: the quadratic formula $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$ solves any quadratic.
 
@@ -461,7 +499,7 @@
                 Anchor link to a section in this document: [Overview](#overview).
             }
 
-            # Table Formulas
+            # Table Formulas @table-formulas
             {
                 Tables support simple formulas. Cell references use spreadsheet-style A1 notation (headers excluded from row numbering). Hover a computed cell in preview to see the formula.
 

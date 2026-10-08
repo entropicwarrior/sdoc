@@ -4,7 +4,8 @@ const os = require("os");
 const path = require("path");
 const url = require("url");
 const vscode = require("vscode");
-const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, validateRefs, validateCitations } = require("./sdoc");
+const { hrefCandidates, hrefPathExists } = require("./href-path");
+const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, getDocumentScope, validateRefs, validateCitations, validateSignposts, fixSignpostOrder } = require("./sdoc");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -50,9 +51,11 @@ function activate(context) {
     showPreview(document, vscode.ViewColumn.Active);
   });
 
-  // Export commands accept an optional { includeAbout } arg when invoked
-  // programmatically (e.g. via `vscode.commands.executeCommand`). Default is
-  // false — the @about scope is hidden in exports.
+  // Export commands accept the renderer's signpost options when invoked
+  // programmatically (e.g. via `vscode.commands.executeCommand`):
+  // { includeSignposts: true } keeps every signpost, { includeAbout: true }
+  // adds @about, and { signposts: { "related-resources": true } } keeps or
+  // drops single sections. By default only @reading-guide is kept.
   const exportHtmlCommand = vscode.commands.registerCommand("sdoc.exportHtml", (args) => {
     exportHtml(args || {});
   });
@@ -155,7 +158,8 @@ function activate(context) {
 
     const text = editor.document.getText();
     const parsed = parseSdoc(text);
-    const docTitle = parsed.nodes.length > 0 && parsed.nodes[0].title ? parsed.nodes[0].title : "Untitled";
+    const titleNode = getDocumentScope(parsed.nodes) || parsed.nodes[0];
+    const docTitle = titleNode && titleNode.title ? titleNode.title : "Untitled";
     const sections = listSections(parsed.nodes);
 
     if (sections.length === 0) {
@@ -332,6 +336,33 @@ function activate(context) {
     })
   );
 
+  // Quick fix for the signpost-order warning: reorders @meta and the
+  // signposts with fixSignpostOrder. When no safe fix exists the action is
+  // shown disabled, with the reason, rather than hidden.
+  context.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider("sdoc", {
+      provideCodeActions(document, range, codeActionContext) {
+        const diagnostics = codeActionContext.diagnostics.filter(
+          (d) => d.source === "sdoc" && d.code === "signpost-order"
+        );
+        if (!diagnostics.length) return [];
+        const text = document.getText();
+        const fix = fixSignpostOrder(text);
+        const action = new vscode.CodeAction("Reorder signposts", vscode.CodeActionKind.QuickFix);
+        action.diagnostics = diagnostics;
+        if (!fix.changed) {
+          action.disabled = { reason: fix.reason || "The signposts are already in order." };
+          return [action];
+        }
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(text.length)), fix.text);
+        action.edit = edit;
+        action.isPreferred = true;
+        return [action];
+      }
+    }, { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] })
+  );
+
   context.subscriptions.push(
     vscode.languages.registerDocumentFormattingEditProvider("sdoc", {
       provideDocumentFormattingEdits(document, options) {
@@ -455,27 +486,6 @@ function activate(context) {
   );
 }
 
-// A link href may percent-encode path characters (%20 for spaces, %28/%29 for
-// parentheses, ...). The file system knows nothing about percent-encoding, so
-// resolve against both the raw href and its decoded form.
-function hrefCandidates(filePath) {
-  const candidates = [filePath];
-  try {
-    const decoded = decodeURIComponent(filePath);
-    if (decoded !== filePath) candidates.push(decoded);
-  } catch (e) {
-    // Malformed percent sequence (e.g. a literal "%" in a filename) — raw only.
-  }
-  return candidates;
-}
-
-function hrefPathExists(filePath, docDir) {
-  return hrefCandidates(filePath).some((candidate) => {
-    const absPath = path.isAbsolute(candidate) ? candidate : path.join(docDir, candidate);
-    return fs.existsSync(absPath);
-  });
-}
-
 function updateDiagnostics(document, fullValidation) {
   if (!diagnosticCollection) return;
   const parsed = parseSdoc(document.getText());
@@ -489,15 +499,20 @@ function updateDiagnostics(document, fullValidation) {
 
   const warnings = validateRefs(metaResult.nodes, options);
   const citationWarnings = validateCitations(metaResult.nodes);
-  const allWarnings = warnings.concat(citationWarnings);
+  // The full tree, not the one extractMeta returns: @meta's placement and
+  // order are checked too, as build-doc --check does.
+  const signpostWarnings = validateSignposts(parsed.nodes);
+  const allWarnings = warnings.concat(citationWarnings, signpostWarnings);
   const lines = document.getText().split("\n");
   const diagnostics = allWarnings.map((warning) => {
-    const severity = warning.type === "unused-citation"
+    const severity = warning.type === "unused-citation" || warning.severity === "warning"
       ? vscode.DiagnosticSeverity.Warning
       : vscode.DiagnosticSeverity.Error;
     const range = findWarningRange(document, lines, warning);
     const diagnostic = new vscode.Diagnostic(range, warning.message, severity);
     diagnostic.source = "sdoc";
+    // The type doubles as the code, so a quick fix can find its diagnostics.
+    diagnostic.code = warning.type;
     return diagnostic;
   });
   diagnosticCollection.set(document.uri, diagnostics);
@@ -509,7 +524,7 @@ function findWarningRange(document, lines, warning) {
 
   for (let i = startLine; i <= endLine; i++) {
     const line = lines[i];
-    if (warning.type === "broken-ref") {
+    if (warning.type === "broken-ref" || warning.type === "signpost-ref") {
       // Skip heading lines to avoid matching @id declarations
       if (/^\s*#/.test(line)) continue;
       const token = "@" + warning.id;
@@ -1148,9 +1163,9 @@ async function buildHtml(document, title, webview) {
       cssAppend: cssAppendParts.join("\n"),
       script: buildWebviewScript(),
       mermaidTheme: isDark ? "dark" : "neutral",
-      // Live preview keeps @about visible — the renderer defaults to hiding
-      // it for export-style output.
-      includeAbout: true,
+      // Live preview keeps every signpost visible — the renderer
+      // defaults to hiding most of them for export-style output.
+      includeSignposts: true,
       renderOptions: { editable: false, brokenRefIds, brokenLinkHrefs }
     }
   );
@@ -1384,13 +1399,23 @@ function buildCollapseScript() {
 `;
 }
 
-// HTML/PDF export path. By default the @about scope is hidden because the
-// recipient of an exported file has already been asked to read it — the
-// "should I read this?" framing in @about is for discovery, not for someone
-// who already has the doc in hand. Pass { includeAbout: true } to keep it.
+// HTML/PDF export path. By default the signposts for discovery and for
+// editors are hidden, because the recipient of an exported file has already
+// been asked to read it and will not edit it; @reading-guide stays. The
+// includeSignposts / includeAbout / signposts options are passed through.
+// A reserved scope below the top level is exported as an ordinary section,
+// content and all; warn instead of dropping it.
+function warnMisplacedReservedScopes(nodes, document) {
+  const misplaced = validateSignposts(nodes).filter((f) => f.type === "reserved-scope-placement");
+  if (misplaced.length === 0) return;
+  const first = misplaced[0];
+  const more = misplaced.length > 1 ? ` (and ${misplaced.length - 1} more)` : "";
+  vscode.window.showWarningMessage(`SDOC: ${path.basename(document.uri.fsPath)}:${first.lineStart}: ${first.message}${more}`);
+}
+
 async function buildCleanHtml(document, exportOptions = {}) {
-  const includeAbout = exportOptions.includeAbout === true;
   const parsed = parseSdoc(document.getText());
+  warnMisplacedReservedScopes(parsed.nodes, document);
   const metaResult = extractMeta(parsed.nodes);
   const config = loadConfigForDocument(document);
   const metaStyles = resolveMetaStyles(metaResult.meta, document.uri.fsPath);
@@ -1427,7 +1452,9 @@ async function buildCleanHtml(document, exportOptions = {}) {
       cssAppend: cssAppendParts.join("\n"),
       script: buildCollapseScript(),
       mermaidTheme: "auto",
-      includeAbout
+      includeSignposts: exportOptions.includeSignposts,
+      includeAbout: exportOptions.includeAbout,
+      signposts: exportOptions.signposts
     }
   );
 

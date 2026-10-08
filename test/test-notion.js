@@ -615,5 +615,85 @@ test("@about with content still emits callout (regression guard for empty-skip)"
 });
 
 // ============================================================
+console.log("\n--- Signposts as callouts ---");
+
+const NOTION_SIGNPOSTS = { "not-about": "Not About", "related-resources": "Related Resources", "reading-guide": "Reading Guide", "edit-guide": "Edit Guide" };
+
+for (const [id, label] of Object.entries(NOTION_SIGNPOSTS)) {
+  test(`@${id} renders as a callout opening with a bold "${label}" label`, () => {
+    const blocks = parseAndRender(`# Doc {\n  @${id} {\n    Some text.\n  }\n  # Body {\n    Content.\n  }\n}`);
+    const callouts = blocks[0].heading_1.children.filter(b => b.type === "callout");
+    assert(callouts.length === 1, "one callout, got " + callouts.length);
+    const rt = callouts[0].callout.rich_text;
+    assert(callouts[0].callout.icon.emoji === "ℹ️" && callouts[0].callout.color === "gray_background");
+    assert(rt[0].text.content === label && rt[0].annotations.bold === true, "first run is the bold label, got " + JSON.stringify(rt[0]));
+    assert(rt.map(r => r.text.content).join("").includes("Some text."), "prose follows the label");
+  });
+}
+
+test("a heading-form signpost uses its title as the callout label", () => {
+  const blocks = parseAndRender("# Doc {\n  # Before You Edit @edit-guide {\n    - Keep it short.\n  }\n}");
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout.callout.rich_text[0].text.content === "Before You Edit");
+  assert(callout.callout.children.some(b => b.type === "bulleted_list_item"), "list becomes a callout child");
+});
+
+test("@about callout has no label (unchanged output)", () => {
+  const blocks = parseAndRender("# Doc {\n  @about {\n    A short summary.\n  }\n}");
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout.callout.rich_text.length === 1 && callout.callout.rich_text[0].text.content === "A short summary.");
+  assert(callout.callout.rich_text[0].annotations.bold === false);
+});
+
+test("an empty @edit-guide emits no callout", () => {
+  const blocks = parseAndRender("# Doc {\n  @edit-guide {\n  }\n  # Body {\n    Content.\n  }\n}");
+  assert(!blocks[0].heading_1.children.some(b => b.type === "callout"));
+});
+
+test("@related-resources puts its table in the callout children", () => {
+  const blocks = parseAndRender("# Doc {\n  @related-resources {\n    {[table]\n      Resource | Relation\n      [Spec](spec.sdoc) | Normative source\n    }\n  }\n}");
+  const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
+  assert(callout.callout.rich_text[0].text.content === "Related Resources");
+  assert(callout.callout.children.some(b => b.type === "table"), "table is a callout child");
+});
+
+test("a signpost beside the root becomes a callout inside the title toggle", () => {
+  const blocks = parseAndRender("@reading-guide {\n  Start with the intro.\n}\n# Doc {\n  # Intro {\n    Hello.\n  }\n}");
+  assert(blocks.length === 1 && blocks[0].type === "heading_1", "one title toggle, got " + blocks.map(b => b.type).join(", "));
+  assert(blocks[0].heading_1.rich_text[0].text.content === "Doc", "the root is the title");
+  const first = blocks[0].heading_1.children[0];
+  assert(first.type === "callout" && first.callout.rich_text[0].text.content === "Reading Guide", "the guide comes first, as a callout");
+});
+
+test("a :comment scope beside the root is dropped and the root stays the title", () => {
+  const blocks = renderNotionBlocks(parseSdoc("# Notes :comment {\n  Draft.\n}\n# Doc {\n  Body.\n}").nodes);
+  assert(blocks.length === 1 && blocks[0].heading_1.rich_text[0].text.content === "Doc", JSON.stringify(blocks.map(b => b.type)));
+  assert(!JSON.stringify(blocks).includes("Draft."), "the comment is not rendered");
+});
+
+test("a reserved id below the top level renders as an ordinary heading, not a callout", () => {
+  const blocks = parseAndRender("# Doc {\n  # Body {\n    # Edit Guide @edit-guide {\n      Rules.\n    }\n  }\n}");
+  const json = JSON.stringify(blocks);
+  assert(!json.includes("\"callout\""), "no callout");
+  assert(json.includes("Edit Guide") && json.includes("Rules."), "heading and content kept");
+});
+
+test("a signpost label renders its inline markup, bold throughout", () => {
+  const blocks = parseAndRender("# Doc {\n  # Start **Here** and `there` @reading-guide {\n    Read the intro.\n  }\n}");
+  const label = blocks[0].heading_1.children[0].callout.rich_text;
+  const runs = label.slice(0, label.findIndex(rt => rt.text.content === "\n"));
+  assert(runs.map(rt => rt.text.content).join("") === "Start Here and there", JSON.stringify(runs));
+  assert(runs.every(rt => rt.annotations.bold), "every run of the label is bold");
+  assert(runs.find(rt => rt.text.content === "there").annotations.code, "inline code kept");
+});
+
+test("a plain signpost label is unchanged: one bold run", () => {
+  const blocks = parseAndRender("# Doc {\n  @reading-guide {\n    Read the intro.\n  }\n}");
+  const first = blocks[0].heading_1.children[0].callout.rich_text[0];
+  const expected = { type: "text", text: { content: "Reading Guide", link: null }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: "default" } };
+  assert(JSON.stringify(first) === JSON.stringify(expected), JSON.stringify(first));
+});
+
+// ============================================================
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);
