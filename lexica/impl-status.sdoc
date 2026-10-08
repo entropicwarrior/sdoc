@@ -1,4 +1,51 @@
 # SDOC — Implementation Status @sdoc-impl-status
+
+# Handover @handover
+{
+    Where this is as of 8 Oct 2026, written because a session's context ran
+    out mid-flight and the next one should not have to reconstruct it.
+
+    ## State @handover-state
+    {
+        - Branch \`fix/artifact-subset-conformance\`, PR #73 against \`develop\`,
+          31 commits. Michael reviewed and approved it, then the branch was
+          force-pushed to scrub company-specific words out of its history, which
+          **dismissed the approval** — it needs re-approving before it can merge
+        - \`origin/main\` and \`origin/develop\` trees were identical beforehand,
+          so there is no drift to clean up first
+        - All eight suites green: 918 tests, 0 failures
+        - Next after merge: a version bump (0.2.24 is a feature release behind —
+          connectors and two new @meta keys argue for 0.3.0), a release branch,
+          a tag, and a GitHub release, which is what starts the package being
+          published
+
+    }
+
+    ## What a reader should not re-learn @handover-traps
+    {
+        - **The repo is public.** It had words in it tying back to a private
+          deck — an element id naming a chip architecture, an internal repo
+          name, another company's framing in a stats fixture. All scrubbed from
+          the working tree and from this branch's history. Two commit messages
+          on \`main\` still carry an internal repo name; that was a deliberate
+          decision not to rewrite published history on the default branch
+        - **A clean number from \`artifact-fidelity.js\` is not a correct slide.**
+          It renders in Chrome, not the Slides viewer, and it measures geometry.
+          Its own header says what it cannot see; read that before trusting it
+        - **Every serious defect this week produced a reassuring output.** Five
+          separate checks could not fail — a guard over an empty corpus, a
+          fixture that passed either way, a measurement whose two sides shared
+          a flaw, a placement check whose loop had no body. The only reliable
+          test is: if this were broken, would the output look any different?
+        - **The viewer differs from Chrome** in ways that have shipped broken
+          slides four times. AGENTS.md lists what publishing has proved it will
+          not carry. Probe anything load-bearing on a live artifact
+        - **Both harvests are template literals.** Double every backslash and
+          never write a backtick inside one, comments included
+
+    }
+
+}
 {
     # Meta @meta
     {

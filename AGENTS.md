@@ -191,9 +191,13 @@ should be evaluated against.
 
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
-- Run all tests:
-  `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js`
-  (489 + 24 + 65 + 122 + 93 + 96 + 20 + 9 = 918 as of v0.2.24 + connectors)
+- Run the fast suites — no browser, half a second, 578 tests:
+  `npm test`
+- Run the browser-gated ones too (several minutes, needs Chrome):
+  `npm run test:browser`   — or `npm run test:all` for both
+- Before committing anything that touches the parser, the renderer or an
+  exporter, run `npm run test:all`. `npm test` alone does not cover slides.
+  (578 fast + 340 browser = 918 as of v0.2.24)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

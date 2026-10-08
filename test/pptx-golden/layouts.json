@@ -277,7 +277,7 @@
       "layout": "columns",
       "atoms": {
         "text": 14,
-        "box": 3
+        "box": 6
       },
       "text": [
         "COLUMNS, CARD VARIANT",
@@ -297,7 +297,7 @@
       ],
       "pptx": {
         "pictures": 0,
-        "shapes": 17,
+        "shapes": 23,
         "runs": [
           "COLUMNS, CARD VARIANT",
           "Cards",
@@ -878,7 +878,7 @@
       "layout": "stack",
       "atoms": {
         "text": 13,
-        "box": 13
+        "box": 18
       },
       "text": [
         "CONNECTORS",
@@ -897,7 +897,7 @@
       ],
       "pptx": {
         "pictures": 0,
-        "shapes": 26,
+        "shapes": 35,
         "runs": [
           "CONNECTORS",
           "Connectors",
