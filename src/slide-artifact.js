@@ -70,7 +70,13 @@ const ARTIFACT_SCRIPT = `
              // its parent and re-emitted at the top coordinate it happened to
              // measure at stops being held there the moment anything inside it
              // changes size — and the export removes chrome from inside it.
-             "top","right","bottom","left"];
+             "top","right","bottom","left",
+             // A rotation. The subset has rotate(), and without this a rotated
+             // box was emitted as the axis-aligned rectangle it happened to
+             // occupy, with the rotation gone and the paint still on. The
+             // origin travels too, because the subset has no transform-origin
+             // and reproduces a rotation about the centre only.
+             "transform","transformOrigin"];
   var TYPE = ["fontFamily","fontSize","fontWeight","fontStyle","lineHeight",
               "letterSpacing","textAlign","textTransform","whiteSpace","color",
               // Paint on text, lost for the same reason a box-shadow was.
@@ -117,6 +123,44 @@ const ARTIFACT_SCRIPT = `
       }
     }
     return authoredRules;
+  }
+
+  // A pure rotation, in degrees, or null for a transform that is anything
+  // else. getBoundingClientRect reports the AXIS-ALIGNED box a rotated element
+  // occupies — for a thin bar at 45 degrees that is a square as wide as the
+  // bar is long — so a rotated box measured naively is exported as that square,
+  // painted, with the rotation gone. A connector drawn straight between two
+  // corners arrived as a block covering most of the slide.
+  //
+  // matrix(a,b,c,d,e,f) is a rotation when it is orthonormal, has no
+  // translation, and a === d with b === -c. Anything else (a scale, a skew, a
+  // mirror, a translate) is left alone and measured as it always was.
+  function rotationOf(cs) {
+    var text = String(cs.transform || "none");
+    if (text === "none") return 0;
+    if (text.indexOf("matrix(") !== 0) return null;
+    var m = text.slice(7, -1).split(",");
+    if (m.length !== 6) return null;
+    var a = parseFloat(m[0]), b = parseFloat(m[1]), c = parseFloat(m[2]);
+    var d = parseFloat(m[3]), e = parseFloat(m[4]), f = parseFloat(m[5]);
+    if (!isFinite(a) || !isFinite(b) || !isFinite(c) || !isFinite(d)) return null;
+    if (Math.abs(e) > 0.01 || Math.abs(f) > 0.01) return null;
+    if (Math.abs(a * a + b * b - 1) > 0.001) return null;
+    if (Math.abs(c * c + d * d - 1) > 0.001) return null;
+    if (Math.abs(a - d) > 0.001 || Math.abs(b + c) > 0.001) return null;
+    return Math.round((Math.atan2(b, a) * 180) / Math.PI * 100) / 100;
+  }
+
+  // The box the element would occupy unrotated, which is the one a rotation
+  // has to be applied to. Measured by switching the transform off and back —
+  // the element is out of flow in every case this fires on, so nothing else
+  // moves while it is off.
+  function uprightRect(el) {
+    var prior = el.style.transform;
+    el.style.transform = "none";
+    var rect = el.getBoundingClientRect();
+    el.style.transform = prior;
+    return rect;
   }
 
   function anchorsOf(el) {
@@ -921,9 +965,15 @@ const ARTIFACT_SCRIPT = `
       var cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) return null;
 
-      var rect = el.getBoundingClientRect();
+      var spin = rotationOf(cs);
+      var rect = spin ? uprightRect(el) : el.getBoundingClientRect();
       var node = {
         tag: tag,
+        // The angle, and whether the transform was one the subset can say at
+        // all — a scale, a skew or a mirror is neither carried nor silently
+        // flattened, it is reported.
+        rotate: spin || 0,
+        spins: spin !== null,
         cls: cls,
         roleCls: cls || inheritedCls || "",
         style: styleOf(cs),
@@ -1036,8 +1086,35 @@ const ARTIFACT_SCRIPT = `
       if (tag === "ul" || tag === "ol") {
         node.items = [];
         for (var li = 0; li < el.children.length; li++) {
-          if (el.children[li].tagName.toLowerCase() !== "li") continue;
-          node.items.push({ runs: runsOf(el.children[li]) });
+          var kid = el.children[li];
+          if (kid.tagName.toLowerCase() !== "li") continue;
+          node.items.push({
+            runs: runsOf(kid),
+            // Kept for the artifact-lists boxes mode: a plain <li> carries none
+            // this, and on one deck the flex share is what spaces eight stages
+            // evenly down a 501px spine so each meets its own spur.
+            style: styleOf(getComputedStyle(kid)),
+            box: { w: kid.getBoundingClientRect().width, h: kid.getBoundingClientRect().height }
+          });
+          // An <li> never reaches visit(), because a list is taken whole and
+          // turned into runs — so anything it paints with a pseudo-element was
+          // lost with it. One real deck draws its pipeline that way: a spur
+          // and a dot per stage, sixteen painted marks, and the slide arrived
+          // as a plain bulleted list. The subset allows only a plain <li>, so
+          // they cannot ride on the item; they become pinned boxes of their
+          // own, which is what every other painted pseudo-element does.
+          var lps = pseudoBoxes(kid, kid.getBoundingClientRect(), origin);
+          for (var lp = 0; lp < lps.length; lp++) {
+            lps[lp].cls = kid.className && kid.className.baseVal === undefined
+              ? String(kid.className) : "";
+            lps[lp].tag = "li";
+            if (lps[lp].painted && lps[lp].box) {
+              node.pseudos = node.pseudos || [];
+              node.pseudos.push(lps[lp]);
+              lps[lp].attached = true;
+            }
+            pseudos.push(lps[lp]);
+          }
         }
         return node;
       }
@@ -1102,6 +1179,12 @@ const ARTIFACT_SCRIPT = `
       slide.classList.add("active");
       var prior = slide.getAttribute("style") || "";
       slide.setAttribute("style", prior + ";position:absolute;top:0;left:0;transform:none;");
+      // A connector is drawn by the deck's own runtime against the boxes the
+      // browser laid out, and a slide that is display:none has no boxes. So it
+      // is asked for here, once the slide is up and parked at the origin, and
+      // the painted rectangles it adds are harvested like any others. The same
+      // call is in the other harvest, for the same reason.
+      if (window.sdocConnectors) window.sdocConnectors.resolve(slide);
       out.push(slideTree(slide));
       slide.setAttribute("style", prior);
       if (!wasActive) slide.classList.remove("active");
@@ -1534,11 +1617,88 @@ function declarationsFor(node, ctx, inherited) {
     const names = ["border-top", "border-right", "border-bottom", "border-left"];
     sides.forEach((b, i) => { if (b) push(names[i], b); });
   }
-  const radius = lenOf(s.borderTopLeftRadius, scale);
-  if (radius > 0) push("border-radius", `${radius}px`);
+  // A percentage radius stays a percentage. Chrome serialises `border-radius:
+  // 50%` as "50%", and running that through lenOf() gives the NUMBER 50, which
+  // was then emitted as 50px — the right picture only while the box happens to
+  // be under 100px across, and a barely-rounded corner on anything larger. The
+  // subset takes a percentage here, so there is nothing to convert.
+  const radiusRaw = String(s.borderTopLeftRadius || "").trim();
+  if (/%$/.test(radiusRaw)) {
+    const pct = parseFloat(radiusRaw);
+    if (isFinite(pct) && pct > 0) push("border-radius", `${r2(pct)}%`);
+  } else {
+    const radius = lenOf(s.borderTopLeftRadius, scale);
+    if (radius > 0) push("border-radius", `${radius}px`);
+  }
 
   const opacity = parseFloat(s.opacity);
   if (isFinite(opacity) && opacity < 1) push("opacity", String(opacity));
+
+  // Two things become a `transform` here, and the grammar takes them in one
+  // order, each at most once — so they are collected and written together.
+  //
+  // A relative offset moves the paint and not the layout, which is exactly
+  // what a translate does — and the subset has translate. The format says
+  // `left top right bottom · pinned only (relative does not offset)`, so the
+  // offset cannot travel as written, and emitting the flow box put a deck's
+  // two pictures 36.67px low because their rule lifts them by that much.
+  //
+  // Pinning them would also place them correctly and would stop them
+  // reflowing. A translate does not: the element keeps its place in the flow
+  // and only its paint moves, which is what `position: relative` means and
+  // what the author chose it for.
+  const offs = [];
+  if (!pinned && s.position === "relative") {
+    const axis = (near, far) => {
+      const a = parseFloat(s[near]);
+      if (isFinite(a) && Math.abs(a) > 0.5) return a;
+      const b = parseFloat(s[far]);
+      if (isFinite(b) && Math.abs(b) > 0.5) return -b;
+      return 0;
+    };
+    const dx = lenOf(axis("left", "right"), scale);
+    const dy = lenOf(axis("top", "bottom"), scale);
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+      offs.push(dy && !dx ? `translateY(${dy}px)` : dx && !dy ? `translateX(${dx}px)` : `translate(${dx}px, ${dy}px)`);
+    }
+  }
+  // And a rotation, which the subset also has. The box this is applied to is
+  // the UPRIGHT one — the harvest measured it with the transform off — so this
+  // reproduces exactly what the deck draws, about the same centre.
+  if (node.rotate) offs.push(`rotate(${node.rotate}deg)`);
+  // translate before rotate: the grammar takes them in that order, each once.
+  if (offs.length) push("transform", offs.join(" "));
+  // The subset has no transform-origin, so a deck that moved the origin gets a
+  // rotation about the centre instead, which is a different picture. Said out
+  // loud rather than quietly done.
+  if (node.rotate) {
+    const origin = String(s.transformOrigin || "").trim();
+    const parts = origin.split(/\s+/).map((v) => parseFloat(v));
+    const centred =
+      !origin ||
+      (parts.length >= 2 &&
+        Math.abs(parts[0] - node.box.w / 2) < 1 &&
+        Math.abs(parts[1] - node.box.h / 2) < 1);
+    if (!centred) {
+      ctx.warnings.push({
+        slide: ctx.slide,
+        kind: "transform-origin-dropped",
+        message:
+          `<${node.tag}>${node.cls ? " ." + node.cls.split(/\s+/)[0] : ""} rotates about ` +
+          `${origin}, and the subset rotates about the centre only; it will sit elsewhere`,
+      });
+    }
+  } else if (node.spins === false) {
+    ctx.warnings.push({
+      slide: ctx.slide,
+      kind: "transform-dropped",
+      message:
+        `<${node.tag}>${node.cls ? " ." + node.cls.split(/\s+/)[0] : ""} carries ` +
+        `${s.transform}, which is not a plain rotation — a scale, a skew or a mirror cannot be ` +
+        "reconstructed from the matrix, so the transform is not carried and the box is emitted " +
+        "at the size and place it was measured",
+    });
+  }
 
   if (!pinned) {
     const grow = parseFloat(s.flexGrow) || 0;
@@ -1841,7 +2001,15 @@ function emitNodeInner(node, ctx, inherited, depth) {
     const markup = raster
       ? `<img src="${raster}" alt="${escapeHtml(node.svgLabel || "diagram")}"${styleFor("img", `width:${lenOf(node.box.w, ctx.scale)}px;height:${lenOf(node.box.h, ctx.scale)}px;object-fit:contain`)}>`
       : node.svg.replace(/\sclass="[^"]*"/g, "");
-    if (!ctx.pinHere) return markup;
+    // A drawing the deck pinned keeps its pin. The flow path used to return the
+    // bare markup, which has no position on it at all, so a pinned arrow fell
+    // to the end of the section and landed bottom left. It reached the output
+    // and was still in the wrong place, which is worse than being dropped.
+    if (!ctx.pinHere) {
+      const own = node.style.position;
+      if (own !== "absolute" && own !== "fixed") return markup;
+      return `<div${styleFor("div")}>${markup}</div>`;
+    }
     // Traced: a drawing needs placing like everything else, and the <svg>
     // element can itself be the framed box — a border and a radius on the svg
     // are the frame around a diagram, and emitting the markup alone loses it.
@@ -1872,7 +2040,17 @@ function emitNodeInner(node, ctx, inherited, depth) {
   // flow properties a div may have and they may not — which the page drops, so
   // a list meant to be a flex column arrives stacked by accident rather than
   // by arrangement.
-  if (node.rows) return emitTable(node, ctx, styleFor("table"));
+  if (node.rows) {
+    return ctx.tablesAsBoxes
+      ? emitTableAsBoxes(node, ctx, styleFor("div"))
+      : emitTable(node, ctx, styleFor("table"));
+  }
+
+  if (node.items && ctx.listsAsBoxes) {
+    // A list the deck spaced deliberately, where a plain <li> would lose it.
+    const colStyle = styleFor("div", "display:flex;flex-direction:column");
+    return emitListAsBoxes(node, ctx, colStyle);
+  }
 
   if (node.items) {
     const tag = node.tag;
@@ -2011,6 +2189,126 @@ function emitPinnedSlide(slide, ctx, inherited) {
     );
   }
   return groups.join("\n");
+}
+
+// A list as a column of plain boxes, for a deck that asks for it with
+// `artifact-lists: boxes` in its @meta.
+//
+// The format allows a plain <li> and nothing else — no style at all — so every
+// list is a stack of items at their natural height. A deck that spaces its
+// items deliberately loses that: one real deck gives each stage `flex: 1 1 0`
+// so eight of them divide a 501px spine evenly and each meets its own spur,
+// and as plain items they pack to the top and stop meeting anything.
+//
+// Same trade as the table: this is no longer a list to a screen reader, which
+// is why it is opt-in.
+function emitListAsBoxes(node, ctx, style) {
+  const scale = ctx.scale;
+  const items = (node.items || [])
+    .map((item) => {
+      const st = item.style || {};
+      const parts = [];
+      if (st.display === "flex" || st.display === "grid") {
+        parts.push(`display:${st.display}`);
+        if (st.display === "flex" && st.flexDirection && st.flexDirection !== "row") {
+          parts.push(`flex-direction:${st.flexDirection}`);
+        }
+        if (st.alignItems && !["normal", "stretch"].includes(st.alignItems)) {
+          parts.push(`align-items:${alignWord(st.alignItems)}`);
+        }
+      }
+      const grow = parseFloat(st.flexGrow);
+      if (isFinite(grow) && grow > 0) {
+        const shrink = isFinite(parseFloat(st.flexShrink)) ? parseFloat(st.flexShrink) : 1;
+        const basis = !st.flexBasis || st.flexBasis === "auto" ? "auto"
+          : st.flexBasis === "0%" || st.flexBasis === "0px" ? "0%"
+            : `${lenOf(st.flexBasis, scale)}px`;
+        parts.push(grow === 1 && shrink === 1 && basis === "0%" ? "flex:1" : `flex:${grow} ${shrink} ${basis}`);
+      }
+      const pads = ["Top", "Right", "Bottom", "Left"].map((k) =>
+        Math.max(0, Math.min(256, lenOf(st[`padding${k}`], scale)))
+      );
+      if (pads.some((v) => v > 0)) parts.push(`padding:${pads.map((v) => `${v}px`).join(" ")}`);
+      const fill = colourOf(st.backgroundColor);
+      if (fill) parts.push(`background:${fill}`);
+      const colour = colourOf(st.color);
+      if (colour) parts.push(`color:${colour}`);
+      const attr = parts.length ? ` style="${parts.join(";")}"` : "";
+      // The words in a text element, as everywhere: a div holding them is not
+      // in the subset and an inline mark inside one is rejected outright.
+      return `<div${attr}><p>${runsToHtml(item.runs, ctx)}</p></div>`;
+    })
+    .join("\n");
+  return `<div${style}>\n${items}\n</div>`;
+}
+
+// A table as a grid of plain boxes, for a deck that asks for it with
+// `artifact-tables: boxes` in its @meta.
+//
+// The viewer styles a real table its own way and will not be talked out of it:
+// it rules every cell and puts its own background behind a header row, and a
+// colour on a mark inside a cell is lost. None of that is reachable from the
+// deck, because the format gives a cell only colour, alignment, a width and
+// the table's one padding.
+//
+// The same data as boxes has none of those limits — a div is unruled until the
+// deck rules it, takes a background so banding comes back, and holds an
+// ordinary coloured span. What it costs is real and the reason this is opt-in:
+// a grid of boxes is not a table to a screen reader, and the columns no longer
+// size themselves, so each cell is given the share it was measured at.
+function emitTableAsBoxes(node, ctx, style) {
+  const scale = ctx.scale;
+  const rows = node.rows
+    .map((row) => {
+      const cells = row.cells
+        .map((cell) => {
+          const parts = [];
+          if (node.box.w) {
+            parts.push(`width:${Math.round((cell.box.w / node.box.w) * 1000) / 10}%`);
+          }
+          const pads = ["Top", "Right", "Bottom", "Left"].map((k) =>
+            Math.max(0, Math.min(256, lenOf(cell.style[`padding${k}`], scale)))
+          );
+          if (pads.some((v) => v > 0)) parts.push(`padding:${pads.map((v) => `${v}px`).join(" ")}`);
+          // A cell may carry its own rule now, and its own fill.
+          const sides = ["Top", "Right", "Bottom", "Left"].map((k) => borderOf(cell.style, k, scale));
+          const names = ["border-top", "border-right", "border-bottom", "border-left"];
+          if (sides.every((b) => b && b === sides[0])) parts.push(`border:${sides[0]}`);
+          else sides.forEach((b, i) => { if (b) parts.push(`${names[i]}:${b}`); });
+          const fill = colourOf(cell.style.backgroundColor);
+          if (fill) parts.push(`background:${fill}`);
+          const align = cell.style.textAlign;
+          if (align && !["start", "left"].includes(align)) parts.push(`text-align:${align}`);
+          const colour = colourOf(cell.style.color);
+          if (colour) parts.push(`color:${colour}`);
+          // And its own type, which a real cell could not take either.
+          const face = fontStack(cell.style.fontFamily);
+          if (face) {
+            parts.push(`font-family:${face.css}`);
+            if (face.declared) ctx.faces.add(face.declared);
+          }
+          const size = lenOf(cell.style.fontSize, scale);
+          if (size) parts.push(`font-size:${size}px`);
+          const weight = parseInt(cell.style.fontWeight, 10);
+          if (weight) parts.push(`font-weight:${String(Math.round(weight / 100) * 100)}`);
+          // The words go in a <p>, not straight into the div. An inline mark
+          // needs a text element around it — a <td> is one and a <div> is not,
+          // so a bold inside a cell div is rejected outright by the editor:
+          // "<b> is not a tag in this format" at that position. The format
+          // says the same in general terms: text must sit in a text element.
+          return `<div style="${parts.join(";")}"><p>${runsToHtml(cell.runs, ctx)}</p></div>`;
+        })
+        .join("\n");
+      const rowParts = ["display:flex"];
+      const bg = colourOf(row.style.backgroundColor);
+      if (bg) rowParts.push(`background:${bg}`);
+      const rs = ["Top", "Right", "Bottom", "Left"].map((k) => borderOf(row.style, k, scale));
+      const rn = ["border-top", "border-right", "border-bottom", "border-left"];
+      rs.forEach((b, i) => { if (b) rowParts.push(`${rn[i]}:${b}`); });
+      return `<div style="${rowParts.join(";")}">\n${cells}\n</div>`;
+    })
+    .join("\n");
+  return `<div${style}>\n${rows}\n</div>`;
 }
 
 function emitTable(node, ctx, style) {
@@ -2286,6 +2584,12 @@ function buildArtifact(harvest, options = {}) {
       minFont: options.minFontSize === true,
       probes: options.probe === true ? [] : null,
       hoisted: [],
+      // `artifact-tables: boxes` in a deck's @meta: send a table as a grid of
+      // plain boxes, because the viewer styles a real table its own way.
+      tablesAsBoxes: options.tablesAsBoxes === true,
+      // `artifact-lists: boxes`: the same, for a list whose items are spaced
+      // by the deck rather than by their own height.
+      listsAsBoxes: options.listsAsBoxes === true,
       // Trace the layout instead of rebuilding it. Exact, and not editable.
       pinAll: options.pinAll === true,
       addAsset(src) {

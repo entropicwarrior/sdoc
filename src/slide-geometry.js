@@ -36,6 +36,55 @@ const MEASURE_SCRIPT = `
     return { hex: (hex(parts[0]) + hex(parts[1]) + hex(parts[2])).toUpperCase(), alpha: a };
   }
 
+  // A border radius in px, whatever the deck wrote it in.
+  function radiusPx(value, box) {
+    var text = String(value || "").trim();
+    var n = parseFloat(text);
+    if (!isFinite(n) || n <= 0) return 0;
+    if (text.charAt(text.length - 1) === "%") {
+      return (n / 100) * Math.min(box.w, box.h);
+    }
+    return n;
+  }
+
+  // A pure rotation, in degrees, or null for a transform that is anything
+  // else. getBoundingClientRect reports the AXIS-ALIGNED box a rotated element
+  // occupies — for a thin bar at 45 degrees that is a square as wide as the
+  // bar is long — so a rotated box measured naively is exported as that square,
+  // painted, with the rotation gone. A connector drawn straight between two
+  // corners arrived as a block covering most of the slide.
+  //
+  // matrix(a,b,c,d,e,f) is a rotation when it is orthonormal, has no
+  // translation, and a === d with b === -c. Anything else (a scale, a skew, a
+  // mirror, a translate) is left alone and measured as it always was.
+  function rotationOf(cs) {
+    var text = String(cs.transform || "none");
+    if (text === "none") return 0;
+    if (text.indexOf("matrix(") !== 0) return null;
+    var m = text.slice(7, -1).split(",");
+    if (m.length !== 6) return null;
+    var a = parseFloat(m[0]), b = parseFloat(m[1]), c = parseFloat(m[2]);
+    var d = parseFloat(m[3]), e = parseFloat(m[4]), f = parseFloat(m[5]);
+    if (!isFinite(a) || !isFinite(b) || !isFinite(c) || !isFinite(d)) return null;
+    if (Math.abs(e) > 0.01 || Math.abs(f) > 0.01) return null;
+    if (Math.abs(a * a + b * b - 1) > 0.001) return null;
+    if (Math.abs(c * c + d * d - 1) > 0.001) return null;
+    if (Math.abs(a - d) > 0.001 || Math.abs(b + c) > 0.001) return null;
+    return Math.round((Math.atan2(b, a) * 180) / Math.PI * 100) / 100;
+  }
+
+  // The box the element would occupy unrotated, which is the one a rotation
+  // has to be applied to. Measured by switching the transform off and back —
+  // the element is out of flow in every case this fires on, so nothing else
+  // moves while it is off.
+  function uprightRect(el) {
+    var prior = el.style.transform;
+    el.style.transform = "none";
+    var rect = el.getBoundingClientRect();
+    el.style.transform = prior;
+    return rect;
+  }
+
   function firstFamily(stack) {
     if (!stack) return null;
     var first = stack.split(",")[0].trim();
@@ -159,13 +208,15 @@ const MEASURE_SCRIPT = `
       var cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) return;
 
-      var rect = el.getBoundingClientRect();
+      var spin = rotationOf(cs);
+      var rect = spin ? uprightRect(el) : el.getBoundingClientRect();
       var box = {
         x: rect.left - origin.left,
         y: rect.top - origin.top,
         w: rect.width,
         h: rect.height
       };
+      if (spin) box.rot = spin;
 
       if (el.tagName === "IMG") {
         push({ kind: "image", box: box, src: el.getAttribute("src"), alt: el.getAttribute("alt") || "" });
@@ -183,7 +234,12 @@ const MEASURE_SCRIPT = `
           fill: fill ? fill.hex : null,
           fillAlpha: fill ? fill.alpha : 0,
           border: border,
-          radius: parseFloat(cs.borderTopLeftRadius) || 0,
+          // Resolved against the box, because PowerPoint's corner adjustment
+          // is a fraction of the shorter side and a percentage read as a
+          // px length is a different corner on every box it is not 100px
+          // wide. The same halving is in the artifact harvest, which keeps
+          // the percentage instead because its subset has one.
+          radius: radiusPx(cs.borderTopLeftRadius, box),
           cls: el.className || ""
         });
       }
@@ -421,6 +477,12 @@ const MEASURE_SCRIPT = `
       // Park the slide at the origin, unscaled, so measurement is in design px.
       var prior = slide.getAttribute("style") || "";
       slide.setAttribute("style", prior + ";position:absolute;top:0;left:0;transform:none;");
+      // A connector is drawn by the deck's own runtime against the boxes the
+      // browser laid out, and a slide that is display:none has no boxes. So it
+      // is asked for here, once the slide is up and parked at the origin, and
+      // the painted rectangles it adds are harvested like any others. The same
+      // call is in the other harvest, for the same reason.
+      if (window.sdocConnectors) window.sdocConnectors.resolve(slide);
       box.w = Math.max(box.w, slide.offsetWidth);
       box.h = Math.max(box.h, slide.offsetHeight);
       out.push(measureSlide(slide));

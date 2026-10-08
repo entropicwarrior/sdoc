@@ -558,6 +558,91 @@
         }
     }
 
+    # Connectors @connectors-slide
+    {
+        config: stack
+
+        kicker: Connectors
+
+        lede: A connector names the two elements it joins and the shape of the run between them, and the browser supplies the numbers.
+
+        # @conn-sources
+        {
+            config: columns
+
+            variant: card
+
+            # Ingest @conn-ingest
+            {
+                Reads the stream.
+            }
+
+            # Index @conn-index
+            {
+                Builds the map.
+            }
+
+            # Enrich @conn-enrich
+            {
+                Adds the labels.
+            }
+        }
+
+        # @conn-floor
+        {
+            config: columns
+
+            variant: panel
+
+            # One store @conn-sink
+            {
+                Everything above lands here, and the lines saying so are not
+                drawn by hand: each one names two scopes and a shape.
+            }
+        }
+
+        # @connectors
+        {
+            {
+                from: @conn-ingest bottom-center
+
+                to: @conn-sink top-left
+
+                shape: vh
+
+                node: start
+            }
+
+            {
+                from: @conn-index bottom-right
+
+                to: @conn-sink top-center
+
+                shape: straight
+            }
+
+            {
+                from: @conn-enrich bottom-center
+
+                to: @conn-sink top-right
+
+                shape: hv
+
+                node: start
+
+                accent: secondary
+            }
+
+            {
+                from: @conn-ingest right
+
+                to: @conn-index left
+
+                shape: elbow
+            }
+        }
+    }
+
     # The default layout @default-slide
     {
         kicker: No config line

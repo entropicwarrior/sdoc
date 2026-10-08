@@ -72,6 +72,21 @@ const MEASURE_SCRIPT = `
     if (!r || (!r.width && !r.height)) r = el.getBoundingClientRect();
     return r;
   }
+  // The box an element would occupy unrotated. The exporter records the
+  // upright box and writes a rotate() beside it, so measuring the rotated
+  // bounding box here would compare two different rectangles and report every
+  // rotated element as misplaced by tens of pixels. Same test and same trick
+  // as the two harvests: a pure rotation only, measured with the transform
+  // switched off and back.
+  function uprightRect(el) {
+    var t = String(getComputedStyle(el).transform || "none");
+    if (t === "none") return el.getBoundingClientRect();
+    var prior = el.style.transform;
+    el.style.transform = "none";
+    var r = el.getBoundingClientRect();
+    el.style.transform = prior;
+    return r;
+  }
   function run() {
     var out = [];
     var frames = document.querySelectorAll(".fidelity-frame");
@@ -99,7 +114,7 @@ const MEASURE_SCRIPT = `
       var tagged = frame.querySelectorAll("[data-sdoc-probe]");
       for (var k = 0; k < tagged.length; k++) {
         var pe = tagged[k];
-        var pr = pe.getBoundingClientRect();
+        var pr = uprightRect(pe);
         probes.push({
           id: parseInt(pe.getAttribute("data-sdoc-probe"), 10),
           x: pr.left - origin.left,
@@ -508,14 +523,20 @@ async function main() {
     return { pairs, missed, spare };
   }
 
-  const bySlide = new Map(measured.slides.map((s) => [s.id, s.items]));
+  // The whole measured record, not just its text items. Keyed to `s.items`,
+  // the probe pass below asked a list of text for its `.probes`, got undefined
+  // every time, and iterated nothing — so "every emitted element landed where
+  // the exporter placed it" was printed by a loop with no body. A guard that
+  // cannot fail is worse than no guard: it is the one in this file that was
+  // supposed to catch the defects the text comparison cannot see.
+  const bySlide = new Map(measured.slides.map((s) => [s.id, s]));
   const report = { canvas: CANVAS, deck: resolved, theme: themeDir, slides: [], totals: {} };
   const allDy = [];
   const allDx = [];
   let unmatched = 0;
 
   for (const slide of slides) {
-    const got = bySlide.get(slide.id) || [];
+    const got = (bySlide.get(slide.id) || {}).items || [];
     const want = slide.texts;
     const { pairs, missed, spare } = pairByText(want, got);
     unmatched += missed.length + spare.length;
@@ -549,25 +570,8 @@ async function main() {
   }
 
   // Second question, and the one the text comparison cannot ask: did every
-  // emitted element land where the exporter put it? A box pinned with slide
-  // coordinates inside a position:relative ancestor renders somewhere else
-  // entirely, and nothing about that involves text.
-  const misplaced = [];
-  for (const slide of slides) {
-    const got = bySlide.get(slide.id);
-    const want = new Map((slide.probes || []).map((p) => [p.id, p]));
-    for (const g of (got && got.probes) || []) {
-      const w = want.get(g.id);
-      if (!w) continue;
-      const dx = Math.round((g.x - w.box.x) * 10) / 10;
-      const dy = Math.round((g.y - w.box.y) * 10) / 10;
-      const dw = Math.round((g.w - w.box.w) * 10) / 10;
-      const dh = Math.round((g.h - w.box.h) * 10) / 10;
-      if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2 && Math.abs(dw) <= 2 && Math.abs(dh) <= 2) continue;
-      misplaced.push({ slide: slide.id, tag: w.tag, role: w.role, dx, dy, dw, dh });
-    }
-  }
-  misplaced.sort((a, b) => Math.max(Math.abs(b.dx), Math.abs(b.dy)) - Math.max(Math.abs(a.dx), Math.abs(a.dy)));
+  // emitted element land where the exporter put it?
+  const misplaced = misplacedElements(slides, measured.slides);
   report.misplaced = misplaced;
 
   report.totals = {
@@ -648,4 +652,44 @@ if (require.main === module) {
   });
 }
 
-module.exports = { measurePage, resolveAssets, faceCssFrom, median, narrowToSlides, MEASURE_SCRIPT };
+// Did every emitted element land where the exporter put it? A box pinned with
+// slide coordinates inside a position:relative ancestor renders somewhere else
+// entirely, and nothing about that involves text — so this is the half of the
+// measurement that can see an image, a drawing or a painted box at all.
+//
+// `built` is the exporter's own record per slide (`probes`), `measured` is what
+// the modelled viewer rendered (`items` and `probes`). Pulled out of the report
+// function and exported so it can be tested: keyed on a slide's TEXT ITEMS by
+// mistake, this loop asked a list of text for its `.probes`, got undefined and
+// iterated nothing — and the report then printed "every emitted element landed
+// where the exporter placed it" from a loop with no body, on every run anyone
+// has ever made. A guard that cannot fail is worse than no guard, and the only
+// way to know this one can is to make it fail on purpose.
+const PLACEMENT_TOLERANCE = 2;
+
+function misplacedElements(built, measured) {
+  const bySlide = new Map((measured || []).map((s) => [s.id, s]));
+  const out = [];
+  for (const slide of built) {
+    const got = bySlide.get(slide.id);
+    const want = new Map((slide.probes || []).map((p) => [p.id, p]));
+    for (const g of (got && got.probes) || []) {
+      const w = want.get(g.id);
+      if (!w) continue;
+      const dx = Math.round((g.x - w.box.x) * 10) / 10;
+      const dy = Math.round((g.y - w.box.y) * 10) / 10;
+      const dw = Math.round((g.w - w.box.w) * 10) / 10;
+      const dh = Math.round((g.h - w.box.h) * 10) / 10;
+      const t = PLACEMENT_TOLERANCE;
+      if (Math.abs(dx) <= t && Math.abs(dy) <= t && Math.abs(dw) <= t && Math.abs(dh) <= t) continue;
+      out.push({ slide: slide.id, tag: w.tag, role: w.role, dx, dy, dw, dh });
+    }
+  }
+  out.sort((a, b) => Math.max(Math.abs(b.dx), Math.abs(b.dy)) - Math.max(Math.abs(a.dx), Math.abs(a.dy)));
+  return out;
+}
+
+module.exports = {
+  measurePage, resolveAssets, faceCssFrom, median, narrowToSlides, MEASURE_SCRIPT,
+  misplacedElements, PLACEMENT_TOLERANCE,
+};

@@ -50,6 +50,14 @@ src/                Source code
   sdoc.js             Parser and HTML renderer (~2000 lines)
   slide-renderer.js   SDOC-to-HTML slide deck renderer
   slide-layouts.js    Structured slide layouts (columns, stats, pipeline, ...)
+  slide-connectors.js Connectors: a line between two elements named by @id, with a
+                      shape hint (vh, hv, elbow, straight). The routing is pure and
+                      is serialised into the deck with toString(), so one
+                      implementation runs in the page and is unit-tested here.
+                      Resolved once, in the browser, against the laid-out boxes —
+                      which is why the HTML build and every export agree without any
+                      of them re-measuring. Both harvests call
+                      window.sdocConnectors.resolve(slide) once a slide is visible.
   slide-geometry.js   Measures a built deck in headless Chrome
   slide-pptx.js       PowerPoint / Google Slides export, driven by that measurement
   slide-pdf.js        PDF export via headless Chrome (used by build-slides.js --pdf)
@@ -95,9 +103,14 @@ test/               Test files
   artifact-golden/    The checked-in Claude Slides export of the two example decks
   pptx-golden/        Structural digests of the PPTX export: what the harvest found
                       per slide against what reached the file
-  test-slide-layouts.js  Structured layouts, theme loading, geometry, PPTX
-                         (node test/test-slide-layouts.js; the geometry and
-                         PPTX tests skip themselves when Chrome is absent)
+  test-slide-layouts.js  Structured layouts, theme loading, geometry, PPTX and
+                         connectors (node test/test-slide-layouts.js; the
+                         geometry, PPTX and connector tests skip themselves when
+                         Chrome is absent). The connector routing is tested as
+                         pure arithmetic — planConnector takes two boxes and
+                         returns rectangles — plus a browser check that the
+                         boxes come out in design pixels at any window scale,
+                         which is the standing trap in this repo
   *.sdoc              Test fixture files
 
 skills/             Claude skills shipped with the repo (copy into .claude/skills/)
@@ -127,6 +140,10 @@ tools/              CLI tools
                       text, never by index; resolves sdoc-asset: to real bytes
                       and carries the deck's @font-face over, because a
                       collapsed picture or a fallback face buries the signal.
+                      It asks two questions: where the text landed, and whether
+                      every emitted element landed where the exporter placed it
+                      (`misplacedElements`, which is exported and unit-tested —
+                      it was keyed wrongly and silently checked nothing).
                       A CLEAN RUN IS NOT A CORRECT SLIDE: it renders in Chrome,
                       not the Slides runtime, so anything the viewer does
                       differently is invisible (an empty div with a width holds
@@ -176,7 +193,7 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run all tests:
   `node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js`
-  (489 + 24 + 65 + 122 + 72 + 88 + 19 + 9 = 888 as of v0.2.24)
+  (489 + 24 + 65 + 122 + 93 + 96 + 20 + 9 = 918 as of v0.2.24 + connectors)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
@@ -215,6 +232,18 @@ can tell:
   spacer has to grow — `flex:1 1 auto` inside a row with an explicit width.
 - **A pinned box nested in flow containers is offset by its flow parent**, so
   the exporter lifts every one to be a direct child of the `<section>`.
+- **`object-fit` is stripped from an `<img>` when the page normalises it.**
+  Read back off a stored slide: `width:527px;height:354px;object-fit:cover`
+  came back as `width:527px;height:354px`. A deck relying on a crop loses it
+  with nothing to say so. Either crop the source asset to its box aspect, or
+  bake the crop into the picture at export — neither is done automatically.
+- **An auto margin centres nothing.** `margin` is accepted and ignored, so
+  `margin-inline: auto` — a common idiom — simply does not centre. Use
+  `align-self: center` in a flex column, which the exporter now emits.
+- **A relative offset does not offset.** `left/top/right/bottom` are pinned-only
+  in the format, so the exporter emits a relative offset as a `transform:
+  translate(...)` instead: that moves the paint and not the layout, which is
+  what `position: relative` means and keeps the element reflowing.
 
 ## SDOC Format
 

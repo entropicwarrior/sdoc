@@ -223,6 +223,51 @@ test("every heading carries its own font-size and font-weight", () => {
   assert(bare.length === 0, `${bare.length} heading(s) left to the subset's defaults:\n  ` + bare.slice(0, 4).join("\n  "));
 });
 
+test("a connector arrives as a stroke, not the rectangle it covers", () => {
+  // A connector is resolved in the page and exported as whatever painted boxes
+  // it turned into, which is the property that makes it survive the subset —
+  // and also the reason a defect in it is invisible to the validator. Two have
+  // been seen:
+  //
+  //   The runs are never drawn at all. Every slide but the active one is
+  //   display:none, so the deck's runtime measures nothing and draws nothing,
+  //   and the export carries on happily. The slide simply arrives without its
+  //   lines, which reads as a design choice.
+  //
+  //   A diagonal run loses its rotation. getBoundingClientRect reports the
+  //   axis-aligned box a rotated element occupies, so a 1624x2 bar at -4.39
+  //   degrees was exported as a solid 1620x126 block.
+  //
+  // Both show up here as the same thing: a painted box that is not a stroke.
+  const file = "layouts--connectors-slide.html";
+  assert(goldens.includes(file), "the corpus still has a connectors slide");
+  const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+
+  const painted = [];
+  eachElement(html, (el) => {
+    if (el.tag !== "div") return;
+    if ((el.children || []).some((k) => k.tag && k.tag !== "#text")) return;
+    const d = declarations(el);
+    const at = (prop) => (d.find((x) => x.prop === prop) || {}).value;
+    if (at("position") !== "absolute" || !at("background")) return;
+    const w = parseFloat(at("width"));
+    const h = parseFloat(at("height"));
+    if (!isFinite(w) || !isFinite(h)) return;
+    painted.push({ w, h, style: el.attrs.style });
+  });
+
+  // Four connectors: a vh (two runs and a node), a straight, an hv (two runs
+  // and a node) and an elbow that collapses to one run.
+  assert(painted.length >= 8,
+    `the connectors slide should carry its runs and nodes, got ${painted.length}: ` +
+      painted.map((p) => p.style).join("\n  "));
+  const blocks = painted.filter((p) => Math.min(p.w, p.h) > 12);
+  assert(blocks.length === 0,
+    "a painted box that is neither a stroke nor a node — a dropped rotation looks exactly like this:\n  " +
+      blocks.map((p) => p.style).join("\n  "));
+  assert(!html.includes("<svg"), "and none of it needed a drawing");
+});
+
 test("a cut-out picture is not given a rectangular shadow", () => {
   // box-shadow follows the element's rectangle; a drop-shadow filter follows
   // the alpha channel. Translating one to the other draws a hard box around a

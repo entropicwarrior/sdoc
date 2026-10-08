@@ -41,6 +41,9 @@ Warnings are worth reading aloud to the user once, especially:
 - type under 24px, which the deck will render small;
 - `margin` dropped, because the subset has none;
 - an svg using `<text>`, whose labels will not render;
+- a `transform` the subset cannot say — it has `rotate()` and `scale()` and
+  nothing else, so a skew or a mirror is dropped and the box is emitted where
+  it was measured;
 - a typeface that is not declared in the theme's `googleFonts`, which falls
   back to a basic face.
 

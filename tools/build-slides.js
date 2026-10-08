@@ -205,9 +205,18 @@ async function main() {
     console.error(`Warning: ${warning}`);
   }
 
+  // What the deck asked for and did not get. A connector pointing at an id no
+  // scope on its slide declares is the one this exists for: the line simply
+  // would not appear, which is exactly the silent failure connectors were
+  // added to stop, so it is said here rather than discovered by looking.
+  const slideWarnings = [];
   let html = renderSlides(nodes, {
-    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional
+    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional,
+    warnings: slideWarnings
   });
+  for (const warning of slideWarnings) {
+    console.error(`Warning: ${warning.slide ? warning.slide + ": " : ""}${warning.message}`);
+  }
 
   // Image paths in a .sdoc are relative to the .sdoc, which stops being true
   // the moment the built file is written somewhere else. Resolve them here,
@@ -356,6 +365,12 @@ async function main() {
         source: { path: path.basename(resolvedInput), theme: themePath || "default" },
         previousManifest: readPreviousManifest(outDir),
         minFontSize: raiseSmallText,
+        // The viewer styles a real table its own way — it rules every cell,
+        // backs the header row, and loses a colour on a mark inside a cell —
+        // and none of that is reachable from the deck. A deck that wants its
+        // tables to look as it drew them asks for boxes instead.
+        tablesAsBoxes: String(meta.properties?.["artifact-tables"] || "").trim() === "boxes",
+        listsAsBoxes: String(meta.properties?.["artifact-lists"] || "").trim() === "boxes",
         pinAll,
       });
 

@@ -25,6 +25,7 @@ const {
   ARTIFACT_SCRIPT,
 } = require("../src/slide-artifact.js");
 const { MEASURE_SCRIPT, harvestComplete, SENTINEL } = require("../src/slide-geometry.js");
+const { CONNECTOR_JS, CONNECTOR_RUNTIME } = require("../src/slide-connectors.js");
 
 let pass = 0, fail = 0;
 const asyncTests = [];
@@ -1079,6 +1080,132 @@ if (findChrome()) {
   });
 }
 
+// --- A deck can ask for its lists as boxes ---------------------------------
+if (findChrome()) {
+  test("artifact-lists: boxes keeps what a plain li cannot carry (integration)", async () => {
+    // The format allows a plain <li> and nothing else, so a list is always a
+    // stack of items at their natural height. A deck that spaces its items
+    // deliberately loses that: one gives each stage `flex: 1 1 0` so eight of
+    // them divide a 501px spine evenly and each meets its own spur, and as
+    // plain items they pack to the top and stop meeting anything.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-lbox-"));
+    const parsed = parseSdoc("# Deck {\n    # One {\n        - Alpha\n        - Beta\n        - Gamma\n    }\n}");
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: "ul { display: flex; flex-direction: column; height: 400px; } " +
+        "li { flex: 1 1 0; padding-left: 120px; }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const opts = { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" };
+      const plain = buildArtifact(harvest, opts);
+      const boxes = buildArtifact(harvest, { ...opts, listsAsBoxes: true });
+      const html = (b) => Object.entries(b.files).find(([f]) => f.endsWith(".html"))[1];
+
+      assert(/<li>/.test(html(plain)), "the default is still a list of plain items");
+      assert(!/<li>/.test(html(boxes)), "and the option sends none");
+
+      const items = html(boxes).match(/<div style="[^"]*flex:1[^"]*"><p>/g) || [];
+      assert(items.length === 3, `each item keeps its share, got ${items.length}`);
+      assert(/padding:0px 0px 0px 120px/.test(html(boxes)),
+        "and its indent, which a plain item could not carry either");
+      assert(boxes.errors.length === 0,
+        "inside the subset: " + JSON.stringify(boxes.errors.slice(0, 3)));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- A deck can ask for its tables as boxes --------------------------------
+if (findChrome()) {
+  test("artifact-tables: boxes sends a table as a grid of divs (integration)", async () => {
+    // The viewer styles a real table its own way and will not be talked out of
+    // it: it rules every cell, backs the header row, and loses a colour on a
+    // mark inside a cell. None of that is reachable from the deck, because the
+    // format gives a cell only colour, alignment, a width and the table's one
+    // padding. As boxes those limits go — at the cost of not being a table to
+    // a screen reader, which is why it is opt-in rather than the default.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-tbox-"));
+    const parsed = parseSdoc(fs.readFileSync(EXAMPLE, "utf-8"));
+    assert(parsed.errors.length === 0, "the example parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const opts = { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" };
+      const asTable = buildArtifact(harvest, opts);
+      const asBoxes = buildArtifact(harvest, { ...opts, tablesAsBoxes: true });
+
+      const count = (built, needle) => Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html"))
+        .reduce((n, [, b]) => n + (b.split(needle).length - 1), 0);
+
+      assert(count(asTable, "<table") > 0, "the default is still a real table");
+      assert(count(asBoxes, "<table") === 0, "and the option sends none");
+      assert(count(asBoxes, "<td") === 0, "nor any cells");
+      assert(asBoxes.errors.length === 0,
+        "the grid is inside the subset: " + JSON.stringify(asBoxes.errors.slice(0, 3)));
+
+      // The point of it: a cell keeps what a real cell could not.
+      const grid = Object.entries(asBoxes.files)
+        .map(([, b]) => b).find((b) => /display:flex/.test(b) && /width:[0-9.]+%/.test(b));
+      assert(grid, "a row is a flex row of share-width boxes");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- A list item's painted marks are not lost with the list ----------------
+if (findChrome()) {
+  test("a pseudo-element on a list item becomes a box of its own (integration)", async () => {
+    // A list is taken whole and turned into runs, so an <li> never reaches the
+    // walk and anything it paints went with it. One real deck draws its
+    // pipeline that way — a spur and a dot per stage, sixteen painted marks —
+    // and the slide arrived as a plain bulleted list, the worst-looking slide
+    // in the deck. The subset allows only a plain <li>, so the marks cannot
+    // ride on the item: they become pinned boxes, as every other painted
+    // pseudo-element does.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-lipseudo-"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # One {\n        - Alpha\n        - Beta\n        - Gamma\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses: " + JSON.stringify(parsed.errors.slice(0, 2)));
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss: "li { position: relative; } " +
+        "li::after { content: ''; position: absolute; left: -18px; top: 8px; " +
+        "width: 9px; height: 9px; border-radius: 50%; background: rgb(0, 209, 218); }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const out = Object.entries(built.files).find(([f]) => f.endsWith(".html"))[1];
+
+      const dots = (out.match(/rgb\(0, 209, 218\)/g) || []).length;
+      assert(dots === 3,
+        `one painted box per list item, got ${dots}:\n` + out.slice(0, 700));
+      assert(/<li>/.test(out), "and the list itself is still a list of plain items");
+      assert(built.errors.length === 0,
+        "inside the subset: " + JSON.stringify(built.errors.slice(0, 2)));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 // --- A painted pseudo-element lands in its host's layer --------------------
 if (findChrome()) {
   test("a pseudo-element is not painted over by a later backdrop (integration)", async () => {
@@ -1529,6 +1656,11 @@ function resolvedScript(script) {
 for (const [name, script] of [
   ["slide-artifact.js ARTIFACT_SCRIPT", ARTIFACT_SCRIPT],
   ["slide-geometry.js MEASURE_SCRIPT", MEASURE_SCRIPT],
+  // The connector runtime is injected into the deck itself rather than by a
+  // harvest, but it is the same template literal with the same trap in it, and
+  // it carries a function serialised with toString() besides — so what reaches
+  // the page is checked the same way.
+  ["slide-connectors.js CONNECTOR_JS", CONNECTOR_JS],
 ]) {
   test(`${name} parses as the page will see it`, () => {
     const body = resolvedScript(script);
@@ -1547,6 +1679,9 @@ test("a harvest carries no backtick, which would end the script early", () => {
   for (const [name, script] of [
     ["ARTIFACT_SCRIPT", ARTIFACT_SCRIPT],
     ["MEASURE_SCRIPT", MEASURE_SCRIPT],
+    // CONNECTOR_JS as a whole legitimately holds one, because the planner it
+    // serialises is ordinary source. The literal half must not.
+    ["CONNECTOR_RUNTIME", CONNECTOR_RUNTIME],
   ]) {
     assert(!script.includes("\u0060"), `${name} holds a backtick`);
   }
@@ -1555,7 +1690,11 @@ test("a harvest carries no backtick, which would end the script early", () => {
 // ============================================================
 console.log("\n--- Measuring a named subset of a deck ---");
 
-const { narrowToSlides } = require("../tools/artifact-fidelity.js");
+const {
+  narrowToSlides,
+  misplacedElements,
+  MEASURE_SCRIPT: FIDELITY_SCRIPT,
+} = require("../tools/artifact-fidelity.js");
 
 function deckNodes(src) {
   const parsed = parseSdoc(src);
@@ -1575,6 +1714,52 @@ test("narrowing a deck keeps the slides asked for and drops the rest", () => {
   const ids = out[0].children.filter((n) => n.type === "scope").map((n) => n.id);
   assert(ids.includes("alpha") && ids.includes("gamma"), "the named slides are kept: " + ids.join(","));
   assert(!ids.includes("beta"), "and the others are not: " + ids.join(","));
+});
+
+test("the placement check reports an element that moved, and is quiet about one that did not", () => {
+  // This guard was dead. The lookup it reads from was keyed to a slide's TEXT
+  // ITEMS rather than the slide, so it asked a list of text for its `.probes`,
+  // got undefined and iterated nothing — and the report printed "every emitted
+  // element landed where the exporter placed it" from a loop with no body, on
+  // every run anyone had made. It is the half of the measurement that can see
+  // an image, a drawing or a painted box at all, so nothing else covered it.
+  const built = [{
+    id: "s1",
+    probes: [
+      { id: 0, tag: "div", role: "sdoc-conn", box: { x: 100, y: 200, w: 300, h: 2 } },
+      { id: 1, tag: "p", role: "lede", box: { x: 10, y: 20, w: 400, h: 40 } },
+    ],
+  }];
+  const measured = [{
+    id: "s1",
+    // The text items. Reading these as the whole record is the original bug.
+    items: [{ tag: "p", text: "a lede", x: 10, y: 20, w: 400, h: 40 }],
+    probes: [
+      { id: 0, x: 100, y: 200.5, w: 300, h: 2 },
+      { id: 1, x: 10, y: 88, w: 400, h: 40 },
+    ],
+  }];
+
+  const found = misplacedElements(built, measured);
+  assert(found.length === 1, "exactly the one that moved: " + JSON.stringify(found));
+  assert(found[0].role === "lede" && found[0].dy === 68, "and it says how far: " + JSON.stringify(found[0]));
+
+  // Nothing moved at all.
+  const still = misplacedElements(built, [{
+    id: "s1", items: [], probes: built[0].probes.map((p) => ({ id: p.id, ...p.box })),
+  }]);
+  assert(still.length === 0, "a slide that matches reports nothing: " + JSON.stringify(still));
+
+  // A slide the viewer never reported is not silently a pass or a fail.
+  assert(misplacedElements(built, []).length === 0, "an unmeasured slide contributes nothing");
+});
+
+test("the fidelity measure script parses as the page will see it", () => {
+  // The third injected template literal in this repo, with the same trap in
+  // it as the two harvests and nothing checking it until now.
+  const body = FIDELITY_SCRIPT.replace(/\$\{SENTINEL\}/g, "SENTINEL");
+  assert(!body.includes("\u0060"), "it holds a backtick, which would end the script early");
+  new Function(body);
 });
 
 test("narrowing refuses an id no slide has, and says what the deck does have", () => {
@@ -1634,6 +1819,171 @@ test("the virtual-time budget grows with the attempt, as the wall clock does", (
   assert(/attempt/.test(expr),
     "and it scales with the attempt, not just the page size: " + expr.replace(/\s+/g, " "));
 });
+
+
+if (findChrome()) {
+  // A connector names the two elements it joins; the deck's own runtime turns
+  // that into absolutely positioned painted divs against the boxes the browser
+  // laid out, and this export sees them as ordinary pinned painted boxes.
+  //
+  // Checked against the anchors rather than against hard-coded numbers: the
+  // columns' own measured boxes come back in the same harvest, so this says
+  // "the line starts where the first column ends and finishes where the second
+  // begins", which is the property that matters and the one that breaks when
+  // anything about the routing or the export is wrong.
+  //
+  // TWO slides, with the connectors on the SECOND. A deck's own runtime draws
+  // the slide that is up when the page loads, so a one-slide fixture has its
+  // connectors drawn before any harvest asks — and then passes whether or not
+  // the harvest asks at all. Only a slide that starts hidden proves the
+  // harvest makes it measurable and then calls for the lines.
+  const connectorDeck = (shape, extra) => `# Deck
+{
+    # First @first
+    {
+        Nothing to join here.
+    }
+
+    # Wired @wired
+    {
+        config: columns
+
+        # Alpha @alpha
+        {
+            One.
+        }
+
+        # Beta @beta
+        {
+            Two.
+        }
+
+        # @connectors
+        {
+            {
+                from: @alpha ${extra || "right"}
+
+                to: @beta ${extra ? "top-left" : "left"}
+
+                shape: ${shape}
+
+                node: both
+            }
+        }
+    }
+}`;
+
+  const exportDeck = async (sdoc) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-conn-"));
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const parsed = parseSdoc(sdoc);
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeJs: theme.themeJs, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    const harvest = await harvestArtifact(htmlPath);
+    const built = buildArtifact(harvest, {
+      title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+    const wired = harvest.slides.find((sl) => sl.id === "wired");
+    assert(wired, "the wired slide was harvested");
+    const file = Object.entries(built.files).find(([f]) => /\bwired\.html$/.test(f));
+    assert(file, "its HTML was emitted: " + Object.keys(built.files).join(", "));
+    return { harvest, built, slide: wired, html: file[1] };
+  };
+
+  // Every pinned box in a slide's exported HTML, as numbers.
+  const pinnedBoxes = (html) =>
+    [...html.matchAll(/style="([^"]*position:absolute[^"]*)"/g)].map((m) => {
+      const style = m[1];
+      const get = (prop) => {
+        const hit = new RegExp("(?:^|;)" + prop + ":(-?[0-9.]+)px").exec(style);
+        return hit ? parseFloat(hit[1]) : null;
+      };
+      const spin = /transform:rotate\((-?[0-9.]+)deg\)/.exec(style);
+      return {
+        style,
+        x: get("left"), y: get("top"), w: get("width"), h: get("height"),
+        angle: spin ? parseFloat(spin[1]) : null,
+        background: (/(?:^|;)background:([^;]+)/.exec(style) || [])[1] || null,
+        radius: (/(?:^|;)border-radius:([^;]+)/.exec(style) || [])[1] || null,
+      };
+    });
+
+  // The harvested node for each column, which is where the connector's ends
+  // are supposed to be.
+  const columnsOf = (slide) => {
+    const found = [];
+    const walk = (n) => {
+      if (/\bcolumn\b/.test(n.cls || "")) found.push(n);
+      for (const k of n.children || []) walk(k);
+    };
+    for (const k of slide.children || []) walk(k);
+    return found;
+  };
+
+  test("a connector is exported as pinned painted rectangles at its anchors (integration)", async () => {
+    const { built, slide: wired, html } = await exportDeck(connectorDeck("straight"));
+    assert(built.errors.length === 0, "the export is inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+
+    const cols = columnsOf(wired);
+    assert(cols.length === 2, "two columns were measured");
+    const [a, b] = cols;
+    // The anchors the deck named: the right edge of the first column and the
+    // left edge of the second, both at their vertical middles.
+    const startX = a.box.x + a.box.w;
+    const endX = b.box.x;
+    const midY = a.box.y + a.box.h / 2;
+
+    const boxes = pinnedBoxes(html);
+    const bar = boxes.find((p) => p.w > 10 && p.h <= 6 && p.x !== null && Math.abs(p.x - startX) < 1.5);
+    assert(bar, `a bar starting at the first column's right edge (${startX}): ` +
+      JSON.stringify(boxes.map((p) => [p.x, p.y, p.w, p.h])));
+    assert(Math.abs(bar.x + bar.w - endX) < 1.5, `it should end at the second column's left edge (${endX}): ${bar.x + bar.w}`);
+    assert(Math.abs(bar.y + bar.h / 2 - midY) < 1.5, `and run through their middle (${midY}): ${bar.y + bar.h / 2}`);
+    assert(bar.background && /^rgb/.test(bar.background.trim()), "painted, with a literal colour: " + bar.background);
+    assert(!html.includes("<svg"), "and no drawing was needed to do it");
+
+    // The two nodes, centred on the ends, and round. A percentage radius has
+    // to stay a percentage: run through the px path it became `50px`, which is
+    // a circle only while the dot is under 100px across.
+    const dots = boxes.filter((p) => p.radius);
+    assert(dots.length === 2, "two endpoint nodes: " + JSON.stringify(dots.map((d) => d.style)));
+    assert(dots.every((d) => d.radius.trim() === "50%"), "still a percentage: " + JSON.stringify(dots.map((d) => d.radius)));
+    assert(dots.some((d) => Math.abs(d.x + d.w / 2 - startX) < 1.5), "one centred on the start");
+    assert(dots.some((d) => Math.abs(d.x + d.w / 2 - endX) < 1.5), "one centred on the end");
+  });
+
+  test("a diagonal run keeps its angle and its upright size (integration)", async () => {
+    // getBoundingClientRect reports the AXIS-ALIGNED box a rotated element
+    // occupies. Measured naively, this connector exported as a painted block
+    // 1620 by 126 — most of the slide, solid, with the rotation gone and no
+    // error anywhere. The box has to be measured upright and the rotation
+    // carried, which the subset has.
+    const { built, slide: wired, html } = await exportDeck(connectorDeck("straight", "bottom-center"));
+    assert(built.errors.length === 0, "inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+
+    const [a, b] = columnsOf(wired);
+    const from = { x: a.box.x + a.box.w / 2, y: a.box.y + a.box.h };
+    const to = { x: b.box.x, y: b.box.y };
+    const span = Math.hypot(to.x - from.x, to.y - from.y);
+
+    const spun = pinnedBoxes(html).filter((p) => p.angle !== null);
+    assert(spun.length === 1, "one rotated box: " + JSON.stringify(pinnedBoxes(html).map((p) => p.style)));
+    const bar = spun[0];
+    assert(bar.h <= 6, `it is a stroke, not a block: height ${bar.h}`);
+    assert(Math.abs(bar.w - span) < 2, `as long as the run (${span}): ${bar.w}`);
+    const want = (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
+    assert(Math.abs(bar.angle - want) < 0.5, `at the run's angle (${want}): ${bar.angle}`);
+    // Rotated about its own centre, so the upright box has to be centred on
+    // the midpoint of the run or it lands somewhere else entirely.
+    assert(Math.abs(bar.x + bar.w / 2 - (from.x + to.x) / 2) < 2, "centred across the run");
+    assert(Math.abs(bar.y + bar.h / 2 - (from.y + to.y) / 2) < 2, "centred down the run");
+  });
+}
 
 // ============================================================
 Promise.all(asyncTests).then(() => {

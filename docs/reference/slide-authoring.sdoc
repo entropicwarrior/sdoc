@@ -175,6 +175,10 @@
                 \`quadrants:\` | \`scatter\` only. \`true\` draws dividers through the midpoint.
                 \`at:\` | On a \`scatter\` child: the position, as \`X Y\` percentages from the bottom-left.
                 \`label:\` | On a \`scatter\` child: \`above\`, \`below\`, \`left\` or \`right\`, the side the text sits on.
+                \`from:\` | On a \`@connectors\` child: the element and point the line leaves. See [Connectors](#connectors).
+                \`to:\` | On a \`@connectors\` child: the element and point it arrives at.
+                \`shape:\` | On a \`@connectors\` child: \`vh\`, \`hv\`, \`elbow\` (the default) or \`straight\`.
+                \`node:\` | On a \`@connectors\` child: \`start\`, \`end\`, \`both\` or \`none\` (the default) — a dot on an end.
                 \`background:\` | An image behind the slide. See [Background Images](#backgrounds).
                 \`background-position:\` | Which part of the image is shown, and where it sits.
                 \`background-size:\` | \`cover\` (default), \`contain\`, \`fill\`, \`none\`, \`scale-down\`, or a pair such as \`auto 100%\`.
@@ -571,6 +575,172 @@
             file instead. The same holds for rotated text, which exports
             horizontal, and it is why \`background-flip:\` is dropped by the
             Claude Slides export rather than silently ignored.
+        }
+    }
+
+    # Connectors @connectors
+    {
+        A connector is a line between two things on a slide: an arrow from a
+        card to the block it feeds, a spine with labelled branches. It names
+        the two elements it joins and the shape of the run between them, and
+        the browser that laid the slide out supplies the numbers.
+
+        That is the whole point. The alternative — measuring the two boxes by
+        eye and drawing an inline \`<svg>\` with the coordinates in it — breaks
+        silently: a longer title, a different face, a new theme, and the line
+        now ends in the wrong place while the deck still builds and every test
+        still passes. There are no coordinates in a connector, so there is
+        nothing to go stale.
+
+        # Giving an element a name @connector-ids
+        {
+            A connector points at a scope's \`@id\`, so the elements it joins
+            need one. Any child scope of a structured layout can carry one, and
+            it reaches the built slide as an HTML \`id\`:
+
+            ```
+            # Three stages {
+                config: columns
+
+                # Ingest @stage-ingest {
+                    Reads the stream.
+                }
+
+                # Index @stage-index {
+                    Builds the map.
+                }
+            }
+            ```
+
+            The id has to be declared somewhere **on the same slide**. A
+            connector naming one the slide has not got is reported when you
+            build, with the slide's own ids listed beside it — the usual cause
+            is a typo, and a line that silently fails to appear is exactly what
+            this feature exists to stop.
+        }
+
+        # Writing a connector @connector-syntax
+        {
+            Connectors live in a reserved \`@connectors\` scope on the slide,
+            one child scope per connector. It is a scope rather than a slide
+            property because a slide has several connectors and a property is
+            one value per key: a second \`connect:\` line would silently replace
+            the first.
+
+            ```
+            # Three stages {
+                config: columns
+
+                # Ingest @stage-ingest {
+                    Reads the stream.
+                }
+
+                # Index @stage-index {
+                    Builds the map.
+                }
+
+                # @connectors {
+                    {
+                        from: @stage-ingest right
+
+                        to: @stage-index left
+
+                        shape: straight
+
+                        node: both
+                    }
+                }
+            }
+            ```
+
+            \`from:\` and \`to:\` name an element and a point on it. The sigil is
+            optional and both of the ones you might reach for work, as does
+            either separator — \`@stage-ingest right\`, \`#stage-ingest:right\`
+            and \`stage-ingest right\` are the same endpoint.
+
+            A connector scope holds nothing but these keys. A line that is not
+            one of them is reported rather than kept, because the scope is
+            lifted out of the slide whole and anything left in it would
+            disappear with it.
+        }
+
+        # The points on a box @connector-points
+        {
+            Nine of them, named the way CSS names them:
+
+            {[.]
+                - \`top-left\`, \`top-center\`, \`top-right\`
+                - \`left-center\`, \`center\`, \`right-center\`
+                - \`bottom-left\`, \`bottom-center\`, \`bottom-right\`
+            }
+
+            \`top\`, \`bottom\`, \`left\` and \`right\` are shorthand for the
+            middle of that edge, and \`center-left\` and \`center-right\` are
+            accepted spellings of the two side midpoints.
+
+            **Leave the point out and the two boxes face each other.** The edge
+            chosen is the one pointing at the other element: compare the two
+            centres, and the larger of the horizontal and vertical distance
+            decides the axis. An exact tie leaves sideways.
+
+            A \`node:\` dot is centred on the point it marks, so it overhangs a
+            box edge by half its diameter. Put one on a box at the slide margin
+            and \`--check\` will report the overflow; move the anchor inboard, or
+            mark the other end.
+        }
+
+        # Shapes @connector-shapes
+        {
+            \`shape:\` says how the run gets from one end to the other, and it
+            is honoured exactly — nothing reroutes a connector to avoid
+            anything.
+
+            {[.]
+                - \`vh\` — down (or up) first, then across.
+                - \`hv\` — across first, then down (or up).
+                - \`elbow\` — leave on the side you anchored to, cross at the
+                  midpoint, arrive on the far side. Three runs, not two. With
+                  no side named — an anchor at the centre — the longer of the
+                  two distances decides which way it leaves.
+                - \`straight\` — one run, directly from one point to the other.
+            }
+
+            With no \`shape:\` you get \`elbow\`.
+
+            A bend that does not bend is dropped: two boxes with their centres
+            aligned give a single rectangle rather than three, so a spine down
+            a column of cards is one line whichever shape you asked for.
+
+            \`node:\` puts a dot on an end — \`start\`, \`end\`, \`both\` or
+            \`none\`, and \`none\` is the default. \`accent:\` names the
+            connector's role and the theme supplies the colour, exactly as it
+            does for a column or a pipeline row.
+        }
+
+        # What the exports do @connector-export
+        {
+            The line is resolved once, in the page, by the deck's own runtime.
+            Every format reads a built deck out of a browser, so by the time
+            any exporter looks the connector is already an ordinary set of
+            painted boxes that went through the same layout as everything else.
+
+            {[.]
+                - **HTML** draws it, and redraws it on a resize, when a slide
+                  becomes the active one and when a webfont finishes loading.
+                - **The Claude Slides artifact** carries each run as a pinned
+                  painted rectangle, exact to the pixel. No \`<svg>\` is
+                  involved, which is what lets it survive the subset.
+                - **PDF** and **PowerPoint** get them for the same reason.
+            }
+
+            A diagonal \`straight\` run is one rectangle rotated about its own
+            centre. Everything else is axis-aligned, so if you want to stay
+            well inside what every target can draw, use \`vh\`, \`hv\` or
+            \`elbow\`.
+
+            Connectors need JavaScript, which a built deck already needs for
+            its navigation. A deck with no connectors carries neither the
+            runtime nor its styles.
         }
     }
 
