@@ -4,24 +4,28 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: write
-  # Lets the runner mint the short-lived OIDC token npm exchanges for publish
-  # rights. Without it npm falls back to looking for a token and fails.
-  id-token: write
-
 # Two independent jobs, deliberately. They were one, in this order: package,
 # upload the VSIX, publish to the Marketplace, publish to npm — so when the
 # Marketplace answered v0.3.0 with an HTTP 503, the job stopped there and the
 # npm step never ran at all. The two registries have nothing to do with one
 # another, and an outage at one should not hold back the other.
 #
-# Each job checks out and installs for itself rather than passing the package
-# between them. That is a little more runner time for a lot less coupling: a
-# job that needs nothing from another cannot be held up by one.
+# Each job checks out for itself rather than passing the package between them.
+# That is a little more runner time for a lot less coupling: a job that needs
+# nothing from another cannot be held up by one.
+#
+# One registry succeeding while the other fails is now an ordinary outcome, so
+# re-run the FAILED job and never all of them: publishing a version that is
+# already there is an error at both.
+#
+# Permissions are per job rather than shared at the top, so neither job holds
+# rights it has no use for.
 jobs:
   marketplace:
     runs-on: ubuntu-latest
+    permissions:
+      # Attaching the VSIX to the release writes to the repository.
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +49,12 @@ jobs:
 
   npm:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets the runner mint the short-lived OIDC token npm exchanges for
+      # publish rights. Without it npm falls back to looking for a token and
+      # fails.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +73,11 @@ jobs:
           npm install -g npm@latest
           npm --version
 
-      - run: npm install
+      # Nothing is installed for the package itself: it has no dependencies, no
+      # publish lifecycle script and nothing to build, and npm does not pack
+      # node_modules. An install here would buy nothing and add one more
+      # registry round-trip that can fail, in the job whose whole point is not
+      # to be stopped by something unrelated to it.
 
       # Goes out over OIDC, against the trusted publisher npm holds for this
       # repository and this workflow filename. Renaming this file, or moving the
