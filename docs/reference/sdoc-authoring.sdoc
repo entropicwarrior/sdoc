@@ -636,7 +636,7 @@ Content of Section B.
                 `@not-about` | What does it deliberately leave out, and why? | Paragraphs and lists, no links | Hidden
                 `@related-resources` | What else can I open that goes with it? | One table: Resource, Relation | Hidden
                 `@reading-guide` | I am going to read this. Where do I start, and what can I skip? | Paragraphs and lists, then one table: Sections, Note | Shown
-                `@edit-guide` | I am going to change this file. What are the rules? | Paragraphs and lists | Hidden
+                `@editing-guide` | I am going to change this file. What are the rules? | Paragraphs and lists | Hidden
             }
 
             # Rules for All Signposts @signpost-rules
@@ -662,7 +662,7 @@ Content of Section B.
                     - It says what this document leaves out, and why: `@not-about`.
                     - It links to something a reader can open, such as a document, a file or a URL: a row in `@related-resources`.
                     - It tells a committed reader where to start or what to skip: `@reading-guide`.
-                    - It tells an editor how to change this file: `@edit-guide`.
+                    - It tells an editor how to change this file: `@editing-guide`.
                     - It tells the reader about the subject: the body, not a signpost.
                 }
             }
@@ -698,7 +698,7 @@ Content of Section B.
 
                 It does not redirect. The resources that cover a left-out topic belong in `@related-resources`, and a link here is a validation error. [Not About or Related Resources](#not-about-or-related-resources) explains the split.
 
-                It does not restate what the document covers; that is `@about`. Keep each reason to one clause: a longer argument for the boundary belongs in the body, or in `@edit-guide` when it binds editors. List only plausible expectations, not everything the document is not.
+                It does not restate what the document covers; that is `@about`. Keep each reason to one clause: a longer argument for the boundary belongs in the body, or in `@editing-guide` when it binds editors. List only plausible expectations, not everything the document is not.
             }
 
             # Related Resources @related-resources-scope
@@ -750,12 +750,12 @@ Content of Section B.
                 This is the only signpost kept in HTML and PDF exports, because the person holding an exported copy is exactly the reader it serves.
             }
 
-            # Edit Guide @edit-guide-scope
+            # Editing Guide @editing-guide-scope
             {
-                `@edit-guide` tells someone about to change this file how to do it: what belongs in which section, conventions to keep, what must change together, which parts are normative, and who owns the file or how changes are proposed. It holds paragraphs and lists only.
+                `@editing-guide` tells someone about to change this file how to do it: what belongs in which section, conventions to keep, what must change together, which parts are normative, and who owns the file or how changes are proposed. It holds paragraphs and lists only.
 
                 ```sdoc
-                @edit-guide {
+                @editing-guide {
                     - A new feature gets a Quick Reference entry. A pitfall goes in Common Mistakes, not in the entry.
                     - Examples use the bare form for reserved scopes.
                 }
@@ -778,7 +778,7 @@ Content of Section B.
 
                 A signpost out of the conventional order is a warning, which `--check` prints without failing. Fix it with the **Reorder signposts** quick fix in VS Code, or with `node tools/build-doc.js file.sdoc --fix`, which rewrites the file. The fix moves each signpost with the `//` comments directly above it. It refuses, and says why, when moving the text would change the document's structure, as a braceless signpost next to body text can.
 
-                HTML and PDF exports drop `@about`, `@not-about`, `@related-resources` and `@edit-guide` by default. An exported copy goes to someone already asked to read it, who will not edit it. `@reading-guide` stays. Pass `--include-signposts` to keep all of them, or `--signposts` to keep or drop single sections, such as `--signposts related-resources` (see [CLI and Tools Reference](./cli.sdoc)). The live preview and the document browser always show all of them. Only top-level signposts are dropped: one written deeper down is exported as an ordinary section, and the export prints a warning for it.
+                HTML and PDF exports drop `@about`, `@not-about`, `@related-resources` and `@editing-guide` by default. An exported copy goes to someone already asked to read it, who will not edit it. `@reading-guide` stays. Pass `--include-signposts` to keep all of them, or `--signposts` to keep or drop single sections, such as `--signposts related-resources` (see [CLI and Tools Reference](./cli.sdoc)). The live preview and the document browser always show all of them. Only top-level signposts are dropped: one written deeper down is exported as an ordinary section, and the export prints a warning for it.
             }
         }
 

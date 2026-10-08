@@ -617,7 +617,7 @@ test("@about with content still emits callout (regression guard for empty-skip)"
 // ============================================================
 console.log("\n--- Signposts as callouts ---");
 
-const NOTION_SIGNPOSTS = { "not-about": "Not About", "related-resources": "Related Resources", "reading-guide": "Reading Guide", "edit-guide": "Edit Guide" };
+const NOTION_SIGNPOSTS = { "not-about": "Not About", "related-resources": "Related Resources", "reading-guide": "Reading Guide", "editing-guide": "Editing Guide" };
 
 for (const [id, label] of Object.entries(NOTION_SIGNPOSTS)) {
   test(`@${id} renders as a callout opening with a bold "${label}" label`, () => {
@@ -632,7 +632,7 @@ for (const [id, label] of Object.entries(NOTION_SIGNPOSTS)) {
 }
 
 test("a heading-form signpost uses its title as the callout label", () => {
-  const blocks = parseAndRender("# Doc {\n  # Before You Edit @edit-guide {\n    - Keep it short.\n  }\n}");
+  const blocks = parseAndRender("# Doc {\n  # Before You Edit @editing-guide {\n    - Keep it short.\n  }\n}");
   const callout = blocks[0].heading_1.children.find(b => b.type === "callout");
   assert(callout.callout.rich_text[0].text.content === "Before You Edit");
   assert(callout.callout.children.some(b => b.type === "bulleted_list_item"), "list becomes a callout child");
@@ -645,8 +645,8 @@ test("@about callout has no label (unchanged output)", () => {
   assert(callout.callout.rich_text[0].annotations.bold === false);
 });
 
-test("an empty @edit-guide emits no callout", () => {
-  const blocks = parseAndRender("# Doc {\n  @edit-guide {\n  }\n  # Body {\n    Content.\n  }\n}");
+test("an empty @editing-guide emits no callout", () => {
+  const blocks = parseAndRender("# Doc {\n  @editing-guide {\n  }\n  # Body {\n    Content.\n  }\n}");
   assert(!blocks[0].heading_1.children.some(b => b.type === "callout"));
 });
 
@@ -672,10 +672,10 @@ test("a :comment scope beside the root is dropped and the root stays the title",
 });
 
 test("a reserved id below the top level renders as an ordinary heading, not a callout", () => {
-  const blocks = parseAndRender("# Doc {\n  # Body {\n    # Edit Guide @edit-guide {\n      Rules.\n    }\n  }\n}");
+  const blocks = parseAndRender("# Doc {\n  # Body {\n    # Editing Guide @editing-guide {\n      Rules.\n    }\n  }\n}");
   const json = JSON.stringify(blocks);
   assert(!json.includes("\"callout\""), "no callout");
-  assert(json.includes("Edit Guide") && json.includes("Rules."), "heading and content kept");
+  assert(json.includes("Editing Guide") && json.includes("Rules."), "heading and content kept");
 });
 
 test("a signpost label renders its inline markup, bold throughout", () => {

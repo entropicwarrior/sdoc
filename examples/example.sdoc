@@ -50,7 +50,7 @@
         }
     }
 
-    @edit-guide {
+    @editing-guide {
         - Every construct the parser supports appears here once; add a new one next to its nearest relative.
         - Keep each section self-contained so it can be copied out as a snippet.
     }

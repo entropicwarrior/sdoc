@@ -123,7 +123,7 @@ const html = renderHtmlDocumentFromParsed(
 
     # Signposts in exports @signposts-in-exports
     {
-        Signposts are the reserved scopes that describe a document rather than its subject: `@about`, `@not-about`, `@related-resources`, `@reading-guide` and `@edit-guide` (see [Signposts](sdoc-authoring.sdoc#signposts)). Four of them serve someone deciding whether to read, or someone editing the file. When a document is exported to HTML or PDF and sent to a recipient, that reader has already been asked to read it and will not edit it, so those four add noise. `@reading-guide` is written for exactly that reader.
+        Signposts are the reserved scopes that describe a document rather than its subject: `@about`, `@not-about`, `@related-resources`, `@reading-guide` and `@editing-guide` (see [Signposts](sdoc-authoring.sdoc#signposts)). Four of them serve someone deciding whether to read, or someone editing the file. When a document is exported to HTML or PDF and sent to a recipient, that reader has already been asked to read it and will not edit it, so those four add noise. `@reading-guide` is written for exactly that reader.
 
         For that reason, **all HTML and PDF rendering paths drop every signpost except `@reading-guide` by default**. Only signposts at the top level (the root's children, or scopes beside the root) are dropped: a scope with a reserved id deeper down is an ordinary scope and is exported with its content, and `build-doc` and the VS Code export commands warn about it. This applies uniformly to `renderHtmlDocument`, `renderHtmlDocumentFromParsed`, `renderHtmlBody`, the `tools/build-doc.js` CLI, and the VS Code `sdoc.exportHtml` / `sdoc.exportPdf` commands. The live preview in the VS Code extension and the document browser pass `includeSignposts: true`, so authors see every section while editing and readers browsing a knowledge base see what each document covers and links to.
 
@@ -147,8 +147,8 @@ const html = renderHtmlDocument(sdocText, "Title", {
     signposts: { "related-resources": true, "reading-guide": false }
 });
 
-// Everything except @edit-guide
-const html = renderHtmlDocument(sdocText, "Title", { includeSignposts: true, signposts: { "edit-guide": false } });
+// Everything except @editing-guide
+const html = renderHtmlDocument(sdocText, "Title", { includeSignposts: true, signposts: { "editing-guide": false } });
         ```
 
         Empty or whitespace-only signposts are never rendered, whatever the options say.
@@ -299,7 +299,7 @@ const notAbout = extractSignpost(parseSdoc(sdocText).nodes, "not-about");
 
             {[.]
                 - `nodes` -- the parsed nodes
-                - `id` -- one of `about`, `not-about`, `related-resources`, `reading-guide`, `edit-guide`
+                - `id` -- one of `about`, `not-about`, `related-resources`, `reading-guide`, `editing-guide`
                 - Returns the section's paragraphs, list items and table rows joined with a blank line, inline markup left as written so links survive. Returns `null` when the id is not a signpost, or the section is absent or empty
                 - Looks only at the top level: the root scope's children, and reserved scopes written beside the root
             }

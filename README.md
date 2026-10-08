@@ -102,7 +102,7 @@ listSections(nodes);              // ~50-100 tokens — what sections does it ha
 extractSection(nodes, "error-handling"); // ~200-1000 tokens — give me just this section
 ```
 
-Optional signposts describe a document to whoever is about to use it: `@about` (should I read this?), `@not-about` (what it leaves out, and why), `@related-resources` (documents, project files and external links that go with it), `@reading-guide` (where to start) and `@edit-guide` (how to change it). See the [authoring guide](docs/reference/sdoc-authoring.sdoc).
+Optional signposts describe a document to whoever is about to use it: `@about` (should I read this?), `@not-about` (what it leaves out, and why), `@related-resources` (documents, project files and external links that go with it), `@reading-guide` (where to start) and `@editing-guide` (how to change it). See the [authoring guide](docs/reference/sdoc-authoring.sdoc).
 
 Total cost for a precise answer: ~750 tokens. The same lookup in Markdown requires loading the full file (5,000-50,000 tokens).
 

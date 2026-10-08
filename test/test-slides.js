@@ -140,7 +140,7 @@ test("signposts are excluded from slides", () => {
     @reading-guide {
         Start here.
     }
-    @edit-guide {
+    @editing-guide {
         - Rules.
     }
     # Slide {

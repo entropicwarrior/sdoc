@@ -282,7 +282,7 @@ function detectImplicitRoot(cursor) {
 //   "table"       — exactly one table with the given header, nothing else
 //   "prose-table" — paragraphs and lists, then exactly one table, nothing after
 // exportVisible says whether HTML/PDF export keeps the section by default.
-// @about, @not-about, @related-resources and @edit-guide serve someone deciding
+// @about, @not-about, @related-resources and @editing-guide serve someone deciding
 // whether to read or someone editing the file, so an exported copy sent to a
 // reader drops them; @reading-guide serves exactly that reader, so it stays.
 const SIGNPOSTS = {
@@ -290,7 +290,7 @@ const SIGNPOSTS = {
   "not-about":     { id: "not-about",     title: "Not About",     exportVisible: false, model: "prose" },
   "related-resources": { id: "related-resources", title: "Related Resources", exportVisible: false, model: "table",       table: ["Resource", "Relation"] },
   "reading-guide": { id: "reading-guide", title: "Reading Guide", exportVisible: true,  model: "prose-table", table: ["Sections", "Note"] },
-  "edit-guide":    { id: "edit-guide",    title: "Edit Guide",    exportVisible: false, model: "prose" }
+  "editing-guide": { id: "editing-guide", title: "Editing Guide", exportVisible: false, model: "prose" }
 };
 const SIGNPOST_IDS = Object.keys(SIGNPOSTS);
 const EXPORT_HIDDEN_SIGNPOST_IDS = SIGNPOST_IDS.filter((id) => !SIGNPOSTS[id].exportVisible);
@@ -3113,7 +3113,7 @@ const DEFAULT_STYLE = `
   }
 
   /* Signposts (@about, @not-about, @related-resources, @reading-guide,
-     @edit-guide) — rendered with a distinct, subdued style so readers can
+     @editing-guide) — rendered with a distinct, subdued style so readers can
      tell at a glance this is about the document, not body content. The rules
      target .sdoc-meta-section, the class @about carried before the other
      signposts existed, so stylesheets written against it keep working; every
@@ -3381,7 +3381,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   // An exported file is normally sent to someone who has already been asked
   // to read it and will not edit it, so by default the signposts for
   // discovery (@about, @not-about, @related-resources) and for editors
-  // (@edit-guide) are dropped. @reading-guide serves that reader and stays.
+  // (@editing-guide) are dropped. @reading-guide serves that reader and stays.
   // The live preview opts in to everything with `includeSignposts: true`, and
   // `signposts` picks single sections (see hiddenSignposts).
   const renderNodes = applySignpostOptions(parsed.nodes, options);
