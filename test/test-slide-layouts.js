@@ -1669,6 +1669,102 @@ if (!findChrome()) {
       "the theme's colour reached the runs: " + [...new Set(runs.map((a) => a.fill))].join(", "));
   });
 
+  test("a connector joins two nested scopes, not only layout cells", async () => {
+    // collectScopeIds walks to any depth, but an id only reached the markup on
+    // a layout cell and on the slide itself. So a connector naming a scope
+    // nested inside a cell passed the build's own check — which even offered
+    // the id in its "the slide has:" list — and then found nothing to attach
+    // to in the page, so the line was simply absent, with no diagnostic from
+    // the build or from --check. Reported against a real deck, where a figure
+    // and its caption were wrapped in a scope so a line could join the pair.
+    //
+    // Both halves are asserted, because the id reaching the markup is the
+    // easy half: what the feature promises is a line, so the test resolves
+    // the slide and counts the runs the runtime actually drew.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-connnested-"));
+    const file = path.join(dir, "nested.html");
+    const defaultTheme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const src = `
+# Nested {
+    @meta {
+        type: slides
+    }
+
+    # Pair @pair {
+        config: columns
+
+        # Alpha @n-alpha {
+            One.
+
+            # @n-inner-a {
+                Inner A.
+            }
+        }
+
+        # Beta @n-beta {
+            Two.
+
+            # @n-inner-b {
+                Inner B.
+            }
+        }
+
+        # @connectors {
+            {
+                from: @n-inner-a right
+
+                to: @n-inner-b left
+
+                shape: straight
+
+                node: both
+            }
+        }
+    }
+}`;
+    const parsedNested = parseSdoc(src);
+    assert(parsedNested.errors.length === 0, "fixture parses");
+    const metaNested = extractMeta(parsedNested.nodes);
+    const nestedHtml = renderSlides(metaNested.nodes, {
+      meta: metaNested.meta,
+      themeCss: defaultTheme.themeCss,
+      themeJs: defaultTheme.themeJs,
+      themeConfig: defaultTheme.themeConfig,
+    });
+    assert(/<section id="n-inner-a"/.test(nestedHtml),
+      "the nested scope's id reached the markup");
+    fs.writeFileSync(file, nestedHtml, "utf-8");
+
+    const SCRIPT = `
+(function () {
+  function run() {
+    var slide = document.querySelector(".slide");
+    slide.classList.add("active");
+    window.sdocConnectors.resolve(slide);
+    var el = document.createElement("script");
+    el.type = "application/json";
+    el.id = "connnested";
+    el.textContent = JSON.stringify({
+      segs: slide.querySelectorAll(".sdoc-conn").length,
+      found: !!slide.querySelector("#n-inner-a") && !!slide.querySelector("#n-inner-b")
+    }) + "\\n/*${SENTINEL}*/";
+    document.body.appendChild(el);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { requestAnimationFrame(run); });
+  else requestAnimationFrame(run);
+})();
+`;
+    try {
+      const { runHarvest } = require("../src/slide-geometry.js");
+      const data = await runHarvest(file, SCRIPT, "connnested", {});
+      assert(data.found, "both nested ends are addressable in the page");
+      assert(data.segs > 0,
+        "the connector between two nested scopes was drawn, got " + data.segs + " runs");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a connector is placed in design pixels whatever the window scale", async () => {
     // A deck is scaled to the window with a transform on .slide, so a client
     // rect is in WINDOW pixels while the boxes an absolutely positioned child
