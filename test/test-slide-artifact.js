@@ -1202,6 +1202,14 @@ if (findChrome()) {
       // tracking, which reads as loose text rather than a lost property.
       assert(/letter-spacing:0\.6px/.test(pill[1]),
         "the pill keeps its tracking: " + pill[1]);
+      // Leading, on every line and on a plain cell alike. The runtime gives a
+      // <p> 1.4 and this theme is on 1.25, so silence is not agreement — and
+      // a row is as tall as its tallest cell, so a plain cell left at the
+      // default sets the row's height whatever its neighbours carry.
+      assert(/line-height:[0-9.]+px/.test(pill[1]),
+        "the pill carries its leading: " + pill[1]);
+      const plainCell = /<p style="line-height:[0-9.]+px">centred<\/p>/.test(html);
+      assert(plainCell, "and so does a cell with no block children: " + html.slice(0, 500));
       // The block line above it must NOT shrink, or its text re-wraps.
       const blockLine = /<p style="([^"]*)"[^>]*>\s*<b>Alpha Systems/.exec(html);
       assert(blockLine, "the stacked label is a styled <p>");

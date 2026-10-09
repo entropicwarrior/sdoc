@@ -2405,6 +2405,16 @@ function emitCellLine(line, cell, ctx, scale) {
   // character count times the tracking — 4.2px to 7.2px on a pill, which
   // reads as the text sitting loose in its box rather than as a missing
   // property. The exporter emits it everywhere else; this path did not.
+  // Leading, because the runtime's default is not this deck's. The format's
+  // reference gives a <p> a default line-height of 1.4; a theme on 1.25 that
+  // says nothing therefore renders every line ~0.15 of its font-size taller
+  // than the build — about 2.9px on a 19px line, doubled per two-line cell
+  // and multiplied by the rows, which grows the table rather than only
+  // loosening it. The failure is a table pushing into whatever sits beneath
+  // it, which is why this is carried on a documented difference rather than
+  // waiting for a deck to look wrong.
+  const leading = lenOf(s.lineHeight, scale);
+  if (leading > 0) out.push(`line-height:${leading}px`);
   const track = lenOf(s.letterSpacing, scale);
   const cellTrack = lenOf(cell.style.letterSpacing, scale);
   if (s.letterSpacing && s.letterSpacing !== "normal" && track !== cellTrack) {
@@ -2476,9 +2486,19 @@ function emitTableAsBoxes(node, ctx, style) {
           // so a bold inside a cell div is rejected outright by the editor:
           // "<b> is not a tag in this format" at that position. The format
           // says the same in general terms: text must sit in a text element.
+          // A cell with no block children carries its leading too, and for a
+          // reason the line path alone does not cover: a row is as tall as
+          // its tallest cell, so a plain cell left at the runtime's default
+          // sets the row's height whatever its neighbours do. Carrying it on
+          // the lines and not here would leave the table exactly as tall as
+          // it was and only change which cell decided.
+          const lead = lenOf(cell.style.lineHeight, scale);
+          const plain = lead > 0
+            ? `<p style="line-height:${lead}px">${runsToHtml(cell.runs, ctx)}</p>`
+            : `<p>${runsToHtml(cell.runs, ctx)}</p>`;
           const body = cell.lines
             ? cell.lines.map((line) => emitCellLine(line, cell, ctx, scale)).join("")
-            : `<p>${runsToHtml(cell.runs, ctx)}</p>`;
+            : plain;
           return `<div style="${parts.join(";")}">${body}</div>`;
         })
         .join("\n");
