@@ -2343,19 +2343,24 @@ function emitListAsBoxes(node, ctx, style) {
 // turn a <strong> into a pill, and the size and weight that make a stacked
 // label read as a heading above its caption.
 //
-// Only an inline-block takes its measured width. A block child is a full-width
-// line, and giving it the width it happened to occupy would re-wrap its text
-// at a different word; leaving it to stretch keeps the line breaks the build
-// chose. An inline-block has to be told, or it fills the column and the pill
-// becomes a bar.
+// An inline-block shrinks to its content rather than being given a width.
+// A measured width cannot be emitted safely here: the subset accepts
+// `box-sizing` as a no-op, so whether a width means the border box or the
+// content box is the runtime's choice and not ours, and the two differ by the
+// padding and rule that make a pill a pill — 110px measured against 140px
+// rendered, a pill drawn as a bar. `align-self:start` says the same thing
+// without a number, and it is what the format's own note describes: a pill is
+// a <p> with a background, padding and a radius.
+//
+// Only the inline-block gets it. A block child is a full-width line, and
+// shrinking it to its content would re-wrap its text at a different word;
+// left to stretch it keeps the line breaks the build chose.
 function emitCellLine(line, cell, ctx, scale) {
   if (line.kind !== "box") return `<p>${runsToHtml(line.runs, ctx)}</p>`;
   const s = line.style || {};
   const out = [];
 
-  if (line.display === "inline-block" && line.box && line.box.w) {
-    out.push(`width:${Math.round(line.box.w * scale * 10) / 10}px`);
-  }
+  if (line.display === "inline-block") out.push("align-self:start");
   const pads = ["Top", "Right", "Bottom", "Left"].map((k) =>
     Math.max(0, Math.min(256, lenOf(s[`padding${k}`], scale)))
   );

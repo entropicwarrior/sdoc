@@ -1187,8 +1187,20 @@ if (findChrome()) {
       for (const want of ["padding:", "border:", "border-radius:", "background:"]) {
         assert(pill[1].includes(want), `the pill carries ${want} — got ${pill[1]}`);
       }
-      // Without a width an inline-block fills the column and the pill is a bar.
-      assert(/width:[0-9.]+px/.test(pill[1]), "and its measured width: " + pill[1]);
+      // And it shrinks to its content rather than filling the column. Not a
+      // measured width: the subset takes box-sizing as a no-op, so a width
+      // here means the border box or the content box at the runtime's choice,
+      // and the two differ by exactly the padding and rule that make it a
+      // pill. align-self says it without a number.
+      assert(pill[1].includes("align-self:start"),
+        "the pill shrinks to its content: " + pill[1]);
+      assert(!/width:/.test(pill[1]),
+        "and is given no width to be misread: " + pill[1]);
+      // The block line above it must NOT shrink, or its text re-wraps.
+      const blockLine = /<p style="([^"]*)"[^>]*>\s*<b>Alpha Systems/.exec(html);
+      assert(blockLine, "the stacked label is a styled <p>");
+      assert(!blockLine[1].includes("align-self"),
+        "a block line still stretches: " + blockLine[1]);
 
       // vertical-align: middle reaches the cell as justified content. Not
       // align-self, which would shrink the cell and take a row's banding
