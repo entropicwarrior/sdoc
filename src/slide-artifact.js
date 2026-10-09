@@ -410,8 +410,19 @@ const ARTIFACT_SCRIPT = `
           var tag = child.tagName.toLowerCase();
           if (tag === "br") { runs.push({ text: "\\n", br: true }); continue; }
           walk(child, {
-            bold: marks.bold || tag === "b" || tag === "strong",
-            italic: marks.italic || tag === "i" || tag === "em",
+            // Not seeded from the tag. A theme that de-italicises <em> or
+            // sets <strong> to 400 means it: the text node below reads the
+            // computed weight and style of its own parent, which already
+            // accounts for both the tag's default and anything overriding it.
+            // Seeding here made the tag win — marks.bold short-circuits the
+            // computed check — so a de-italicised <em> arrived in italics and
+            // a 400-weight <strong> arrived bold, in every export.
+            //
+            // Underline is still seeded, because nothing below reads
+            // text-decoration: dropping it here would lose underlines
+            // altogether rather than fix anything.
+            bold: marks.bold,
+            italic: marks.italic,
             underline: marks.underline || tag === "u",
             href: marks.href || (tag === "a" ? child.getAttribute("href") : null),
             // A span the renderer coloured, or one it used to protect a unit:

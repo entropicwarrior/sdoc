@@ -459,7 +459,15 @@ async function reportOverflow(htmlPath) {
   try {
     printOverflow(overflowReport(await harvestGeometry(htmlPath)));
   } catch (err) {
-    console.error(`Layout check skipped: ${err.message}`);
+    // A check that could not run is not a check that passed. This swallowed
+    // the error and left the exit code at 0, so a deck whose layout was never
+    // measured was indistinguishable — to a person skimming, and to any CI
+    // gate — from one that measured clean. The harvest fails for real reasons
+    // (no display, so no frames and no requestAnimationFrame; Chrome absent),
+    // and every one of them was reported as success.
+    console.error(`Layout check FAILED to run: ${err.message}`);
+    console.error("  The layout was not checked. This is not a pass.");
+    process.exitCode = 1;
   }
 }
 

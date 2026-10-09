@@ -546,6 +546,24 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, atte
       [
         "--headless=new",
         "--disable-gpu",
+        // Without a display there is no vsync, and with no vsync Chrome
+        // produces no frames — so requestAnimationFrame never fires. The
+        // measuring script waits on one (fonts -> rAF -> rasterise -> payload),
+        // so it stops one frame short, never appends its results, and the
+        // harvest fails minutes later as "Chrome did not report slide
+        // geometry" — naming a timeout for what is a missing frame.
+        //
+        // Measured on this repo: a probe page whose script marks two nested
+        // rAF callbacks logs the synchronous mark and then nothing at all;
+        // with this flag both callbacks run in about a second. It is harmless
+        // where frames already flow, and it is not specific to one machine —
+        // any runner without a display (CI container, ssh session, a locked
+        // Mac) has no vsync and hangs the same way.
+        //
+        // Not --run-all-compositor-stages-before-draw: that restores the
+        // second frame on a trivial page and still fails on a real deck, so
+        // it tests as a fix and is not one.
+        "--disable-frame-rate-limit",
         "--no-first-run",
         "--no-default-browser-check",
         "--hide-scrollbars",
