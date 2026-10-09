@@ -1141,7 +1141,8 @@ if (findChrome()) {
 .matrix td:nth-child(2) { vertical-align: middle; }
 .matrix td:nth-child(3) strong {
   display: inline-block; padding: 3px 12px; border: 1px solid #888888;
-  border-radius: 999px; background: #00ccdd; color: #001122; font-weight: 400; }
+  border-radius: 999px; background: #00ccdd; color: #001122; font-weight: 400;
+  letter-spacing: 0.6px; }
 `;
     const src = `
 # Boxed {
@@ -1196,6 +1197,11 @@ if (findChrome()) {
         "the pill shrinks to its content: " + pill[1]);
       assert(!/width:/.test(pill[1]),
         "and is given no width to be misread: " + pill[1]);
+      // Tracking is part of a capitalised label's type. Dropped, the pill
+      // renders tighter than the build by its character count times the
+      // tracking, which reads as loose text rather than a lost property.
+      assert(/letter-spacing:0\.6px/.test(pill[1]),
+        "the pill keeps its tracking: " + pill[1]);
       // The block line above it must NOT shrink, or its text re-wraps.
       const blockLine = /<p style="([^"]*)"[^>]*>\s*<b>Alpha Systems/.exec(html);
       assert(blockLine, "the stacked label is a styled <p>");

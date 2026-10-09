@@ -2400,6 +2400,16 @@ function emitCellLine(line, cell, ctx, scale) {
   if (weight && weight !== cellWeight) {
     out.push(`font-weight:${String(Math.round(weight / 100) * 100)}`);
   }
+  // Tracking is part of the type treatment wherever a label is set in caps,
+  // and a line that does not carry it renders tighter than the build by the
+  // character count times the tracking — 4.2px to 7.2px on a pill, which
+  // reads as the text sitting loose in its box rather than as a missing
+  // property. The exporter emits it everywhere else; this path did not.
+  const track = lenOf(s.letterSpacing, scale);
+  const cellTrack = lenOf(cell.style.letterSpacing, scale);
+  if (s.letterSpacing && s.letterSpacing !== "normal" && track !== cellTrack) {
+    out.push(`letter-spacing:${track}px`);
+  }
   if (s.whiteSpace === "nowrap") out.push("white-space:nowrap");
 
   return out.length
