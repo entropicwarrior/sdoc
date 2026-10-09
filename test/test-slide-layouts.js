@@ -1064,7 +1064,8 @@ test("a connector pointing at an id the slide has not got is reported, not drawn
   const warnings = [];
   const html = render(CONNECTOR_DECK.replace("to: @beta left", "to: @gamma left"), { warnings });
   assert(!html.includes("data-sdoc-connectors"), "nothing is emitted for it");
-  assert(warnings.some((w) => w.message.includes("@gamma") && w.message.includes("no scope on this slide")),
+  // "nothing", not "no scope": an id inside a raw svg block counts too.
+  assert(warnings.some((w) => w.message.includes("@gamma") && w.message.includes("nothing on this slide")),
     "and it is said out loud: " + JSON.stringify(warnings));
   // The ids it DOES have are named, because the usual cause is a typo.
   assert(warnings.some((w) => w.message.includes("@alpha")), "the slide's own ids are listed");
@@ -1670,7 +1671,7 @@ if (!findChrome()) {
   });
 
   test("a connector joins two nested scopes, not only layout cells", async () => {
-    // collectScopeIds walks to any depth, but an id only reached the markup on
+    // collectAnchorIds walks to any depth, but an id only reached the markup on
     // a layout cell and on the slide itself. So a connector naming a scope
     // nested inside a cell passed the build's own check — which even offered
     // the id in its "the slide has:" list — and then found nothing to attach
@@ -1760,6 +1761,122 @@ if (!findChrome()) {
       assert(data.found, "both nested ends are addressable in the page");
       assert(data.segs > 0,
         "the connector between two nested scopes was drawn, got " + data.segs + " runs");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a connector anchors to an id inside a raw svg block", async () => {
+    // A diagram is one `svg` block, so two boxes inside it cannot be scopes
+    // however much a line wants to join them — and the ids in that block do
+    // reach the page as real elements, which querySelector finds and
+    // getBoundingClientRect measures. Only the build-time check stood in the
+    // way, refusing an id it had not collected. It warned and dropped rather
+    // than failing silently, so this is the opposite failure from the nested
+    // scope above: safe, and too strict.
+    //
+    // The second half guards the trap in widening it. sanitizeSvg drops
+    // <script> and <foreignObject>, and the collected set is also the list a
+    // refused connector prints — so collecting an id out of the block as
+    // written would advertise an id that never reaches the DOM, which is the
+    // nested-scope defect again one layer along.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-connsvg-"));
+    const file = path.join(dir, "svg.html");
+    const defaultTheme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const deck = (target) => `
+# Drawn {
+    @meta {
+        type: slides
+    }
+
+    # Diagram @d-slide {
+        config: columns
+
+        # Drawing @d-drawing {
+            \`\`\`svg
+            <svg viewBox="0 0 200 100" width="200" height="100">
+              <rect id="d-box" x="10" y="10" width="60" height="40" fill="#888"/>
+              <foreignObject id="d-ghost"><div>x</div></foreignObject>
+            </svg>
+            \`\`\`
+        }
+
+        # Card @d-card {
+            Text.
+        }
+
+        # @connectors {
+            {
+                from: @d-card top-center
+
+                to: @${target} bottom-center
+
+                shape: elbow
+            }
+        }
+    }
+}`;
+    const build = (target) => {
+      const parsedSvg = parseSdoc(deck(target));
+      assert(parsedSvg.errors.length === 0, "fixture parses");
+      const metaSvg = extractMeta(parsedSvg.nodes);
+      const warningsSvg = [];
+      const out = renderSlides(metaSvg.nodes, {
+        meta: metaSvg.meta,
+        themeCss: defaultTheme.themeCss,
+        themeJs: defaultTheme.themeJs,
+        themeConfig: defaultTheme.themeConfig,
+        warnings: warningsSvg,
+      });
+      return { html: out, warnings: warningsSvg };
+    };
+
+    const good = build("d-box");
+    assert(good.html.includes("data-sdoc-connectors"),
+      "a connector naming a raw-svg id survives the build");
+    assert(!good.warnings.some((w) => /d-box/.test(w.message || "")),
+      "and is not warned about: " + good.warnings.map((w) => w.message).join(" | "));
+
+    // An id the sanitiser removes must neither resolve nor be offered.
+    const ghost = build("d-ghost");
+    const ghostSaid = ghost.warnings.map((w) => w.message).join(" | ");
+    assert(/d-ghost/.test(ghostSaid), "an id inside a stripped element is refused");
+    // Only the offered list matters here: the id being refused is naturally
+    // named in the message, so a search of the whole sentence would pass
+    // whatever the list said.
+    const offered = /\(the slide has: ([^)]*)\)/.exec(ghostSaid);
+    assert(offered, "the warning says what the slide does have: " + ghostSaid);
+    assert(!/@d-ghost\b/.test(offered[1]),
+      "a stripped id is not offered as a usable one: " + offered[1]);
+    assert(/@d-box\b/.test(offered[1]),
+      "while the id that does reach the page is: " + offered[1]);
+
+    fs.writeFileSync(file, good.html, "utf-8");
+    const SCRIPT = `
+(function () {
+  function run() {
+    var slide = document.querySelector(".slide");
+    slide.classList.add("active");
+    window.sdocConnectors.resolve(slide);
+    var el = document.createElement("script");
+    el.type = "application/json";
+    el.id = "connsvg";
+    el.textContent = JSON.stringify({
+      segs: slide.querySelectorAll(".sdoc-conn").length,
+      rect: !!slide.querySelector("#d-box")
+    }) + "\\n/*${SENTINEL}*/";
+    document.body.appendChild(el);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { requestAnimationFrame(run); });
+  else requestAnimationFrame(run);
+})();
+`;
+    try {
+      const { runHarvest } = require("../src/slide-geometry.js");
+      const data = await runHarvest(file, SCRIPT, "connsvg", {});
+      assert(data.rect, "the svg rect is addressable in the page");
+      assert(data.segs > 0,
+        "the connector to the svg rect was drawn, got " + data.segs + " runs");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
