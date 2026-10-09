@@ -386,13 +386,13 @@ const { parseSdoc, validateSignposts } = require("@entropicwarrior/sdoc");
 const findings = validateSignposts(parseSdoc(sdocText).nodes);
 // [{ type: "signpost-table", id: "related-resources",
 //    message: "@related-resources table row 2: \"Resource\" must be exactly one link, [label](target) or a bare URL",
-//    lineStart: 18, lineEnd: 22 }]
+//    lineStart: 18, lineEnd: 18 }]
         ```
 
         {[.]
             - `nodes` -- the parsed nodes, before `extractMeta` so a misplaced `@meta` is caught too
-            - Returns an array of findings in the same shape as `validateRefs`, plus a severity: `{ type, id, severity, message, lineStart, lineEnd }`. `severity` is `"warning"` for `signpost-order` and `"error"` for every other type. It never throws
-            - `type` is one of `reserved-scope-placement` (the scope is then ordinary, and the message says so), `reserved-scope-duplicate`, `signpost-content`, `signpost-table`, `signpost-ref` (a `Sections` entry naming a reserved scope; an entry that does not resolve is left to `validateRefs`, which reports it as `broken-ref`), `signpost-order`. The rules are in [the specification](../../lexica/specification.sdoc#signpost-validation)
+            - Returns an array of findings, `{ type, id, severity, message, lineStart, lineEnd }`: the same shape as `validateRefs` and `validateCitations`, which also set a severity. `severity` is `"warning"` for `signpost-order` and `"error"` for every other type. It never throws
+            - `type` is one of `reserved-scope-placement` (the scope is then ordinary, and the message says so), `reserved-scope-duplicate`, `signpost-content`, `signpost-table`, `signpost-order`. A `Sections` entry is a reference like any other: `validateRefs` reports one that does not resolve, or that names a reserved scope, as `broken-ref`. The rules are in [the specification](../../lexica/specification.sdoc#signpost-validation)
             - A finding about one table row carries that row's line, and the message names the row. A finding about the whole table, such as a wrong header, carries the table's lines
         }
     }

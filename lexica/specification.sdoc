@@ -1019,7 +1019,7 @@ Content of Section B.
             }
 
             {[.]
-                - All five ids, and `meta`, are reserved. They must not be used as ids of ordinary scopes or as reference targets
+                - All five ids, and `meta`, are reserved. They must not be used as ids of ordinary scopes or as reference targets. `validateRefs` reports a reference to one, anywhere in the document, as `broken-ref`, because most signposts are dropped from exports and the link would lead nowhere
                 - Each is optional. A document has at most one of each, as a direct child of the root scope. Scopes written beside a single root scope (such as a `# Meta @meta` above `# Title { }`) count as direct children of it. In a document without a single root scope, the top-level nodes take the root's place. This top level is the reserved level
                 - A scope with a reserved id anywhere below the reserved level is not a signpost, and a nested `@meta` is not configuration. It is reported as `reserved-scope-placement`, and is otherwise an ordinary scope: rendered with its content and no signpost styling, kept in exports, listed by `listSections` and matched by `extractSection`. Export tools warn about it. Nothing is dropped because of its id
                 - The single root scope is the only top-level scope left once the reserved scopes and the `:comment` scopes are set aside. Any other top-level content, a paragraph or a second ordinary scope, means there is no single root. Renderers treat the scopes beside the root as its children, in source order: those written before it come first, those after it last
@@ -1137,11 +1137,12 @@ Content of Section B.
                     `reserved-scope-duplicate` | error | a reserved scope appears a second time at the top level (reported on the second)
                     `signpost-content` | error | a section contains a block its content model does not allow, including anything after the `@reading-guide` table, `@not-about` contains a link, or `@about` contains an `@id` reference
                     `signpost-table` | error | the table is missing, `@related-resources` has more than one, the header is wrong, a row has the wrong number of cells or an empty cell, a `Resource` cell is not one link or links into this document or to an absolute path, or a `Sections` token is not an `@id` reference
-                    `signpost-ref` | error | a `Sections` reference names a reserved scope. One that does not resolve is reported by `validateRefs` as `broken-ref`, like any other reference, so it is reported once
                     `signpost-order` | warning | a reserved scope at the top level comes after the body, or after a reserved scope ranked later in the conventional order (reported on the scope that is out of place)
                 }
 
                 `fixSignpostOrder(text)` restores the conventional order. It moves the reserved scopes as source text, each with the `//` comment lines directly above it, and re-indents them to their new place. A scope written beside the root stays there when its rank allows, and moves into the root's children otherwise. The fix is applied only when the result reparses to the same tree with just those scopes moved, keeps every non-blank line, and leaves no order warning. A braceless scope next to body content can fail that test; the fix then reports why and changes nothing.
+
+                A `Sections` entry is an ordinary reference, so `validateRefs` reports one that does not resolve, or that names a reserved scope, as `broken-ref`, once.
 
                 An empty `@related-resources` or `@reading-guide` is not reported. Rendering does not depend on validation: a section that fails it renders whatever it contains.
 

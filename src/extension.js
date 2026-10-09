@@ -505,7 +505,9 @@ function updateDiagnostics(document, fullValidation) {
   const allWarnings = warnings.concat(citationWarnings, signpostWarnings);
   const lines = document.getText().split("\n");
   const diagnostics = allWarnings.map((warning) => {
-    const severity = warning.type === "unused-citation" || warning.severity === "warning"
+    // Every validator sets the severity, so the editor and build-doc --check
+    // agree on what is an error.
+    const severity = warning.severity === "warning"
       ? vscode.DiagnosticSeverity.Warning
       : vscode.DiagnosticSeverity.Error;
     const range = findWarningRange(document, lines, warning);
@@ -524,7 +526,7 @@ function findWarningRange(document, lines, warning) {
 
   for (let i = startLine; i <= endLine; i++) {
     const line = lines[i];
-    if (warning.type === "broken-ref" || warning.type === "signpost-ref") {
+    if (warning.type === "broken-ref") {
       // Skip heading lines to avoid matching @id declarations
       if (/^\s*#/.test(line)) continue;
       const token = "@" + warning.id;

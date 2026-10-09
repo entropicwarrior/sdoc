@@ -646,7 +646,7 @@ Content of Section B.
                     - Place them as direct children of the root scope. This is required: written anywhere else, the scope is an ordinary section, and the validator reports it as an error.
                     - Put them after `@meta` and before the body, in the order of the table above. This is a convention: a signpost out of order still works where it is written, and the validator reports a warning. The VS Code quick fix **Reorder signposts**, or `build-doc.js --fix`, puts them in order for you.
                     - Use the bare form, `@reading-guide { ... }`. The heading form, `# Start Here @reading-guide { }`, also works, and its title replaces the default label.
-                    - The ids are reserved. Never give an ordinary section one of them, and never point a reference at one.
+                    - The ids are reserved. Never give an ordinary section one of them, and never point a reference at one: a reference to a signpost or to `@meta` is reported as broken, since most signposts are dropped from exports.
                     - A signpost written deeper than the root's children is not a signpost. It renders and exports as an ordinary section, content and all, and the validator and the export tools flag it.
                     - **Paragraphs and lists** means exactly that: paragraphs, and lists whose items hold only paragraphs and lists. Inline formatting, links and `@id` references are fine. Tables, code blocks, data blocks, blockquotes, horizontal rules and sub-scopes are not.
                     - An empty signpost is never rendered.
@@ -773,7 +773,7 @@ Content of Section B.
                     - the same signpost twice
                     - a block the section's shape does not allow, or a link in `@not-about`
                     - a missing, doubled or malformed table, including a wrong header, a wrong cell count, an empty cell, or a `Resource` cell that is not one link, links into this document, or uses an absolute path
-                    - a `Sections` reference that does not resolve to an explicit `@id` in this document
+                    - a `Sections` reference that does not resolve to an explicit `@id` in this document, or that names a signpost, reported as a broken reference
                 }
 
                 A signpost out of the conventional order is a warning, which `--check` prints without failing. Fix it with the **Reorder signposts** quick fix in VS Code, or with `node tools/build-doc.js file.sdoc --fix`, which rewrites the file. The fix moves each signpost with the `//` comments directly above it. It refuses, and says why, when moving the text would change the document's structure, as a braceless signpost next to body text can.

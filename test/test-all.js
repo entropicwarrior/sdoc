@@ -2064,6 +2064,28 @@ test("extractRelatedResources returns label, href and relation per row", () => {
   assert(pages[1].label === "Guide" && pages[1].href === "guide.sdoc#intro");
 });
 
+test("extractRelatedResources and extractReadingGuide skip a row that is not exactly two cells", () => {
+  const r = parseSdoc("# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [A](a.sdoc) | Sibling | Extra\n            [B](b.sdoc) | Sibling\n        }\n    }\n    @reading-guide {\n        {[table]\n            Sections | Note\n            @x | One | Extra\n            @x | Two\n        }\n    }\n    # X @x {\n        x\n    }\n}");
+  assert(JSON.stringify(extractRelatedResources(r.nodes).map((x) => x.label)) === JSON.stringify(["B"]));
+  assert(JSON.stringify(extractReadingGuide(r.nodes).entries.map((x) => x.note)) === JSON.stringify(["Two"]));
+});
+
+test("a link with any URL scheme is external to resources and to the broken-link check alike", () => {
+  assert(resourceKind("tel:+123") === "external" && resourceKind("ftp://x.y/f") === "external");
+  assert(resourceKind("C:\\docs\\x.txt") === "file", "a drive letter is not a scheme");
+  const src = "# Doc {\n    Call [us](tel:+123), fetch [it](ftp://x.y/f), see [here](missing.sdoc).\n}";
+  const w = validateRefs(parseSdoc(src).nodes, { resolveFilePath: () => false });
+  assert(JSON.stringify(w.map((x) => x.href)) === JSON.stringify(["missing.sdoc"]), "only the relative path is checked as a file: " + JSON.stringify(w));
+});
+
+test("every validator gives each finding a severity", () => {
+  const src = "# Doc {\n    See @missing [@nokey].\n\n    {[citations]\n        - @unused Some source.\n    }\n}";
+  const nodes = parseSdoc(src).nodes;
+  const all = validateRefs(nodes, { resolveFilePath: () => false }).concat(validateCitations(nodes));
+  const bySeverity = Object.fromEntries(all.map((x) => [x.type, x.severity]));
+  assert(bySeverity["broken-ref"] === "error" && bySeverity["broken-citation"] === "error" && bySeverity["unused-citation"] === "warning", JSON.stringify(bySeverity));
+});
+
 test("extractRelatedResources classifies each resource as sdoc, file or external", () => {
   const r = parseSdoc("# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [Spec](../spec.sdoc#refs) | Source\n            [Logo](img/logo.svg) | Artwork\n            https://github.com/o/r | Repository\n            [Here](#here) | Not a resource\n        }\n    }\n}");
   const got = extractRelatedResources(r.nodes).map((x) => x.label + ":" + x.kind);
@@ -2352,8 +2374,25 @@ test("ref: a Sections reference matching only a title slug is broken, and names 
   assert(w[0].message.includes('matches the heading "Intro", which has no @id: add @intro to it'), w[0].message);
 });
 
-test("ref: a Sections reference to a reserved scope is rejected", () => {
-  assert(JSON.stringify(findingTypes(withSection("reading-guide", TABLE("Sections | Note", "@reading-guide | Start")))) === JSON.stringify(["signpost-ref"]));
+test("ref: a Sections reference to a reserved scope is reported once, by validateRefs", () => {
+  const src = withSection("reading-guide", TABLE("Sections | Note", "@reading-guide | Start"));
+  assert(findingTypes(src).length === 0, "no signpost finding: " + JSON.stringify(findingTypes(src)));
+  const w = validateRefs(parseSdoc(src).nodes);
+  assert(w.length === 1 && w[0].type === "broken-ref" && w[0].id === "reading-guide" && /reserved scope/.test(w[0].message), JSON.stringify(w));
+});
+
+test("ref: a reference to a reserved scope in body text is a broken reference", () => {
+  for (const id of ["about", "meta", "editing-guide", "Reading-Guide"]) {
+    const w = validateRefs(parseSdoc(`# Doc {\n    @about {\n        Summary.\n    }\n    # Body {\n        See @${id} for more.\n    }\n}`).nodes);
+    assert(w.length === 1 && w[0].type === "broken-ref" && w[0].severity === "error" && /not a reference target/.test(w[0].message), id + ": " + JSON.stringify(w));
+  }
+});
+
+test("placement: a reserved scope nested inside a correctly placed signpost or @meta is reported", () => {
+  const inSignpost = signpostFindings("# Doc {\n    @about {\n        Summary.\n\n        @editing-guide {\n            - Rule.\n        }\n    }\n}");
+  assert(inSignpost.some((f) => f.type === "reserved-scope-placement" && f.id === "editing-guide" && f.lineStart === 5), JSON.stringify(inSignpost));
+  const inMeta = signpostFindings("# Doc {\n    @meta {\n        type: doc\n\n        @about {\n            Summary.\n        }\n    }\n}");
+  assert(inMeta.some((f) => f.type === "reserved-scope-placement" && f.id === "about"), JSON.stringify(inMeta));
 });
 
 test("an empty table-model section is not reported", () => {
@@ -2933,7 +2972,9 @@ test("extractReadingGuide and extractRelatedResources give each row its own line
 test("validation: a finding about a row points at that row", () => {
   const f = validateSignposts(parseSdoc(ROW_LINES_SRC).nodes).filter((x) => x.type !== "signpost-order");
   const at = f.map((x) => [x.type, x.lineStart, x.lineEnd]);
-  assert(JSON.stringify(at) === JSON.stringify([["signpost-ref", 7, 7], ["signpost-table", 8, 8]]), JSON.stringify(at));
+  assert(JSON.stringify(at) === JSON.stringify([["signpost-table", 8, 8]]), JSON.stringify(at));
+  const refs = validateRefs(parseSdoc(ROW_LINES_SRC).nodes).map((x) => [x.id, x.lineStart, x.lineEnd]);
+  assert(JSON.stringify(refs) === JSON.stringify([["reading-guide", 7, 7]]), "the reserved entry is reported at its row: " + JSON.stringify(refs));
 });
 
 test("validateRefs: a broken reference in a table cell points at its row", () => {

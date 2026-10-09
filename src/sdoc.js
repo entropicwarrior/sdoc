@@ -3837,6 +3837,14 @@ function parseSectionsCell(cell) {
 // project by relative path, or an external URL. Not a #fragment of this
 // document (its sections belong in @reading-guide), and not an absolute
 // filesystem path or file: URL, which would not resolve anywhere else.
+// True when an href carries a URL scheme (https:, mailto:, tel:, data:, ...)
+// and so names no file. A scheme is two characters or more, so a Windows
+// drive letter (C:\docs) reads as a path. Shared by resource classification
+// and the broken-link check, so the two never disagree about what is a file.
+function hasUrlScheme(href) {
+  return /^[a-z][a-z0-9+.-]+:/i.test(href || "");
+}
+
 function resourceHrefProblem(href) {
   if (!href) return "the link has no target";
   if (href.startsWith("#")) return "it points into this document; link this document's sections from @reading-guide instead";
@@ -3849,7 +3857,7 @@ function resourceHrefProblem(href) {
 // "external" for a URL with a scheme (https:, mailto:, ...), "sdoc" for
 // another SDOC document of the project, "file" for any other project file.
 function resourceKind(href) {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return "external";
+  if (hasUrlScheme(href)) return "external";
   return /\.sdoc$/i.test(href.split(/[?#]/)[0]) ? "sdoc" : "file";
 }
 
@@ -3864,7 +3872,7 @@ function extractRelatedResources(nodes) {
   if (!table) return [];
   const resources = [];
   (table.rows || []).forEach((row, index) => {
-    if (row.length < 2) return;
+    if (row.length !== 2) return;
     const inline = significantInline(row[0]);
     const relation = (row[1] || "").trim();
     if (inline.length !== 1 || inline[0].type !== "link" || !relation) return;
@@ -3887,7 +3895,7 @@ function extractReadingGuide(nodes) {
   if (tableIndex >= 0) {
     const table = children[tableIndex];
     (table.rows || []).forEach((row, index) => {
-      if (row.length < 2) return;
+      if (row.length !== 2) return;
       const sections = parseSectionsCell(row[0]);
       const note = (row[1] || "").trim();
       if (!sections || !note) return;
@@ -4086,10 +4094,24 @@ function validateRefs(nodes, options = {}) {
   const warnings = [];
 
   for (const ref of refs) {
-    if (!ids.has(ref.id) && !externalIds.has(ref.id)) {
+    // @meta and the signposts are not reference targets: most are dropped from
+    // exports, which would leave a dead link, and the spec reserves the ids.
+    // This covers @reading-guide's Sections cells too, so a reserved entry
+    // there is reported once, here.
+    if (RESERVED_SCOPE_IDS.has(ref.id.toLowerCase())) {
       warnings.push({
         type: "broken-ref",
         id: ref.id,
+        severity: "error",
+        message: `Broken reference: @${ref.id} names a reserved scope (@meta or a signpost), which is not a reference target`,
+        lineStart: ref.lineStart,
+        lineEnd: ref.lineEnd
+      });
+    } else if (!ids.has(ref.id) && !externalIds.has(ref.id)) {
+      warnings.push({
+        type: "broken-ref",
+        id: ref.id,
+        severity: "error",
         message: `Broken reference: @${ref.id} does not match any scope @id${slugRefHint(ref.id, bySlug)}`,
         lineStart: ref.lineStart,
         lineEnd: ref.lineEnd
@@ -4099,7 +4121,7 @@ function validateRefs(nodes, options = {}) {
 
   for (const link of links) {
     const href = link.href;
-    if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href) || href.startsWith("#") || href.startsWith("data:")) {
+    if (href.startsWith("#") || hasUrlScheme(href)) {
       continue;
     }
     if (options.resolveFilePath) {
@@ -4108,6 +4130,7 @@ function validateRefs(nodes, options = {}) {
       if (!options.resolveFilePath(filePath)) {
         warnings.push({
           type: "broken-link",
+          severity: "error",
           href,
           message: `Broken link: file not found — ${href}`,
           lineStart: link.lineStart,
@@ -4127,11 +4150,9 @@ function validateRefs(nodes, options = {}) {
 //   reserved-scope-duplicate  the same reserved scope twice at the top level
 //   signpost-content    a block the section's model does not allow
 //   signpost-table      the structured table is missing, doubled or malformed
-//   signpost-ref        a @reading-guide reference that names a reserved scope.
-//                       Whether a reference resolves is validateRefs' job, so
-//                       an unresolved one is reported once, as broken-ref.
 //   signpost-order      the reserved level is out of RESERVED_ORDER (a warning)
-// Every finding has a severity: "error", or "warning" for signpost-order,
+// A @reading-guide entry naming a reserved scope is a reference to it, which
+// validateRefs reports like any other. Every finding has a severity: "error", or "warning" for signpost-order,
 // which fixSignpostOrder can put right without changing what renders.
 function validateSignposts(nodes) {
   const findings = [];
@@ -4152,7 +4173,12 @@ function validateSignposts(nodes) {
     for (const node of list || []) {
       if (!node) continue;
       const id = reservedId(node);
-      if (id && topSet.has(node)) continue; // a section's own content is checked below
+      if (id && topSet.has(node)) {
+        // A signpost's (or @meta's) own content model is checked below, but a
+        // reserved scope nested inside it is still out of place.
+        walk(node.children);
+        continue;
+      }
       if (id) {
         // Rendered, listed and exported as an ordinary scope, so say so: the
         // export warnings print this message as it is. Being ordinary, its
@@ -4250,11 +4276,6 @@ function validateSignposts(nodes) {
         if (!refs) {
           report("signpost-table", id, `${where}: "Sections" must be a comma-separated list of @id references`, at);
           return;
-        }
-        for (const ref of refs) {
-          if (RESERVED_SCOPE_IDS.has(ref.toLowerCase())) {
-            report("signpost-ref", ref, `${where}: @${ref} is a reserved scope, not a section of this document`, at);
-          }
         }
       }
     });
@@ -4512,6 +4533,7 @@ function validateCitations(nodes) {
     if (!definedKeys.has(ref.key)) {
       warnings.push({
         type: "broken-citation",
+        severity: "error",
         key: ref.key,
         message: `Broken citation: [@${ref.key}] is not defined in any {[citations] block`,
         lineStart: ref.lineStart,
@@ -4525,6 +4547,7 @@ function validateCitations(nodes) {
     if (!referencedKeys.has(def.key)) {
       warnings.push({
         type: "unused-citation",
+        severity: "warning",
         key: def.key,
         message: `Unused citation: @${def.key} is defined but never referenced with [@${def.key}]`,
         lineStart: def.lineStart,
