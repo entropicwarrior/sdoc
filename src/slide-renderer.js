@@ -11,6 +11,12 @@ const fs = require("fs");
 const path = require("path");
 const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, colorSwatchHtml, RESERVED_SCOPE_IDS, getDocumentScope } = require("./sdoc");
 const { extractConfig, buildBody, accentClass, slug, truthy } = require("./slide-layouts");
+const {
+  readConnector,
+  CONNECTOR_SCOPE_ID,
+  CONNECTOR_JS,
+  CONNECTOR_CSS,
+} = require("./slide-connectors");
 
 // ---------------------------------------------------------------------------
 // Image inlining
@@ -292,8 +298,18 @@ function renderNestedScope(scope) {
     ? `<h3>${renderInline(scope.title)}</h3>`
     : "";
   const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
+  // The id reaches the DOM so the scope is addressable, which is what a
+  // connector needs of its ends. Without it `collectAnchorIds` and the markup
+  // disagreed about what an id is: a connector naming a nested scope passed
+  // the build's own check — the check even offered the id in its "the slide
+  // has:" list — and then found nothing to attach to in the page, so the line
+  // was simply absent. A connector that cannot be drawn must be refused at
+  // build time, and the way to keep that promise here is to make the id real
+  // rather than to stop collecting it: a figure and its caption wrapped in a
+  // scope is a reasonable thing to join a line to.
+  const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
   const children = scope.children.map((child) => renderNode(child)).join("\n");
-  return `<section${typeAttr}>${heading}\n${children}</section>`;
+  return `<section${idAttr}${typeAttr}>${heading}\n${children}</section>`;
 }
 
 function renderChildren(nodes) {
@@ -328,6 +344,97 @@ function extractNotes(children) {
     }
   }
   return { notes, contentNodes: rest };
+}
+
+// Every id a connector can anchor to on this slide: a scope's id at any depth
+// — the ends are usually cells of a layout nested inside another one — and the
+// ids inside a raw `svg` block, which arrive in the page as real elements and
+// are no less addressable for not being scopes. A diagram is one block, so two
+// boxes inside it cannot be scopes however much a line wants to join them.
+//
+// The svg ids are read from the SANITISED markup rather than from the block as
+// the author wrote it. sanitizeSvg drops <script> and <foreignObject>, so an id
+// declared inside one never reaches the DOM — and this set is also the list a
+// refused connector prints to say what the slide does have. Collecting an id
+// that cannot work would put it in that list and send the author at it, which
+// is the defect this function has already caused once.
+function collectAnchorIds(nodes, into) {
+  for (const node of nodes || []) {
+    if (node.type === "code" && node.lang === "svg") {
+      const markup = sanitizeSvg(node.text || "");
+      const attr = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let found;
+      while ((found = attr.exec(markup)) !== null) {
+        const id = found[1] !== undefined ? found[1] : found[2];
+        if (id) into.add(id);
+      }
+      continue;
+    }
+    if (node.type !== "scope") continue;
+    if (node.id) into.add(String(node.id));
+    collectAnchorIds(node.children, into);
+  }
+  return into;
+}
+
+// Separates the reserved @connectors child scope from other children, and
+// reads each of ITS child scopes as one connector.
+//
+// Written as a scope rather than as slide configuration because a slide has
+// several connectors and configuration is one value per key: a second
+// "connect:" line would silently replace the first. It is pulled out here for
+// the same reason @notes is — a structured layout treats every child scope as
+// a cell, so left in place a connectors scope would render as a column.
+//
+// A connector naming an id the slide has not got is the failure this feature
+// exists to prevent, so it is caught here, at build time, rather than
+// resolving to nothing in a browser and leaving the line simply absent.
+function extractConnectors(children, slideTitle, warnings) {
+  const rest = [];
+  const specs = [];
+  let scope = null;
+
+  for (const child of children) {
+    if (child.type === "scope" && child.id && child.id.toLowerCase() === CONNECTOR_SCOPE_ID) {
+      scope = child;
+    } else {
+      rest.push(child);
+    }
+  }
+  if (!scope) return { specs, contentNodes: rest };
+
+  const ids = collectAnchorIds(rest, new Set());
+  const cells = (scope.children || []).filter(
+    (n) => n.type === "scope" && n.scopeType !== "comment"
+  );
+
+  const say = (message) => {
+    if (warnings) warnings.push({ slide: slideTitle || "", message });
+  };
+
+  if (!cells.length) {
+    say("a @connectors scope holds no connectors; each one is a scope of its own inside it");
+  }
+
+  cells.forEach((cell, i) => {
+    const { config, contentNodes: leftovers } = extractConfig(cell.children, CONNECTOR_SCOPE_ID);
+    const { spec, errors } = readConnector(config, i, leftovers);
+    for (const message of errors) say(message);
+    if (!spec) return;
+    for (const end of ["from", "to"]) {
+      if (!ids.has(spec[end].id)) {
+        say(
+          `connector ${i + 1} points "${end}:" at @${spec[end].id}, and nothing on this slide ` +
+            `declares that id` +
+            (ids.size ? ` (the slide has: ${[...ids].map((d) => "@" + d).join(", ")})` : "")
+        );
+        return;
+      }
+    }
+    specs.push(spec);
+  });
+
+  return { specs, contentNodes: rest };
 }
 
 // Separates :detail child scopes (drilldown / vertical slides) from other
@@ -646,12 +753,15 @@ function slideBackground(config, baked) {
 
 // position: { spine: 1-based spine index, detail: 0 for spine, 1..N for details,
 //             totalSpines: total number of spine slides, hasDetails: bool (spine only) }
-function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade) {
+function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade, warnings) {
   // Pull :detail children out first so they don't appear inline in the spine
   // slide's content; they're rendered as sibling vertical slides instead.
   const { contentNodes: afterDetails } = extractDetails(scope.children);
   const { config, contentNodes: afterConfig } = extractConfig(afterDetails);
-  const { notes, contentNodes } = extractNotes(afterConfig);
+  const { notes, contentNodes: afterNotes } = extractNotes(afterConfig);
+  const { specs: connectors, contentNodes } = extractConnectors(
+    afterNotes, scope.title || scope.id || `slide ${slideIndex + 1}`, warnings
+  );
 
   const layout = config.layout || "";
   const classes = ["slide"];
@@ -715,6 +825,14 @@ function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade) {
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
 
+  // The connectors, as data. They are resolved against the laid-out boxes by
+  // the deck's own runtime (see src/slide-connectors.js), which is why nothing
+  // here is a coordinate — and why the HTML build and every export get the
+  // same answer without any of them re-measuring.
+  const connectorAttr = connectors.length
+    ? ` data-sdoc-connectors="${escapeAttr(JSON.stringify(connectors))}"`
+    : "";
+
   // Drilldown metadata + slide indicator label (substituted into the footer)
   let dataAttrs = "";
   let indicatorLabel = "";
@@ -736,7 +854,7 @@ function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade) {
   // picture lands at the bottom of the z-order in the exported .pptx.
   const bgHtml = slideBackground(config, bakedFade);
 
-  return `<div class="${classes.join(" ")}"${idAttr}${dataAttrs}>\n${bgHtml}<div class="slide-content-scale">\n${title}\n${bodyHtml}\n</div>${notesHtml}${overlay}\n</div>`;
+  return `<div class="${classes.join(" ")}"${idAttr}${connectorAttr}${dataAttrs}>\n${bgHtml}<div class="slide-content-scale">\n${title}\n${bodyHtml}\n</div>${notesHtml}${overlay}\n</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1070,7 +1188,12 @@ function renderSlides(nodes, options = {}) {
     // slide index -> a data URI with the fade already in its pixels. Only an
     // export fills this in; the HTML build keeps the real CSS mask, which a
     // browser renders correctly and which costs no browser to produce.
-    bakedFades = {}
+    bakedFades = {},
+    // An array the caller may pass to be told what the deck asked for and did
+    // not get — a connector pointed at an id nothing on the slide declares,
+    // say. The renderer is a pure AST-to-HTML function and has nowhere else to
+    // put such a thing; a caller that passes nothing gets today's behaviour.
+    warnings = null
   } = options;
 
   // The design box and print page come from the theme (themes/<name>/theme.json).
@@ -1196,7 +1319,7 @@ function renderSlides(nodes, options = {}) {
 
   const slidesHtml = emitted
     .map(({ scope, position }, index) =>
-      renderSlide(scope, index, overlayHtml, position, bakedFades[index]))
+      renderSlide(scope, index, overlayHtml, position, bakedFades[index], warnings))
     .join("\n\n");
 
   const title = meta.properties?.title
@@ -1274,6 +1397,13 @@ function renderSlides(nodes, options = {}) {
   position: absolute; bottom: 30px; left: 48px; right: 48px;
   display: flex; align-items: baseline;
   pointer-events: none;
+  /* The spacing between the footer's parts is a gap on the row, not a margin
+     on each part. Both render the same here, but an export to a format with
+     no margin can carry a gap and cannot carry these — and this is engine
+     chrome, so every deck paid for it on every slide. 0.5em because the parts
+     it separates are set at 0.7em, where the old 0.8em/0.6em margins came to
+     0.56em/0.42em of this row's size. The flex:1 spacer absorbs the rest. */
+  gap: 0.5em;
 }
 .slide-footer-gap { flex: 1; }
 .nav-prev, .nav-next {
@@ -1321,13 +1451,11 @@ function renderSlides(nodes, options = {}) {
 .sdoc-company-footer {
   font-size: 0.7em; color: rgba(0,0,0,0.35);
   letter-spacing: 0.04em;
-  margin-right: 0.8em;
 }
 .sdoc-confidential-notice {
   font-size: 0.65em; font-weight: 600;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: rgba(160, 40, 40, 0.6);
-  margin-left: 0.8em;
 }
 .slide-indicator {
   font-size: 0.7em; color: rgba(0,0,0,0.35);
@@ -1335,7 +1463,6 @@ function renderSlides(nodes, options = {}) {
   letter-spacing: 0.04em;
   pointer-events: none;
   user-select: none;
-  margin-right: 0.6em;
 }
 /* Scale wrapper: invisible to layout in screen mode so existing slide
    styles (flex centering, two-column grid, etc.) work as-is.  In print
@@ -1540,10 +1667,18 @@ blockquote p { color: #9d9d9d; }
   // overrides, so a deck can settle a tie on its own slides without raising
   // specificity. A theme is shared by every deck built from it; this is the
   // escape hatch for the one slide that should not look like the others.
-  const cssTag = `<style>\n${structuralCss}\n${themeCss}\n${darkCss}\n${deckCss}</style>`;
+  // Only when a deck actually draws one: a deck with no connectors is emitted
+  // exactly as it was before this existed, which is what keeps every checked-in
+  // golden honest about what changed.
+  const hasConnectors = slidesHtml.includes("data-sdoc-connectors=");
+  const connectorCss = hasConnectors ? CONNECTOR_CSS : "";
+
+  const cssTag = `<style>\n${structuralCss}\n${connectorCss}${themeCss}\n${darkCss}\n${deckCss}</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
   // After the theme, so the navigation it couples to already exists.
   const filmstripTag = `<script>\n${FILMSTRIP_JS}\n</script>`;
+  // Last, so the boxes it measures have been laid out by everything above it.
+  const connectorTag = hasConnectors ? `<script>\n${CONNECTOR_JS}\n</script>` : "";
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
   const mermaidTheme = darkMode ? "dark" : "neutral";
   const mermaidTag = slidesHtml.includes('class="mermaid"')
@@ -1565,9 +1700,17 @@ ${cssTag}${katexTag}
 <body>
 ${slidesHtml}
 
-${jsTag}${filmstripTag}${mermaidTag}
+${jsTag}${filmstripTag}${connectorTag}${mermaidTag}
 </body>
 </html>`;
 }
 
-module.exports = { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide, inlineDeckImages };
+module.exports = {
+  renderSlides,
+  renderSlide,
+  renderNode,
+  renderInline,
+  isOptionalSlide,
+  inlineDeckImages,
+  extractConnectors,
+};

@@ -69,6 +69,8 @@ const NOW = "2026-01-01T00:00:00Z";
 const CORPUS = [
   { deck: "examples/layouts-example.sdoc", title: "SDOC Slide Layouts", prefix: "layouts" },
   { deck: "examples/background-example.sdoc", title: "Slide Backgrounds", prefix: "background" },
+  // Carries the drawings, which have their own rules in this format.
+  { deck: "examples/svg-example.sdoc", title: "SVG", prefix: "svg" },
 ];
 
 // A feature the corpus does not exercise has to be written down here, with the
@@ -201,6 +203,233 @@ test("a flex or grid container keeps its children as elements", () => {
   assert(offenders.length === 0, offenders.slice(0, 4).join("\n  "));
 });
 
+test("every heading carries its own font-size and font-weight", () => {
+  // The format is explicit that font-size and font-weight "flow into <p> and
+  // <li>, but never into <h1> through <h3>" — and the subset's headings default
+  // to 600. Emitting a value only when it differs from the inherited one, the
+  // usual harmless economy, therefore sent every 400-weight heading out with no
+  // weight at all, and it arrived bold. Deck-wide, invisible to a validator
+  // because the output is perfectly admissible, and it reads as "the type looks
+  // a bit off" rather than as a bug.
+  const bare = [];
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    for (const m of html.matchAll(/<(h[123])\b([^>]*)>/g)) {
+      const attrs = m[2];
+      if (!/font-weight\s*:/.test(attrs)) bare.push(`${file}: <${m[1]}> has no font-weight`);
+      else if (!/font-size\s*:/.test(attrs)) bare.push(`${file}: <${m[1]}> has no font-size`);
+    }
+  }
+  assert(bare.length === 0, `${bare.length} heading(s) left to the subset's defaults:\n  ` + bare.slice(0, 4).join("\n  "));
+});
+
+test("a connector arrives as a stroke, not the rectangle it covers", () => {
+  // A connector is resolved in the page and exported as whatever painted boxes
+  // it turned into, which is the property that makes it survive the subset —
+  // and also the reason a defect in it is invisible to the validator. Two have
+  // been seen:
+  //
+  //   The runs are never drawn at all. Every slide but the active one is
+  //   display:none, so the deck's runtime measures nothing and draws nothing,
+  //   and the export carries on happily. The slide simply arrives without its
+  //   lines, which reads as a design choice.
+  //
+  //   A diagonal run loses its rotation. getBoundingClientRect reports the
+  //   axis-aligned box a rotated element occupies, so a 1624x2 bar at -4.39
+  //   degrees was exported as a solid 1620x126 block.
+  //
+  // Both show up here as the same thing: a painted box that is not a stroke.
+  const file = "layouts--connectors-slide.html";
+  assert(goldens.includes(file), "the corpus still has a connectors slide");
+  const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+
+  const painted = [];
+  eachElement(html, (el) => {
+    if (el.tag !== "div") return;
+    if ((el.children || []).some((k) => k.tag && k.tag !== "#text")) return;
+    const d = declarations(el);
+    const at = (prop) => (d.find((x) => x.prop === prop) || {}).value;
+    if (at("position") !== "absolute" || !at("background")) return;
+    const w = parseFloat(at("width"));
+    const h = parseFloat(at("height"));
+    if (!isFinite(w) || !isFinite(h)) return;
+    painted.push({ w, h, style: el.attrs.style });
+  });
+
+  // Four connectors: a vh (two runs and a node), a straight, an hv (two runs
+  // and a node) and an elbow that collapses to one run.
+  assert(painted.length >= 8,
+    `the connectors slide should carry its runs and nodes, got ${painted.length}: ` +
+      painted.map((p) => p.style).join("\n  "));
+  const blocks = painted.filter((p) => Math.min(p.w, p.h) > 12);
+  assert(blocks.length === 0,
+    "a painted box that is neither a stroke nor a node — a dropped rotation looks exactly like this:\n  " +
+      blocks.map((p) => p.style).join("\n  "));
+  assert(!html.includes("<svg"), "and none of it needed a drawing");
+});
+
+test("a cut-out picture is not given a rectangular shadow", () => {
+  // box-shadow follows the element's rectangle; a drop-shadow filter follows
+  // the alpha channel. Translating one to the other draws a hard box around a
+  // picture that hasn't got one. Nothing here should emit a box-shadow on an
+  // <img> at all.
+  const boxed = [];
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    for (const m of html.matchAll(/<img\b([^>]*)>/g)) {
+      if (/box-shadow\s*:/.test(m[1])) boxed.push(`${file}: ${m[0].slice(0, 70)}`);
+    }
+  }
+  assert(boxed.length === 0, boxed.join("\n  "));
+});
+
+test("a painted box that holds no text carries its own size", () => {
+  // The one class of defect a positional check cannot see. A box painted by
+  // CSS and sized by CSS — a bar track at `height: 8px`, a rule, a swatch —
+  // has no content to fall back on, so emitting no size makes it zero-high and
+  // invisible. Nothing moves: the chart is simply not there.
+  //
+  // Measured on a real deck before this was fixed: six tracks and six fills on
+  // one slide, all twelve stripped. The positional harness called that slide
+  // 42px out, because the labels beside the bars shifted by the bars' height.
+  // The number was real and described something far smaller than what broke.
+  const offenders = [];
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    // Walk each <div ...> to its matching close, so a container is judged on
+    // everything inside it rather than on the next tag along.
+    const open = /<div\b([^>]*)>/g;
+    let m;
+    while ((m = open.exec(html))) {
+      const attrs = m[1];
+      if (!/background|border|box-shadow/.test(attrs)) continue;
+      let depth = 1;
+      const scan = /<\/?div\b[^>]*>/g;
+      scan.lastIndex = open.lastIndex;
+      let close = html.length;
+      let t;
+      while ((t = scan.exec(html))) {
+        depth += t[0].startsWith("</") ? -1 : 1;
+        if (depth === 0) { close = t.index; break; }
+      }
+      const inner = html.slice(open.lastIndex, close);
+      const text = inner.replace(/<[^>]*>/g, "").trim();
+      if (text) continue;
+      // Nothing inside it reads. It is visible only if something in here has a
+      // size — itself, or a painted child it holds.
+      if (/(?:^|;)(?:width|height|aspect-ratio|flex):/.test(attrs)) continue;
+      // Deliberately NOT "something inside it has a size". A pinned child is
+      // out of flow and gives its parent no height at all, so counting it let
+      // the scatter layout's axes — two borders on a box with no size — pass
+      // as visible through every export in which they had never rendered.
+      offenders.push(`${file}: ${m[0].slice(0, 110)}`);
+    }
+  }
+  assert(offenders.length === 0,
+    "painted box(es) with no text and no size, so nothing of them is visible:\n  " +
+      offenders.slice(0, 4).join("\n  "));
+});
+
+test("a table's cells carry one padding, and it is the deck's", () => {
+  // The format gives a table one padding for all its cells ("padding · td/th:
+  // one per table, ≤64"). Emitting none left every cell on the subset's own
+  // 0.35em 0.6em default, so a table with roomy rows arrived tighter than the
+  // deck's. On a slide that centres its column that is not a local error: the
+  // table loses height, so everything above it moves down and everything below
+  // it moves up by the same amount, which reads as two separate defects.
+  // Measured on this corpus: it was the whole of the matrix slide's error.
+  const tables = goldens.filter((f) => /matrix/.test(f));
+  assert(tables.length > 0, "the corpus still has a table");
+  for (const file of tables) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    const cells = html.match(/<t[dh][^>]*>/g) || [];
+    assert(cells.length > 0, `${file}: no cells to check`);
+    const pads = new Set();
+    for (const cell of cells) {
+      const m = /padding:([^;"]*)/.exec(cell);
+      assert(m, `${file}: a cell carries no padding, so it falls back to the subset's default: ${cell}`);
+      pads.add(m[1].trim());
+      for (const len of m[1].match(/[0-9.]+/g) || []) {
+        assert(parseFloat(len) <= 64, `${file}: a cell pads ${len}px, past the 64px the format allows: ${cell}`);
+      }
+    }
+    assert(pads.size === 1,
+      `${file}: cells carry ${pads.size} different paddings; the format allows one per table: ${[...pads].join(" | ")}`);
+  }
+});
+
+test("a highlighted table row keeps its wash", () => {
+  // The format allows a background on a <tr> and on nothing inside it: "A <tr>
+  // may carry background:COLOR; no background on cells". A theme that paints
+  // the highlight on `tr.is-highlight td` therefore renders correctly in the
+  // deck and silently loses the paint on export — it is not a dropped
+  // declaration anyone is told about, it is a colour that is simply absent.
+  // This is positional tests' blind spot: nothing moves, it just goes grey.
+  const matrix = goldens.filter((f) => /matrix/.test(f));
+  assert(matrix.length > 0, "the corpus still has a matrix slide");
+  for (const file of matrix) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    const rows = html.match(/<tr[^>]*>/g) || [];
+    const washed = rows.filter((r) => /background/.test(r));
+    assert(washed.length === 1,
+      `${file}: expected exactly one row to carry the highlight wash, found ${washed.length}. ` +
+        "A wash painted on the cells instead of the row is dropped on the way out.");
+    // Not "no cell has a background" — emitTable never writes one, so that
+    // asserts nothing. What can go wrong is a cell carrying type the format
+    // gives only to the table, which validates against a wrong transcription
+    // and is dropped by the page.
+    for (const cell of html.match(/<t[dh][^>]*>/g) || []) {
+      assert(!/font-family|font-size/.test(cell),
+        `${file}: a cell carries a face or a size, which belong to the <table>: ${cell}`);
+      assert(!/<td[^>]*font-weight/.test(cell),
+        `${file}: a <td> carries a weight, which the format allows only on <th>: ${cell}`);
+    }
+  }
+});
+
+test("every drawing carries a size in pixels", () => {
+  // The format is explicit that an <svg>'s width and height are its viewBox's,
+  // and it is shown as an image. So whatever size it was authored with —
+  // "100%", "84%", or nothing — means nothing here: a percentage resolves
+  // against a parent in a page, and on the other side there is neither a
+  // parent nor a stylesheet. Seven of one deck's eight drawings had no usable
+  // size and every one arrived collapsed, which reads as "the drawings are
+  // broken" rather than as a missing attribute.
+  //
+  // A drawing leaves by one of two doors: unlabelled it stays markup, and
+  // labelled it is painted and leaves as a picture. Both are checked, and the
+  // corpus is required to still hold one of each — when every example drawing
+  // became a picture this test went on passing over nothing at all.
+  const bad = [];
+  let markup = 0;
+  let painted = 0;
+  for (const file of goldens) {
+    const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
+    for (const m of html.matchAll(/<svg\b([^>]*)>/g)) {
+      markup++;
+      const w = /\swidth="([^"]*)"/.exec(m[1]);
+      const h = /\sheight="([^"]*)"/.exec(m[1]);
+      if (!w || !h) { bad.push(`${file}: a drawing has no ${w ? "height" : "width"}`); continue; }
+      if (!/^[0-9.]+$/.test(w[1]) || !/^[0-9.]+$/.test(h[1])) {
+        bad.push(`${file}: a drawing is sized "${w[1]}" x "${h[1]}", which needs a stylesheet to mean anything`);
+      }
+    }
+    // A painted drawing is an <img> whose alt came from the drawing's
+    // aria-label. It needs its size in the style, for the same reason.
+    for (const m of html.matchAll(/<img\b([^>]*)>/g)) {
+      if (!/alt="diagram"/.test(m[1])) continue;
+      painted++;
+      const style = /\sstyle="([^"]*)"/.exec(m[1]);
+      const w = style && /(?:^|;)width:([0-9.]+)px/.exec(style[1]);
+      const h = style && /(?:^|;)height:([0-9.]+)px/.exec(style[1]);
+      if (!w || !h) bad.push(`${file}: a painted drawing has no ${w ? "height" : "width"} in pixels`);
+    }
+  }
+  assert(bad.length === 0, bad.slice(0, 4).join("\n  "));
+  assert(markup > 0, "no example leaves a drawing as markup any more, so the vector path is unchecked");
+  assert(painted > 0, "no example has a painted drawing, so the picture path is unchecked");
+});
+
 test("every declaration value has balanced parentheses", () => {
   // Found by publishing: a regex with [^)]* scanning `drop-shadow(rgba(0,0,0,.5) 0 1px 3px)`
   // stops at the inner paren and emits an unbalanced value. The slide then
@@ -249,6 +478,7 @@ test("a shadow puts its colour last, as the subset's grammar requires", () => {
   // colour first. The subset wants it last. Passing a computed value straight
   // through is out of subset even when it was captured correctly.
   const offenders = [];
+  let seen = 0;
   for (const file of goldens) {
     const html = fs.readFileSync(path.join(GOLDEN, file), "utf-8");
     eachElement(html, (el) => {
@@ -256,12 +486,16 @@ test("a shadow puts its colour last, as the subset's grammar requires", () => {
         if (!(d.prop in SHADOW_BLUR_MAX)) continue;
         if (/^\s*none\s*$/i.test(d.value)) continue;
         for (const layer of shadowLayers(d.value)) {
+          seen++;
           if (COLOUR_FIRST.test(layer)) offenders.push(`${file}: ${d.prop}: ${layer.trim()}`);
         }
       }
     });
   }
   assert(offenders.length === 0, "colour-first shadow(s):\n  " + offenders.slice(0, 4).join("\n  "));
+  // This ran over nothing for as long as box-shadow went unharvested: zero
+  // shadows in the corpus, and a guard with nothing to guard passes forever.
+  assert(seen > 0, "no exported shadow anywhere in the corpus, so neither this nor the blur limit is checking anything");
 });
 
 test("a shadow's blur is within the limit for the property it lands on", () => {

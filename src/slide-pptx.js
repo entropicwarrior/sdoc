@@ -61,8 +61,16 @@ function solidFill(hex, alpha) {
 }
 
 function xfrm(box) {
+  // PowerPoint measures rotation in sixtieth-thousandths of a degree, positive
+  // clockwise, about the shape's centre — which is CSS's own direction and
+  // default origin, so the angle the harvest read carries over unchanged.
+  // Without this a rotated box arrives as the axis-aligned rectangle it
+  // happened to occupy, which for a diagonal connector is most of the slide.
+  const rot = isFinite(box.rot) && Math.abs(box.rot) > 0.01
+    ? ` rot="${Math.round(((box.rot % 360) + 360) % 360 * 60000)}"`
+    : "";
   return (
-    `<a:xfrm><a:off x="${px(box.x)}" y="${px(box.y)}"/>` +
+    `<a:xfrm${rot}><a:off x="${px(box.x)}" y="${px(box.y)}"/>` +
     `<a:ext cx="${px(Math.max(box.w, 1))}" cy="${px(Math.max(box.h, 1))}"/></a:xfrm>`
   );
 }

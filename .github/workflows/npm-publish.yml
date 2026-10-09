@@ -36,7 +36,22 @@ jobs:
           npm --version
 
       # npm holds a second trusted publisher for this filename, so the manual
-      # rescue path publishes over OIDC too and needs no token either.
+      # rescue path publishes over OIDC too and needs no token either. Verified
+      # working 8 Oct 2026 — and it had to be repaired first, which is the part
+      # worth knowing: the connection was listed by `npm trust list` with the
+      # right repository, the right filename and both permissions, and was
+      # refused every time. Revoking it and creating an identical one fixed it
+      # at once. A listed trusted publisher is not a working one, and nothing
+      # in the listing tells the two apart.
+      #
+      # `--loglevel verbose` stays. Without it a failure here says only
+      # `E404 ... PUT https://registry.npmjs.org/@entropicwarrior%2fsdoc`,
+      # which is about neither the package nor the real cause: npm falls back
+      # to the placeholder token setup-node writes, and the registry answers an
+      # unauthenticated write to an existing package with 404 rather than 403.
+      # The flag is what surfaces the line that matters —
+      # `oidc Failed token exchange request ... OIDC token exchange error`.
+      # Diagnosing this without it cost four runs and a wrong hypothesis.
       - name: Publish to npm as @entropicwarrior/sdoc
         run: |
           node -e "
@@ -45,4 +60,4 @@ jobs:
             pkg.name = '@entropicwarrior/sdoc';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish --access public
+          npm publish --access public --loglevel verbose
