@@ -1123,6 +1123,92 @@ if (findChrome()) {
 
 // --- A deck can ask for its tables as boxes --------------------------------
 if (findChrome()) {
+  test("a cell drawn as a box keeps its lines, its pill and its alignment", async () => {
+    // Three defects with one cause: runsOf flattens a cell to inline runs, so
+    // a child the theme made block or inline-block arrived as bare words. A
+    // stacked label and its caption collapsed into one line at one size; a
+    // pill lost its padding, border, radius and fill. The pill case was the
+    // one that mattered — its text colour survived while the background that
+    // justified it did not, so a near-black label landed on a transparent
+    // cell and could not be read at all.
+    //
+    // Nothing in this repo's own corpus has an inline-block in a cell, so the
+    // theme is extended here rather than relying on a deck that happens to
+    // exercise it. The default theme supplies the block case already
+    // (.matrix td strong { display: block }).
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const extraCss = `
+.matrix td:nth-child(2) { vertical-align: middle; }
+.matrix td:nth-child(3) strong {
+  display: inline-block; padding: 3px 12px; border: 1px solid #888888;
+  border-radius: 999px; background: #00ccdd; color: #001122; font-weight: 400; }
+`;
+    const src = `
+# Boxed {
+    @meta {
+        type: slides
+    }
+
+    # Matrix @m-slide {
+        config: matrix
+
+        {[table]
+            Who | Mid | Answer
+            **Alpha Systems** *Series C* | centred | **Converts**
+        }
+    }
+}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-cellline-"));
+    const htmlPath = path.join(dir, "deck.html");
+    const parsed = parseSdoc(src);
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss + extraCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+        tablesAsBoxes: true,
+      });
+      assert(built.errors.length === 0,
+        "the grid is inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+      const html = Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html")).map(([, b]) => b).join("\n");
+
+      // The stacked label is two lines again, not one.
+      assert(/<p[^>]*>\s*<b>Alpha Systems<\/b>\s*<\/p>\s*<p/.test(html),
+        "a block child is a line of its own: " + html.slice(0, 400));
+
+      // The pill keeps the box that makes its colour legible.
+      const pill = /<p style="([^"]*)"[^>]*>(?:<b>)?Converts/.exec(html);
+      assert(pill, "the pill is a styled <p>: " + html.slice(0, 400));
+      for (const want of ["padding:", "border:", "border-radius:", "background:"]) {
+        assert(pill[1].includes(want), `the pill carries ${want} — got ${pill[1]}`);
+      }
+      // Without a width an inline-block fills the column and the pill is a bar.
+      assert(/width:[0-9.]+px/.test(pill[1]), "and its measured width: " + pill[1]);
+
+      // vertical-align: middle reaches the cell as justified content. Not
+      // align-self, which would shrink the cell and take a row's banding
+      // with it wherever the fill is on the cell rather than the row.
+      //
+      // Matched on a CELL, not anywhere in the slide: the <section> carries
+      // justify-content:center of its own from the layout, so a bare search
+      // of the page passes whether or not a cell was ever aligned. It did,
+      // until this assertion was tightened.
+      const cells = html.match(/<div style="width:[^"]*"/g) || [];
+      assert(cells.length, "cells are width-shared divs");
+      assert(cells.some((c) => c.includes("justify-content:center")),
+        "a middle-aligned cell centres its content: " + cells.join(" | "));
+      assert(cells.some((c) => !c.includes("justify-content")),
+        "and a cell that asked for nothing is left alone: " + cells.join(" | "));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("artifact-tables: boxes sends a table as a grid of divs (integration)", async () => {
     // The viewer styles a real table its own way and will not be talked out of
     // it: it rules every cell, backs the header row, and loses a colour on a
