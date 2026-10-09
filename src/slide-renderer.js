@@ -299,7 +299,7 @@ function renderNestedScope(scope) {
     : "";
   const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
   // The id reaches the DOM so the scope is addressable, which is what a
-  // connector needs of its ends. Without it `collectScopeIds` and the markup
+  // connector needs of its ends. Without it `collectAnchorIds` and the markup
   // disagreed about what an id is: a connector naming a nested scope passed
   // the build's own check — the check even offered the id in its "the slide
   // has:" list — and then found nothing to attach to in the page, so the line
@@ -346,13 +346,33 @@ function extractNotes(children) {
   return { notes, contentNodes: rest };
 }
 
-// Every id declared anywhere inside a slide, at any depth — a connector's ends
-// are usually cells of a layout nested inside another one.
-function collectScopeIds(nodes, into) {
+// Every id a connector can anchor to on this slide: a scope's id at any depth
+// — the ends are usually cells of a layout nested inside another one — and the
+// ids inside a raw `svg` block, which arrive in the page as real elements and
+// are no less addressable for not being scopes. A diagram is one block, so two
+// boxes inside it cannot be scopes however much a line wants to join them.
+//
+// The svg ids are read from the SANITISED markup rather than from the block as
+// the author wrote it. sanitizeSvg drops <script> and <foreignObject>, so an id
+// declared inside one never reaches the DOM — and this set is also the list a
+// refused connector prints to say what the slide does have. Collecting an id
+// that cannot work would put it in that list and send the author at it, which
+// is the defect this function has already caused once.
+function collectAnchorIds(nodes, into) {
   for (const node of nodes || []) {
+    if (node.type === "code" && node.lang === "svg") {
+      const markup = sanitizeSvg(node.text || "");
+      const attr = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let found;
+      while ((found = attr.exec(markup)) !== null) {
+        const id = found[1] !== undefined ? found[1] : found[2];
+        if (id) into.add(id);
+      }
+      continue;
+    }
     if (node.type !== "scope") continue;
     if (node.id) into.add(String(node.id));
-    collectScopeIds(node.children, into);
+    collectAnchorIds(node.children, into);
   }
   return into;
 }
@@ -383,7 +403,7 @@ function extractConnectors(children, slideTitle, warnings) {
   }
   if (!scope) return { specs, contentNodes: rest };
 
-  const ids = collectScopeIds(rest, new Set());
+  const ids = collectAnchorIds(rest, new Set());
   const cells = (scope.children || []).filter(
     (n) => n.type === "scope" && n.scopeType !== "comment"
   );
@@ -404,7 +424,7 @@ function extractConnectors(children, slideTitle, warnings) {
     for (const end of ["from", "to"]) {
       if (!ids.has(spec[end].id)) {
         say(
-          `connector ${i + 1} points "${end}:" at @${spec[end].id}, and no scope on this slide ` +
+          `connector ${i + 1} points "${end}:" at @${spec[end].id}, and nothing on this slide ` +
             `declares that id` +
             (ids.size ? ` (the slide has: ${[...ids].map((d) => "@" + d).join(", ")})` : "")
         );
@@ -1170,7 +1190,7 @@ function renderSlides(nodes, options = {}) {
     // browser renders correctly and which costs no browser to produce.
     bakedFades = {},
     // An array the caller may pass to be told what the deck asked for and did
-    // not get — a connector pointed at an id no scope on the slide declares,
+    // not get — a connector pointed at an id nothing on the slide declares,
     // say. The renderer is a pure AST-to-HTML function and has nowhere else to
     // put such a thing; a caller that passes nothing gets today's behaviour.
     warnings = null
