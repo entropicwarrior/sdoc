@@ -12,11 +12,12 @@
 // --include-signposts keeps them all; --include-about keeps @about as well;
 // --signposts picks single sections on top of either: a comma-separated list of
 // ids, each kept, or dropped when prefixed with "-" (--signposts related-resources,-reading-guide).
-// --check validates the document (signposts, references, citations),
-// prints each finding as file:line: message (file:line: warning: message for
-// a warning), still writes the output, and exits 1 when it found an error.
-// --fix rewrites the .sdoc in place first, putting @meta and the signposts in
-// their conventional order (fixSignpostOrder); it says so when it cannot.
+// --check validates the document (parse errors, signposts, references,
+// citations), prints each finding as file:line: message (file:line: warning:
+// message for a warning), and exits 1 when it found an error.
+// --fix rewrites the .sdoc in place, putting @meta and the signposts in their
+// conventional order (fixSignpostOrder); when it cannot, it says why and exits 1.
+// With --check or --fix, nothing is exported unless -o or --html is given too.
 
 const fs = require("fs");
 const path = require("path");
@@ -25,6 +26,9 @@ const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, v
 const { hrefPathExists } = require("../src/href-path");
 
 const CONFIG_FILENAME = "sdoc.config.json";
+
+// The validateSignposts findings that change what an export contains.
+const EXPORT_WARNING_TYPES = new Set(["reserved-scope-placement", "signpost-root"]);
 
 function usage() {
   console.error("Usage: build-doc <input.sdoc> [-o output] [--html] [--include-signposts] [--include-about] [--signposts LIST] [--check] [--fix]");
@@ -121,9 +125,10 @@ async function buildHtml(filePath, options = {}) {
     }
 
     // A reserved scope below the top level is exported as an ordinary section,
-    // content and all; say so instead of dropping it.
+    // content and all; say so instead of dropping it. A document whose only
+    // scope is a signpost exports empty; say that too.
     for (const finding of validateSignposts(parsed.nodes)) {
-      if (finding.type === "reserved-scope-placement") {
+      if (EXPORT_WARNING_TYPES.has(finding.type)) {
         console.error(`Warning: line ${finding.lineStart}: ${finding.message}`);
       }
     }
@@ -212,7 +217,7 @@ function checkDocument(filePath) {
   const docDir = path.dirname(filePath);
   const resolveFilePath = (href) => hrefPathExists(href, docDir);
   return [
-    ...parsed.errors.map((e) => ({ message: e.message, lineStart: e.line })),
+    ...parsed.errors.map((e) => ({ type: "parse-error", severity: "error", message: e.message, lineStart: e.line })),
     ...validateSignposts(parsed.nodes),
     ...validateRefs(body, { resolveFilePath }),
     ...validateCitations(body)
@@ -292,6 +297,7 @@ async function main() {
       console.log(`Fixed: reordered the signposts in ${shown}`);
     } else if (fix.reason) {
       console.error(`${shown}: could not reorder the signposts: ${fix.reason}`);
+      process.exitCode = 1;
     }
   }
 
@@ -304,6 +310,8 @@ async function main() {
     if (findings.some((f) => f.severity !== "warning")) process.exitCode = 1;
     if (!findings.length) console.log("Check: no findings.");
   }
+
+  if ((checkMode || fixMode) && !outputPath && !htmlMode) return;
 
   const html = await buildHtml(resolvedInput, { includeSignposts, includeAbout, signposts, quiet: checkMode });
 

@@ -300,7 +300,7 @@ const notAbout = extractSignpost(parseSdoc(sdocText).nodes, "not-about");
             {[.]
                 - `nodes` -- the parsed nodes
                 - `id` -- one of `about`, `not-about`, `related-resources`, `reading-guide`, `editing-guide`
-                - Returns the section's paragraphs, list items and table rows joined with a blank line, inline markup left as written so links survive. Returns `null` when the id is not a signpost, or the section is absent or empty
+                - Returns the section's paragraphs, list items and table rows (not the table's header, which the section's model fixes) joined with a blank line, inline markup left as written so links survive. Returns `null` when the id is not a signpost, or the section is absent or empty
                 - Looks only at the top level: the root scope's children, and reserved scopes written beside the root
             }
         }
@@ -324,7 +324,7 @@ const resources = extractRelatedResources(parseSdoc(sdocText).nodes);
 
             {[.]
                 - Returns one object per row, or `null` when the document has no `@related-resources`
-                - `kind` is `"sdoc"` for another SDOC document, `"file"` for any other file of the project, and `"external"` for a URL with a scheme. `resourceKind(href)` computes it on its own
+                - `kind` is `"sdoc"` for another SDOC document, `"file"` for any other file of the project, and `"external"` for a URL with a scheme. `resourceKind(href)` computes it on its own, and returns `null` when `href` is not a string
                 - `label` is the link text, or the URL itself for a bare URL
                 - `lineStart` is the row's own source line
                 - Rows that do not fit the schema are skipped, including a link into this document or to an absolute path. `validateSignposts` reports them
@@ -392,7 +392,7 @@ const findings = validateSignposts(parseSdoc(sdocText).nodes);
         {[.]
             - `nodes` -- the parsed nodes, before `extractMeta` so a misplaced `@meta` is caught too
             - Returns an array of findings, `{ type, id, severity, message, lineStart, lineEnd }`: the same shape as `validateRefs` and `validateCitations`, which also set a severity. `severity` is `"warning"` for `signpost-order` and `"error"` for every other type. It never throws
-            - `type` is one of `reserved-scope-placement` (the scope is then ordinary, and the message says so), `reserved-scope-duplicate`, `signpost-content`, `signpost-table`, `signpost-order`. A `Sections` entry is a reference like any other: `validateRefs` reports one that does not resolve, or that names a reserved scope, as `broken-ref`. The rules are in [the specification](../../lexica/specification.sdoc#signpost-validation)
+            - `type` is one of `reserved-scope-placement` (the scope is then ordinary, and the message says so; one inside a `:comment` scope is not reported), `reserved-scope-duplicate`, `signpost-root` (the document's only scope is a signpost, so it renders empty), `signpost-content`, `signpost-table`, `signpost-order`. A `Sections` entry is a reference like any other: `validateRefs` reports one that does not resolve, or that names a reserved scope, as `broken-ref`. The rules are in [the specification](../../lexica/specification.sdoc#signpost-validation)
             - A finding about one table row carries that row's line, and the message names the row. A finding about the whole table, such as a wrong header, carries the table's lines
         }
     }

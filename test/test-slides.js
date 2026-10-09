@@ -191,6 +191,17 @@ test("a deck root beside a signpost is unwrapped without extractMeta too", () =>
   assert(slideCount === 2, "two slides, got " + slideCount);
 });
 
+test("a lone ordinary scope is the deck root whatever sits beside it, as it is alone", () => {
+  // The root rule: what sits beside the only ordinary scope does not change
+  // how the deck is read. A one-slide deck with sub-scopes needs a root.
+  const slide = "# Welcome @cover {\n    # Left {\n        L.\n    }\n    # Right {\n        R.\n    }\n}";
+  const count = (src) => (parseAndRender(src).match(/<div class="slide"/g) || []).length;
+  assert(count(slide) === 2, "alone: its sub-scopes are the slides");
+  assert(count("@about {\n    Summary.\n}\n" + slide) === 2, "beside @about: the same");
+  assert(count("# Draft :comment {\n    x\n}\n" + slide) === 2, "beside a :comment: the same");
+  assert(count("# Deck {\n" + slide.replace(/^/gm, "    ") + "\n}") === 1, "inside a root: one slide");
+});
+
 // ============================================================
 console.log("\n--- Layouts ---");
 

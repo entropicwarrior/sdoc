@@ -52,7 +52,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { parseSdoc, extractMeta } = require("../src/sdoc.js");
+const { parseSdoc, extractMeta, getDocumentScope, RESERVED_SCOPE_IDS } = require("../src/sdoc.js");
 const { renderSlides, inlineDeckImages } = require("../src/slide-renderer.js");
 const { loadTheme, inlineCssAssets } = require("../src/theme.js");
 const { runHarvest, SENTINEL } = require("../src/slide-geometry.js");
@@ -233,11 +233,11 @@ ${frames}
 // that silently matches nothing is the same empty-set trap as a guard that
 // cannot fail, and it would report a flawless deck.
 function narrowToSlides(nodes, wanted) {
-  const RESERVED = new Set(["meta", "about"]);
   const slug = (v) =>
     String(v || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-  const wrapped = nodes.length === 1 && nodes[0].type === "scope" && nodes[0].children;
-  const scopes = wrapped ? nodes[0].children : nodes;
+  // The deck root and what counts as a slide, exactly as renderSlides decides.
+  const deck = getDocumentScope(nodes);
+  const scopes = deck ? deck.children : nodes;
 
   const available = [];
   const kept = [];
@@ -246,7 +246,7 @@ function narrowToSlides(nodes, wanted) {
     const isSlide =
       n.type === "scope" &&
       n.scopeType !== "comment" &&
-      !(n.id && RESERVED.has(n.id.toLowerCase()));
+      !(n.id && RESERVED_SCOPE_IDS.has(n.id.toLowerCase()));
     if (!isSlide) { kept.push(n); continue; }
     const id = n.id || "";
     if (id) available.push(id);
@@ -262,7 +262,7 @@ function narrowToSlides(nodes, wanted) {
         `This deck's slides are: ${available.join(", ") || "(none carry an @id)"}`
     );
   }
-  return wrapped ? [{ ...nodes[0], children: kept }] : kept;
+  return deck ? nodes.map((n) => (n === deck ? { ...deck, children: kept } : n)) : kept;
 }
 
 // The deck's own stylesheet, named by `@meta style-append:` and resolved

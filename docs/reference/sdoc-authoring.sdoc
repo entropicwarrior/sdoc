@@ -769,7 +769,8 @@ Content of Section B.
                 The parser accepts any content in a signpost, and `validateSignposts` checks the rules above. Its findings appear in the VS Code Problems panel as you type, and `node tools/build-doc.js file.sdoc --check` prints them with line numbers. These are errors, and make `--check` exit 1: It reports:
 
                 {[.]
-                    - a signpost below the top level of the document, which then renders as an ordinary section
+                    - a signpost below the top level of the document, which then renders as an ordinary section. One inside a `:comment` scope is not reported
+                    - a document whose only scope is a signpost, such as `# Editing Guide @editing-guide { ... }` on its own: it is read as the signpost, and the document renders empty. Give the root another id
                     - the same signpost twice
                     - a block the section's shape does not allow, or a link in `@not-about`
                     - a missing, doubled or malformed table, including a wrong header, a wrong cell count, an empty cell, or a `Resource` cell that is not one link, links into this document, or uses an absolute path

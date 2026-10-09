@@ -256,9 +256,11 @@ function renderNotionBlocks(nodes) {
   // top-level nodes when there is no single root.
   const saved = _signpostScopes;
   _signpostScopes = new Set((doc ? doc.children : body).filter((node) => getSignpost(node)));
-  const blocks = renderDocument(body, doc);
-  _signpostScopes = saved;
-  return blocks;
+  try {
+    return renderDocument(body, doc);
+  } finally {
+    _signpostScopes = saved;
+  }
 }
 
 function renderDocument(body, doc) {

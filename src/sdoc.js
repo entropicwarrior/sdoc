@@ -1702,9 +1702,21 @@ function findUnescaped(text, start, token) {
 let _renderOptions = {};
 
 // The scopes the current render shows as signposts: the reserved scopes at the
-// reserved level, set by renderBodyNodes. A reserved id anywhere else renders
+// reserved level, set by withSignpostScopes. A reserved id anywhere else renders
 // as an ordinary scope.
 let _signpostScopes = new Set();
+
+// Runs `render` with the reserved scopes at `nodes`' reserved level shown as
+// signposts, and restores the previous set afterwards, even when it throws.
+function withSignpostScopes(nodes, render) {
+  const saved = _signpostScopes;
+  _signpostScopes = reservedLevelScopes(nodes);
+  try {
+    return render();
+  } finally {
+    _signpostScopes = saved;
+  }
+}
 
 // --- Citation numbering ---
 // Built before rendering; maps citation key → { number, anchorId }
@@ -2642,7 +2654,7 @@ function renderTextParagraphs(text) {
 }
 
 function renderFragment(nodes, depth = 2) {
-  return nodes.map((node) => renderNode(node, depth)).join("\n");
+  return withSignpostScopes(nodes, () => nodes.map((node) => renderNode(node, depth)).join("\n"));
 }
 
 function buildConfidentialHtml(meta) {
@@ -3308,18 +3320,14 @@ function hasHighlightableCodeBlocks(nodes) {
 function renderBodyNodes(nodes) {
   const body = foldRootSiblings(nodes);
   const title = body.find((node) => !isRootSibling(node));
-  const savedSignposts = _signpostScopes;
-  _signpostScopes = reservedLevelScopes(body);
-  const html = body
+  return withSignpostScopes(body, () => body
     .map((node) => {
       if (node.type === "scope" && node === title) {
         return renderScope(node, 1, true);
       }
       return renderNode(node, 1);
     })
-    .join("\n");
-  _signpostScopes = savedSignposts;
-  return html;
+    .join("\n"));
 }
 
 // The signposts a render drops, as ids, resolved from its options in
@@ -3608,15 +3616,9 @@ function foldRootSiblings(nodes) {
   return [{ ...doc, children: getReservedLevel(nodes) }];
 }
 
-function getContentScopes(nodes) {
-  const doc = getDocumentScope(nodes);
-  const children = doc ? doc.children : nodes;
-  return children.filter(
-    (n) => n.type === "scope" && (!n.id || !RESERVED_SCOPE_IDS.has(n.id.toLowerCase()))
-  );
-}
-
-function collectPlainText(nodes) {
+// The text of the blocks, joined with a blank line. `headers: false` leaves
+// out each table's header row.
+function collectPlainText(nodes, { headers = true } = {}) {
   const parts = [];
   for (const node of nodes) {
     if (node.type === "paragraph") {
@@ -3624,16 +3626,16 @@ function collectPlainText(nodes) {
     } else if (node.type === "list") {
       for (const item of node.items || []) {
         if (item.title) parts.push(item.title);
-        if (item.children) parts.push(collectPlainText(item.children));
+        if (item.children) parts.push(collectPlainText(item.children, { headers }));
       }
     } else if (node.type === "scope" && node.children) {
-      parts.push(collectPlainText(node.children));
+      parts.push(collectPlainText(node.children, { headers }));
     } else if (node.type === "code" && node.content) {
       parts.push(node.content);
     } else if (node.type === "blockquote" && node.text) {
       parts.push(node.text);
     } else if (node.type === "table") {
-      if (node.headers) parts.push(node.headers.join(" | "));
+      if (headers && node.headers) parts.push(node.headers.join(" | "));
       if (node.rows) {
         for (const row of node.rows) parts.push(row.join(" | "));
       }
@@ -3789,14 +3791,15 @@ function findSignpostScope(nodes, id) {
 
 // Plain text of a signpost (paragraphs, list items and table rows, with
 // inline markup left as written so links survive), or null when the id is not
-// a signpost, or the section is absent or empty. Unlike extractAbout,
-// blocks are joined with a blank line, not a space.
+// a signpost, or the section is absent or empty. A table's header is fixed by
+// the section's model, so it is left out. Unlike extractAbout, blocks are
+// joined with a blank line, not a space.
 function extractSignpost(nodes, id) {
   const key = String(id || "").toLowerCase();
   if (!SIGNPOSTS[key]) return null;
   const scope = findSignpostScope(nodes, key);
   if (!scope || isSignpostEmpty(scope)) return null;
-  return collectPlainText(scope.children || []) || null;
+  return collectPlainText(scope.children || [], { headers: false }) || null;
 }
 
 // Every present, non-empty signpost as { [id]: text }.
@@ -3855,8 +3858,10 @@ function resourceHrefProblem(href) {
 }
 
 // "external" for a URL with a scheme (https:, mailto:, ...), "sdoc" for
-// another SDOC document of the project, "file" for any other project file.
+// another SDOC document of the project, "file" for any other project file;
+// null when href is not a string.
 function resourceKind(href) {
+  if (typeof href !== "string") return null;
   if (hasUrlScheme(href)) return "external";
   return /\.sdoc$/i.test(href.split(/[?#]/)[0]) ? "sdoc" : "file";
 }
@@ -3942,21 +3947,8 @@ function stripAboutScopes(nodes) {
 // explicit @ids only (see collectRefTargets); this wider set is kept for
 // existing callers.
 function collectAllIds(nodes) {
-  const ids = new Set();
-  function walk(nodeList) {
-    for (const node of nodeList) {
-      if (node.type === "scope") {
-        if (node.id) ids.add(node.id);
-        if (node.title) ids.add(slugify(node.title));
-      }
-      if (node.children) walk(node.children);
-      if (node.type === "list" && node.items) {
-        walk(node.items);
-      }
-    }
-  }
-  walk(nodes);
-  return ids;
+  const { ids, bySlug } = collectRefTargets(nodes);
+  return new Set([...ids, ...bySlug.keys()]);
 }
 
 // The ids an @ref resolves to: explicit @ids only. A title's derived slug
@@ -4148,6 +4140,7 @@ function validateRefs(nodes, options = {}) {
 // does not depend on it. Rule types:
 //   reserved-scope-placement  a reserved scope below the document's top level
 //   reserved-scope-duplicate  the same reserved scope twice at the top level
+//   signpost-root       the document's only scope is a signpost, so it renders empty
 //   signpost-content    a block the section's model does not allow
 //   signpost-table      the structured table is missing, doubled or malformed
 //   signpost-order      the reserved level is out of RESERVED_ORDER (a warning)
@@ -4168,10 +4161,24 @@ function validateSignposts(nodes) {
     return RESERVED_SCOPE_IDS.has(id) ? id : null;
   }
 
-  // Placement: reserved scopes only as direct children of the top level.
+  // A file whose only scope is a signpost has no root: the scope is read as
+  // the signpost, and the document renders empty. A root written with a
+  // reserved id by mistake looks just like this.
+  if (!getDocumentScope(nodes)) {
+    const rest = nodes.filter((node) => !(node.type === "scope" && node.scopeType === "comment"));
+    const signposts = rest.filter((node) => reservedId(node) && reservedId(node) !== "meta");
+    if (signposts.length === 1 && rest.every((node) => reservedId(node))) {
+      const id = reservedId(signposts[0]);
+      report("signpost-root", id, `@${id} is the document's only scope, so it is read as a signpost and the document renders empty; give the root another id`, signposts[0]);
+    }
+  }
+
+  // Placement: reserved scopes only as direct children of the top level. A
+  // :comment scope is never rendered, so what it holds is not checked.
   function walk(list) {
     for (const node of list || []) {
       if (!node) continue;
+      if (node.type === "scope" && node.scopeType === "comment") continue;
       const id = reservedId(node);
       if (id && topSet.has(node)) {
         // A signpost's (or @meta's) own content model is checked below, but a

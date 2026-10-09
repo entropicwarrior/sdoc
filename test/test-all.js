@@ -2021,6 +2021,12 @@ test("extractSignpost joins blocks with a blank line and keeps links", () => {
   assert(text === "Not covered here.\n\nSlides: see [slide guide](slides.sdoc).", "got: " + JSON.stringify(text));
 });
 
+test("extractSignpost leaves out a table's header row", () => {
+  const r = parseSdoc("@related-resources {\n    {[table]\n        Resource | Relation\n        [X](x.sdoc) | Sibling\n    }\n}\n# Doc {\n    Body.\n}");
+  const text = extractSignpost(r.nodes, "related-resources");
+  assert(text === "[X](x.sdoc) | Sibling", "got: " + JSON.stringify(text));
+});
+
 test("extractSignpost returns null for absent, empty and unknown sections", () => {
   const r = parseSdoc("# Doc {\n    @editing-guide {\n    }\n    # Body {\n        Text.\n    }\n}");
   assert(extractSignpost(r.nodes, "not-about") === null, "absent");
@@ -2096,6 +2102,10 @@ test("resourceKind: a scheme is external, a .sdoc path is sdoc, anything else is
   assert(resourceKind("https://x.y/a.sdoc") === "external" && resourceKind("mailto:a@b.c") === "external");
   assert(resourceKind("a/b.sdoc?x=1#s") === "sdoc" && resourceKind("../c.SDOC") === "sdoc");
   assert(resourceKind("data.json") === "file" && resourceKind("dir/") === "file");
+});
+
+test("resourceKind returns null for an href that is not a string", () => {
+  assert(resourceKind(undefined) === null && resourceKind(null) === null && resourceKind(42) === null);
 });
 
 test("extractRelatedResources skips malformed rows and returns null when absent", () => {
@@ -2665,6 +2675,37 @@ test("validation: the placement finding says the scope is ordinary, and its cont
 test("validation: a misplaced @meta is ordinary, not configuration", () => {
   const f = signpostFindings("# Doc {\n    # Body {\n        @meta {\n            type: doc\n        }\n    }\n}");
   assert(f[0].message.includes("not configuration"), f[0].message);
+});
+
+test("validation: a reserved scope inside a :comment scope is not reported", () => {
+  const f = signpostFindings("# Doc {\n    # Old draft :comment {\n        @about {\n            Earlier wording.\n        }\n    }\n    Body.\n}");
+  assert(f.length === 0, JSON.stringify(f));
+});
+
+// ============================================================
+console.log("\n--- A document whose only scope is a signpost ---");
+
+test("validation: a lone signpost is reported as signpost-root", () => {
+  const f = signpostFindings("# Editing Guide @editing-guide {\n    # Style @style {\n        Use short sentences.\n    }\n}");
+  const root = f.filter((x) => x.type === "signpost-root");
+  assert(root.length === 1 && root[0].severity === "error" && root[0].id === "editing-guide", JSON.stringify(f));
+  assert(root[0].message.includes("give the root another id"), root[0].message);
+});
+
+test("validation: @meta and :comment scopes beside a lone signpost do not hide it", () => {
+  const f = signpostFindings("@meta {\n    type: doc\n}\n# Note :comment {\n    x\n}\n@about {\n    Text.\n}");
+  assert(f.some((x) => x.type === "signpost-root" && x.id === "about"), JSON.stringify(f));
+});
+
+test("validation: no signpost-root with a real root, or with several signposts", () => {
+  assert(!signpostFindings("@about {\n    A.\n}\n# Doc {\n    Body.\n}").some((x) => x.type === "signpost-root"), "a root beside it");
+  assert(!signpostFindings("@about {\n    A.\n}\n@editing-guide {\n    B.\n}").some((x) => x.type === "signpost-root"), "two signposts");
+  assert(!signpostFindings("@about {\n    A.\n}\nStray paragraph.").some((x) => x.type === "signpost-root"), "other content");
+});
+
+test("renderFragment styles a top-level signpost, as the full render does", () => {
+  const html = renderFragment(parseSdoc("@about {\n    Hi.\n}\n# Doc {\n    Body.\n}").nodes);
+  assert(html.includes("sdoc-signpost-about"), html);
 });
 
 // ============================================================

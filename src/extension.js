@@ -5,7 +5,7 @@ const path = require("path");
 const url = require("url");
 const vscode = require("vscode");
 const { hrefCandidates, hrefPathExists } = require("./href-path");
-const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, getDocumentScope, validateRefs, validateCitations, validateSignposts, fixSignpostOrder } = require("./sdoc");
+const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, getDocumentScope, foldRootSiblings, RESERVED_SCOPE_IDS, validateRefs, validateCitations, validateSignposts, fixSignpostOrder } = require("./sdoc");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -201,67 +201,44 @@ function activate(context) {
       return;
     }
 
-    // Find existing @about scope to replace, or insert after @meta
+    // Replace the @about at the reserved level, in either form, or insert one
+    // where the conventional order puts it: after @meta, or else before the
+    // first node of the reserved level (with any // lines directly above it).
     const lines = text.split("\n");
-    let aboutStart = -1;
-    let aboutEnd = -1;
-    let metaEnd = -1;
-    let braceDepth = 0;
-    let inAbout = false;
+    const docScope = getDocumentScope(parsed.nodes);
+    const level = docScope ? foldRootSiblings(parsed.nodes)[0].children : parsed.nodes;
+    const hasId = (node, id) => node.type === "scope" && Boolean(node.id) && node.id.toLowerCase() === id;
+    const existing = level.find((node) => hasId(node, "about"));
+    const meta = level.find((node) => hasId(node, "meta"));
+    const lineIndent = (index) => lines[index].match(/^\s*/)[0];
 
-    for (let i = 0; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-
-      if (inAbout) {
-        if (trimmed === "{") {
-          braceDepth++;
-        } else if (trimmed === "}") {
-          braceDepth--;
-          if (braceDepth === 0) {
-            aboutEnd = i;
-            inAbout = false;
-          }
-        }
-        continue;
-      }
-
-      if (/^#\s+.*@about\b/.test(trimmed) || /^#\s+About\s+@about/.test(trimmed)) {
-        aboutStart = i;
-        // Look for the opening brace
-        for (let j = i; j < Math.min(i + 3, lines.length); j++) {
-          if (lines[j].trim() === "{" || lines[j].trim().endsWith("{")) {
-            braceDepth = 1;
-            inAbout = true;
-            break;
-          }
-        }
-      }
-
-      if (/^#\s+.*@meta\b/.test(trimmed)) {
-        // Track end of meta scope
-        let mDepth = 0;
-        for (let j = i; j < lines.length; j++) {
-          const mt = lines[j].trim();
-          if (mt === "{" || mt.endsWith("{")) mDepth++;
-          if (mt === "}") {
-            mDepth--;
-            if (mDepth === 0) {
-              metaEnd = j;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Determine indentation from context
-    let indent = "    ";
-    if (aboutStart >= 0) {
-      const match = lines[aboutStart].match(/^(\s*)/);
-      if (match) indent = match[1];
-    } else if (metaEnd >= 0) {
-      const match = lines[metaEnd].match(/^(\s*)/);
-      if (match) indent = match[1];
+    let indent = "";
+    let replaceRange = null;
+    let insertAt = null;
+    let insertText = null;
+    if (existing) {
+      indent = lineIndent(existing.lineStart - 1);
+      replaceRange = new vscode.Range(existing.lineStart - 1, 0, existing.lineEnd - 1, lines[existing.lineEnd - 1].length);
+    } else if (meta) {
+      indent = lineIndent(meta.lineStart - 1);
+      insertAt = meta.lineEnd;
+      insertText = (block) => "\n" + block + "\n";
+    } else if (level.length) {
+      let at = level[0].lineStart - 1;
+      while (at > 0 && lines[at - 1].trim().startsWith("//")) at--;
+      indent = lineIndent(at);
+      insertAt = at;
+      insertText = (block) => block + "\n\n";
+    } else if (docScope) {
+      // An empty root: just inside its opening brace.
+      let brace = docScope.lineStart - 1;
+      while (brace < docScope.lineEnd - 1 && !lines[brace].trim().endsWith("{")) brace++;
+      indent = lineIndent(brace) + "    ";
+      insertAt = brace + 1;
+      insertText = (block) => block + "\n";
+    } else {
+      insertAt = 0;
+      insertText = (block) => block + "\n\n";
     }
 
     // Wrap about text at ~72 chars within the indent
@@ -280,33 +257,14 @@ function activate(context) {
     }
     if (currentLine) wrappedLines.push(innerIndent + currentLine);
 
-    const aboutBlock = [
-      indent + "# About @about",
-      indent + "{",
-      ...wrappedLines,
-      indent + "}"
-    ].join("\n");
+    const aboutBlock = [indent + "@about {", ...wrappedLines, indent + "}"].join("\n");
 
     const editBuilder = new vscode.WorkspaceEdit();
     const docUri = editor.document.uri;
-
-    if (aboutStart >= 0 && aboutEnd >= 0) {
-      // Replace existing @about
-      const range = new vscode.Range(aboutStart, 0, aboutEnd, lines[aboutEnd].length);
-      editBuilder.replace(docUri, range, aboutBlock);
-    } else if (metaEnd >= 0) {
-      // Insert after @meta closing brace
-      const pos = new vscode.Position(metaEnd + 1, 0);
-      editBuilder.insert(docUri, pos, "\n" + aboutBlock + "\n");
+    if (replaceRange) {
+      editBuilder.replace(docUri, replaceRange, aboutBlock);
     } else {
-      // Insert at beginning of document scope (after first {)
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim() === "{") {
-          const pos = new vscode.Position(i + 1, 0);
-          editBuilder.insert(docUri, pos, "\n" + aboutBlock + "\n");
-          break;
-        }
-      }
+      editBuilder.insert(docUri, new vscode.Position(insertAt, 0), insertText(aboutBlock));
     }
 
     await vscode.workspace.applyEdit(editBuilder);
@@ -338,7 +296,17 @@ function activate(context) {
 
   // Quick fix for the signpost-order warning: reorders @meta and the
   // signposts with fixSignpostOrder. When no safe fix exists the action is
-  // shown disabled, with the reason, rather than hidden.
+  // shown disabled, with the reason, rather than hidden. The fix parses the
+  // document twice and VS Code asks again on every cursor move over the
+  // warning, so the last result is kept for that document version.
+  let lastSignpostFix = null;
+  function signpostFix(document) {
+    const uri = document.uri.toString();
+    if (!lastSignpostFix || lastSignpostFix.uri !== uri || lastSignpostFix.version !== document.version) {
+      lastSignpostFix = { uri, version: document.version, fix: fixSignpostOrder(document.getText()) };
+    }
+    return lastSignpostFix.fix;
+  }
   context.subscriptions.push(
     vscode.languages.registerCodeActionsProvider("sdoc", {
       provideCodeActions(document, range, codeActionContext) {
@@ -346,8 +314,7 @@ function activate(context) {
           (d) => d.source === "sdoc" && d.code === "signpost-order"
         );
         if (!diagnostics.length) return [];
-        const text = document.getText();
-        const fix = fixSignpostOrder(text);
+        const fix = signpostFix(document);
         const action = new vscode.CodeAction("Reorder signposts", vscode.CodeActionKind.QuickFix);
         action.diagnostics = diagnostics;
         if (!fix.changed) {
@@ -355,7 +322,7 @@ function activate(context) {
           return [action];
         }
         const edit = new vscode.WorkspaceEdit();
-        edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(text.length)), fix.text);
+        edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), fix.text);
         action.edit = edit;
         action.isPreferred = true;
         return [action];
@@ -502,11 +469,12 @@ function updateDiagnostics(document, fullValidation) {
   // The full tree, not the one extractMeta returns: @meta's placement and
   // order are checked too, as build-doc --check does.
   const signpostWarnings = validateSignposts(parsed.nodes);
-  const allWarnings = warnings.concat(citationWarnings, signpostWarnings);
+  const parseErrors = parsed.errors.map((e) => ({ type: "parse-error", severity: "error", message: e.message, lineStart: e.line }));
+  const allWarnings = parseErrors.concat(warnings, citationWarnings, signpostWarnings);
   const lines = document.getText().split("\n");
   const diagnostics = allWarnings.map((warning) => {
-    // Every validator sets the severity, so the editor and build-doc --check
-    // agree on what is an error.
+    // Every finding has a severity, parse errors included, so the editor and
+    // build-doc --check agree on what is an error.
     const severity = warning.severity === "warning"
       ? vscode.DiagnosticSeverity.Warning
       : vscode.DiagnosticSeverity.Error;
@@ -521,7 +489,8 @@ function updateDiagnostics(document, fullValidation) {
 }
 
 function findWarningRange(document, lines, warning) {
-  const startLine = Math.max(0, (warning.lineStart || 1) - 1);
+  // Clamped: a parse error at the end of the file can name the line after it.
+  const startLine = Math.min(lines.length - 1, Math.max(0, (warning.lineStart || 1) - 1));
   const endLine = Math.min(lines.length - 1, (warning.lineEnd || warning.lineStart || 1) - 1);
 
   for (let i = startLine; i <= endLine; i++) {
@@ -1407,8 +1376,13 @@ function buildCollapseScript() {
 // includeSignposts / includeAbout / signposts options are passed through.
 // A reserved scope below the top level is exported as an ordinary section,
 // content and all; warn instead of dropping it.
+// The validateSignposts findings that change what an export contains: a
+// reserved scope exported as an ordinary section, or a document whose only
+// scope is a signpost, which exports empty.
+const EXPORT_WARNING_TYPES = new Set(["reserved-scope-placement", "signpost-root"]);
+
 function warnMisplacedReservedScopes(nodes, document) {
-  const misplaced = validateSignposts(nodes).filter((f) => f.type === "reserved-scope-placement");
+  const misplaced = validateSignposts(nodes).filter((f) => EXPORT_WARNING_TYPES.has(f.type));
   if (misplaced.length === 0) return;
   const first = misplaced[0];
   const more = misplaced.length > 1 ? ` (and ${misplaced.length - 1} more)` : "";
@@ -1634,11 +1608,16 @@ function siteRelPosix(absPath, rootDir) {
   return rel.split(path.sep).join("/");
 }
 
+// The root's title, or else the first titled top-level scope that is not a
+// reserved or :comment scope: a heading-form @meta or signpost written above
+// the root is not the document's title.
 function extractTitleFromParsed(nodes) {
+  const root = getDocumentScope(nodes);
+  if (root && root.title) return root.title;
   for (const node of nodes) {
-    if (node.type === "scope" && node.title) {
-      return node.title;
-    }
+    if (node.type !== "scope" || !node.title || node.scopeType === "comment") continue;
+    if (node.id && RESERVED_SCOPE_IDS.has(node.id.toLowerCase())) continue;
+    return node.title;
   }
   return "Untitled";
 }

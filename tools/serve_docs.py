@@ -83,12 +83,50 @@ def parse_heading(line: str) -> Tuple[str, Optional[str]]:
     return title, ident
 
 
+# @meta and the signposts; kept in step with RESERVED_SCOPE_IDS in src/sdoc.js.
+RESERVED_SCOPE_IDS = {"meta", "about", "not-about", "related-resources", "reading-guide", "editing-guide"}
+
+
+def heading_parts(line: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """The title, @id and :type of a heading line, a trailing "{" removed."""
+    stripped = line.strip()
+    if stripped.endswith("{"):
+        stripped = stripped[:-1].rstrip()
+    parts = stripped.lstrip("#").split()
+    ident = None
+    scope_type = None
+    while parts and len(parts[-1]) > 1 and parts[-1][0] in "@:":
+        token = parts[-1]
+        if token[0] == "@" and ident is None:
+            ident = token[1:]
+        elif token[0] == ":" and scope_type is None:
+            scope_type = token[1:]
+        else:
+            break
+        parts.pop()
+    return " ".join(parts), ident, scope_type
+
+
 def extract_title(text: str) -> str:
+    """The title of the first top-level heading that is not @meta, a signpost
+    or a :comment scope: the root's title, which the renderer shows."""
+    depth = 0
+    code_fence = False
     for line in text.splitlines():
-        if is_heading_line(line):
-            title, _ = parse_heading(line)
-            if title:
+        trimmed = line.strip()
+        if trimmed.startswith("```"):
+            code_fence = not code_fence
+            continue
+        if code_fence or not trimmed:
+            continue
+        if depth == 0 and is_heading_line(trimmed):
+            title, ident, scope_type = heading_parts(trimmed)
+            if title and scope_type != "comment" and (ident or "").lower() not in RESERVED_SCOPE_IDS:
                 return title
+        if trimmed == "}":
+            depth = max(0, depth - 1)
+        elif trimmed.startswith("{") or trimmed.endswith("{"):
+            depth += 1
     return "Untitled"
 
 

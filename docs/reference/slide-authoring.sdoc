@@ -226,6 +226,13 @@
             Every child scope of the root becomes one slide.
 
             The \`@meta\` scope is extracted and never rendered as a slide.
+
+            \`@meta\`, the signposts and \`:comment\` scopes may also be
+            written beside the root, outside it, and the root is still the
+            root. So a file whose only ordinary top-level scope is one slide
+            is read as a deck root, and its sub-scopes become the slides,
+            whatever sits beside it. A one-slide deck whose slide has
+            sub-scopes needs a root around it.
         }
 
         # Meta Properties @meta-properties
