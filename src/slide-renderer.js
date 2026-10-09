@@ -298,8 +298,18 @@ function renderNestedScope(scope) {
     ? `<h3>${renderInline(scope.title)}</h3>`
     : "";
   const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
+  // The id reaches the DOM so the scope is addressable, which is what a
+  // connector needs of its ends. Without it `collectScopeIds` and the markup
+  // disagreed about what an id is: a connector naming a nested scope passed
+  // the build's own check — the check even offered the id in its "the slide
+  // has:" list — and then found nothing to attach to in the page, so the line
+  // was simply absent. A connector that cannot be drawn must be refused at
+  // build time, and the way to keep that promise here is to make the id real
+  // rather than to stop collecting it: a figure and its caption wrapped in a
+  // scope is a reasonable thing to join a line to.
+  const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
   const children = scope.children.map((child) => renderNode(child)).join("\n");
-  return `<section${typeAttr}>${heading}\n${children}</section>`;
+  return `<section${idAttr}${typeAttr}>${heading}\n${children}</section>`;
 }
 
 function renderChildren(nodes) {
