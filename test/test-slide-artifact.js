@@ -542,6 +542,59 @@ function diffFixture(after, roles) {
   return classifySlide(readSlide(slideFixture()), readSlide(after), { texts: roles || FIXTURE_ROLES });
 }
 
+test("a swapped picture, a retargeted link and a changed icon are reported", () => {
+  // The fingerprint was tag, style and text, so none of these registered: a
+  // collaborator could replace a photograph, send a link elsewhere, change an
+  // icon or a shape, or move a connector, and the tool whose job is saying
+  // what they changed said nothing. A false negative in a change detector is
+  // worse than a false positive — the second wastes an hour, the first ships.
+  const withBits = (src, href, icon) =>
+    slideFixture({ extra:
+      `<img src="${src}" alt="a" style="width:100px;height:50px">\n` +
+      `<p style="font-size:30px"><a href="${href}" style="color:rgb(0, 0, 255)">link</a></p>\n` +
+      `<x-icon name="${icon}" style="width:24px;height:24px">\n` });
+
+  const before = readSlide(withBits("sdoc-asset:alpha.png", "https://example.com/one", "Check"), {});
+  const after = readSlide(withBits("sdoc-asset:omega.png", "https://example.com/two", "Star"), {});
+  const out = classifySlide(before, after, { texts: FIXTURE_ROLES });
+
+  assert(out.identityChanges.length === 3,
+    "all three are seen, got " + JSON.stringify(out.identityChanges.map((c) => c.tag)));
+  assert(out.classification.includes("retargeted"), "and the slide is classified: " + out.classification);
+  // The link is reported against the <p> that holds it, not the <a>. The walk
+  // stops at a text leaf, so the paragraph is the element it knows about —
+  // and that is the more useful answer anyway, because the role lookup can
+  // name the paragraph and a bare <a> would be anonymous.
+  const tags = out.identityChanges.map((c) => c.tag).sort().join(",");
+  assert(tags === "img,p,x-icon", "the right three: " + tags);
+  const link = out.identityChanges.find((c) => c.tag === "p");
+  assert(/example\.com\/one/.test(link.from.hrefs) && /example\.com\/two/.test(link.to.hrefs),
+    "and it names both targets: " + JSON.stringify(link));
+});
+
+test("the same picture as a placeholder and as a published blob is not a change", () => {
+  // An exported file carries `sdoc-asset:photo.png`; the same image pulled
+  // back carries `/_blob/<id>`. Comparing the urls reports every picture as
+  // changed on every run, which is the shape of false positive that looks
+  // exactly like the catastrophe the tool exists to detect — and it is why
+  // this resolves both sides to the asset's NAME.
+  const assets = { "photo.png": { src: "sdoc-asset:photo.png", blob: "abc123" } };
+  const img = (src) => slideFixture({ extra:
+    `<img src="${src}" alt="a" style="width:100px;height:50px">\n` });
+
+  const exported = readSlide(img("sdoc-asset:photo.png"), assets);
+  const pulled = readSlide(img("/_blob/abc123"), assets);
+  const same = classifySlide(exported, pulled, { texts: FIXTURE_ROLES });
+  assert(same.identityChanges.length === 0,
+    "the same picture is not a change: " + JSON.stringify(same.identityChanges));
+
+  // But a genuinely different one still is, through the same resolution.
+  const other = readSlide(img("/_blob/zzz999"), assets);
+  const diff = classifySlide(exported, other, { texts: FIXTURE_ROLES });
+  assert(diff.identityChanges.length === 1,
+    "a different picture still reports: " + JSON.stringify(diff.identityChanges));
+});
+
 test("a slide re-saved in the editor's normalised form reads as unchanged", () => {
   // The editor rewrites every slide it touches: declarations reordered,
   // colours re-cased, whitespace collapsed. Without this, every slide in the
@@ -1123,6 +1176,101 @@ if (findChrome()) {
 
 // --- A deck can ask for its tables as boxes --------------------------------
 if (findChrome()) {
+  test("an item that does not grow keeps its flex, and one that declared nothing stays silent", async () => {
+    // `flex` was emitted only inside `if (grow > 0)`, with no else, so any
+    // item that does not grow lost the lot — basis, shrink and all. A column
+    // written `flex: 0 0 286px` sized from its content, its siblings took the
+    // slack, and the row relaid itself; 32 more items on the same deck said
+    // `flex: none` and were told nothing, which is invisible until something
+    // overflows.
+    //
+    // The negative case is the one that matters. The CSS initial value is
+    // `0 1 auto`, NOT `0 0 auto` — that is `flex: none`, a real declaration.
+    // A guard that skips `0 0 auto` would emit a flex on every element that
+    // declared nothing: 1,294 of them against 33 on the deck this was
+    // measured against. So the silence is asserted here as hard as the
+    // carrying is.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const extraCss = `
+#fx-row { display: flex; }
+#fx-row > #fx-fixed { flex: 0 0 123px; }
+#fx-row > #fx-none  { flex: none; }
+#fx-row > #fx-grow  { flex: 1; }
+`;
+    const src = `
+# Flexed {
+    @meta {
+        type: slides
+    }
+
+    # Row @fx-slide {
+        # @fx-row {
+            # @fx-fixed {
+                Fixed
+            }
+
+            # @fx-none {
+                NoneHere
+            }
+
+            # @fx-grow {
+                Grows
+            }
+
+            # @fx-plain {
+                PlainOne
+            }
+        }
+    }
+}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-flex-"));
+    const htmlPath = path.join(dir, "deck.html");
+    const parsed = parseSdoc(src);
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss + extraCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const built = buildArtifact(await harvestArtifact(htmlPath), {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+      });
+      assert(built.errors.length === 0,
+        "inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+      const html = Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html")).map(([, b]) => b).join("\n");
+
+      // The flex lands on the item's own <div>, not on the <p> of words
+      // inside it — and an item that should say nothing has no style
+      // attribute at all, so the match has to allow its absence or the
+      // silent case cannot even be seen.
+      const styleOf = (word) => {
+        const m = new RegExp(`<div(?: style="([^"]*)")?>\\s*<p[^>]*>${word}`).exec(html);
+        return m ? (m[1] || "") : null;
+      };
+
+      const fixed = styleOf("Fixed");
+      assert(fixed !== null, "the fixed-basis item is emitted");
+      assert(/flex:0 0 123px/.test(fixed), "it keeps its basis: " + fixed);
+
+      const none = styleOf("NoneHere");
+      assert(none !== null, "the flex:none item is emitted");
+      assert(/flex:none/.test(none), "it keeps its refusal to shrink: " + none);
+
+      const grow = styleOf("Grows");
+      assert(grow !== null && /flex:1\b/.test(grow), "a growing item is unchanged: " + grow);
+
+      // The 1,294 case. An element that declared nothing computes 0 1 auto,
+      // and must come out with no flex at all.
+      const plain = styleOf("PlainOne");
+      assert(plain !== null, "the plain item is emitted");
+      assert(!/flex:/.test(plain),
+        "an item at the CSS initial value says nothing: " + plain);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a text-indent travels as a translate, and a wrapped one is warned about", async () => {
     // text-indent is not in the subset and nothing stood in for it, so a
     // theme using it to optically align a title lost the alignment silently —
