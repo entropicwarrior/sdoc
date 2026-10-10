@@ -122,6 +122,36 @@ test("meta scope is excluded from slides", () => {
   assert(slideCount === 1, "meta should not become a slide, got " + slideCount);
 });
 
+test("signposts are excluded from slides", () => {
+  const html = parseAndRender(`
+# Deck {
+    @about {
+        Summary.
+    }
+    @not-about {
+        - Not this.
+    }
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Other](other.sdoc) | Sibling
+        }
+    }
+    @reading-guide {
+        Start here.
+    }
+    @editing-guide {
+        - Rules.
+    }
+    # Slide {
+        Hello.
+    }
+}
+`);
+  const slideCount = (html.match(/<div class="slide"/g) || []).length;
+  assert(slideCount === 1, "signposts should not become slides, got " + slideCount);
+});
+
 test("title falls back to document scope title", () => {
   const html = parseAndRender(`
 # My Deck Title {
@@ -131,6 +161,45 @@ test("title falls back to document scope title", () => {
 }
 `);
   assert(html.includes("<title>My Deck Title</title>"), "should fall back to doc title");
+});
+
+test("signposts and :comment scopes beside the deck root do not merge the slides", () => {
+  const html = parseAndRender(`
+# Notes :comment {
+    Draft.
+}
+@about {
+    Summary.
+}
+# My Deck Title {
+    # Slide 1 {
+        One.
+    }
+    # Slide 2 {
+        Two.
+    }
+}
+`);
+  const slideCount = (html.match(/<div class="slide"/g) || []).length;
+  assert(slideCount === 2, "two slides, got " + slideCount);
+  assert(html.includes("<title>My Deck Title</title>"), "the deck title is found");
+});
+
+test("a deck root beside a signpost is unwrapped without extractMeta too", () => {
+  const nodes = parseSdoc("@about {\n    Summary.\n}\n# Deck {\n    # Slide 1 {\n        One.\n    }\n    # Slide 2 {\n        Two.\n    }\n}").nodes;
+  const slideCount = (renderSlides(nodes).match(/<div class="slide"/g) || []).length;
+  assert(slideCount === 2, "two slides, got " + slideCount);
+});
+
+test("a lone ordinary scope is the deck root whatever sits beside it, as it is alone", () => {
+  // The root rule: what sits beside the only ordinary scope does not change
+  // how the deck is read. A one-slide deck with sub-scopes needs a root.
+  const slide = "# Welcome @cover {\n    # Left {\n        L.\n    }\n    # Right {\n        R.\n    }\n}";
+  const count = (src) => (parseAndRender(src).match(/<div class="slide"/g) || []).length;
+  assert(count(slide) === 2, "alone: its sub-scopes are the slides");
+  assert(count("@about {\n    Summary.\n}\n" + slide) === 2, "beside @about: the same");
+  assert(count("# Draft :comment {\n    x\n}\n" + slide) === 2, "beside a :comment: the same");
+  assert(count("# Deck {\n" + slide.replace(/^/gm, "    ") + "\n}") === 1, "inside a root: one slide");
 });
 
 // ============================================================

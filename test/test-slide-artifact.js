@@ -2120,6 +2120,24 @@ test("narrowing refuses an id no slide has, and says what the deck does have", (
   assert(/alpha, beta, gamma/.test(err.message), "and listing the deck's own: " + err.message);
 });
 
+test("narrowing agrees with renderSlides on what a slide is", () => {
+  // Every reserved id is a signpost, not a slide, and a deck root with a
+  // signpost beside it is still the root: renderSlides drops @reading-guide,
+  // so offering it as a slide id would measure nothing.
+  const nodes = parseSdoc("@reading-guide {\n    Start here.\n}\n" + SUBSET_DECK).nodes;
+  let err = null;
+  try {
+    narrowToSlides(nodes, new Set(["reading-guide"]));
+  } catch (e) {
+    err = e;
+  }
+  assert(err && /alpha, beta, gamma$/.test(err.message), "only the slides are offered: " + (err && err.message));
+  const out = narrowToSlides(nodes, new Set(["beta"]));
+  const deck = out.find((n) => n.title === "Deck");
+  assert(deck && deck.children.filter((n) => n.type === "scope").map((n) => n.id).join() === "beta", "the root is narrowed");
+  assert(out.some((n) => n.id === "reading-guide"), "and what sits beside it is kept");
+});
+
 // ============================================================
 console.log("\n--- A harvest is finished only when it has reported ---");
 

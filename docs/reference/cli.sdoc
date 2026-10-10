@@ -30,10 +30,11 @@
         {
             Exports the current SDOC document as a self-contained `.html` file. Works from the editor or the preview panel. The exported file includes all styles and supports collapsible scope toggles in the browser.
 
-            **`@about` is hidden by default in exports.** The reasoning: an exported file is normally sent to a specific recipient who has already decided to read it, so the "should I read this?" framing of `@about` is redundant in that context. To keep `@about` in the output, invoke the command programmatically with `{ includeAbout: true }`:
+            **Only `@reading-guide` of the signposts is kept by default.** An exported file is normally sent to a recipient who has already been asked to read it and will not edit it. `@about`, `@not-about` and `@related-resources` help someone decide whether to read, and `@editing-guide` is for editors, so all four are dropped. `@reading-guide` is written for the reader holding the copy, so it stays. Only signposts at the top level are dropped: a scope with a reserved id deeper down is exported as an ordinary section, and the command shows a warning for it. To choose otherwise, invoke the command programmatically with the renderer's options: `includeSignposts: true` keeps every signpost, `includeAbout: true` keeps `@about` as well as the default, and `signposts` keeps or drops single sections (see [Signposts in exports](api.sdoc#signposts-in-exports)):
 
             ```javascript
-vscode.commands.executeCommand("sdoc.exportHtml", { includeAbout: true });
+vscode.commands.executeCommand("sdoc.exportHtml", { includeSignposts: true });
+vscode.commands.executeCommand("sdoc.exportHtml", { signposts: { "related-resources": true } });
             ```
         }
 
@@ -41,10 +42,10 @@ vscode.commands.executeCommand("sdoc.exportHtml", { includeAbout: true });
         {
             Exports the current SDOC document as an A4 PDF. Works from the editor or the preview panel. Requires Google Chrome or Chromium installed on the system (or set the `CHROME_PATH` environment variable). The PDF uses print-optimized styles with correct font sizes and preserved marker colors.
 
-            Like Export HTML, `@about` is hidden by default. Pass `{ includeAbout: true }` to keep it:
+            Like Export HTML, only `@reading-guide` of the signposts is kept by default, and the command takes the same options:
 
             ```javascript
-vscode.commands.executeCommand("sdoc.exportPdf", { includeAbout: true });
+vscode.commands.executeCommand("sdoc.exportPdf", { includeSignposts: true });
             ```
         }
 
@@ -63,7 +64,10 @@ node tools/build-doc.js input.sdoc                   # PDF output (default)
 node tools/build-doc.js input.sdoc -o output.pdf      # PDF with custom path
 node tools/build-doc.js input.sdoc --html             # HTML output
 node tools/build-doc.js input.sdoc --html -o out.html  # HTML with custom path
-node tools/build-doc.js input.sdoc --include-about    # keep @about in the export
+node tools/build-doc.js input.sdoc --include-signposts     # keep every signpost in the export
+node tools/build-doc.js input.sdoc --signposts related-resources,-reading-guide  # pick single sections
+node tools/build-doc.js input.sdoc --check            # validate only; exit 1 on any error
+node tools/build-doc.js input.sdoc --fix              # put the signposts in order (rewrites the file)
         ```
 
         # Options
@@ -71,7 +75,12 @@ node tools/build-doc.js input.sdoc --include-about    # keep @about in the expor
             {[.]
                 - `-o <path>` -- output file path (default: input name with `.pdf` or `.html` extension)
                 - `--html` -- export as HTML instead of PDF
-                - `--include-about` -- keep the `@about` scope in the export. By default it is hidden because exported files are normally sent to a specific recipient who has already been asked to read the document, so the discovery summary in `@about` is redundant.
+                - `--include-signposts` -- keep every signpost in the export. By default only `@reading-guide` is kept: an exported file is normally sent to a recipient who has already been asked to read it and will not edit it, so the discovery sections (`@about`, `@not-about`, `@related-resources`) and `@editing-guide` are noise for them. Only signposts at the top level are dropped: a scope with a reserved id deeper down is exported as an ordinary section, and a `Warning: line N:` message is printed for it
+                - `--include-about` -- keep `@about` as well as the default
+                - `--signposts <list>` -- keep or drop single signposts, applied after the two flags above. The list is comma-separated ids; an id is kept, or dropped when prefixed with `-`. The flag may be repeated. An unknown id is an error (exit 1)
+                - `--check` -- validate the document: parse errors, signposts against their content models, broken references and links, and citations. Each finding is printed as `file:line: message`, or `file:line: warning: message` for a warning, such as a signpost out of order or an unused citation. The exit code is 1 when an error was found; warnings alone leave it at 0
+                - `--fix` -- rewrite the `.sdoc` in place so `@meta` and the signposts are in their conventional order. It prints what it did, or why it could not do it safely; in that case it leaves the file unchanged and the exit code is 1. Combine it with `--check` to see what remains
+                - With `--check` or `--fix`, nothing is exported, so neither needs Chrome. Add `-o` or `--html` to export as well, after the fix and the check
                 - `--help` / `-h` -- show usage information and exit
             }
         }
@@ -220,7 +229,7 @@ python3 tools/serve_docs.py --no-open                # don't auto-open browser
 
         # How It Works
         {
-            The server serves files directly from the source directory -- no copying, no bundling. The manifest (file list, titles, configs, CSS) is computed fresh on each request, so edits are reflected on browser refresh.
+            The server serves files directly from the source directory -- no copying, no bundling. The manifest (file list, titles, configs, CSS) is computed fresh on each request, so edits are reflected on browser refresh. Pages render like the live preview, with every signpost shown; only exports drop them.
 
             {[.]
                 - `GET /` -- viewer UI (`src/site-template/index.html`)

@@ -2,22 +2,36 @@
 // SDOC Document — CLI tool for HTML and PDF export
 //
 // Usage:
-//   node tools/build-doc.js input.sdoc [-o output] [--html] [--include-about]
+//   node tools/build-doc.js input.sdoc [-o output] [--html] [--include-signposts]
+//                           [--include-about] [--signposts LIST] [--check] [--fix]
 //
 // Default output is PDF (requires Chrome/Chromium).
 // Use --html for HTML-only output (no Chrome needed).
 // If -o is omitted, writes to input.pdf (or input.html with --html).
-// The @about scope is hidden by default; pass --include-about to keep it.
+// Signposts other than @reading-guide are hidden by default.
+// --include-signposts keeps them all; --include-about keeps @about as well;
+// --signposts picks single sections on top of either: a comma-separated list of
+// ids, each kept, or dropped when prefixed with "-" (--signposts related-resources,-reading-guide).
+// --check validates the document (parse errors, signposts, references,
+// citations), prints each finding as file:line: message (file:line: warning:
+// message for a warning), and exits 1 when it found an error.
+// --fix rewrites the .sdoc in place, putting @meta and the signposts in their
+// conventional order (fixSignpostOrder); when it cannot, it says why and exits 1.
+// With --check or --fix, nothing is exported unless -o or --html is given too.
 
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed } = require("../src/sdoc");
+const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, validateRefs, validateCitations, validateSignposts, fixSignpostOrder, SIGNPOST_IDS } = require("../src/sdoc");
+const { hrefPathExists } = require("../src/href-path");
 
 const CONFIG_FILENAME = "sdoc.config.json";
 
+// The validateSignposts findings that change what an export contains.
+const EXPORT_WARNING_TYPES = new Set(["reserved-scope-placement", "signpost-root"]);
+
 function usage() {
-  console.error("Usage: build-doc <input.sdoc> [-o output] [--html] [--include-about]");
+  console.error("Usage: build-doc <input.sdoc> [-o output] [--html] [--include-signposts] [--include-about] [--signposts LIST] [--check] [--fix]");
   process.exit(1);
 }
 
@@ -100,14 +114,23 @@ function resolveMetaStyles(meta, documentPath) {
 }
 
 async function buildHtml(filePath, options = {}) {
-  const includeAbout = options.includeAbout === true;
   const resolvedPath = path.resolve(filePath);
   const text = fs.readFileSync(resolvedPath, "utf8");
   const parsed = parseSdoc(text);
 
-  if (parsed.errors.length > 0) {
+  // `quiet` is set after --check, which has already printed all of these.
+  if (!options.quiet) {
     for (const error of parsed.errors) {
       console.error(`Warning: line ${error.line}: ${error.message}`);
+    }
+
+    // A reserved scope below the top level is exported as an ordinary section,
+    // content and all; say so instead of dropping it. A document whose only
+    // scope is a signpost exports empty; say that too.
+    for (const finding of validateSignposts(parsed.nodes)) {
+      if (EXPORT_WARNING_TYPES.has(finding.type)) {
+        console.error(`Warning: line ${finding.lineStart}: ${finding.message}`);
+      }
     }
   }
 
@@ -143,7 +166,9 @@ async function buildHtml(filePath, options = {}) {
       config,
       cssOverride: cssOverride || undefined,
       cssAppend: cssAppendParts.join("\n") || undefined,
-      includeAbout,
+      includeSignposts: options.includeSignposts,
+      includeAbout: options.includeAbout,
+      signposts: options.signposts,
     }
   );
 
@@ -183,20 +208,68 @@ function inlineLocalImages(html, docDir) {
   });
 }
 
+// Every finding for a file: the signposts checked on the full tree (so a
+// misplaced @meta is caught too), references and citations on the body.
+function checkDocument(filePath) {
+  const text = fs.readFileSync(filePath, "utf8");
+  const parsed = parseSdoc(text);
+  const body = extractMeta(parsed.nodes).nodes;
+  const docDir = path.dirname(filePath);
+  const resolveFilePath = (href) => hrefPathExists(href, docDir);
+  return [
+    ...parsed.errors.map((e) => ({ type: "parse-error", severity: "error", message: e.message, lineStart: e.line })),
+    ...validateSignposts(parsed.nodes),
+    ...validateRefs(body, { resolveFilePath }),
+    ...validateCitations(body)
+  ];
+}
+
+// "related-resources,-reading-guide" → { "related-resources": true, "reading-guide": false },
+// merged into `into`. An unknown id is a usage error.
+function parseSignpostList(list, into) {
+  for (const raw of list.split(",")) {
+    const item = raw.trim();
+    if (!item) continue;
+    const drop = item.startsWith("-");
+    const id = (drop || item.startsWith("+") ? item.slice(1) : item).toLowerCase();
+    if (!SIGNPOST_IDS.includes(id)) {
+      console.error(`Unknown signpost: ${id} (expected one of ${SIGNPOST_IDS.join(", ")})`);
+      process.exit(1);
+    }
+    into[id] = !drop;
+  }
+  return into;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   let inputPath = null;
   let outputPath = null;
   let htmlMode = false;
+  // Left undefined unless given: an explicit includeSignposts: false would
+  // override --include-about.
+  let includeSignposts;
   let includeAbout = false;
+  const signposts = {};
+  let checkMode = false;
+  let fixMode = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-o" && i + 1 < args.length) {
       outputPath = args[++i];
     } else if (args[i] === "--html") {
       htmlMode = true;
+    } else if (args[i] === "--include-signposts") {
+      includeSignposts = true;
     } else if (args[i] === "--include-about") {
       includeAbout = true;
+    } else if (args[i] === "--signposts") {
+      if (i + 1 >= args.length) usage();
+      parseSignpostList(args[++i], signposts);
+    } else if (args[i] === "--check") {
+      checkMode = true;
+    } else if (args[i] === "--fix") {
+      fixMode = true;
     } else if (args[i] === "--help" || args[i] === "-h") {
       usage();
     } else if (!inputPath) {
@@ -215,7 +288,32 @@ async function main() {
     process.exit(1);
   }
 
-  const html = await buildHtml(resolvedInput, { includeAbout });
+  const shown = path.relative(process.cwd(), resolvedInput) || resolvedInput;
+
+  if (fixMode) {
+    const fix = fixSignpostOrder(fs.readFileSync(resolvedInput, "utf8"));
+    if (fix.changed) {
+      fs.writeFileSync(resolvedInput, fix.text, "utf8");
+      console.log(`Fixed: reordered the signposts in ${shown}`);
+    } else if (fix.reason) {
+      console.error(`${shown}: could not reorder the signposts: ${fix.reason}`);
+      process.exitCode = 1;
+    }
+  }
+
+  if (checkMode) {
+    const findings = checkDocument(resolvedInput);
+    for (const f of findings) {
+      const label = f.severity === "warning" ? "warning: " : "";
+      console.error(`${shown}:${f.lineStart || 1}: ${label}${f.message}`);
+    }
+    if (findings.some((f) => f.severity !== "warning")) process.exitCode = 1;
+    if (!findings.length) console.log("Check: no findings.");
+  }
+
+  if ((checkMode || fixMode) && !outputPath && !htmlMode) return;
+
+  const html = await buildHtml(resolvedInput, { includeSignposts, includeAbout, signposts, quiet: checkMode });
 
   if (htmlMode) {
     if (!outputPath) {

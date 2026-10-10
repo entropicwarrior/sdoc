@@ -94,12 +94,15 @@ Key resources for agents:
 All `.sdoc` files are designed for progressive disclosure. The JavaScript API provides three functions that let agents navigate without loading entire files:
 
 ```javascript
-const { extractAbout, listSections, extractSection } = require("@entropicwarrior/sdoc");
+const { parseSdoc, extractAbout, listSections, extractSection } = require("@entropicwarrior/sdoc");
+const { nodes } = parseSdoc(text);
 
-extractAbout(text);              // ~50 tokens — what is this file about?
-listSections(text);              // ~50-100 tokens — what sections does it have?
-extractSection(text, "error-handling"); // ~200-1000 tokens — give me just this section
+extractAbout(nodes);              // ~50 tokens — what is this file about?
+listSections(nodes);              // ~50-100 tokens — what sections does it have?
+extractSection(nodes, "error-handling"); // ~200-1000 tokens — give me just this section
 ```
+
+Optional signposts describe a document to whoever is about to use it: `@about` (should I read this?), `@not-about` (what it leaves out, and why), `@related-resources` (documents, project files and external links that go with it), `@reading-guide` (where to start) and `@editing-guide` (how to change it). See the [authoring guide](docs/reference/sdoc-authoring.sdoc).
 
 Total cost for a precise answer: ~750 tokens. The same lookup in Markdown requires loading the full file (5,000-50,000 tokens).
 

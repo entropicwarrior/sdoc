@@ -275,10 +275,42 @@ function detectImplicitRoot(cursor) {
   return isImplicit;
 }
 
-const BARE_DIRECTIVES = new Set(["meta", "about"]);
+// Signposts: reserved top-level scopes that describe the document itself
+// rather than its subject. Each answers one question for one audience, and
+// has a content model the validator enforces (validateSignposts):
+//   "prose"       — paragraphs and lists only
+//   "table"       — exactly one table with the given header, nothing else
+//   "prose-table" — paragraphs and lists, then exactly one table, nothing after
+// exportVisible says whether HTML/PDF export keeps the section by default.
+// @about, @not-about, @related-resources and @editing-guide serve someone deciding
+// whether to read or someone editing the file, so an exported copy sent to a
+// reader drops them; @reading-guide serves exactly that reader, so it stays.
+const SIGNPOSTS = {
+  "about":         { id: "about",         title: "About",         exportVisible: false, model: "prose" },
+  "not-about":     { id: "not-about",     title: "Not About",     exportVisible: false, model: "prose" },
+  "related-resources": { id: "related-resources", title: "Related Resources", exportVisible: false, model: "table",       table: ["Resource", "Relation"] },
+  "reading-guide": { id: "reading-guide", title: "Reading Guide", exportVisible: true,  model: "prose-table", table: ["Sections", "Note"] },
+  "editing-guide": { id: "editing-guide", title: "Editing Guide", exportVisible: false, model: "prose" }
+};
+const SIGNPOST_IDS = Object.keys(SIGNPOSTS);
+const EXPORT_HIDDEN_SIGNPOST_IDS = SIGNPOST_IDS.filter((id) => !SIGNPOSTS[id].exportVisible);
+// Every reserved scope id: @meta (configuration, never rendered) plus the
+// signposts. Each may be written in the bare form `@id { ... }`.
+const RESERVED_SCOPE_IDS = new Set(["meta", ...SIGNPOST_IDS]);
+const BARE_DIRECTIVES = RESERVED_SCOPE_IDS;
+// The conventional order of the reserved level: @meta, then the signposts in
+// SIGNPOSTS order, then the body. validateSignposts warns when it is not
+// followed, and fixSignpostOrder restores it.
+const RESERVED_ORDER = ["meta", ...SIGNPOST_IDS];
+
+// The SIGNPOSTS entry for a scope, matched case-insensitively, or null.
+function getSignpost(scope) {
+  if (!scope || scope.type !== "scope" || !scope.id) return null;
+  return SIGNPOSTS[scope.id.toLowerCase()] || null;
+}
 
 function parseBareDirective(trimmed) {
-  // Match @meta, @about, @meta {, @about {
+  // Match a reserved bare directive: @meta, @about, @meta {, @about {, ...
   if (!trimmed.startsWith("@")) return null;
   const withoutAt = trimmed.slice(1);
   // Check for "@directive {" (K&R style)
@@ -629,7 +661,7 @@ function parseBracelessBlock(cursor) {
       break;
     }
 
-    // Stop on bare @meta / @about — becomes sibling, don't advance
+    // Stop on a reserved bare directive (@meta, @about, ...) — becomes sibling, don't advance
     if (parseBareDirective(trimmed)) {
       flushParagraph();
       break;
@@ -947,6 +979,9 @@ function parseTableBlock(cursor) {
 function parseTableBody(cursor, tableStartLine, options) {
   options = options || {};
   const rows = [];
+  // The 1-based source line of each entry in `rows`, so a consumer can cite a
+  // row by line (the extractors, validation findings, the Python binding).
+  const lines = [];
 
   while (!cursor.eof()) {
     const line = cursor.current();
@@ -964,6 +999,7 @@ function parseTableBody(cursor, tableStartLine, options) {
 
     const cells = trimmed.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, "|"));
     rows.push(cells);
+    lines.push(cursor.index + 1);
     cursor.next();
   }
 
@@ -979,17 +1015,18 @@ function parseTableBody(cursor, tableStartLine, options) {
     columnFormat = directives.format;
     columnCopy = directives.copy;
     rows.splice(directiveIndex, 1);
+    lines.splice(directiveIndex, 1);
   }
 
   const hasOptions = options.borderless || options.headerless || options.width || options.align;
 
   let tableNode;
   if (options.headerless) {
-    tableNode = { type: "table", headers: [], rows, lineStart: tableStartLine, lineEnd: cursor.index };
+    tableNode = { type: "table", headers: [], rows, rowLines: lines, lineStart: tableStartLine, lineEnd: cursor.index };
   } else {
     const headers = rows.length > 0 ? rows[0] : [];
     const body = rows.slice(1);
-    tableNode = { type: "table", headers, rows: body, lineStart: tableStartLine, lineEnd: cursor.index };
+    tableNode = { type: "table", headers, rows: body, rowLines: lines.slice(1), lineStart: tableStartLine, lineEnd: cursor.index };
   }
   if (hasOptions) tableNode.options = options;
   if (columnAlign) tableNode.columnAlign = columnAlign;
@@ -1664,6 +1701,23 @@ function findUnescaped(text, start, token) {
 
 let _renderOptions = {};
 
+// The scopes the current render shows as signposts: the reserved scopes at the
+// reserved level, set by withSignpostScopes. A reserved id anywhere else renders
+// as an ordinary scope.
+let _signpostScopes = new Set();
+
+// Runs `render` with the reserved scopes at `nodes`' reserved level shown as
+// signposts, and restores the previous set afterwards, even when it throws.
+function withSignpostScopes(nodes, render) {
+  const saved = _signpostScopes;
+  _signpostScopes = reservedLevelScopes(nodes);
+  try {
+    return render();
+  } finally {
+    _signpostScopes = saved;
+  }
+}
+
 // --- Citation numbering ---
 // Built before rendering; maps citation key → { number, anchorId }
 // anchorId is the id of the first inline citation_ref for back-linking
@@ -1926,15 +1980,15 @@ function renderScope(scope, depth, isTitleScope = false) {
   // :comment scopes are not rendered
   if (scope.scopeType === "comment") return "";
 
-  const isAbout = scope.id && scope.id.toLowerCase() === "about";
-  // Skip empty/whitespace-only @about — no point rendering an empty meta box.
-  if (isAbout && isAboutEmpty(scope)) return "";
+  const signpost = _signpostScopes.has(scope) ? getSignpost(scope) : null;
+  // Skip an empty/whitespace-only signpost — no point rendering an empty box.
+  if (signpost && isSignpostEmpty(scope)) return "";
 
-  // Bare `@about { ... }` (no heading) and heading-form with empty title both
-  // get a default heading of "About" so the meta-section is always labelled.
-  // A custom title (e.g. `# Document Discovery @about`) is preserved.
-  if (isAbout && (!scope.hasHeading || !scope.title || !scope.title.trim())) {
-    scope = { ...scope, hasHeading: true, title: "About" };
+  // A bare `@about { ... }` (no heading) and a heading form with an empty
+  // title both get the section's default label ("About", "Reading Guide", ...)
+  // so a signpost is always labelled. A custom title is preserved.
+  if (signpost && (!scope.hasHeading || !scope.title || !scope.title.trim())) {
+    scope = { ...scope, hasHeading: true, title: signpost.title };
   }
 
   const level = Math.min(6, Math.max(1, depth));
@@ -1943,10 +1997,10 @@ function renderScope(scope, depth, isTitleScope = false) {
   const dl = dataLineAttrs(scope);
   const typeAttr = scope.scopeType ? ` data-scope-type="${escapeAttr(scope.scopeType)}"` : "";
   const typeClass = scope.scopeType ? ` sdoc-scope-type-${scope.scopeType}` : "";
-  const metaClass = isAbout ? " sdoc-meta-section" : "";
+  const signpostClass = signpost ? ` sdoc-meta-section sdoc-signpost sdoc-signpost-${signpost.id}` : "";
 
   if (scope.hasHeading === false) {
-    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}${metaClass}"${typeAttr}${dl}>${children}</section>`;
+    return `<section class="sdoc-scope sdoc-scope-noheading${rootClass}${typeClass}${signpostClass}"${typeAttr}${dl}>${children}</section>`;
   }
 
   const idAttr = scope.id ? ` id="${escapeAttr(scope.id)}"` : "";
@@ -1954,7 +2008,7 @@ function renderScope(scope, depth, isTitleScope = false) {
   const toggle = hasChildren ? `<span class="sdoc-toggle"></span>` : "";
   const heading = `<h${level}${idAttr} class="sdoc-heading sdoc-depth-${level}"${dl}>${toggle}${renderInline(scope.title)}</h${level}>`;
   const childrenHtml = children ? `\n<div class="sdoc-scope-children">${children}</div>` : "";
-  return `<section class="sdoc-scope${rootClass}${typeClass}${metaClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
+  return `<section class="sdoc-scope${rootClass}${typeClass}${signpostClass}"${typeAttr}>${heading}${childrenHtml}</section>`;
 }
 
 function renderCitations(node) {
@@ -2486,9 +2540,12 @@ function renderErrors(errors) {
   return `<aside class="sdoc-errors"><strong>SDOC parse warnings</strong><ul>${items}</ul></aside>`;
 }
 
+// The returned nodes have the scopes written beside the root folded into it
+// (see foldRootSiblings), so a renderer finds a single root either way.
 function extractMeta(nodes) {
-  const doc = getDocumentScope(nodes);
-  const searchNodes = doc ? doc.children : nodes;
+  const body = foldRootSiblings(nodes);
+  const doc = getDocumentScope(body);
+  const searchNodes = doc ? doc.children : body;
 
   let metaIndex = -1;
   for (let i = 0; i < searchNodes.length; i += 1) {
@@ -2500,7 +2557,7 @@ function extractMeta(nodes) {
   }
 
   if (metaIndex === -1) {
-    return { nodes, meta: {}, warnings: [] };
+    return { nodes: body, meta: {}, warnings: [] };
   }
 
   const metaNode = searchNodes[metaIndex];
@@ -2567,12 +2624,13 @@ function extractMeta(nodes) {
   }
 
   if (doc) {
-    // @meta was inside the document scope — strip it from children
+    // @meta was inside the document scope, or beside it and folded in —
+    // strip it from children
     const filteredChildren = doc.children.filter((_, index) => index !== metaIndex);
     const stripped = { ...doc, children: filteredChildren };
     return { nodes: [stripped], meta, warnings };
   }
-  const bodyNodes = nodes.filter((_, index) => index !== metaIndex);
+  const bodyNodes = body.filter((_, index) => index !== metaIndex);
   return { nodes: bodyNodes, meta, warnings };
 }
 
@@ -2596,7 +2654,7 @@ function renderTextParagraphs(text) {
 }
 
 function renderFragment(nodes, depth = 2) {
-  return nodes.map((node) => renderNode(node, depth)).join("\n");
+  return withSignpostScopes(nodes, () => nodes.map((node) => renderNode(node, depth)).join("\n"));
 }
 
 function buildConfidentialHtml(meta) {
@@ -3066,8 +3124,12 @@ const DEFAULT_STYLE = `
     display: none;
   }
 
-  /* Meta sections (@about) — rendered with a distinct, subdued style
-     so readers can tell at a glance this is document metadata, not body content. */
+  /* Signposts (@about, @not-about, @related-resources, @reading-guide,
+     @editing-guide) — rendered with a distinct, subdued style so readers can
+     tell at a glance this is about the document, not body content. The rules
+     target .sdoc-meta-section, the class @about carried before the other
+     signposts existed, so stylesheets written against it keep working; every
+     signpost also carries sdoc-signpost and sdoc-signpost-<id> as hooks. */
   .sdoc-scope.sdoc-meta-section {
     position: relative;
     margin: 1.2rem 3rem 1.6rem 3rem;
@@ -3101,6 +3163,13 @@ const DEFAULT_STYLE = `
      left border. Default is left: -1.4em which lands on the border. */
   .sdoc-meta-section > .sdoc-heading > .sdoc-toggle {
     left: -2.6em;
+  }
+
+  /* The structured part of @related-resources and @reading-guide is data, not
+     commentary: keep it upright and at full contrast. */
+  .sdoc-signpost .sdoc-table {
+    font-style: normal;
+    color: var(--sdoc-fg);
   }
 
 `;
@@ -3245,15 +3314,53 @@ function hasHighlightableCodeBlocks(nodes) {
   return false;
 }
 
+// The title scope gets the root styling: the root, once the scopes beside it
+// are folded in, or, without a single root, the first top-level node that is
+// not a reserved or :comment scope, when that node is a scope.
 function renderBodyNodes(nodes) {
-  return nodes
-    .map((node, index) => {
-      if (node.type === "scope" && index === 0) {
+  const body = foldRootSiblings(nodes);
+  const title = body.find((node) => !isRootSibling(node));
+  return withSignpostScopes(body, () => body
+    .map((node) => {
+      if (node.type === "scope" && node === title) {
         return renderScope(node, 1, true);
       }
       return renderNode(node, 1);
     })
-    .join("\n");
+    .join("\n"));
+}
+
+// The signposts a render drops, as ids, resolved from its options in
+// three steps:
+//   1. Start from SIGNPOSTS: only the exportVisible sections are kept.
+//   2. `includeSignposts: true` keeps every section. When `includeSignposts` is not
+//      given, `includeAbout: true` keeps @about as well.
+//   3. `signposts`, a map from id to true (keep) or false (drop),
+//      overrides single sections on top of that.
+// Ids are matched case-insensitively. Unknown ids and non-boolean values are
+// ignored, in keeping with renderers that never throw.
+function hiddenSignposts(options = {}) {
+  const keep = new Set(SIGNPOST_IDS.filter((id) => SIGNPOSTS[id].exportVisible));
+  if (options.includeSignposts === true) {
+    for (const id of SIGNPOST_IDS) keep.add(id);
+  } else if (options.includeSignposts === undefined && options.includeAbout === true) {
+    keep.add("about");
+  }
+  const overrides = options.signposts;
+  if (overrides && typeof overrides === "object") {
+    for (const [key, value] of Object.entries(overrides)) {
+      const id = key.toLowerCase();
+      if (!SIGNPOSTS[id] || typeof value !== "boolean") continue;
+      if (value) keep.add(id);
+      else keep.delete(id);
+    }
+  }
+  return SIGNPOST_IDS.filter((id) => !keep.has(id));
+}
+
+function applySignpostOptions(nodes, options) {
+  const hidden = hiddenSignposts(options);
+  return hidden.length ? stripSignposts(nodes, hidden) : nodes;
 }
 
 function renderHtmlBody(text, options = {}) {
@@ -3261,12 +3368,12 @@ function renderHtmlBody(text, options = {}) {
   const metaResult = extractMeta(parsed.nodes);
   const savedOptions = _renderOptions;
   _renderOptions = {};
-  // includeAbout defaults to false: HTML output is treated as "export-shape"
-  // by default, hiding the discovery summary. The preview path in
-  // extension.js opts in with `includeAbout: true` to keep the meta-section
-  // visible during authoring.
-  const includeAbout = options.includeAbout === true;
-  const renderNodes = includeAbout ? metaResult.nodes : stripAboutScopes(metaResult.nodes);
+  // HTML output is "export-shape" by default: the signposts meant for
+  // someone deciding whether to read, or for an editor, are dropped, and
+  // @reading-guide stays. The preview path in extension.js passes
+  // `includeSignposts: true` to keep them all visible during authoring;
+  // `signposts` picks single sections (see hiddenSignposts).
+  const renderNodes = applySignpostOptions(metaResult.nodes, options);
   const citationData = buildCitationNumbering(renderNodes);
   _citationNumbering = citationData.numbering;
   _citationDefinitions = citationData.definitions;
@@ -3279,12 +3386,13 @@ function renderHtmlBody(text, options = {}) {
 
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   _renderOptions = options.renderOptions ?? {};
-  // includeAbout defaults to false: HTML/PDF output is hidden-by-default
-  // because exported files are normally sent to a specific recipient who has
-  // already been asked to read the doc, so the "should I read this?" framing
-  // in @about adds noise. The live preview opts in with `includeAbout: true`.
-  const includeAbout = options.includeAbout === true;
-  const renderNodes = includeAbout ? parsed.nodes : stripAboutScopes(parsed.nodes);
+  // An exported file is normally sent to someone who has already been asked
+  // to read it and will not edit it, so by default the signposts for
+  // discovery (@about, @not-about, @related-resources) and for editors
+  // (@editing-guide) are dropped. @reading-guide serves that reader and stays.
+  // The live preview opts in to everything with `includeSignposts: true`, and
+  // `signposts` picks single sections (see hiddenSignposts).
+  const renderNodes = applySignpostOptions(parsed.nodes, options);
   const citationData = buildCitationNumbering(renderNodes);
   _citationNumbering = citationData.numbering;
   _citationDefinitions = citationData.definitions;
@@ -3468,22 +3576,49 @@ function slugify(text) {
     .replace(/^-+|-+$/g, "");
 }
 
+// A scope whose id is reserved (@meta and the signposts). It is one of those
+// only at the reserved level (see getReservedLevel); deeper down it is an
+// ordinary scope that the validator reports as misplaced.
+function isReservedScope(node) {
+  return Boolean(node && node.type === "scope" && node.id && RESERVED_SCOPE_IDS.has(node.id.toLowerCase()));
+}
+
+// The reserved scopes that are @meta or a signpost: those at the reserved level.
+function reservedLevelScopes(nodes) {
+  return new Set(getReservedLevel(nodes).filter(isReservedScope));
+}
+
+// A scope that may sit beside the root without making the root stop being the
+// only one: a reserved scope (@meta and the signposts) or a :comment scope.
+function isRootSibling(node) {
+  if (node.type !== "scope") return false;
+  return node.scopeType === "comment" || isReservedScope(node);
+}
+
+// The document's root scope: the only top-level scope left once the reserved
+// and :comment scopes are set aside. Any other top-level content (a paragraph,
+// a second scope) means there is no single root, and this returns null.
 function getDocumentScope(nodes) {
-  if (nodes.length === 1 && nodes[0].type === "scope" && nodes[0].children) {
-    return nodes[0];
+  const body = nodes.filter((node) => !isRootSibling(node));
+  if (body.length === 1 && body[0].type === "scope" && Array.isArray(body[0].children)) {
+    return body[0];
   }
   return null;
 }
 
-function getContentScopes(nodes) {
+// The nodes with the scopes written beside the root moved into it: those
+// before the root go to the front of its children, those after it to the end.
+// The root is copied, not changed. Without a single root, or with nothing
+// beside it, the nodes come back as they are.
+function foldRootSiblings(nodes) {
   const doc = getDocumentScope(nodes);
-  const children = doc ? doc.children : nodes;
-  return children.filter(
-    (n) => n.type === "scope" && (!n.id || (n.id.toLowerCase() !== "meta" && n.id.toLowerCase() !== "about"))
-  );
+  if (!doc || nodes.length === 1) return nodes;
+  return [{ ...doc, children: getReservedLevel(nodes) }];
 }
 
-function collectPlainText(nodes) {
+// The text of the blocks, joined with a blank line. `headers: false` leaves
+// out each table's header row.
+function collectPlainText(nodes, { headers = true } = {}) {
   const parts = [];
   for (const node of nodes) {
     if (node.type === "paragraph") {
@@ -3491,16 +3626,16 @@ function collectPlainText(nodes) {
     } else if (node.type === "list") {
       for (const item of node.items || []) {
         if (item.title) parts.push(item.title);
-        if (item.children) parts.push(collectPlainText(item.children));
+        if (item.children) parts.push(collectPlainText(item.children, { headers }));
       }
     } else if (node.type === "scope" && node.children) {
-      parts.push(collectPlainText(node.children));
+      parts.push(collectPlainText(node.children, { headers }));
     } else if (node.type === "code" && node.content) {
       parts.push(node.content);
     } else if (node.type === "blockquote" && node.text) {
       parts.push(node.text);
     } else if (node.type === "table") {
-      if (node.headers) parts.push(node.headers.join(" | "));
+      if (headers && node.headers) parts.push(node.headers.join(" | "));
       if (node.rows) {
         for (const row of node.rows) parts.push(row.join(" | "));
       }
@@ -3524,19 +3659,20 @@ function firstParagraphPreview(nodes, maxLen) {
 
 /**
  * Recursively collect all tagged (has @id) scope nodes from the content tree.
- * Skips @meta and @about. Used for deep section discovery — lets MCP clients
+ * Skips @meta and the signposts, and what they contain. Used for deep section discovery — lets MCP clients
  * find sections nested inside top-level scopes (e.g. @pass-terminology inside
  * @pedantic-review inside @writing).
  */
 function getAllTaggedScopes(nodes) {
   const result = [];
+  const reserved = reservedLevelScopes(nodes);
   function walk(nodeList) {
     for (const node of nodeList) {
       if (node.type === "scope" && node.hasHeading) {
-        const id = (node.id || "").toLowerCase();
-        if (id !== "meta" && id !== "about") {
-          result.push(node);
-        }
+        // @meta and the signposts are skipped with everything inside them; a
+        // reserved id deeper down is an ordinary scope.
+        if (reserved.has(node)) continue;
+        result.push(node);
         if (node.children) walk(node.children);
       }
     }
@@ -3623,10 +3759,7 @@ function extractDataBlocks(nodes) {
 }
 
 function extractAbout(nodes) {
-  const doc = getDocumentScope(nodes);
-  const children = doc ? doc.children : nodes;
-
-  for (const node of children) {
+  for (const node of getReservedLevel(nodes)) {
     if (node.type === "scope" && node.id && node.id.toLowerCase() === "about") {
       const texts = (node.children || [])
         .filter((c) => c.type === "paragraph")
@@ -3637,34 +3770,177 @@ function extractAbout(nodes) {
   return null;
 }
 
-// True when an @about scope has no meaningful content. Renderers use this to
-// skip emitting an empty meta-section / callout. Whitespace-only paragraphs
+// The level reserved scopes live at: the root scope's children, with the
+// scopes written beside the root in source order around them (`# Meta @meta { }`
+// above `# Title { }` is common). Without a single root scope, the nodes
+// themselves.
+function getReservedLevel(nodes) {
+  const doc = getDocumentScope(nodes);
+  if (!doc) return nodes;
+  const index = nodes.indexOf(doc);
+  return [...nodes.slice(0, index), ...doc.children, ...nodes.slice(index + 1)];
+}
+
+// The top-level scope with a given signpost id, or null.
+function findSignpostScope(nodes, id) {
+  for (const node of getReservedLevel(nodes)) {
+    if (node.type === "scope" && node.id && node.id.toLowerCase() === id) return node;
+  }
+  return null;
+}
+
+// Plain text of a signpost (paragraphs, list items and table rows, with
+// inline markup left as written so links survive), or null when the id is not
+// a signpost, or the section is absent or empty. A table's header is fixed by
+// the section's model, so it is left out. Unlike extractAbout, blocks are
+// joined with a blank line, not a space.
+function extractSignpost(nodes, id) {
+  const key = String(id || "").toLowerCase();
+  if (!SIGNPOSTS[key]) return null;
+  const scope = findSignpostScope(nodes, key);
+  if (!scope || isSignpostEmpty(scope)) return null;
+  return collectPlainText(scope.children || [], { headers: false }) || null;
+}
+
+// Every present, non-empty signpost as { [id]: text }.
+function extractSignposts(nodes) {
+  const result = {};
+  for (const id of SIGNPOST_IDS) {
+    const text = extractSignpost(nodes, id);
+    if (text !== null) result[id] = text;
+  }
+  return result;
+}
+
+// Inline nodes minus whitespace-only text, for "this cell is exactly one X".
+function significantInline(text) {
+  return parseInline(text || "").filter((n) => !(n.type === "text" && !n.value.trim()));
+}
+
+function inlinePlainText(inlineNodes) {
+  return inlineNodes
+    .map((n) => (n.value !== undefined ? n.value : n.children ? inlinePlainText(n.children) : n.id ? "@" + n.id : ""))
+    .join("");
+}
+
+// A cell of the form "@a, @b": the ids, or null when any token is not one reference.
+function parseSectionsCell(cell) {
+  const tokens = (cell || "").split(",").map((t) => t.trim());
+  const ids = [];
+  for (const token of tokens) {
+    const inline = significantInline(token);
+    if (inline.length !== 1 || inline[0].type !== "ref") return null;
+    ids.push(inline[0].id);
+  }
+  return ids;
+}
+
+// Why a link cannot be a @related-resources entry, or null when it can. A
+// resource is outside this document: another SDOC document or any file of the
+// project by relative path, or an external URL. Not a #fragment of this
+// document (its sections belong in @reading-guide), and not an absolute
+// filesystem path or file: URL, which would not resolve anywhere else.
+// True when an href carries a URL scheme (https:, mailto:, tel:, data:, ...)
+// and so names no file. A scheme is two characters or more, so a Windows
+// drive letter (C:\docs) reads as a path. Shared by resource classification
+// and the broken-link check, so the two never disagree about what is a file.
+function hasUrlScheme(href) {
+  return /^[a-z][a-z0-9+.-]+:/i.test(href || "");
+}
+
+function resourceHrefProblem(href) {
+  if (!href) return "the link has no target";
+  if (href.startsWith("#")) return "it points into this document; link this document's sections from @reading-guide instead";
+  if (/^file:/i.test(href) || href.startsWith("/") || /^[a-z]:[\\/]/i.test(href)) {
+    return "a file of the project must be linked by a path relative to this document";
+  }
+  return null;
+}
+
+// "external" for a URL with a scheme (https:, mailto:, ...), "sdoc" for
+// another SDOC document of the project, "file" for any other project file;
+// null when href is not a string.
+function resourceKind(href) {
+  if (typeof href !== "string") return null;
+  if (hasUrlScheme(href)) return "external";
+  return /\.sdoc$/i.test(href.split(/[?#]/)[0]) ? "sdoc" : "file";
+}
+
+// @related-resources as data: [{ label, href, kind, relation, lineStart }], or
+// null when the section is absent. `kind` is "sdoc", "file" or "external" (see
+// resourceKind). Rows that do not fit the schema are skipped here;
+// validateSignposts reports them.
+function extractRelatedResources(nodes) {
+  const scope = findSignpostScope(nodes, "related-resources");
+  if (!scope) return null;
+  const table = (scope.children || []).find((c) => c.type === "table");
+  if (!table) return [];
+  const resources = [];
+  (table.rows || []).forEach((row, index) => {
+    if (row.length !== 2) return;
+    const inline = significantInline(row[0]);
+    const relation = (row[1] || "").trim();
+    if (inline.length !== 1 || inline[0].type !== "link" || !relation) return;
+    const href = inline[0].href;
+    if (resourceHrefProblem(href)) return;
+    resources.push({ label: inlinePlainText(inline[0].children || []), href, kind: resourceKind(href), relation, lineStart: tableRowLine(table, index) });
+  });
+  return resources;
+}
+
+// @reading-guide as data: { text, entries: [{ sections, note, lineStart }] },
+// where text is the free part before the table. Null when absent.
+function extractReadingGuide(nodes) {
+  const scope = findSignpostScope(nodes, "reading-guide");
+  if (!scope) return null;
+  const children = scope.children || [];
+  const tableIndex = children.findIndex((c) => c.type === "table");
+  const free = tableIndex < 0 ? children : children.slice(0, tableIndex);
+  const entries = [];
+  if (tableIndex >= 0) {
+    const table = children[tableIndex];
+    (table.rows || []).forEach((row, index) => {
+      if (row.length !== 2) return;
+      const sections = parseSectionsCell(row[0]);
+      const note = (row[1] || "").trim();
+      if (!sections || !note) return;
+      entries.push({ sections, note, lineStart: tableRowLine(table, index) });
+    });
+  }
+  return { text: collectPlainText(free), entries };
+}
+
+// True when a signpost has no meaningful content. Renderers use this to
+// skip emitting an empty signpost box or callout. Whitespace-only paragraphs
 // count as empty.
-function isAboutEmpty(scope) {
+function isSignpostEmpty(scope) {
   if (!scope || !scope.children || scope.children.length === 0) return true;
   return scope.children.every(
     (child) => child.type === "paragraph" && (!child.text || child.text.trim() === "")
   );
 }
 
-// Recursively remove @about scopes from an AST. Used by the HTML/PDF export
-// paths, which hide @about by default: when a doc is exported and sent to a
-// specific recipient, the "should I read this?" framing is moot — the sender
-// already decided the answer is yes. Pass-through for nodes without children.
-function stripAboutScopes(nodes) {
+// Former name, kept for existing callers.
+const isAboutEmpty = isSignpostEmpty;
+
+// Remove the signposts with the given ids from an AST, without mutating it.
+// The default is the sections hidden in exports (everything but
+// @reading-guide); see SIGNPOSTS. Only the reserved level holds signposts: a
+// scope with a reserved id deeper down is an ordinary scope and stays, with
+// its content (the validator reports it as misplaced).
+function stripSignposts(nodes, ids = EXPORT_HIDDEN_SIGNPOST_IDS) {
   if (!Array.isArray(nodes)) return nodes;
-  const result = [];
-  for (const node of nodes) {
-    if (node && node.type === "scope" && node.id && node.id.toLowerCase() === "about") {
-      continue;
-    }
-    if (node && node.type === "scope" && Array.isArray(node.children)) {
-      result.push({ ...node, children: stripAboutScopes(node.children) });
-    } else {
-      result.push(node);
-    }
-  }
-  return result;
+  const drop = new Set(ids.map((id) => String(id).toLowerCase()));
+  const dropped = (node) => isReservedScope(node) && drop.has(node.id.toLowerCase());
+  const doc = getDocumentScope(nodes);
+  return nodes
+    .filter((node) => !dropped(node))
+    .map((node) => (node === doc ? { ...doc, children: doc.children.filter((child) => !dropped(child)) } : node));
+}
+
+// Former export: removes the top-level @about and nothing else.
+function stripAboutScopes(nodes) {
+  return stripSignposts(nodes, ["about"]);
 }
 
 // The ids a raw `svg` block puts into the page, in document order.
@@ -3693,13 +3969,30 @@ function svgBlockIds(node) {
   return out;
 }
 
+// Every explicit @id and every title slug in the tree. References resolve to
+// explicit @ids only (see collectRefTargets); this wider set is kept for
+// existing callers.
 function collectAllIds(nodes) {
+  const { ids, bySlug } = collectRefTargets(nodes);
+  return new Set([...ids, ...bySlug.keys()]);
+}
+
+// The ids an @ref resolves to: explicit @ids only. A title's derived slug
+// addresses a section for tools (listSections' derivedId, extractSection), but
+// a reference to it would break silently when the title changes, so it does
+// not resolve. Also returns, by slug, the first scope with that title slug,
+// so a broken reference can name the heading it was probably meant for.
+function collectRefTargets(nodes) {
   const ids = new Set();
+  const bySlug = new Map();
   function walk(nodeList) {
     for (const node of nodeList) {
       if (node.type === "scope") {
         if (node.id) ids.add(node.id);
-        if (node.title) ids.add(slugify(node.title));
+        if (node.title) {
+          const slug = slugify(node.title);
+          if (!bySlug.has(slug)) bySlug.set(slug, node);
+        }
       }
       for (const id of svgBlockIds(node)) ids.add(id);
       if (node.children) walk(node.children);
@@ -3709,7 +4002,23 @@ function collectAllIds(nodes) {
     }
   }
   walk(nodes);
-  return ids;
+  return { ids, bySlug };
+}
+
+// The end of a broken-reference message when the id is a heading's title slug:
+// which @id to add, or the @id that heading already has.
+function slugRefHint(id, bySlug) {
+  const scope = bySlug.get(id);
+  if (!scope) return "";
+  return scope.id
+    ? `; it matches the heading "${scope.title}", whose @id is @${scope.id}`
+    : `; it matches the heading "${scope.title}", which has no @id: add @${id} to it`;
+}
+
+// The 1-based source line of a table's row `index`, from the parser's rowLines;
+// the table's own line for a node built without them.
+function tableRowLine(table, index) {
+  return (table.rowLines && table.rowLines[index]) || table.lineStart;
 }
 
 function collectInlineRefs(nodes) {
@@ -3761,11 +4070,12 @@ function collectInlineRefs(nodes) {
           }
         }
         if (node.rows) {
-          for (const row of node.rows) {
+          node.rows.forEach((row, index) => {
+            const line = tableRowLine(node, index);
             for (const cell of row) {
-              processText(cell, node.lineStart, node.lineEnd);
+              processText(cell, line, line);
             }
-          }
+          });
         }
       }
       // Handle list items (no type field, but have title/children)
@@ -3797,17 +4107,31 @@ function collectCitationDefinitions(nodes) {
 }
 
 function validateRefs(nodes, options = {}) {
-  const ids = collectAllIds(nodes);
+  const { ids, bySlug } = collectRefTargets(nodes);
   const externalIds = options.externalIds || new Set();
   const { refs, links } = collectInlineRefs(nodes);
   const warnings = [];
 
   for (const ref of refs) {
-    if (!ids.has(ref.id) && !externalIds.has(ref.id)) {
+    // @meta and the signposts are not reference targets: most are dropped from
+    // exports, which would leave a dead link, and the spec reserves the ids.
+    // This covers @reading-guide's Sections cells too, so a reserved entry
+    // there is reported once, here.
+    if (RESERVED_SCOPE_IDS.has(ref.id.toLowerCase())) {
       warnings.push({
         type: "broken-ref",
         id: ref.id,
-        message: `Broken reference: @${ref.id} does not match any scope ID or title`,
+        severity: "error",
+        message: `Broken reference: @${ref.id} names a reserved scope (@meta or a signpost), which is not a reference target`,
+        lineStart: ref.lineStart,
+        lineEnd: ref.lineEnd
+      });
+    } else if (!ids.has(ref.id) && !externalIds.has(ref.id)) {
+      warnings.push({
+        type: "broken-ref",
+        id: ref.id,
+        severity: "error",
+        message: `Broken reference: @${ref.id} does not match any scope @id${slugRefHint(ref.id, bySlug)}`,
         lineStart: ref.lineStart,
         lineEnd: ref.lineEnd
       });
@@ -3816,7 +4140,7 @@ function validateRefs(nodes, options = {}) {
 
   for (const link of links) {
     const href = link.href;
-    if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href) || href.startsWith("#") || href.startsWith("data:")) {
+    if (href.startsWith("#") || hasUrlScheme(href)) {
       continue;
     }
     if (options.resolveFilePath) {
@@ -3825,6 +4149,7 @@ function validateRefs(nodes, options = {}) {
       if (!options.resolveFilePath(filePath)) {
         warnings.push({
           type: "broken-link",
+          severity: "error",
           href,
           message: `Broken link: file not found — ${href}`,
           lineStart: link.lineStart,
@@ -3835,6 +4160,398 @@ function validateRefs(nodes, options = {}) {
   }
 
   return warnings;
+}
+
+// Checks the signposts against their content models (SIGNPOSTS).
+// Returns findings in the validateRefs shape; it never throws, and rendering
+// does not depend on it. Rule types:
+//   reserved-scope-placement  a reserved scope below the document's top level
+//   reserved-scope-duplicate  the same reserved scope twice at the top level
+//   signpost-root       the document's only scope is a signpost, so it renders empty
+//   signpost-content    a block the section's model does not allow
+//   signpost-table      the structured table is missing, doubled or malformed
+//   signpost-order      the reserved level is out of RESERVED_ORDER (a warning)
+// A @reading-guide entry naming a reserved scope is a reference to it, which
+// validateRefs reports like any other. Every finding has a severity: "error", or "warning" for signpost-order,
+// which fixSignpostOrder can put right without changing what renders.
+function validateSignposts(nodes) {
+  const findings = [];
+  const top = getReservedLevel(nodes);
+  const topSet = new Set(top);
+
+  function report(type, id, message, node, severity = "error") {
+    findings.push({ type, id, severity, message, lineStart: node.lineStart, lineEnd: node.lineEnd });
+  }
+  function reservedId(node) {
+    if (node.type !== "scope" || !node.id) return null;
+    const id = node.id.toLowerCase();
+    return RESERVED_SCOPE_IDS.has(id) ? id : null;
+  }
+
+  // A file whose only scope is a signpost has no root: the scope is read as
+  // the signpost, and the document renders empty. A root written with a
+  // reserved id by mistake looks just like this.
+  if (!getDocumentScope(nodes)) {
+    const rest = nodes.filter((node) => !(node.type === "scope" && node.scopeType === "comment"));
+    const signposts = rest.filter((node) => reservedId(node) && reservedId(node) !== "meta");
+    if (signposts.length === 1 && rest.every((node) => reservedId(node))) {
+      const id = reservedId(signposts[0]);
+      report("signpost-root", id, `@${id} is the document's only scope, so it is read as a signpost and the document renders empty; give the root another id`, signposts[0]);
+    }
+  }
+
+  // Placement: reserved scopes only as direct children of the top level. A
+  // :comment scope is never rendered, so what it holds is not checked.
+  function walk(list) {
+    for (const node of list || []) {
+      if (!node) continue;
+      if (node.type === "scope" && node.scopeType === "comment") continue;
+      const id = reservedId(node);
+      if (id && topSet.has(node)) {
+        // A signpost's (or @meta's) own content model is checked below, but a
+        // reserved scope nested inside it is still out of place.
+        walk(node.children);
+        continue;
+      }
+      if (id) {
+        // Rendered, listed and exported as an ordinary scope, so say so: the
+        // export warnings print this message as it is. Being ordinary, its
+        // content is walked like any other.
+        const role = id === "meta" ? "configuration" : "a signpost";
+        report("reserved-scope-placement", id, `@${id} must be a direct child of the document's root scope; here it is an ordinary section, not ${role}`, node);
+      }
+      if (node.children) walk(node.children);
+      if (node.type === "list") walk(node.items);
+    }
+  }
+  walk(top);
+
+  // Order: @meta, then the signposts in SIGNPOSTS order, then the body.
+  for (const problem of findOrderProblems(top)) {
+    report("signpost-order", problem.id, problem.message, problem.node, "warning");
+  }
+
+  // Duplicates at the top level.
+  const seen = new Set();
+  for (const node of top) {
+    const id = reservedId(node);
+    if (!id) continue;
+    if (seen.has(id)) report("reserved-scope-duplicate", id, `@${id} appears more than once; a document has at most one`, node);
+    seen.add(id);
+  }
+
+  // Prose: paragraphs and lists, list items holding only paragraphs and lists.
+  function checkProse(id, children) {
+    for (const child of children || []) {
+      if (child.type === "paragraph") continue;
+      if (child.type === "list") {
+        for (const item of child.items || []) checkProse(id, item.children);
+        continue;
+      }
+      report("signpost-content", id, `@${id} may contain only paragraphs and lists, found ${describeNode(child)}`, child);
+    }
+  }
+
+  // @not-about says what is left out and why; the resources that cover it are
+  // linked from @related-resources, so a link here is the boundary being crossed.
+  // @about is shown by discovery tools without the body, where a reference to
+  // one of its sections leads nowhere; pointing into the body is @reading-guide's job.
+  const NO_INLINE = {
+    "not-about": { type: "link", message: "@not-about says what this document leaves out and why, and holds no links: list the resource in @related-resources instead" },
+    "about": { type: "ref", message: "@about is read without the body, and holds no section references: point to sections from @reading-guide instead" }
+  };
+  function hasInline(text, type) {
+    const walk = (list) => list.some((n) => n.type === type || (n.children && walk(n.children)));
+    return walk(parseInline(text || ""));
+  }
+  function checkNoInline(id, children, rule) {
+    for (const child of children || []) {
+      if (child.type === "paragraph" && hasInline(child.text, rule.type)) {
+        report("signpost-content", id, rule.message, child);
+      } else if (child.type === "list") {
+        for (const item of child.items || []) {
+          if (hasInline(item.title, rule.type)) report("signpost-content", id, rule.message, item);
+          checkNoInline(id, item.children, rule);
+        }
+      }
+    }
+  }
+
+  function checkTable(id, section, table) {
+    const want = section.table.map((h) => h.toLowerCase());
+    const got = (table.headers || []).map((h) => h.trim().toLowerCase());
+    if (got.length !== want.length || got.some((h, i) => h !== want[i])) {
+      report("signpost-table", id, `@${id} table header must be "${section.table.join(" | ")}"`, table);
+      return;
+    }
+    (table.rows || []).forEach((row, index) => {
+      const where = `@${id} table row ${index + 1}`;
+      const line = tableRowLine(table, index);
+      const at = { lineStart: line, lineEnd: line };
+      if (row.length !== want.length) {
+        report("signpost-table", id, `${where} has ${row.length} cells, expected ${want.length}`, at);
+        return;
+      }
+      const empty = row.findIndex((cell) => !cell || !cell.trim());
+      if (empty >= 0) {
+        report("signpost-table", id, `${where}: the "${section.table[empty]}" cell is empty`, at);
+        return;
+      }
+      if (id === "related-resources") {
+        const inline = significantInline(row[0]);
+        if (inline.length !== 1 || inline[0].type !== "link") {
+          report("signpost-table", id, `${where}: "Resource" must be exactly one link, [label](target) or a bare URL`, at);
+        } else {
+          const problem = resourceHrefProblem(inline[0].href);
+          if (problem) report("signpost-table", id, `${where}: "Resource" ${inline[0].href}: ${problem}`, at);
+        }
+      } else if (id === "reading-guide") {
+        const refs = parseSectionsCell(row[0]);
+        if (!refs) {
+          report("signpost-table", id, `${where}: "Sections" must be a comma-separated list of @id references`, at);
+          return;
+        }
+      }
+    });
+  }
+
+  for (const node of top) {
+    const section = getSignpost(node);
+    if (!section) continue;
+    const id = section.id;
+    const children = node.children || [];
+    if (section.model === "prose") {
+      checkProse(id, children);
+      if (NO_INLINE[id]) checkNoInline(id, children, NO_INLINE[id]);
+      continue;
+    }
+    const tables = children.filter((c) => c.type === "table");
+    const tableIndex = children.findIndex((c) => c.type === "table");
+    if (tableIndex < 0) {
+      if (!isSignpostEmpty(node)) {
+        report("signpost-table", id, `@${id} needs a table with header "${section.table.join(" | ")}"`, node);
+      }
+    }
+    if (section.model === "table") {
+      for (const child of children) {
+        if (child.type === "table") continue;
+        if (child.type === "paragraph" && !child.text.trim()) continue;
+        report("signpost-content", id, `@${id} may contain only its table, found ${describeNode(child)}`, child);
+      }
+      tables.slice(1).forEach((t) => report("signpost-table", id, `@${id} has more than one table`, t));
+    } else {
+      checkProse(id, tableIndex < 0 ? children : children.slice(0, tableIndex));
+      if (tableIndex >= 0) {
+        for (const child of children.slice(tableIndex + 1)) {
+          report("signpost-content", id, `@${id}: nothing may follow its table, found ${describeNode(child)}`, child);
+        }
+      }
+    }
+    if (tables.length) checkTable(id, section, tables[0]);
+  }
+
+  return findings;
+}
+
+function reservedRank(node) {
+  return RESERVED_ORDER.indexOf(node.id.toLowerCase());
+}
+
+function isCommentScope(node) {
+  return node.type === "scope" && node.scopeType === "comment";
+}
+
+// The reserved scopes at the reserved level that break RESERVED_ORDER: one
+// after the body started, or one ranked below a reserved scope before it.
+// :comment scopes are not rendered, so they are neither body nor reserved.
+function findOrderProblems(level) {
+  const order = RESERVED_ORDER.map((id) => "@" + id).join(", ") + ", then the body";
+  const problems = [];
+  let bodyStarted = false;
+  let highest = null;
+  for (const node of level) {
+    if (isReservedScope(node)) {
+      const id = node.id.toLowerCase();
+      if (bodyStarted) {
+        problems.push({ id, node, message: `@${id} should come before the body; the order is ${order}` });
+      } else if (highest && reservedRank(node) < reservedRank(highest)) {
+        problems.push({ id, node, message: `@${id} should come before @${highest.id.toLowerCase()}; the order is ${order}` });
+      }
+      if (!highest || reservedRank(node) > reservedRank(highest)) highest = node;
+    } else if (!isCommentScope(node)) {
+      bodyStarted = true;
+    }
+  }
+  return problems;
+}
+
+// Moves the reserved scopes at the reserved level into RESERVED_ORDER, ahead
+// of the body. Returns { text, changed, reason }. `changed` is false when the
+// order was already right, or when no safe fix exists; `reason` then says
+// why, and `text` is the input unchanged.
+//
+// The scopes move as source text, each with the `//` comment lines directly
+// above it, re-indented to their new place (indentation is cosmetic). Scopes
+// written beside the root stay beside it when their rank allows, and move into
+// the root's children otherwise. A fix is returned only if it reparses to the
+// old tree with exactly those scopes moved, keeps every non-blank line (line
+// comments are not in the tree, so they are checked as text), and leaves no
+// order problem behind. Otherwise the reason names what failed.
+function fixSignpostOrder(text) {
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const trailingNewline = /\r?\n$/.test(text);
+  const lines = text.split(/\r?\n/);
+  if (trailingNewline) lines.pop();
+  const parsed = parseSdoc(text);
+  const nodes = parsed.nodes;
+  if (!findOrderProblems(getReservedLevel(nodes)).length) return { text, changed: false, reason: null };
+
+  const root = getDocumentScope(nodes);
+  const rootIndex = root ? nodes.indexOf(root) : -1;
+  const container = root ? root.children : nodes;
+  const before = root ? nodes.slice(0, rootIndex).filter(isReservedScope) : [];
+  const after = root ? nodes.slice(rootIndex + 1).filter(isReservedScope) : [];
+  const inside = container.filter(isReservedScope);
+
+  const byRank = (list) => list
+    .map((node, index) => ({ node, index }))
+    .sort((a, b) => reservedRank(a.node) - reservedRank(b.node) || a.index - b.index)
+    .map((entry) => entry.node);
+  const rest = inside.concat(after);
+  const lowestRest = rest.length ? Math.min(...rest.map(reservedRank)) : Infinity;
+  const stay = byRank(before.filter((node) => reservedRank(node) <= lowestRest));
+  const block = byRank(rest.concat(before.filter((node) => reservedRank(node) > lowestRest)));
+  // Scopes beside the root that already sit in their final order are left
+  // where they are, untouched.
+  const beforeMoves = !(stay.length === before.length && stay.every((node, i) => node === before[i]));
+  const moving = new Set((beforeMoves ? before : []).concat(inside, after));
+
+  // Where the block goes: before the container's first node that is not a
+  // :comment scope, which is the first reserved scope or the start of the body.
+  const anchorIndex = container.findIndex((node) => !isCommentScope(node));
+  const lineAt = (n) => (n >= 1 && n <= lines.length ? lines[n - 1] : "");
+  const indentOf = (n) => lineAt(n).match(/^[ \t]*/)[0];
+  // A node's first line, widened to the `//` lines directly above it, but
+  // never into the node before it in the same list.
+  function spanStart(node, siblings) {
+    const index = siblings.indexOf(node);
+    const floor = index > 0 ? siblings[index - 1].lineEnd : 0;
+    let start = node.lineStart;
+    while (start - 1 > floor && lineAt(start - 1).trim().startsWith("//")) start--;
+    return start;
+  }
+  const siblingsOf = (node) => (container.includes(node) ? container : nodes);
+
+  let blockLine;
+  let blockIndent;
+  if (anchorIndex >= 0) {
+    blockLine = spanStart(container[anchorIndex], container);
+    blockIndent = indentOf(container[anchorIndex].lineStart);
+  } else if (root) {
+    blockLine = root.lineEnd;
+    blockIndent = indentOf(root.lineStart) + "    ";
+  } else {
+    blockLine = lines.length + 1;
+    blockIndent = "";
+  }
+  const stayLine = before.length ? spanStart(before[0], nodes) : null;
+  const stayIndent = before.length ? indentOf(before[0].lineStart) : "";
+
+  function moved(node, indent) {
+    const own = indentOf(node.lineStart);
+    const out = [];
+    for (let n = spanStart(node, siblingsOf(node)); n <= node.lineEnd; n++) {
+      const line = lineAt(n);
+      if (own === indent || !line.trim()) out.push(own === indent ? line : "");
+      else if (line.startsWith(own)) out.push(indent + line.slice(own.length));
+      else out.push(indent + line.trimStart());
+    }
+    return out;
+  }
+  function blockEntries(list, indent) {
+    const entries = [];
+    list.forEach((node, i) => {
+      if (i > 0) entries.push({ text: "", soft: true });
+      for (const line of moved(node, indent)) entries.push({ text: line, soft: false });
+    });
+    return [{ text: "", soft: true }, ...entries, { text: "", soft: true }];
+  }
+
+  const deleted = new Set();
+  for (const node of moving) {
+    for (let n = spanStart(node, siblingsOf(node)); n <= node.lineEnd; n++) deleted.add(n);
+  }
+  const inserts = new Map();
+  if (beforeMoves && stay.length) inserts.set(stayLine, blockEntries(stay, stayIndent));
+  if (block.length) inserts.set(blockLine, (inserts.get(blockLine) || []).concat(blockEntries(block, blockIndent)));
+
+  // Every edit site is a seam. A deleted span leaves a soft blank, so the lines
+  // either side of it can never join into one paragraph; the original blank
+  // lines touching a seam are soft too. A soft blank is dropped where a blank
+  // line would be redundant: at the start or end, after another blank or an
+  // opening brace, or before a closing one. Blank lines away from the seams
+  // are kept as written.
+  const touched = (n) => deleted.has(n) || inserts.has(n);
+  const entries = [];
+  for (let n = 1; n <= lines.length + 1; n++) {
+    if (inserts.has(n)) entries.push(...inserts.get(n));
+    if (n > lines.length) break;
+    if (deleted.has(n)) {
+      if (!deleted.has(n - 1)) entries.push({ text: "", soft: true });
+      continue;
+    }
+    const line = lines[n - 1];
+    const seam = !line.trim() && (touched(n - 1) || touched(n + 1) || inserts.has(n));
+    entries.push({ text: line, soft: seam });
+  }
+  const kept = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry.soft) { kept.push(entry.text); continue; }
+    const prev = kept.length ? kept[kept.length - 1] : null;
+    const next = entries.slice(i + 1).find((e) => e.text.trim());
+    const redundant = prev === null || !prev.trim() || prev.trimEnd().endsWith("{")
+      || !next || next.text.trim() === "}";
+    if (!redundant) kept.push(entry.text);
+  }
+  const out = kept.join(eol) + (trailingNewline ? eol : "");
+
+  const fail = (reason) => ({ text, changed: false, reason });
+  const reparsed = parseSdoc(out);
+  const errorText = (errors) => errors.map((e) => e.message).join("\n");
+  if (errorText(reparsed.errors) !== errorText(parsed.errors)) return fail("moving the scopes would change how the document parses");
+
+  const isMoving = (node) => moving.has(node);
+  const insertAt = (list, anchorNode, insert) => {
+    const survivors = list.filter((node) => !isMoving(node));
+    const at = anchorNode ? list.slice(0, list.indexOf(anchorNode)).filter((node) => !isMoving(node)).length : survivors.length;
+    survivors.splice(at, 0, ...insert);
+    return survivors;
+  };
+  const children = insertAt(container, anchorIndex >= 0 ? container[anchorIndex] : null, block);
+  let expected;
+  if (root) {
+    const top = insertAt(nodes, beforeMoves && before.length ? before[0] : null, beforeMoves ? stay : [])
+      .map((node) => (node === root ? { ...root, children } : node));
+    expected = top;
+  } else {
+    expected = children;
+  }
+  // Positions move with the text, so they are left out of the comparison:
+  // the scope and block lines, and each table's row lines.
+  const shape = (value) => JSON.stringify(value, (key, v) => (key === "lineStart" || key === "lineEnd" || key === "rowLines" ? undefined : v));
+  if (shape(reparsed.nodes) !== shape(expected)) return fail("moving the scopes as text would change the document's structure (a braceless scope, or content written next to one, can do this); reorder them by hand");
+
+  const contentLines = (s) => s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).sort().join("\n");
+  if (contentLines(out) !== contentLines(text)) return fail("moving the scopes would lose or duplicate a line");
+  if (findOrderProblems(getReservedLevel(reparsed.nodes)).length) return fail("the reserved scopes could not all be put in order");
+  return { text: out, changed: true, reason: null };
+}
+
+function describeNode(node) {
+  if (node.type === "scope") return node.hasHeading ? `a sub-scope "${node.title}"` : "a sub-scope";
+  if (node.type === "code") return node.dataFlag ? "a data block" : "a code block";
+  return "a " + (node.type === "hr" ? "horizontal rule" : node.type);
 }
 
 function validateCitations(nodes) {
@@ -3850,6 +4567,7 @@ function validateCitations(nodes) {
     if (!definedKeys.has(ref.key)) {
       warnings.push({
         type: "broken-citation",
+        severity: "error",
         key: ref.key,
         message: `Broken citation: [@${ref.key}] is not defined in any {[citations] block`,
         lineStart: ref.lineStart,
@@ -3863,6 +4581,7 @@ function validateCitations(nodes) {
     if (!referencedKeys.has(def.key)) {
       warnings.push({
         type: "unused-citation",
+        severity: "warning",
         key: def.key,
         message: `Unused citation: @${def.key} is defined but never referenced with [@${def.key}]`,
         lineStart: def.lineStart,
@@ -3921,6 +4640,23 @@ module.exports = {
   extractAbout,
   isAboutEmpty,
   stripAboutScopes,
+  // The root scope, with the reserved and :comment scopes allowed beside it
+  getDocumentScope,
+  foldRootSiblings,
+  // Signposts
+  SIGNPOSTS,
+  SIGNPOST_IDS,
+  EXPORT_HIDDEN_SIGNPOST_IDS,
+  RESERVED_SCOPE_IDS,
+  getSignpost,
+  isSignpostEmpty,
+  stripSignposts,
+  hiddenSignposts,
+  extractSignpost,
+  extractSignposts,
+  extractRelatedResources,
+  resourceKind,
+  extractReadingGuide,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   // Validation
@@ -3929,6 +4665,9 @@ module.exports = {
   collectCitationDefinitions,
   validateRefs,
   validateCitations,
+  validateSignposts,
+  fixSignpostOrder,
+  RESERVED_ORDER,
   // Low-level helpers for custom renderers (e.g. slide-renderer)
   parseInline,
   renderKatex,

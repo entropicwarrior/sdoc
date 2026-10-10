@@ -71,6 +71,8 @@ src/                Source code
   theme.js            Theme loading, theme.json, CSS asset inlining
   zip.js              Minimal ZIP writer (zlib only), for the PPTX package
   extension.js        VS Code extension with preview and document server
+  href-path.js        Resolves a link href to a file on disk (raw, then percent-
+                      decoded); shared by extension.js and build-doc --check
   site-template/      Shared viewer templates (index.html, viewer.css)
 
 themes/             Slide themes

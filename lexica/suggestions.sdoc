@@ -194,7 +194,7 @@
         {[.]
             - `audience` — who this document is for, enabling agents to skip irrelevant files based on their current task
             - `depends-on` — references to other documents or sections this document assumes knowledge of, enabling agents to load prerequisites first
-            - `related` — sibling documents that cover adjacent topics, enabling agents to discover relevant context
+            - `related` — sibling documents that cover adjacent topics, enabling agents to discover relevant context. {+Superseded by the `@related-resources` signpost+}, which carries each document with a stated relation as a validated table rather than a bare list
             - `read-when` — task descriptions that indicate when this document is useful, enabling agents to match documents to their current intent without parsing prose
         }
 

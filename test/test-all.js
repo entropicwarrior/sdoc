@@ -15,6 +15,23 @@ const {
   extractAbout,
   isAboutEmpty,
   stripAboutScopes,
+  getDocumentScope,
+  foldRootSiblings,
+  SIGNPOST_IDS,
+  EXPORT_HIDDEN_SIGNPOST_IDS,
+  RESERVED_SCOPE_IDS,
+  getSignpost,
+  isSignpostEmpty,
+  stripSignposts,
+  hiddenSignposts,
+  extractSignpost,
+  extractSignposts,
+  extractRelatedResources,
+  resourceKind,
+  extractReadingGuide,
+  validateSignposts,
+  fixSignpostOrder,
+  RESERVED_ORDER,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
   parseInline,
@@ -816,16 +833,12 @@ test("stripAboutScopes removes top-level @about", () => {
   assert(!hasAbout(stripped), "no @about scope should remain after stripping");
 });
 
-test("stripAboutScopes is recursive (removes nested @about too)", () => {
+test("stripAboutScopes removes the top-level @about and keeps a nested one, an ordinary scope", () => {
   const r = parseSdoc("# Doc\n{\n  @about\n  {\n    Top.\n  }\n  # Inner\n  {\n    # About @about\n    {\n      Nested.\n    }\n    Body.\n  }\n}");
-  const stripped = stripAboutScopes(r.nodes);
-  function findAboutDeep(nodes) {
-    return nodes.some((n) =>
-      (n.type === "scope" && n.id && n.id.toLowerCase() === "about")
-      || (n.children && findAboutDeep(n.children))
-    );
-  }
-  assert(!findAboutDeep(stripped), "nested @about should also be removed");
+  const doc = stripAboutScopes(r.nodes)[0];
+  assert(!doc.children.some((n) => n.id === "about"), "top-level @about removed");
+  const inner = doc.children.find((n) => n.title === "Inner");
+  assert(inner.children.some((n) => n.id === "about"), "nested @about kept");
 });
 
 test("stripAboutScopes preserves non-about siblings unchanged", () => {
@@ -1791,6 +1804,911 @@ test("bare directives do not match non-meta/about", () => {
 });
 
 // ============================================================
+console.log("\n--- Signposts: parsing ---");
+
+const NEW_SIGNPOST_IDS = ["not-about", "related-resources", "reading-guide", "editing-guide"];
+
+for (const id of NEW_SIGNPOST_IDS) {
+  test(`bare @${id} { on one line parses as a headingless scope`, () => {
+    const r = parseSdoc(`# Doc {\n    @${id} {\n        Text.\n    }\n    # Body {\n        Content.\n    }\n}`);
+    assert(r.errors.length === 0, "no parse errors");
+    const node = r.nodes[0].children.find((n) => n.type === "scope" && n.id === id);
+    assert(node, `should find scope with id '${id}'`);
+    assert(node.hasHeading === false, "bare form has no heading");
+  });
+
+  test(`bare @${id} with the brace on the next line parses as a scope`, () => {
+    const r = parseSdoc(`# Doc {\n    @${id}\n    {\n        Text.\n    }\n}`);
+    assert(r.errors.length === 0, "no parse errors");
+    assert(r.nodes[0].children.some((n) => n.type === "scope" && n.id === id), "scope found");
+  });
+
+  test(`braceless bare @${id} at top level parses as a scope`, () => {
+    const r = parseSdoc(`@${id}\nText.\n\n# Body {\n    Content.\n}`);
+    assert(r.errors.length === 0, "no parse errors");
+    const node = r.nodes.find((n) => n.type === "scope" && n.id === id);
+    assert(node, "scope found");
+    assert(node.children.some((c) => c.type === "paragraph" && c.text === "Text."), "content captured");
+  });
+}
+
+test("a mid-line reference to a signpost stays a paragraph", () => {
+  const r = parseSdoc("# Doc {\n    See @reading-guide for details.\n}");
+  const children = r.nodes[0].children;
+  assert(children.length === 1 && children[0].type === "paragraph", "one paragraph, no scope");
+});
+
+test("@reading-guide followed by text on the same line is not a directive", () => {
+  const r = parseSdoc("# Doc {\n    @reading-guide is where to start.\n}");
+  assert(!r.nodes[0].children.some((n) => n.type === "scope"), "no scope created");
+});
+
+test("a bare signpost ends a braceless scope and becomes its sibling", () => {
+  const r = parseSdoc("# Doc {\n    # Intro\n    Text.\n    @editing-guide {\n        Rules.\n    }\n}");
+  const children = r.nodes[0].children;
+  assert(children.length === 2, "two siblings, got " + children.length);
+  assert(children[1].id === "editing-guide", "second sibling is @editing-guide");
+});
+
+test("SIGNPOST_IDS lists the five signposts in conventional order", () => {
+  assert(JSON.stringify(SIGNPOST_IDS) === JSON.stringify(["about", "not-about", "related-resources", "reading-guide", "editing-guide"]));
+});
+
+test("RESERVED_SCOPE_IDS is @meta plus the signposts", () => {
+  assert(RESERVED_SCOPE_IDS.size === 6 && RESERVED_SCOPE_IDS.has("meta") && SIGNPOST_IDS.every((id) => RESERVED_SCOPE_IDS.has(id)));
+});
+
+test("EXPORT_HIDDEN_SIGNPOST_IDS is every signpost except @reading-guide", () => {
+  assert(JSON.stringify(EXPORT_HIDDEN_SIGNPOST_IDS) === JSON.stringify(["about", "not-about", "related-resources", "editing-guide"]));
+});
+
+test("getSignpost matches case-insensitively and ignores other scopes", () => {
+  assert(getSignpost({ type: "scope", id: "Not-About" }).id === "not-about");
+  assert(getSignpost({ type: "scope", id: "overview" }) === null);
+  assert(getSignpost({ type: "paragraph" }) === null);
+  assert(getSignpost({ type: "scope", id: "meta" }) === null, "@meta is reserved but not a signpost");
+});
+
+// ============================================================
+console.log("\n--- Signposts: rendering ---");
+
+const SIGNPOST_TITLES = { "not-about": "Not About", "related-resources": "Related Resources", "reading-guide": "Reading Guide", "editing-guide": "Editing Guide" };
+
+for (const id of NEW_SIGNPOST_IDS) {
+  test(`bare @${id} renders as a labelled signpost`, () => {
+    const html = renderHtmlBody(`# Doc {\n    @${id} {\n        Some text.\n    }\n}`, { includeSignposts: true });
+    assert(new RegExp(`<section class="[^"]*sdoc-meta-section sdoc-signpost sdoc-signpost-${id}"`).test(html), "both classes present");
+    const m = html.match(new RegExp(`<h\\d[^>]*\\bid="${id}"[^>]*>(?:<span class="sdoc-toggle"[^>]*></span>)?([^<]+)</h\\d>`));
+    assert(m, "heading with the section id");
+    assert(m[1] === SIGNPOST_TITLES[id], `default title should be "${SIGNPOST_TITLES[id]}", got: ${m[1]}`);
+  });
+
+  test(`empty @${id} renders nothing`, () => {
+    const html = renderHtmlBody(`# Doc {\n    @${id} {\n    \n    }\n    # Body {\n        Content.\n    }\n}`, { includeSignposts: true });
+    assert(!/<section [^>]*sdoc-meta-section/.test(html), "no signpost element");
+  });
+}
+
+test("@about carries the signpost classes and keeps sdoc-meta-section", () => {
+  const html = renderHtmlBody("# Doc {\n    @about {\n        Summary.\n    }\n}", { includeSignposts: true });
+  assert(/<section class="[^"]*sdoc-meta-section sdoc-signpost sdoc-signpost-about"/.test(html), "all three classes on @about");
+});
+
+test("heading-form signpost keeps its custom title", () => {
+  const html = renderHtmlBody("# Doc {\n    # Further Reading @related-resources {\n        {[table]\n            Resource | Relation\n            [A](a.sdoc) | Sibling\n        }\n    }\n}", { includeSignposts: true });
+  assert(/>Further Reading<\/h\d>/.test(html), "custom title kept");
+  assert(html.includes("sdoc-signpost-related-resources"));
+});
+
+test("mixed-case id still gets the canonical per-section class", () => {
+  const html = renderHtmlBody("# Doc {\n    # Scope @Not-About {\n        Text.\n    }\n}", { includeSignposts: true });
+  assert(html.includes("sdoc-signpost-not-about"));
+});
+
+test("the @related-resources table renders as a table inside the signpost", () => {
+  const html = renderHtmlBody("# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [Spec](spec.sdoc) | Normative source\n        }\n    }\n}", { includeSignposts: true });
+  const section = html.slice(html.indexOf("sdoc-signpost-related-resources"));
+  assert(/<table/.test(section), "table rendered");
+  assert(section.includes('href="spec.sdoc"'), "link rendered");
+});
+
+// ============================================================
+console.log("\n--- Signposts: export visibility ---");
+
+const ALL_SIGNPOSTS_SRC = "# Doc {\n    @about {\n        A.\n    }\n    @not-about {\n        - B.\n    }\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [X](x.sdoc) | Sibling\n        }\n    }\n    @reading-guide {\n        Start at the top.\n    }\n    @editing-guide {\n        - Keep it short.\n    }\n    # Body {\n        Real content.\n    }\n}";
+
+function signpostsIn(html) {
+  return SIGNPOST_IDS.filter((id) => new RegExp(`<section [^>]*sdoc-signpost-${id}\\b`).test(html));
+}
+
+test("export default keeps @reading-guide and drops the other four", () => {
+  const html = renderHtmlDocument(ALL_SIGNPOSTS_SRC, "T");
+  assert(JSON.stringify(signpostsIn(html)) === JSON.stringify(["reading-guide"]), "got " + signpostsIn(html));
+  assert(html.includes("Real content."));
+});
+
+test("renderHtmlBody default applies the same rule", () => {
+  assert(JSON.stringify(signpostsIn(renderHtmlBody(ALL_SIGNPOSTS_SRC))) === JSON.stringify(["reading-guide"]));
+});
+
+test("includeSignposts: true keeps all five", () => {
+  assert(signpostsIn(renderHtmlDocument(ALL_SIGNPOSTS_SRC, "T", { includeSignposts: true })).length === 5);
+});
+
+test("includeAbout: true keeps @about on top of the defaults, and nothing more", () => {
+  const expected = JSON.stringify(["about", "reading-guide"]);
+  assert(JSON.stringify(signpostsIn(renderHtmlDocument(ALL_SIGNPOSTS_SRC, "T", { includeAbout: true }))) === expected);
+  assert(JSON.stringify(signpostsIn(renderHtmlBody(ALL_SIGNPOSTS_SRC, { includeAbout: true }))) === expected);
+});
+
+test("signposts keeps a single section on top of the defaults", () => {
+  const html = renderHtmlDocument(ALL_SIGNPOSTS_SRC, "T", { signposts: { "related-resources": true } });
+  assert(JSON.stringify(signpostsIn(html)) === JSON.stringify(["related-resources", "reading-guide"]), "got " + signpostsIn(html));
+});
+
+test("signposts drops a section shown by default", () => {
+  const html = renderHtmlDocument(ALL_SIGNPOSTS_SRC, "T", { signposts: { "reading-guide": false } });
+  assert(signpostsIn(html).length === 0, "got " + signpostsIn(html));
+  assert(html.includes("Real content."));
+});
+
+test("signposts applies on top of includeSignposts: true", () => {
+  const html = renderHtmlDocument(ALL_SIGNPOSTS_SRC, "T", { includeSignposts: true, signposts: { "editing-guide": false } });
+  assert(JSON.stringify(signpostsIn(html)) === JSON.stringify(["about", "not-about", "related-resources", "reading-guide"]));
+});
+
+test("signposts applies on top of includeAbout: true", () => {
+  const html = renderHtmlBody(ALL_SIGNPOSTS_SRC, { includeAbout: true, signposts: { "editing-guide": true, "reading-guide": false } });
+  assert(JSON.stringify(signpostsIn(html)) === JSON.stringify(["about", "editing-guide"]));
+});
+
+test("hiddenSignposts resolves the options to the ids a render drops", () => {
+  assert(JSON.stringify(hiddenSignposts()) === JSON.stringify(["about", "not-about", "related-resources", "editing-guide"]));
+  assert(JSON.stringify(hiddenSignposts({ includeSignposts: true })) === "[]");
+  assert(JSON.stringify(hiddenSignposts({ includeAbout: true })) === JSON.stringify(["not-about", "related-resources", "editing-guide"]));
+  assert(JSON.stringify(hiddenSignposts({ includeSignposts: false, includeAbout: true })) === JSON.stringify(["about", "not-about", "related-resources", "editing-guide"]));
+});
+
+test("hiddenSignposts matches ids case-insensitively and ignores unknown ids and non-booleans", () => {
+  const hidden = hiddenSignposts({ signposts: { "Related-Resources": true, "editing-guide": "yes", "body": true, "meta": true } });
+  assert(JSON.stringify(hidden) === JSON.stringify(["about", "not-about", "editing-guide"]), "got " + hidden);
+});
+
+test("an explicit includeSignposts: false wins over includeAbout: true", () => {
+  const html = renderHtmlDocument(ALL_SIGNPOSTS_SRC, "T", { includeSignposts: false, includeAbout: true });
+  assert(JSON.stringify(signpostsIn(html)) === JSON.stringify(["reading-guide"]));
+});
+
+test("a nested @not-about inside a body section is exported as an ordinary section", () => {
+  const html = renderHtmlBody("# Doc {\n    # Body {\n        @not-about {\n            Nested.\n        }\n        Text.\n    }\n}");
+  assert(html.includes("Nested."), "content kept");
+  assert(!html.includes("sdoc-signpost"), "not styled as a signpost");
+});
+
+test("stripSignposts defaults to the export-hidden sections, without mutating", () => {
+  const r = parseSdoc(ALL_SIGNPOSTS_SRC);
+  const before = JSON.stringify(r.nodes);
+  const ids = stripSignposts(r.nodes)[0].children.filter((n) => n.id).map((n) => n.id);
+  assert(JSON.stringify(ids) === JSON.stringify(["reading-guide"]), "got " + ids);
+  assert(JSON.stringify(r.nodes) === before, "input not mutated");
+});
+
+test("stripSignposts takes an explicit id list", () => {
+  const r = parseSdoc(ALL_SIGNPOSTS_SRC);
+  const ids = stripSignposts(r.nodes, ["reading-guide"])[0].children.filter((n) => n.id).map((n) => n.id);
+  assert(!ids.includes("reading-guide") && ids.includes("about"));
+});
+
+test("stripAboutScopes still removes only @about", () => {
+  const r = parseSdoc(ALL_SIGNPOSTS_SRC);
+  const ids = stripAboutScopes(r.nodes)[0].children.filter((n) => n.id).map((n) => n.id);
+  assert(!ids.includes("about"), "about removed");
+  assert(ids.includes("not-about") && ids.includes("editing-guide"), "other sections untouched");
+});
+
+test("isSignpostEmpty is the function isAboutEmpty names", () => {
+  assert(isAboutEmpty === isSignpostEmpty);
+  assert(isSignpostEmpty({ children: [{ type: "paragraph", text: "  " }] }) === true);
+  assert(isSignpostEmpty({ children: [{ type: "table", headers: [], rows: [] }] }) === false);
+});
+
+// ============================================================
+console.log("\n--- Signposts: extraction ---");
+
+test("extractSignpost joins blocks with a blank line and keeps links", () => {
+  const r = parseSdoc("# Doc {\n    @not-about {\n        Not covered here.\n\n        - Slides: see [slide guide](slides.sdoc).\n    }\n}");
+  const text = extractSignpost(r.nodes, "not-about");
+  assert(text === "Not covered here.\n\nSlides: see [slide guide](slides.sdoc).", "got: " + JSON.stringify(text));
+});
+
+test("extractSignpost leaves out a table's header row", () => {
+  const r = parseSdoc("@related-resources {\n    {[table]\n        Resource | Relation\n        [X](x.sdoc) | Sibling\n    }\n}\n# Doc {\n    Body.\n}");
+  const text = extractSignpost(r.nodes, "related-resources");
+  assert(text === "[X](x.sdoc) | Sibling", "got: " + JSON.stringify(text));
+});
+
+test("extractSignpost returns null for absent, empty and unknown sections", () => {
+  const r = parseSdoc("# Doc {\n    @editing-guide {\n    }\n    # Body {\n        Text.\n    }\n}");
+  assert(extractSignpost(r.nodes, "not-about") === null, "absent");
+  assert(extractSignpost(r.nodes, "editing-guide") === null, "empty");
+  assert(extractSignpost(r.nodes, "body") === null, "not a signpost");
+  assert(extractSignpost(r.nodes, "meta") === null, "@meta is not a signpost");
+});
+
+test("extractSignpost matches a heading-form id case-insensitively", () => {
+  const r = parseSdoc("# Doc {\n    # Rules @Editing-Guide {\n        Keep it short.\n    }\n}");
+  assert(extractSignpost(r.nodes, "editing-guide") === "Keep it short.");
+});
+
+test("extractSignpost finds a section at top level outside a document scope", () => {
+  const r = parseSdoc("@reading-guide {\n    Start here.\n}\n\n# Body {\n    Text.\n}");
+  assert(extractSignpost(r.nodes, "reading-guide") === "Start here.");
+});
+
+test("extractSignpost finds a section written beside the root scope", () => {
+  const r = parseSdoc("@editing-guide {\n    Rules.\n}\n\n# Doc {\n    # Body {\n        Text.\n    }\n}");
+  assert(extractSignpost(r.nodes, "editing-guide") === "Rules.");
+});
+
+test("extractSignposts returns present non-empty sections keyed by id", () => {
+  const r = parseSdoc("# Doc {\n    @about {\n        Summary.\n    }\n    @editing-guide {\n    }\n    # Body {\n        Text.\n    }\n}");
+  const all = extractSignposts(r.nodes);
+  assert(JSON.stringify(Object.keys(all)) === JSON.stringify(["about"]), "got " + Object.keys(all));
+  assert(JSON.stringify(extractSignposts(parseSdoc("# Doc {\n    Text.\n}").nodes)) === "{}");
+});
+
+test("extractAbout still joins paragraphs with a space (unchanged)", () => {
+  const r = parseSdoc("# Doc {\n    @about {\n        First.\n\n        Second.\n    }\n}");
+  assert(extractAbout(r.nodes) === "First. Second.");
+});
+
+test("extractRelatedResources returns label, href and relation per row", () => {
+  const r = parseSdoc("# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [Spec](spec.sdoc) | Normative source\n            [**Guide**](guide.sdoc#intro) | Prerequisite\n        }\n    }\n}");
+  const pages = extractRelatedResources(r.nodes);
+  assert(pages.length === 2);
+  assert(pages[0].label === "Spec" && pages[0].href === "spec.sdoc" && pages[0].relation === "Normative source");
+  assert(pages[1].label === "Guide" && pages[1].href === "guide.sdoc#intro");
+});
+
+test("extractRelatedResources and extractReadingGuide skip a row that is not exactly two cells", () => {
+  const r = parseSdoc("# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [A](a.sdoc) | Sibling | Extra\n            [B](b.sdoc) | Sibling\n        }\n    }\n    @reading-guide {\n        {[table]\n            Sections | Note\n            @x | One | Extra\n            @x | Two\n        }\n    }\n    # X @x {\n        x\n    }\n}");
+  assert(JSON.stringify(extractRelatedResources(r.nodes).map((x) => x.label)) === JSON.stringify(["B"]));
+  assert(JSON.stringify(extractReadingGuide(r.nodes).entries.map((x) => x.note)) === JSON.stringify(["Two"]));
+});
+
+test("a link with any URL scheme is external to resources and to the broken-link check alike", () => {
+  assert(resourceKind("tel:+123") === "external" && resourceKind("ftp://x.y/f") === "external");
+  assert(resourceKind("C:\\docs\\x.txt") === "file", "a drive letter is not a scheme");
+  const src = "# Doc {\n    Call [us](tel:+123), fetch [it](ftp://x.y/f), see [here](missing.sdoc).\n}";
+  const w = validateRefs(parseSdoc(src).nodes, { resolveFilePath: () => false });
+  assert(JSON.stringify(w.map((x) => x.href)) === JSON.stringify(["missing.sdoc"]), "only the relative path is checked as a file: " + JSON.stringify(w));
+});
+
+test("every validator gives each finding a severity", () => {
+  const src = "# Doc {\n    See @missing [@nokey].\n\n    {[citations]\n        - @unused Some source.\n    }\n}";
+  const nodes = parseSdoc(src).nodes;
+  const all = validateRefs(nodes, { resolveFilePath: () => false }).concat(validateCitations(nodes));
+  const bySeverity = Object.fromEntries(all.map((x) => [x.type, x.severity]));
+  assert(bySeverity["broken-ref"] === "error" && bySeverity["broken-citation"] === "error" && bySeverity["unused-citation"] === "warning", JSON.stringify(bySeverity));
+});
+
+test("extractRelatedResources classifies each resource as sdoc, file or external", () => {
+  const r = parseSdoc("# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [Spec](../spec.sdoc#refs) | Source\n            [Logo](img/logo.svg) | Artwork\n            https://github.com/o/r | Repository\n            [Here](#here) | Not a resource\n        }\n    }\n}");
+  const got = extractRelatedResources(r.nodes).map((x) => x.label + ":" + x.kind);
+  assert(JSON.stringify(got) === JSON.stringify(["Spec:sdoc", "Logo:file", "https://github.com/o/r:external"]), JSON.stringify(got));
+});
+
+test("resourceKind: a scheme is external, a .sdoc path is sdoc, anything else is file", () => {
+  assert(resourceKind("https://x.y/a.sdoc") === "external" && resourceKind("mailto:a@b.c") === "external");
+  assert(resourceKind("a/b.sdoc?x=1#s") === "sdoc" && resourceKind("../c.SDOC") === "sdoc");
+  assert(resourceKind("data.json") === "file" && resourceKind("dir/") === "file");
+});
+
+test("resourceKind returns null for an href that is not a string", () => {
+  assert(resourceKind(undefined) === null && resourceKind(null) === null && resourceKind(42) === null);
+});
+
+test("extractRelatedResources skips malformed rows and returns null when absent", () => {
+  const r = parseSdoc("# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            Not a link | Sibling\n            [Ok](ok.sdoc) | Sibling\n        }\n    }\n}");
+  assert(extractRelatedResources(r.nodes).length === 1);
+  assert(extractRelatedResources(parseSdoc("# Doc {\n    Text.\n}").nodes) === null);
+});
+
+test("extractReadingGuide returns the free text and the table entries", () => {
+  const r = parseSdoc("# Doc {\n    @reading-guide {\n        Skim once.\n\n        {[table]\n            Sections | Note\n            @intro, @usage | Start here\n        }\n    }\n    # Intro @intro {\n        A.\n    }\n    # Usage @usage {\n        B.\n    }\n}");
+  const guide = extractReadingGuide(r.nodes);
+  assert(guide.text === "Skim once.");
+  assert(guide.entries.length === 1);
+  assert(JSON.stringify(guide.entries[0].sections) === JSON.stringify(["intro", "usage"]));
+  assert(guide.entries[0].note === "Start here");
+  assert(extractReadingGuide(parseSdoc("# Doc {\n    Text.\n}").nodes) === null);
+});
+
+test("listSections and extractSection exclude every signpost", () => {
+  const r = parseSdoc("# Doc {\n    # Not About @not-about {\n        X.\n    }\n    # Guide @reading-guide {\n        Y.\n    }\n    # Rules @editing-guide {\n        Z.\n    }\n    # Pages @related-resources {\n        W.\n    }\n    # Body @body {\n        Real.\n    }\n}");
+  const ids = listSections(r.nodes).map((s) => s.id);
+  assert(JSON.stringify(ids) === JSON.stringify(["body"]), "got " + ids);
+  for (const id of NEW_SIGNPOST_IDS) assert(extractSection(r.nodes, id) === null, id + " should not be extractable");
+});
+
+// ============================================================
+console.log("\n--- Signposts: validation ---");
+
+const VALID_SIGNPOST_DOC = `# Doc {
+    @about {
+        What this is.
+    }
+    @not-about {
+        - Slides: they need their own layout rules.
+    }
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Spec](spec.sdoc) | Normative source
+        }
+    }
+    @reading-guide {
+        Skim once.
+
+        {[.]
+            - Then dip in.
+        }
+
+        {[table]
+            Sections | Note
+            @intro, @usage | Start here
+        }
+    }
+    @editing-guide {
+        - Keep it short.
+          {[.]
+            - Nested lists are fine.
+          }
+    }
+    # Intro @intro {
+        A.
+    }
+    # Usage @usage {
+        B.
+    }
+}`;
+
+function signpostFindings(src) {
+  const r = parseSdoc(src);
+  assert(r.errors.length === 0, "parse errors: " + r.errors.map((e) => e.message).join(", "));
+  return validateSignposts(r.nodes);
+}
+function findingTypes(src) {
+  return signpostFindings(src).map((f) => f.type);
+}
+// A document with one signpost body swapped in, and @intro/@usage to point at.
+function withSection(id, body) {
+  return `# Doc {\n    @${id} {\n${body}\n    }\n    # Intro @intro {\n        A.\n    }\n    # Usage @usage {\n        B.\n    }\n}`;
+}
+const TABLE = (header, ...rows) => `        {[table]\n            ${header}\n${rows.map((r) => "            " + r).join("\n")}\n        }`;
+
+test("a document using every signpost correctly has no findings", () => {
+  const f = signpostFindings(VALID_SIGNPOST_DOC);
+  assert(f.length === 0, JSON.stringify(f));
+});
+
+test("a document with no signposts has no findings", () => {
+  assert(signpostFindings("# Doc {\n    # Body {\n        Text.\n    }\n}").length === 0);
+});
+
+test("reserved scopes beside the root scope count as top level", () => {
+  assert(signpostFindings("# Meta @meta {\n    sdoc-version: 0.2\n}\n@about {\n    Summary.\n}\n# Doc {\n    @editing-guide {\n        Rules.\n    }\n    Body.\n}").length === 0);
+});
+
+test("placement: a signpost below the top level", () => {
+  const f = signpostFindings("# Doc {\n    # Body {\n        @about {\n            Nested.\n        }\n    }\n}");
+  assert(f.length === 1 && f[0].type === "reserved-scope-placement" && f[0].id === "about", JSON.stringify(f));
+  assert(f[0].lineStart === 3, "line of the nested scope, got " + f[0].lineStart);
+});
+
+test("placement: a nested @meta is reported too", () => {
+  assert(findingTypes("# Doc {\n    # Body {\n        @meta {\n            type: doc\n        }\n    }\n}").includes("reserved-scope-placement"));
+});
+
+test("duplicate: the second occurrence is reported", () => {
+  const f = signpostFindings("# Doc {\n    @editing-guide {\n        One.\n    }\n    # Rules @editing-guide {\n        Two.\n    }\n}");
+  assert(f.length === 1 && f[0].type === "reserved-scope-duplicate" && f[0].lineStart === 5, JSON.stringify(f));
+});
+
+test("content: a code block in @about", () => {
+  assert(JSON.stringify(findingTypes(withSection("about", "        Text.\n        ```js\n        x();\n        ```"))) === JSON.stringify(["signpost-content"]));
+});
+
+test("content: a table in @not-about", () => {
+  assert(JSON.stringify(findingTypes(withSection("not-about", TABLE("A | B", "1 | 2")))) === JSON.stringify(["signpost-content"]));
+});
+
+test("content: a sub-scope inside a list item of @editing-guide", () => {
+  assert(findingTypes(withSection("editing-guide", "        - Item {\n            # Sub {\n                X.\n            }\n          }")).includes("signpost-content"));
+});
+
+test("content: a blockquote in @editing-guide", () => {
+  assert(findingTypes(withSection("editing-guide", "        > Quoted.")).includes("signpost-content"));
+});
+
+test("content: a paragraph in @related-resources", () => {
+  const types = findingTypes(withSection("related-resources", "        These go together.\n\n" + TABLE("Resource | Relation", "[A](a.sdoc) | Sibling")));
+  assert(JSON.stringify(types) === JSON.stringify(["signpost-content"]), JSON.stringify(types));
+});
+
+test("content: a list after the table in @reading-guide", () => {
+  const types = findingTypes(withSection("reading-guide", TABLE("Sections | Note", "@intro | Start") + "\n\n        - Afterthought."));
+  assert(JSON.stringify(types) === JSON.stringify(["signpost-content"]), JSON.stringify(types));
+});
+
+test("content: a code block before the table in @reading-guide", () => {
+  const types = findingTypes(withSection("reading-guide", "        ```\n        x\n        ```\n\n" + TABLE("Sections | Note", "@intro | Start")));
+  assert(JSON.stringify(types) === JSON.stringify(["signpost-content"]), JSON.stringify(types));
+});
+
+test("table: @reading-guide with prose but no table", () => {
+  assert(JSON.stringify(findingTypes(withSection("reading-guide", "        Just prose."))) === JSON.stringify(["signpost-table"]));
+});
+
+test("content: a table written straight after an implicit list item belongs to that item", () => {
+  // The parser attaches a block that follows "- item" to the item, so the
+  // table is inside the list and the section has no table of its own.
+  const types = findingTypes(withSection("reading-guide", "        - Dip in.\n" + TABLE("Sections | Note", "@intro | Start")));
+  assert(types.includes("signpost-content") && types.includes("signpost-table"), JSON.stringify(types));
+});
+
+test("table: @related-resources with no table", () => {
+  assert(findingTypes(withSection("related-resources", "        - [A](a.sdoc)")).includes("signpost-table"));
+});
+
+test("table: @related-resources with two tables", () => {
+  const types = findingTypes(withSection("related-resources", TABLE("Resource | Relation", "[A](a.sdoc) | Sibling") + "\n" + TABLE("Resource | Relation", "[B](b.sdoc) | Sibling")));
+  assert(JSON.stringify(types) === JSON.stringify(["signpost-table"]), JSON.stringify(types));
+});
+
+test("table: wrong header", () => {
+  assert(JSON.stringify(findingTypes(withSection("related-resources", TABLE("Document | Why", "[A](a.sdoc) | Sibling")))) === JSON.stringify(["signpost-table"]));
+});
+
+test("table: header matches case-insensitively", () => {
+  assert(findingTypes(withSection("related-resources", TABLE("resource | RELATION", "[A](a.sdoc) | Sibling"))).length === 0);
+});
+
+test("table: a headerless table fails the header rule", () => {
+  const src = withSection("related-resources", "        {[table headerless]\n            [A](a.sdoc) | Sibling\n        }");
+  assert(JSON.stringify(findingTypes(src)) === JSON.stringify(["signpost-table"]));
+});
+
+test("table: a row with three cells", () => {
+  assert(JSON.stringify(findingTypes(withSection("related-resources", TABLE("Resource | Relation", "[A](a.sdoc) | Sibling | Extra")))) === JSON.stringify(["signpost-table"]));
+});
+
+test("table: an empty Relation cell", () => {
+  const f = signpostFindings(withSection("related-resources", TABLE("Resource | Relation", "[A](a.sdoc) | ")));
+  assert(f.length === 1 && f[0].type === "signpost-table" && /Relation/.test(f[0].message), JSON.stringify(f));
+});
+
+test("table: a Resource cell with two links", () => {
+  assert(JSON.stringify(findingTypes(withSection("related-resources", TABLE("Resource | Relation", "[A](a.sdoc) [B](b.sdoc) | Siblings")))) === JSON.stringify(["signpost-table"]));
+});
+
+test("table: a Resource cell with plain text", () => {
+  assert(JSON.stringify(findingTypes(withSection("related-resources", TABLE("Resource | Relation", "the spec | Sibling")))) === JSON.stringify(["signpost-table"]));
+});
+
+test("table: a Resource may be another SDOC document, any project file, or an external URL", () => {
+  const rows = [
+    "[Spec](spec.sdoc#grammar) | Normative source",
+    "[Theme](../themes/default/theme.css) | Stylesheet the examples use",
+    "https://github.com/entropicwarrior/sdoc | Upstream repository",
+    "<https://example.com/docs> | Product documentation",
+    "[Owner](mailto:docs@example.com) | Who to ask",
+  ];
+  const f = signpostFindings(withSection("related-resources", TABLE("Resource | Relation", ...rows)));
+  assert(f.length === 0, JSON.stringify(f));
+});
+
+test("table: a Resource pointing into this document is rejected", () => {
+  const f = signpostFindings(withSection("related-resources", TABLE("Resource | Relation", "[Intro](#intro) | Start here")));
+  assert(f.length === 1 && f[0].type === "signpost-table" && /@reading-guide/.test(f[0].message), JSON.stringify(f));
+});
+
+test("table: a Resource given by an absolute path or a file: URL is rejected", () => {
+  for (const row of ["[Hosts](/etc/hosts) | Absolute", "[Tmp](file:///tmp/x) | File URL", "[Win](C:\\docs\\x.sdoc) | Drive path"]) {
+    const f = signpostFindings(withSection("related-resources", TABLE("Resource | Relation", row)));
+    assert(f.length === 1 && /relative/.test(f[0].message), row + ": " + JSON.stringify(f));
+  }
+});
+
+test("content: a link in @not-about is rejected, in a paragraph or a list item at any depth", () => {
+  const cases = [
+    "        Slides are covered in [Slide Authoring](slides.sdoc).",
+    "        - Slides: see [Slide Authoring](slides.sdoc).",
+    "        - Styling\n          {[.]\n            - Themes: https://example.com/themes\n          }",
+  ];
+  for (const body of cases) {
+    const f = signpostFindings(withSection("not-about", body));
+    assert(f.length === 1 && f[0].type === "signpost-content" && /holds no links/.test(f[0].message), body + ": " + JSON.stringify(f));
+  }
+});
+
+test("content: @not-about giving reasons, with no links, is valid", () => {
+  assert(signpostFindings(withSection("not-about", "        - Slides: they need their own layout rules.\n        - Theming: nobody has written it yet.")).length === 0);
+});
+
+test("content: links stay allowed in @about and @editing-guide", () => {
+  assert(signpostFindings(withSection("about", "        See [the spec](spec.sdoc).")).length === 0);
+  assert(signpostFindings(withSection("editing-guide", "        - Follow [the style guide](style.sdoc).")).length === 0);
+});
+
+test("content: a section reference in @about is an error, in a paragraph or a list item at any depth", () => {
+  const cases = [
+    "        Start with @intro.",
+    "        - Covers usage, see @usage.",
+    "        - Topics\n          {[.]\n            - Basics: read @intro first\n          }",
+  ];
+  for (const body of cases) {
+    const f = signpostFindings(withSection("about", body));
+    assert(f.length === 1 && f[0].type === "signpost-content" && f[0].severity === "error" && /no section references/.test(f[0].message), body + ": " + JSON.stringify(f));
+  }
+});
+
+test("content: @about may mention an @id as code, escaped, or in an email address", () => {
+  assert(signpostFindings(withSection("about", "        Defines the `@intro` scope and the \\@usage id. Mail docs@example.com.")).length === 0);
+});
+
+test("content: section references stay allowed in @editing-guide", () => {
+  assert(signpostFindings(withSection("editing-guide", "        - Keep @intro and @usage in step.")).length === 0);
+});
+
+test("table: a Sections cell with a bare word", () => {
+  assert(JSON.stringify(findingTypes(withSection("reading-guide", TABLE("Sections | Note", "@intro, usage | Start")))) === JSON.stringify(["signpost-table"]));
+});
+
+test("ref: a Sections reference that does not resolve is reported once, by validateRefs", () => {
+  const src = withSection("reading-guide", TABLE("Sections | Note", "@intro, @nope | Start"));
+  assert(signpostFindings(src).length === 0, JSON.stringify(signpostFindings(src)));
+  const w = validateRefs(parseSdoc(src).nodes);
+  assert(w.length === 1 && w[0].type === "broken-ref" && w[0].id === "nope", JSON.stringify(w));
+});
+
+test("ref: a Sections reference resolves by explicit @id", () => {
+  assert(signpostFindings(withSection("reading-guide", TABLE("Sections | Note", "@intro, @usage | Start"))).length === 0);
+});
+
+test("ref: a Sections reference matching only a title slug is broken, and names the heading", () => {
+  const src = "# Doc {\n    @reading-guide {\n        {[table]\n            Sections | Note\n            @intro | Start\n        }\n    }\n    # Intro {\n        A.\n    }\n}";
+  assert(signpostFindings(src).length === 0, JSON.stringify(signpostFindings(src)));
+  const w = validateRefs(parseSdoc(src).nodes);
+  assert(w.length === 1 && w[0].type === "broken-ref" && w[0].id === "intro", JSON.stringify(w));
+  assert(w[0].message.includes('matches the heading "Intro", which has no @id: add @intro to it'), w[0].message);
+});
+
+test("ref: a Sections reference to a reserved scope is reported once, by validateRefs", () => {
+  const src = withSection("reading-guide", TABLE("Sections | Note", "@reading-guide | Start"));
+  assert(findingTypes(src).length === 0, "no signpost finding: " + JSON.stringify(findingTypes(src)));
+  const w = validateRefs(parseSdoc(src).nodes);
+  assert(w.length === 1 && w[0].type === "broken-ref" && w[0].id === "reading-guide" && /reserved scope/.test(w[0].message), JSON.stringify(w));
+});
+
+test("ref: a reference to a reserved scope in body text is a broken reference", () => {
+  for (const id of ["about", "meta", "editing-guide", "Reading-Guide"]) {
+    const w = validateRefs(parseSdoc(`# Doc {\n    @about {\n        Summary.\n    }\n    # Body {\n        See @${id} for more.\n    }\n}`).nodes);
+    assert(w.length === 1 && w[0].type === "broken-ref" && w[0].severity === "error" && /not a reference target/.test(w[0].message), id + ": " + JSON.stringify(w));
+  }
+});
+
+test("placement: a reserved scope nested inside a correctly placed signpost or @meta is reported", () => {
+  const inSignpost = signpostFindings("# Doc {\n    @about {\n        Summary.\n\n        @editing-guide {\n            - Rule.\n        }\n    }\n}");
+  assert(inSignpost.some((f) => f.type === "reserved-scope-placement" && f.id === "editing-guide" && f.lineStart === 5), JSON.stringify(inSignpost));
+  const inMeta = signpostFindings("# Doc {\n    @meta {\n        type: doc\n\n        @about {\n            Summary.\n        }\n    }\n}");
+  assert(inMeta.some((f) => f.type === "reserved-scope-placement" && f.id === "about"), JSON.stringify(inMeta));
+});
+
+test("an empty table-model section is not reported", () => {
+  assert(signpostFindings(withSection("related-resources", "")).length === 0);
+});
+
+// ============================================================
+console.log("\n--- Signposts: order ---");
+
+function orderFindings(src) {
+  return validateSignposts(parseSdoc(src).nodes).filter((f) => f.type === "signpost-order");
+}
+
+test("RESERVED_ORDER is @meta then the signposts", () => {
+  assert(JSON.stringify(RESERVED_ORDER) === JSON.stringify(["meta", "about", "not-about", "related-resources", "reading-guide", "editing-guide"]));
+});
+
+test("order: the conventional order has no warning", () => {
+  assert(orderFindings("# Meta @meta {\n    type: doc\n}\n# Doc {\n    @about {\n        A.\n    }\n    @editing-guide {\n        - E.\n    }\n    # Body {\n        B.\n    }\n}").length === 0);
+});
+
+test("order: a signpost ranked below one before it is a warning on the later one", () => {
+  const f = orderFindings("# Doc {\n    @editing-guide {\n        - E.\n    }\n    @about {\n        A.\n    }\n}");
+  assert(f.length === 1 && f[0].id === "about" && f[0].lineStart === 5 && f[0].severity === "warning", JSON.stringify(f));
+  assert(/should come before @editing-guide/.test(f[0].message));
+});
+
+test("order: a signpost after the body is a warning", () => {
+  const f = orderFindings("# Doc {\n    # Body {\n        B.\n    }\n    @reading-guide {\n        Start.\n    }\n}");
+  assert(f.length === 1 && f[0].id === "reading-guide" && /before the body/.test(f[0].message), JSON.stringify(f));
+});
+
+test("order: a paragraph before the signposts starts the body", () => {
+  assert(orderFindings("# Doc {\n    Intro.\n\n    @about {\n        A.\n    }\n}").length === 1);
+});
+
+test("order: a :comment scope is neither body nor reserved", () => {
+  assert(orderFindings("# Doc {\n    # Draft :comment {\n        Note.\n    }\n    @about {\n        A.\n    }\n    # Body {\n        B.\n    }\n}").length === 0);
+});
+
+test("order: @meta after a signpost is a warning on @meta", () => {
+  const f = orderFindings("# Doc {\n    @about {\n        A.\n    }\n    @meta {\n        type: doc\n    }\n}");
+  assert(f.length === 1 && f[0].id === "meta", JSON.stringify(f));
+});
+
+test("order: reserved scopes beside the root count in source order", () => {
+  assert(orderFindings("@about {\n    A.\n}\n# Doc {\n    @editing-guide {\n        - E.\n    }\n    # Body {\n        B.\n    }\n}").length === 0);
+  assert(orderFindings("@editing-guide {\n    - E.\n}\n# Doc {\n    @about {\n        A.\n    }\n}").length === 1);
+});
+
+test("order: a nested reserved id is an ordinary section, not out of order", () => {
+  const f = validateSignposts(parseSdoc("# Doc {\n    # Body {\n        @about {\n            A.\n        }\n    }\n}").nodes);
+  assert(JSON.stringify(f.map((x) => x.type)) === JSON.stringify(["reserved-scope-placement"]), JSON.stringify(f));
+});
+
+test("order: every other finding is an error", () => {
+  const f = validateSignposts(parseSdoc("# Doc {\n    # Body {\n        @about {\n            A.\n        }\n    }\n    @not-about {\n        {[table]\n            A | B\n            1 | 2\n        }\n    }\n}").nodes);
+  assert(f.length >= 2 && f.filter((x) => x.type !== "signpost-order").every((x) => x.severity === "error"), JSON.stringify(f));
+});
+
+// ============================================================
+console.log("\n--- Signposts: fixSignpostOrder ---");
+
+function expectFixed(src, expected) {
+  const r = fixSignpostOrder(src);
+  assert(r.changed === true, "should change; reason: " + r.reason);
+  if (expected !== undefined) assert(r.text === expected, "got:\n" + r.text);
+  assert(orderFindings(r.text).length === 0, "no order warning left");
+  assert(fixSignpostOrder(r.text).changed === false, "fixing again changes nothing");
+  return r.text;
+}
+
+test("fix: reorders, moves a signpost from after the body, and keeps a comment with its scope", () => {
+  const src = "# Meta @meta {\n    sdoc-version: 0.2\n}\n# Doc {\n    @editing-guide {\n        - Keep it short.\n    }\n\n    // why this summary exists\n    @about {\n        Summary.\n    }\n    # Body @body {\n        Text.\n    }\n\n    # Start Here @reading-guide {\n        Start.\n    }\n}\n";
+  const out = "# Meta @meta {\n    sdoc-version: 0.2\n}\n# Doc {\n    // why this summary exists\n    @about {\n        Summary.\n    }\n\n    # Start Here @reading-guide {\n        Start.\n    }\n\n    @editing-guide {\n        - Keep it short.\n    }\n\n    # Body @body {\n        Text.\n    }\n}\n";
+  expectFixed(src, out);
+});
+
+test("fix: a signpost beside the root that must follow one inside moves into the root", () => {
+  const out = expectFixed("@editing-guide {\n    - Rules.\n}\n\n# Doc {\n    @about {\n        Summary.\n    }\n    # Body {\n        Text.\n    }\n}\n");
+  assert(out.startsWith("# Doc {\n    @about {"), "root first, @about inside it:\n" + out);
+  assert(out.includes("    @editing-guide {\n        - Rules.\n    }"), "re-indented into the root:\n" + out);
+});
+
+test("fix: a signpost after the root moves into it, re-indented", () => {
+  const out = expectFixed("# Doc {\n    @about {\n        Summary.\n    }\n    # Body {\n        Text.\n    }\n}\n\n@editing-guide {\n    - Rules.\n}\n");
+  assert(out === "# Doc {\n    @about {\n        Summary.\n    }\n\n    @editing-guide {\n        - Rules.\n    }\n\n    # Body {\n        Text.\n    }\n}\n", "got:\n" + out);
+});
+
+test("fix: paragraphs either side of a moved signpost stay separate", () => {
+  const out = expectFixed("# Doc {\n    Intro.\n    @about {\n        A.\n    }\n    More.\n}\n");
+  const paragraphs = parseSdoc(out).nodes[0].children.filter((n) => n.type === "paragraph").map((n) => n.text);
+  assert(JSON.stringify(paragraphs) === JSON.stringify(["Intro.", "More."]), JSON.stringify(paragraphs));
+});
+
+test("fix: refuses, with a reason, when moving text would change the structure", () => {
+  const src = "# Doc {\n    Intro.\n\n    @about\n    Summary.\n}\n";
+  const r = fixSignpostOrder(src);
+  assert(r.changed === false && r.text === src && /structure/.test(r.reason), JSON.stringify(r));
+});
+
+test("fix: a document already in order is returned as it is", () => {
+  const src = "# Doc {\n    @about {\n        A.\n    }\n    # Body {\n        B.\n    }\n}\n";
+  const r = fixSignpostOrder(src);
+  assert(r.changed === false && r.reason === null && r.text === src);
+});
+
+test("fix: keeps CRLF line endings and the trailing newline", () => {
+  const out = expectFixed("# Doc {\r\n    # Body {\r\n        B.\r\n    }\r\n    @about {\r\n        A.\r\n    }\r\n}\r\n");
+  assert(!/[^\r]\n/.test(out) && out.endsWith("}\r\n"), JSON.stringify(out));
+});
+
+test("fix: works on a document without a single root scope", () => {
+  const out = expectFixed("# A {\n    a\n}\n@about {\n    Summary.\n}\n# B {\n    b\n}\n");
+  assert(out.startsWith("@about {"), "got:\n" + out);
+});
+
+test("every .sdoc file in the repo passes validateSignposts", () => {
+  const root = path.join(__dirname, "..");
+  const files = [];
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".sdoc")) files.push(full);
+    }
+  }
+  for (const sub of ["lexica", "docs", "examples"]) walk(path.join(root, sub));
+  assert(files.length > 10, "found the corpus");
+  for (const file of files) {
+    const r = parseSdoc(fs.readFileSync(file, "utf8"));
+    const f = validateSignposts(r.nodes);
+    assert(f.length === 0, path.relative(root, file) + ": " + f.map((x) => x.lineStart + " " + x.message).join("; "));
+  }
+});
+
+// ============================================================
+console.log("\n--- Root scope with scopes beside it ---");
+
+// The class lists of the scope sections, in document order.
+function sectionClasses(html) {
+  return [...html.matchAll(/<section class="([^"]*)"/g)].map((m) => m[1]);
+}
+
+test("getDocumentScope: reserved and :comment scopes beside the root are set aside", () => {
+  const nodes = parseSdoc("# Notes :comment {\n    Draft.\n}\n@about {\n    Summary.\n}\n# Doc {\n    Body.\n}\n@editing-guide {\n    Rules.\n}").nodes;
+  const doc = getDocumentScope(nodes);
+  assert(doc && doc.title === "Doc", "root found, got " + (doc && doc.title));
+});
+
+test("getDocumentScope: a paragraph or a second ordinary scope means no single root", () => {
+  assert(getDocumentScope(parseSdoc("Intro.\n\n# Doc {\n    Body.\n}").nodes) === null, "paragraph beside");
+  assert(getDocumentScope(parseSdoc("# A {\n    a\n}\n# B {\n    b\n}").nodes) === null, "two scopes");
+  assert(getDocumentScope(parseSdoc("# Notes :comment {\n    Draft.\n}").nodes) === null, "a lone :comment is not a root");
+});
+
+test("foldRootSiblings: scopes before the root go first, scopes after it go last", () => {
+  const nodes = parseSdoc("@about {\n    Summary.\n}\n# Doc {\n    # Intro {\n        A.\n    }\n}\n@editing-guide {\n    Rules.\n}").nodes;
+  const folded = foldRootSiblings(nodes);
+  assert(folded.length === 1 && folded[0].title === "Doc", "one root");
+  const order = folded[0].children.map((n) => n.id || n.title);
+  assert(JSON.stringify(order) === JSON.stringify(["about", "Intro", "editing-guide"]), JSON.stringify(order));
+  assert(nodes[1].children.length === 1, "the parsed root is not changed");
+});
+
+test("foldRootSiblings: without a single root, or with nothing beside it, nodes come back as they are", () => {
+  const twoScopes = parseSdoc("@about {\n    Summary.\n}\n# A {\n    a\n}\n# B {\n    b\n}").nodes;
+  assert(foldRootSiblings(twoScopes) === twoScopes, "no single root");
+  const alone = parseSdoc("# Doc {\n    Body.\n}").nodes;
+  assert(foldRootSiblings(alone) === alone, "nothing beside");
+});
+
+test("HTML: @reading-guide beside the root renders inside it, not as the title", () => {
+  const html = renderHtmlBody("@reading-guide {\n    Start with the intro.\n}\n# My Doc {\n    # Intro {\n        Hello.\n    }\n}");
+  const classes = sectionClasses(html);
+  assert(classes[0] === "sdoc-scope sdoc-root", "root first: " + JSON.stringify(classes));
+  assert(classes.filter((c) => c.includes("sdoc-root")).length === 1, "one root: " + JSON.stringify(classes));
+  assert(/sdoc-signpost-reading-guide"[^>]*>\s*<h2/.test(html), "the guide is a child of the root");
+  assert(html.indexOf("Start with the intro") < html.indexOf("Hello."), "the guide keeps its place before the body");
+});
+
+test("HTML: a :comment scope beside the root leaves the root styling alone", () => {
+  const html = renderHtmlBody("# Notes :comment {\n    Draft.\n}\n# My Doc {\n    Body.\n}");
+  assert(sectionClasses(html)[0] === "sdoc-scope sdoc-root", JSON.stringify(sectionClasses(html)));
+  assert(!html.includes("Draft."), "the comment is not rendered");
+});
+
+test("HTML: without a single root, a leading signpost does not take the title styling", () => {
+  const html = renderHtmlBody("@reading-guide {\n    Guide.\n}\n# A {\n    a\n}\n# B {\n    b\n}");
+  const classes = sectionClasses(html);
+  assert(!classes.some((c) => c.includes("sdoc-root") && c.includes("sdoc-meta-section")), JSON.stringify(classes));
+  assert(classes.filter((c) => c.includes("sdoc-root")).length === 1, "A is the title: " + JSON.stringify(classes));
+});
+
+test("extractMeta: @meta and a signpost beside the root leave a single root", () => {
+  const r = extractMeta(parseSdoc("# Meta @meta {\n    sdoc-version: 0.2\n}\n@about {\n    Summary.\n}\n# Doc {\n    Body.\n}").nodes);
+  assert(r.meta.properties["sdoc-version"] === "0.2", "meta read");
+  assert(r.nodes.length === 1 && r.nodes[0].title === "Doc", "one root");
+  assert(r.nodes[0].children[0].id === "about", "@about folded in first");
+});
+
+test("extractAbout: @meta beside the root does not hide an @about inside it", () => {
+  const nodes = parseSdoc("# Meta @meta {\n    sdoc-version: 0.2\n}\n# Doc {\n    @about {\n        Summary.\n    }\n    Body.\n}").nodes;
+  assert(extractAbout(nodes) === "Summary.", "got " + extractAbout(nodes));
+});
+
+test("validation: a :comment scope beside the root does not make signposts misplaced", () => {
+  const src = "# Notes :comment {\n    Draft.\n}\n# Doc {\n    @about {\n        Summary.\n    }\n    Body.\n}";
+  assert(signpostFindings(src).length === 0, JSON.stringify(signpostFindings(src)));
+  assert(extractSignpost(parseSdoc(src).nodes, "about") !== null, "extracted");
+});
+
+test("validation: with @about beside the root and inside it, the later one is the duplicate", () => {
+  const f = signpostFindings("@about {\n    One.\n}\n# Doc {\n    @about {\n        Two.\n    }\n}");
+  assert(f.length === 1 && f[0].type === "reserved-scope-duplicate" && f[0].lineStart === 5, JSON.stringify(f));
+});
+
+// ============================================================
+console.log("\n--- A reserved id below the top level is an ordinary scope ---");
+
+const NESTED_RESERVED_SRC = "# Doc {\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [Spec](spec.sdoc) | Source\n        }\n    }\n    # Body {\n        # Related Resources @related-resources {\n            - [A](a.sdoc)\n        }\n        Text.\n    }\n}";
+
+test("stripSignposts drops the top-level signpost and keeps the nested one", () => {
+  const doc = stripSignposts(parseSdoc(NESTED_RESERVED_SRC).nodes)[0];
+  assert(!doc.children.some((n) => n.id === "related-resources"), "top-level @related-resources dropped");
+  const body = doc.children.find((n) => n.title === "Body");
+  assert(body.children.some((n) => n.id === "related-resources"), "nested one kept");
+});
+
+test("stripSignposts drops a signpost written beside the root", () => {
+  const nodes = parseSdoc("@editing-guide {\n    Rules.\n}\n# Doc {\n    Body.\n}").nodes;
+  const stripped = stripSignposts(nodes);
+  assert(stripped.length === 1 && stripped[0].title === "Doc", JSON.stringify(stripped.map((n) => n.id || n.title)));
+});
+
+test("HTML export: the nested scope keeps its content and is not styled as a signpost", () => {
+  const html = renderHtmlBody(NESTED_RESERVED_SRC);
+  assert(!html.includes("spec.sdoc"), "the top-level @related-resources is hidden in exports");
+  assert(html.includes("a.sdoc"), "the nested section is exported");
+  assert((html.match(/sdoc-signpost/g) || []).length === 0, "no signpost styling");
+});
+
+test("HTML preview: only the top-level scope is styled as a signpost", () => {
+  const html = renderHtmlBody(NESTED_RESERVED_SRC, { includeSignposts: true });
+  assert((html.match(/sdoc-signpost-related-resources/g) || []).length === 1, "one signpost box");
+  assert(html.includes("spec.sdoc") && html.includes("a.sdoc"), "both rendered");
+});
+
+test("listSections and extractSection find the nested scope", () => {
+  const nodes = parseSdoc(NESTED_RESERVED_SRC).nodes;
+  const titles = listSections(nodes).map((s) => s.title);
+  assert(JSON.stringify(titles) === JSON.stringify(["Body", "Related Resources"]), JSON.stringify(titles));
+  const section = extractSection(nodes, "related-resources");
+  assert(section && section.content.includes("a.sdoc"), JSON.stringify(section));
+});
+
+test("listSections does not list what a top-level @meta contains", () => {
+  const nodes = parseSdoc("# Doc {\n    # Meta @meta {\n        # Header {\n            Acme\n        }\n    }\n    # Body {\n        x\n    }\n}").nodes;
+  const titles = listSections(nodes).map((s) => s.title);
+  assert(JSON.stringify(titles) === JSON.stringify(["Body"]), JSON.stringify(titles));
+});
+
+test("validation: the placement finding says the scope is ordinary, and its content is checked", () => {
+  const f = signpostFindings("# Doc {\n    # Body {\n        @about {\n            # Inner {\n                @editing-guide {\n                    Rules.\n                }\n            }\n        }\n    }\n}");
+  assert(f.length === 2 && f.every((x) => x.type === "reserved-scope-placement"), JSON.stringify(f));
+  assert(f[0].message.includes("an ordinary section, not a signpost"), f[0].message);
+  assert(f[1].id === "editing-guide", "the scope inside the misplaced one is reported too");
+});
+
+test("validation: a misplaced @meta is ordinary, not configuration", () => {
+  const f = signpostFindings("# Doc {\n    # Body {\n        @meta {\n            type: doc\n        }\n    }\n}");
+  assert(f[0].message.includes("not configuration"), f[0].message);
+});
+
+test("validation: a reserved scope inside a :comment scope is not reported", () => {
+  const f = signpostFindings("# Doc {\n    # Old draft :comment {\n        @about {\n            Earlier wording.\n        }\n    }\n    Body.\n}");
+  assert(f.length === 0, JSON.stringify(f));
+});
+
+// ============================================================
+console.log("\n--- A document whose only scope is a signpost ---");
+
+test("validation: a lone signpost is reported as signpost-root", () => {
+  const f = signpostFindings("# Editing Guide @editing-guide {\n    # Style @style {\n        Use short sentences.\n    }\n}");
+  const root = f.filter((x) => x.type === "signpost-root");
+  assert(root.length === 1 && root[0].severity === "error" && root[0].id === "editing-guide", JSON.stringify(f));
+  assert(root[0].message.includes("give the root another id"), root[0].message);
+});
+
+test("validation: @meta and :comment scopes beside a lone signpost do not hide it", () => {
+  const f = signpostFindings("@meta {\n    type: doc\n}\n# Note :comment {\n    x\n}\n@about {\n    Text.\n}");
+  assert(f.some((x) => x.type === "signpost-root" && x.id === "about"), JSON.stringify(f));
+});
+
+test("validation: no signpost-root with a real root, or with several signposts", () => {
+  assert(!signpostFindings("@about {\n    A.\n}\n# Doc {\n    Body.\n}").some((x) => x.type === "signpost-root"), "a root beside it");
+  assert(!signpostFindings("@about {\n    A.\n}\n@editing-guide {\n    B.\n}").some((x) => x.type === "signpost-root"), "two signposts");
+  assert(!signpostFindings("@about {\n    A.\n}\nStray paragraph.").some((x) => x.type === "signpost-root"), "other content");
+});
+
+test("renderFragment styles a top-level signpost, as the full render does", () => {
+  const html = renderFragment(parseSdoc("@about {\n    Hi.\n}\n# Doc {\n    Body.\n}").nodes);
+  assert(html.includes("sdoc-signpost-about"), html);
+});
+
+// ============================================================
 console.log("\n--- Mermaid diagrams ---");
 
 test("mermaid code block renders as pre.mermaid", () => {
@@ -2067,6 +2985,48 @@ test("two images side by side", () => {
   // Both images should render
   assert(html.includes('src="a.png"'), "first image");
   assert(html.includes('src="b.png"'), "second image");
+});
+
+// ============================================================
+console.log("\n--- Table row lines ---");
+
+test("a table records the source line of each row, skipping blank lines", () => {
+  const table = parseSdoc("{[table]\n    H | V\n    a | 1\n\n    b | 2\n}").nodes[0];
+  assert(JSON.stringify(table.rowLines) === "[3,5]", JSON.stringify(table.rowLines));
+});
+
+test("rowLines leaves out the header and a column directive row, and keeps a headerless first row", () => {
+  const withDirective = parseSdoc("{[table]\n    H | V\n    < | >\n    a | 1\n}").nodes[0];
+  assert(withDirective.rows.length === 1 && JSON.stringify(withDirective.rowLines) === "[4]", JSON.stringify(withDirective));
+  const headerless = parseSdoc("{[table headerless]\n    a | 1\n    b | 2\n}").nodes[0];
+  assert(JSON.stringify(headerless.rowLines) === "[2,3]", JSON.stringify(headerless.rowLines));
+});
+
+const ROW_LINES_SRC = "# Doc {\n    @reading-guide {\n        {[table]\n            Sections | Note\n            @a | one\n\n            @b, @reading-guide | two\n            bad |\n        }\n    }\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [A](a.sdoc) | Sibling\n            [B](b.sdoc) | Other\n        }\n    }\n    # A @a {\n        x\n    }\n    # B @b {\n        y\n    }\n}";
+
+test("extractReadingGuide and extractRelatedResources give each row its own line", () => {
+  const nodes = parseSdoc(ROW_LINES_SRC).nodes;
+  assert(JSON.stringify(extractReadingGuide(nodes).entries.map((e) => e.lineStart)) === "[5,7]");
+  assert(JSON.stringify(extractRelatedResources(nodes).map((e) => e.lineStart)) === "[14,15]");
+});
+
+test("validation: a finding about a row points at that row", () => {
+  const f = validateSignposts(parseSdoc(ROW_LINES_SRC).nodes).filter((x) => x.type !== "signpost-order");
+  const at = f.map((x) => [x.type, x.lineStart, x.lineEnd]);
+  assert(JSON.stringify(at) === JSON.stringify([["signpost-table", 8, 8]]), JSON.stringify(at));
+  const refs = validateRefs(parseSdoc(ROW_LINES_SRC).nodes).map((x) => [x.id, x.lineStart, x.lineEnd]);
+  assert(JSON.stringify(refs) === JSON.stringify([["reading-guide", 7, 7]]), "the reserved entry is reported at its row: " + JSON.stringify(refs));
+});
+
+test("validateRefs: a broken reference in a table cell points at its row", () => {
+  const w = validateRefs(parseSdoc("# Doc {\n    # A @a {\n        x\n    }\n    {[table]\n        H | V\n        @a | ok\n        @missing | bad\n    }\n}").nodes);
+  assert(w.length === 1 && w[0].lineStart === 8 && w[0].lineEnd === 8, JSON.stringify(w));
+});
+
+test("fixSignpostOrder moves a signpost holding a table", () => {
+  const r = fixSignpostOrder("# Doc {\n    # Body {\n        B.\n    }\n    @related-resources {\n        {[table]\n            Resource | Relation\n            [A](a.sdoc) | Sibling\n        }\n    }\n}\n");
+  assert(r.changed === true, JSON.stringify(r));
+  assert(r.text.indexOf("@related-resources") < r.text.indexOf("# Body"), r.text);
 });
 
 // ============================================================
@@ -2889,11 +3849,23 @@ test("valid @ref not flagged (explicit @id)", () => {
   assert(warnings.length === 0, "expected 0 warnings, got " + warnings.length);
 });
 
-test("derived slug @ref resolves", () => {
+test("a @ref matching only a title slug is broken, and names the heading to give the @id", () => {
   const parsed = parseSdoc("# Doc @doc\n{\n  # My Section\n  {\n    Content.\n  }\n  See @my-section for details.\n}");
   const metaResult = extractMeta(parsed.nodes);
   const warnings = validateRefs(metaResult.nodes);
-  assert(warnings.length === 0, "expected 0 warnings, got " + warnings.length);
+  assert(warnings.length === 1 && warnings[0].type === "broken-ref" && warnings[0].id === "my-section", JSON.stringify(warnings));
+  assert(warnings[0].message.includes('matches the heading "My Section", which has no @id: add @my-section to it'), warnings[0].message);
+});
+
+test("a @ref matching the title slug of a heading with another @id names that @id", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  # Table Formulas @formulas\n  {\n    Content.\n  }\n  See @table-formulas for details.\n}");
+  const warnings = validateRefs(extractMeta(parsed.nodes).nodes);
+  assert(warnings.length === 1 && warnings[0].message.includes("whose @id is @formulas"), JSON.stringify(warnings));
+});
+
+test("a @ref that matches nothing has no hint", () => {
+  const warnings = validateRefs(parseSdoc("# Doc @doc\n{\n  See @nowhere.\n}").nodes);
+  assert(warnings.length === 1 && warnings[0].message === "Broken reference: @nowhere does not match any scope @id", JSON.stringify(warnings));
 });
 
 test("absolute URLs skipped", () => {
@@ -2996,6 +3968,22 @@ test("relative link with query string strips query for resolution", () => {
     resolveFilePath: (p) => p === "./api.sdoc"
   });
   assert(warnings.length === 0, "expected 0 warnings for link with query, got " + warnings.length);
+});
+
+test("hrefPathExists tries the href as written, then percent-decoded", () => {
+  const { hrefPathExists } = require("../src/href-path.js");
+  const dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "sdoc-href-"));
+  try {
+    fs.writeFileSync(path.join(dir, "report%20v2.sdoc"), "");
+    fs.writeFileSync(path.join(dir, "space name.sdoc"), "");
+    fs.writeFileSync(path.join(dir, "100%.sdoc"), "");
+    assert(hrefPathExists("report%20v2.sdoc", dir), "a literal percent sequence in the file name");
+    assert(hrefPathExists("space%20name.sdoc", dir), "an encoded space");
+    assert(hrefPathExists("100%.sdoc", dir), "a malformed sequence is tried as written");
+    assert(!hrefPathExists("missing.sdoc", dir), "a missing file");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ============================================================
