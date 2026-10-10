@@ -9,7 +9,10 @@
 
 const fs = require("fs");
 const path = require("path");
-const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, colorSwatchHtml, RESERVED_SCOPE_IDS, getDocumentScope } = require("./sdoc");
+const {
+  parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, svgBlockIds,
+  colorSwatchHtml, RESERVED_SCOPE_IDS, getDocumentScope,
+} = require("./sdoc");
 const { extractConfig, buildBody, accentClass, slug, truthy } = require("./slide-layouts");
 const {
   readConnector,
@@ -361,13 +364,7 @@ function extractNotes(children) {
 function collectAnchorIds(nodes, into) {
   for (const node of nodes || []) {
     if (node.type === "code" && node.lang === "svg") {
-      const markup = sanitizeSvg(node.text || "");
-      const attr = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-      let found;
-      while ((found = attr.exec(markup)) !== null) {
-        const id = found[1] !== undefined ? found[1] : found[2];
-        if (id) into.add(id);
-      }
+      for (const id of svgBlockIds(node)) into.add(id);
       continue;
     }
     if (node.type !== "scope") continue;

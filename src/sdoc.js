@@ -3943,6 +3943,32 @@ function stripAboutScopes(nodes) {
   return stripSignposts(nodes, ["about"]);
 }
 
+// The ids a raw `svg` block puts into the page, in document order.
+//
+// Read from the SANITISED markup, never from the block as the author wrote it:
+// sanitizeSvg drops <script> and <foreignObject>, so an id declared inside one
+// never reaches the DOM. A caller collecting it would offer a target that
+// nothing can resolve, which is the defect this exists to avoid rather than
+// cause.
+//
+// Shared because two callers must give the same answer and must not drift
+// apart: the slide renderer, deciding whether a connector may anchor to an id,
+// and validateRefs, deciding whether an @id written in prose is broken. They
+// disagreed once — the renderer accepted an svg id and the validator reported
+// it as a broken reference on the same document.
+function svgBlockIds(node) {
+  const out = [];
+  if (!node || node.type !== "code" || node.lang !== "svg") return out;
+  const markup = sanitizeSvg(node.text || "");
+  const attr = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  let found;
+  while ((found = attr.exec(markup)) !== null) {
+    const id = found[1] !== undefined ? found[1] : found[2];
+    if (id) out.push(id);
+  }
+  return out;
+}
+
 // Every explicit @id and every title slug in the tree. References resolve to
 // explicit @ids only (see collectRefTargets); this wider set is kept for
 // existing callers.
@@ -3968,6 +3994,7 @@ function collectRefTargets(nodes) {
           if (!bySlug.has(slug)) bySlug.set(slug, node);
         }
       }
+      for (const id of svgBlockIds(node)) ids.add(id);
       if (node.children) walk(node.children);
       if (node.type === "list" && node.items) {
         walk(node.items);
@@ -4647,6 +4674,7 @@ module.exports = {
   escapeHtml,
   escapeAttr,
   sanitizeSvg,
+  svgBlockIds,
   colorSwatchHtml,
   readableTextColor
 };

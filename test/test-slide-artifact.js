@@ -542,6 +542,59 @@ function diffFixture(after, roles) {
   return classifySlide(readSlide(slideFixture()), readSlide(after), { texts: roles || FIXTURE_ROLES });
 }
 
+test("a swapped picture, a retargeted link and a changed icon are reported", () => {
+  // The fingerprint was tag, style and text, so none of these registered: a
+  // collaborator could replace a photograph, send a link elsewhere, change an
+  // icon or a shape, or move a connector, and the tool whose job is saying
+  // what they changed said nothing. A false negative in a change detector is
+  // worse than a false positive — the second wastes an hour, the first ships.
+  const withBits = (src, href, icon) =>
+    slideFixture({ extra:
+      `<img src="${src}" alt="a" style="width:100px;height:50px">\n` +
+      `<p style="font-size:30px"><a href="${href}" style="color:rgb(0, 0, 255)">link</a></p>\n` +
+      `<x-icon name="${icon}" style="width:24px;height:24px">\n` });
+
+  const before = readSlide(withBits("sdoc-asset:alpha.png", "https://example.com/one", "Check"), {});
+  const after = readSlide(withBits("sdoc-asset:omega.png", "https://example.com/two", "Star"), {});
+  const out = classifySlide(before, after, { texts: FIXTURE_ROLES });
+
+  assert(out.identityChanges.length === 3,
+    "all three are seen, got " + JSON.stringify(out.identityChanges.map((c) => c.tag)));
+  assert(out.classification.includes("retargeted"), "and the slide is classified: " + out.classification);
+  // The link is reported against the <p> that holds it, not the <a>. The walk
+  // stops at a text leaf, so the paragraph is the element it knows about —
+  // and that is the more useful answer anyway, because the role lookup can
+  // name the paragraph and a bare <a> would be anonymous.
+  const tags = out.identityChanges.map((c) => c.tag).sort().join(",");
+  assert(tags === "img,p,x-icon", "the right three: " + tags);
+  const link = out.identityChanges.find((c) => c.tag === "p");
+  assert(/example\.com\/one/.test(link.from.hrefs) && /example\.com\/two/.test(link.to.hrefs),
+    "and it names both targets: " + JSON.stringify(link));
+});
+
+test("the same picture as a placeholder and as a published blob is not a change", () => {
+  // An exported file carries `sdoc-asset:photo.png`; the same image pulled
+  // back carries `/_blob/<id>`. Comparing the urls reports every picture as
+  // changed on every run, which is the shape of false positive that looks
+  // exactly like the catastrophe the tool exists to detect — and it is why
+  // this resolves both sides to the asset's NAME.
+  const assets = { "photo.png": { src: "sdoc-asset:photo.png", blob: "abc123" } };
+  const img = (src) => slideFixture({ extra:
+    `<img src="${src}" alt="a" style="width:100px;height:50px">\n` });
+
+  const exported = readSlide(img("sdoc-asset:photo.png"), assets);
+  const pulled = readSlide(img("/_blob/abc123"), assets);
+  const same = classifySlide(exported, pulled, { texts: FIXTURE_ROLES });
+  assert(same.identityChanges.length === 0,
+    "the same picture is not a change: " + JSON.stringify(same.identityChanges));
+
+  // But a genuinely different one still is, through the same resolution.
+  const other = readSlide(img("/_blob/zzz999"), assets);
+  const diff = classifySlide(exported, other, { texts: FIXTURE_ROLES });
+  assert(diff.identityChanges.length === 1,
+    "a different picture still reports: " + JSON.stringify(diff.identityChanges));
+});
+
 test("a slide re-saved in the editor's normalised form reads as unchanged", () => {
   // The editor rewrites every slide it touches: declarations reordered,
   // colours re-cased, whitespace collapsed. Without this, every slide in the
@@ -1123,6 +1176,296 @@ if (findChrome()) {
 
 // --- A deck can ask for its tables as boxes --------------------------------
 if (findChrome()) {
+  test("an item that does not grow keeps its flex, and one that declared nothing stays silent", async () => {
+    // `flex` was emitted only inside `if (grow > 0)`, with no else, so any
+    // item that does not grow lost the lot — basis, shrink and all. A column
+    // written `flex: 0 0 286px` sized from its content, its siblings took the
+    // slack, and the row relaid itself; 32 more items on the same deck said
+    // `flex: none` and were told nothing, which is invisible until something
+    // overflows.
+    //
+    // The negative case is the one that matters. The CSS initial value is
+    // `0 1 auto`, NOT `0 0 auto` — that is `flex: none`, a real declaration.
+    // A guard that skips `0 0 auto` would emit a flex on every element that
+    // declared nothing: 1,294 of them against 33 on the deck this was
+    // measured against. So the silence is asserted here as hard as the
+    // carrying is.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const extraCss = `
+#fx-row { display: flex; }
+#fx-row > #fx-fixed { flex: 0 0 123px; }
+#fx-row > #fx-none  { flex: none; }
+#fx-row > #fx-grow  { flex: 1; }
+`;
+    const src = `
+# Flexed {
+    @meta {
+        type: slides
+    }
+
+    # Row @fx-slide {
+        # @fx-row {
+            # @fx-fixed {
+                Fixed
+            }
+
+            # @fx-none {
+                NoneHere
+            }
+
+            # @fx-grow {
+                Grows
+            }
+
+            # @fx-plain {
+                PlainOne
+            }
+        }
+    }
+}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-flex-"));
+    const htmlPath = path.join(dir, "deck.html");
+    const parsed = parseSdoc(src);
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss + extraCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const built = buildArtifact(await harvestArtifact(htmlPath), {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+      });
+      assert(built.errors.length === 0,
+        "inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+      const html = Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html")).map(([, b]) => b).join("\n");
+
+      // The flex lands on the item's own <div>, not on the <p> of words
+      // inside it — and an item that should say nothing has no style
+      // attribute at all, so the match has to allow its absence or the
+      // silent case cannot even be seen.
+      const styleOf = (word) => {
+        const m = new RegExp(`<div(?: style="([^"]*)")?>\\s*<p[^>]*>${word}`).exec(html);
+        return m ? (m[1] || "") : null;
+      };
+
+      const fixed = styleOf("Fixed");
+      assert(fixed !== null, "the fixed-basis item is emitted");
+      assert(/flex:0 0 123px/.test(fixed), "it keeps its basis: " + fixed);
+
+      const none = styleOf("NoneHere");
+      assert(none !== null, "the flex:none item is emitted");
+      assert(/flex:none/.test(none), "it keeps its refusal to shrink: " + none);
+
+      const grow = styleOf("Grows");
+      assert(grow !== null && /flex:1\b/.test(grow), "a growing item is unchanged: " + grow);
+
+      // The 1,294 case. An element that declared nothing computes 0 1 auto,
+      // and must come out with no flex at all.
+      const plain = styleOf("PlainOne");
+      assert(plain !== null, "the plain item is emitted");
+      assert(!/flex:/.test(plain),
+        "an item at the CSS initial value says nothing: " + plain);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a text-indent travels as a translate, and a wrapped one is warned about", async () => {
+    // text-indent is not in the subset and nothing stood in for it, so a
+    // theme using it to optically align a title lost the alignment silently —
+    // the one property whose whole purpose is to put ink where the box does
+    // not say it is. Measured on a real cover: -0.0817em on a 133px wordmark
+    // is -10.87px, and without it the glyphs sat that far right of the rule
+    // drawn beneath them.
+    //
+    // An indent applies to the first line and a translate moves every line,
+    // so the wrapped case must be refused rather than approximated. Nothing
+    // in this repo's corpus uses text-indent at all, so the theme is extended
+    // here rather than hoping a deck covers it.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const extraCss = `
+#ti-one p { text-indent: -12px; }
+#ti-many { width: 300px; }
+#ti-many p { text-indent: 9px; }
+#ti-inherit { text-indent: 7px; }
+`;
+    const src = `
+# Indented {
+    @meta {
+        type: slides
+    }
+
+    # Title @ti-slide {
+        # @ti-one {
+            Short line
+        }
+
+        # @ti-many {
+            A much longer passage of words that is certain to wrap onto more than one line inside three hundred pixels of width.
+        }
+
+        # @ti-inherit {
+            Handed down
+        }
+    }
+}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-indent-"));
+    const htmlPath = path.join(dir, "deck.html");
+    const parsed = parseSdoc(src);
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss + extraCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const built = buildArtifact(await harvestArtifact(htmlPath), {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+      });
+      assert(built.errors.length === 0,
+        "inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+      const html = Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html")).map(([, b]) => b).join("\n");
+
+      // The single line carries the offset, with its sign.
+      const one = /<p style="([^"]*)"[^>]*>Short line/.exec(html);
+      assert(one, "the indented line is emitted: " + html.slice(0, 400));
+      assert(/translateX\(-1[12](\.\d+)?px\)/.test(one[1]),
+        "a one-line indent travels as a translate: " + one[1]);
+
+      // The wrapped one does not, and says so.
+      const many = /<p style="([^"]*)"[^>]*>A much longer/.exec(html);
+      assert(many, "the wrapped paragraph is emitted");
+      assert(!/translateX/.test(many[1]),
+        "a wrapped indent is not silently shifted: " + many[1]);
+      const warned = (built.warnings || []).some((w) => w.kind === "text-indent-wrapped");
+      assert(warned, "and is warned about: " +
+        JSON.stringify((built.warnings || []).map((w) => w.kind)));
+
+      // An indent inherits; a transform composes. A container that sets one
+      // must move once, not once per descendant that inherited it — the
+      // first version of this moved the text twice.
+      const sevens = (html.match(/translateX\(7(\.\d+)?px\)/g) || []).length;
+      assert(sevens === 1,
+        "an inherited indent moves the element that declared it, once: " +
+        sevens + " translates");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a cell drawn as a box keeps its lines, its pill and its alignment", async () => {
+    // Three defects with one cause: runsOf flattens a cell to inline runs, so
+    // a child the theme made block or inline-block arrived as bare words. A
+    // stacked label and its caption collapsed into one line at one size; a
+    // pill lost its padding, border, radius and fill. The pill case was the
+    // one that mattered — its text colour survived while the background that
+    // justified it did not, so a near-black label landed on a transparent
+    // cell and could not be read at all.
+    //
+    // Nothing in this repo's own corpus has an inline-block in a cell, so the
+    // theme is extended here rather than relying on a deck that happens to
+    // exercise it. The default theme supplies the block case already
+    // (.matrix td strong { display: block }).
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const extraCss = `
+.matrix td:nth-child(2) { vertical-align: middle; }
+.matrix td:nth-child(3) strong {
+  display: inline-block; padding: 3px 12px; border: 1px solid #888888;
+  border-radius: 999px; background: #00ccdd; color: #001122; font-weight: 400;
+  letter-spacing: 0.6px; }
+`;
+    const src = `
+# Boxed {
+    @meta {
+        type: slides
+    }
+
+    # Matrix @m-slide {
+        config: matrix
+
+        {[table]
+            Who | Mid | Answer
+            **Alpha Systems** *Series C* | centred | **Converts**
+        }
+    }
+}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-cellline-"));
+    const htmlPath = path.join(dir, "deck.html");
+    const parsed = parseSdoc(src);
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss + extraCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+        tablesAsBoxes: true,
+      });
+      assert(built.errors.length === 0,
+        "the grid is inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+      const html = Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html")).map(([, b]) => b).join("\n");
+
+      // The stacked label is two lines again, not one.
+      assert(/<p[^>]*>\s*<b>Alpha Systems<\/b>\s*<\/p>\s*<p/.test(html),
+        "a block child is a line of its own: " + html.slice(0, 400));
+
+      // The pill keeps the box that makes its colour legible.
+      const pill = /<p style="([^"]*)"[^>]*>(?:<b>)?Converts/.exec(html);
+      assert(pill, "the pill is a styled <p>: " + html.slice(0, 400));
+      for (const want of ["padding:", "border:", "border-radius:", "background:"]) {
+        assert(pill[1].includes(want), `the pill carries ${want} — got ${pill[1]}`);
+      }
+      // And it shrinks to its content rather than filling the column. Not a
+      // measured width: the subset takes box-sizing as a no-op, so a width
+      // here means the border box or the content box at the runtime's choice,
+      // and the two differ by exactly the padding and rule that make it a
+      // pill. align-self says it without a number.
+      assert(pill[1].includes("align-self:start"),
+        "the pill shrinks to its content: " + pill[1]);
+      assert(!/width:/.test(pill[1]),
+        "and is given no width to be misread: " + pill[1]);
+      // Tracking is part of a capitalised label's type. Dropped, the pill
+      // renders tighter than the build by its character count times the
+      // tracking, which reads as loose text rather than a lost property.
+      assert(/letter-spacing:0\.6px/.test(pill[1]),
+        "the pill keeps its tracking: " + pill[1]);
+      // Leading, on every line and on a plain cell alike. The runtime gives a
+      // <p> 1.4 and this theme is on 1.25, so silence is not agreement — and
+      // a row is as tall as its tallest cell, so a plain cell left at the
+      // default sets the row's height whatever its neighbours carry.
+      assert(/line-height:[0-9.]+px/.test(pill[1]),
+        "the pill carries its leading: " + pill[1]);
+      const plainCell = /<p style="line-height:[0-9.]+px">centred<\/p>/.test(html);
+      assert(plainCell, "and so does a cell with no block children: " + html.slice(0, 500));
+      // The block line above it must NOT shrink, or its text re-wraps.
+      const blockLine = /<p style="([^"]*)"[^>]*>\s*<b>Alpha Systems/.exec(html);
+      assert(blockLine, "the stacked label is a styled <p>");
+      assert(!blockLine[1].includes("align-self"),
+        "a block line still stretches: " + blockLine[1]);
+
+      // vertical-align: middle reaches the cell as justified content. Not
+      // align-self, which would shrink the cell and take a row's banding
+      // with it wherever the fill is on the cell rather than the row.
+      //
+      // Matched on a CELL, not anywhere in the slide: the <section> carries
+      // justify-content:center of its own from the layout, so a bare search
+      // of the page passes whether or not a cell was ever aligned. It did,
+      // until this assertion was tightened.
+      const cells = html.match(/<div style="width:[^"]*"/g) || [];
+      assert(cells.length, "cells are width-shared divs");
+      assert(cells.some((c) => c.includes("justify-content:center")),
+        "a middle-aligned cell centres its content: " + cells.join(" | "));
+      assert(cells.some((c) => !c.includes("justify-content")),
+        "and a cell that asked for nothing is left alone: " + cells.join(" | "));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("artifact-tables: boxes sends a table as a grid of divs (integration)", async () => {
     // The viewer styles a real table its own way and will not be talked out of
     // it: it rules every cell, backs the header row, and loses a colour on a

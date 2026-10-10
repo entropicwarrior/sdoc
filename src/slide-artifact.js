@@ -79,6 +79,12 @@ const ARTIFACT_SCRIPT = `
              "transform","transformOrigin"];
   var TYPE = ["fontFamily","fontSize","fontWeight","fontStyle","lineHeight",
               "letterSpacing","textAlign","textTransform","whiteSpace","color",
+              // Optical alignment. Not in the subset, and not emitted as
+              // anything else either, so a theme that nudges a title's glyphs
+              // off their box lost the nudge in silence — the one property
+              // whose whole job is to move ink away from where the box says
+              // it is.
+              "textIndent",
               // Paint on text, lost for the same reason a box-shadow was.
               "textShadow"];
 
@@ -386,12 +392,17 @@ const ARTIFACT_SCRIPT = `
     }
   }
 
-  function runsOf(el, baseWeight) {
+  // The "only" argument walks a subset of el's children rather than all of them, so a cell
+  // split into lines can read each stretch of inline content with the same
+  // mark logic instead of a second copy of it. Everything else passes nothing
+  // and gets exactly the old behaviour.
+  function runsOf(el, baseWeight, only) {
     var runs = [];
     var base = baseWeight || parseInt(getComputedStyle(el).fontWeight, 10) || 400;
-    function walk(node, marks) {
-      for (var i = 0; i < node.childNodes.length; i++) {
-        var child = node.childNodes[i];
+    function walk(node, marks, subset) {
+      var kids = subset || node.childNodes;
+      for (var i = 0; i < kids.length; i++) {
+        var child = kids[i];
         if (child.nodeType === 3) {
           var cs = getComputedStyle(node);
           var raw = child.nodeValue.replace(/\\s+/g, " ");
@@ -410,8 +421,19 @@ const ARTIFACT_SCRIPT = `
           var tag = child.tagName.toLowerCase();
           if (tag === "br") { runs.push({ text: "\\n", br: true }); continue; }
           walk(child, {
-            bold: marks.bold || tag === "b" || tag === "strong",
-            italic: marks.italic || tag === "i" || tag === "em",
+            // Not seeded from the tag. A theme that de-italicises <em> or
+            // sets <strong> to 400 means it: the text node below reads the
+            // computed weight and style of its own parent, which already
+            // accounts for both the tag's default and anything overriding it.
+            // Seeding here made the tag win — marks.bold short-circuits the
+            // computed check — so a de-italicised <em> arrived in italics and
+            // a 400-weight <strong> arrived bold, in every export.
+            //
+            // Underline is still seeded, because nothing below reads
+            // text-decoration: dropping it here would lose underlines
+            // altogether rather than fix anything.
+            bold: marks.bold,
+            italic: marks.italic,
             underline: marks.underline || tag === "u",
             href: marks.href || (tag === "a" ? child.getAttribute("href") : null),
             // A span the renderer coloured, or one it used to protect a unit:
@@ -425,8 +447,64 @@ const ARTIFACT_SCRIPT = `
         }
       }
     }
-    walk(el, { bold: false, italic: false, underline: false, href: null, color: false });
+    walk(el, { bold: false, italic: false, underline: false, href: null, color: false }, only);
     return runs.filter(function (r) { return r.br || r.text.trim().length || r.text === " "; });
+  }
+
+  // A cell's content as the lines it actually lays out as, for the boxes path.
+  //
+  // runsOf flattens a cell to inline runs. That is right for a real <td>, whose
+  // cell properties are nearly all the subset allows, and wrong for a cell
+  // drawn as a box: a theme that gives a <strong> display:block puts it on a
+  // line of its own, and one that gives it inline-block draws a pill, with
+  // padding, a border and a radius. A run carries none of that, so both
+  // arrived as bare words — the pill losing the background its own text colour
+  // depended on, which is how a near-black label ended up on a transparent
+  // cell and could not be read at all.
+  //
+  // Returns null when every child is ordinary inline content, which is every
+  // deck that was exporting correctly before: the caller then takes the old
+  // path unchanged. Only emitTableAsBoxes reads this. The run list is untouched, so
+  // no other emitter can see it and no text outside a table can move because
+  // of it.
+  function cellLines(td) {
+    var base = parseInt(getComputedStyle(td).fontWeight, 10) || 400;
+    var lines = [];
+    var pending = null;
+    var sawBox = false;
+    for (var i = 0; i < td.childNodes.length; i++) {
+      var child = td.childNodes[i];
+      if (child.nodeType === 1) {
+        var cs = getComputedStyle(child);
+        if (cs.display === "none" || cs.visibility === "hidden") continue;
+        if (cs.display === "block" || cs.display === "inline-block") {
+          var r = child.getBoundingClientRect();
+          lines.push({
+            kind: "box",
+            display: cs.display,
+            style: styleOf(cs),
+            runs: runsOf(child, base),
+            box: { w: r.width, h: r.height }
+          });
+          pending = null;
+          sawBox = true;
+          continue;
+        }
+      } else if (child.nodeType !== 3) {
+        continue;
+      } else if (!child.nodeValue.replace(/\\s+/g, " ").trim()) {
+        continue;
+      }
+      if (!pending) { pending = { kind: "runs", nodes: [] }; lines.push(pending); }
+      pending.nodes.push(child);
+    }
+    if (!sawBox) return null;
+    for (var j = 0; j < lines.length; j++) {
+      if (lines[j].kind !== "runs") continue;
+      lines[j].runs = runsOf(td, base, lines[j].nodes);
+      delete lines[j].nodes;
+    }
+    return lines;
   }
 
   // A pseudo-element that paints has no node to harvest. The built-in theme
@@ -1076,6 +1154,12 @@ const ARTIFACT_SCRIPT = `
               tag: tds[c].tagName.toLowerCase(),
               runs: runsOf(tds[c]),
               style: styleOf(getComputedStyle(tds[c])),
+              // Not in the captured set, and the one property that says where
+              // a cell's content sits in a row taller than it is. A cell drawn
+              // as a box is a flex item, so this becomes its align-self; left
+              // unharvested, every centred cell arrived at the top.
+              valign: getComputedStyle(tds[c]).verticalAlign,
+              lines: cellLines(tds[c]),
               box: { w: tds[c].getBoundingClientRect().width }
             });
           }
@@ -1662,6 +1746,46 @@ function declarationsFor(node, ctx, inherited) {
       offs.push(dy && !dx ? `translateY(${dy}px)` : dx && !dy ? `translateX(${dx}px)` : `translate(${dx}px, ${dy}px)`);
     }
   }
+
+  // A text-indent, as the same kind of translate.
+  //
+  // The subset has no text-indent, and nothing stood in for it, so a theme
+  // using it to optically align a title lost the alignment with no warning —
+  // the one property whose entire purpose is to put ink somewhere the box
+  // does not say. Measured on a real cover: a -0.0817em indent on a 133px
+  // wordmark is -10.87px, and without it the glyphs sat that far right of the
+  // rule drawn under them, which is what a reader notices.
+  //
+  // Flow only, like the leading-pseudo padding above and for the same reason:
+  // a traced box is pinned at its ink, and the ink already has the indent in
+  // it. Folding it again there would move the glyphs twice.
+  //
+  // An indent applies to the FIRST line; a translate moves the whole box. On
+  // one line those are the same thing and on more than one they are not, so a
+  // wrapped element is warned about rather than quietly shifted — every use
+  // of this in the theme that prompted it is a single line, and the case that
+  // is not should be visible rather than approximated.
+  if (!ctx.pinHere) {
+    const indent = lenOf(s.textIndent, scale);
+    // Only where this element declares it. Inherited, the same offset would
+    // be applied again at every level beneath the one that set it.
+    const own = indent - (inherited.indent || 0);
+    if (Math.abs(indent) > 0.5 && Math.abs(own) > 0.5) {
+      if (node.ink && node.ink.lines > 1) {
+        ctx.warnings.push({
+          slide: ctx.slide,
+          kind: "text-indent-wrapped",
+          message:
+            `<${node.tag}>${node.cls ? " ." + node.cls.split(/\s+/)[0] : ""} has a ` +
+            `${Math.round(indent * 10) / 10}px text-indent over ${node.ink.lines} lines. The ` +
+            "subset has no text-indent and a transform moves every line, not the first, so it " +
+            "is not carried; the first line will start where the others do",
+        });
+      } else {
+        offs.push(`translateX(${own}px)`);
+      }
+    }
+  }
   // And a rotation, which the subset also has. The box this is applied to is
   // the UPRIGHT one — the harvest measured it with the transform off — so this
   // reproduces exactly what the deck draws, about the same centre.
@@ -1724,6 +1848,37 @@ function declarationsFor(node, ctx, inherited) {
         "flex",
         grow === 1 && sh === 1 && basisPart === "0%" ? "1" : `${grow} ${sh} ${basisPart}`
       );
+    } else {
+      // An item that does not grow still said something, and nothing was
+      // written for it at all — not the basis, not the shrink. A column
+      // written `flex: 0 0 286px` sized from its content instead, its
+      // siblings took the slack, and the row relaid itself. Measured on the
+      // deck that found it: one such column, and 32 more items declaring
+      // `flex: none` whose refusal to shrink was being dropped just as
+      // quietly. That one is invisible until something overflows, which is
+      // the same shape as a leading that silently took the runtime's default.
+      //
+      // The guard is the whole of the risk here, and the obvious form of it
+      // is backwards. The CSS initial value is `0 1 auto` — verified in the
+      // browser rather than recalled: an item with nothing declared computes
+      // `0 1 auto`, `flex: none` computes `0 0 auto`, `flex: 1` computes
+      // `1 1 0%`. So `0 0 auto` is a real declaration to carry, and skipping
+      // it while emitting everything else would put a flex on all 1,294
+      // elements of that deck that had declared nothing, to rescue 33 that
+      // had. Only the initial value is silence.
+      const sh = isFinite(shrink) ? shrink : 1;
+      const auto = !basis || basis === "auto";
+      if (!(grow === 0 && sh === 1 && auto)) {
+        const basisPart = auto
+          ? "auto"
+          : basis === "0%" || basis === "0px"
+            ? "0%"
+            : `${lenOf(basis, scale)}px`;
+        push(
+          "flex",
+          grow === 0 && sh === 0 && basisPart === "auto" ? "none" : `${grow} ${sh} ${basisPart}`
+        );
+      }
     }
   }
 
@@ -1957,6 +2112,12 @@ function emitNodeInner(node, ctx, inherited, depth) {
     size: lenOf(node.style.fontSize, ctx.scale) || inherited.size,
     weight: parseInt(node.style.fontWeight, 10) || inherited.weight,
     colour: colourOf(node.style.color) || inherited.colour,
+    // text-indent inherits, so a container that sets one hands it to every
+    // text element beneath it. The offset is carried as a transform, and a
+    // transform does not inherit — it composes. Tracking what came down
+    // means only the element that actually declares an indent is moved,
+    // rather than it and each of its descendants in turn.
+    indent: lenOf(node.style.textIndent, ctx.scale) || 0,
   };
 
   if (node.tag === "img") {
@@ -2256,6 +2417,99 @@ function emitListAsBoxes(node, ctx, style) {
 // ordinary coloured span. What it costs is real and the reason this is opt-in:
 // a grid of boxes is not a table to a screen reader, and the columns no longer
 // size themselves, so each cell is given the share it was measured at.
+// One line of a cell drawn as a box.
+//
+// An inline stretch is a plain <p> and inherits the cell's type, which is what
+// it did before. A child the theme made block or inline-block carries its own
+// box and type instead, because that is what it had in the build and a run
+// cannot hold any of it: the padding, the rule, the radius and the fill that
+// turn a <strong> into a pill, and the size and weight that make a stacked
+// label read as a heading above its caption.
+//
+// An inline-block shrinks to its content rather than being given a width.
+// A measured width cannot be emitted safely here: the subset accepts
+// `box-sizing` as a no-op, so whether a width means the border box or the
+// content box is the runtime's choice and not ours, and the two differ by the
+// padding and rule that make a pill a pill — 110px measured against 140px
+// rendered, a pill drawn as a bar. `align-self:start` says the same thing
+// without a number, and it is what the format's own note describes: a pill is
+// a <p> with a background, padding and a radius.
+//
+// Only the inline-block gets it. A block child is a full-width line, and
+// shrinking it to its content would re-wrap its text at a different word;
+// left to stretch it keeps the line breaks the build chose.
+function emitCellLine(line, cell, ctx, scale) {
+  if (line.kind !== "box") return `<p>${runsToHtml(line.runs, ctx)}</p>`;
+  const s = line.style || {};
+  const out = [];
+
+  if (line.display === "inline-block") out.push("align-self:start");
+  const pads = ["Top", "Right", "Bottom", "Left"].map((k) =>
+    Math.max(0, Math.min(256, lenOf(s[`padding${k}`], scale)))
+  );
+  if (pads.some((v) => v > 0)) out.push(`padding:${pads.map((v) => `${v}px`).join(" ")}`);
+
+  const sides = ["Top", "Right", "Bottom", "Left"].map((k) => borderOf(s, k, scale));
+  const names = ["border-top", "border-right", "border-bottom", "border-left"];
+  if (sides.every((b) => b && b === sides[0])) out.push(`border:${sides[0]}`);
+  else sides.forEach((b, i) => { if (b) out.push(`${names[i]}:${b}`); });
+
+  const radiusRaw = String(s.borderTopLeftRadius || "").trim();
+  if (radiusRaw.endsWith("%")) {
+    const pct = parseFloat(radiusRaw);
+    if (isFinite(pct) && pct > 0) out.push(`border-radius:${pct}%`);
+  } else {
+    const radius = lenOf(s.borderTopLeftRadius, scale);
+    if (radius > 0) out.push(`border-radius:${radius}px`);
+  }
+
+  const fill = colourOf(s.backgroundColor);
+  if (fill) out.push(`background:${fill}`);
+
+  // Type only where it differs from the cell, which keeps the common line a
+  // bare <p> and says what a pill or a stacked label actually asked for.
+  const colour = colourOf(s.color);
+  if (colour && colour !== colourOf(cell.style.color)) out.push(`color:${colour}`);
+  const face = fontStack(s.fontFamily);
+  const cellFace = fontStack(cell.style.fontFamily);
+  if (face && (!cellFace || face.css !== cellFace.css)) {
+    out.push(`font-family:${face.css}`);
+    if (face.declared) ctx.faces.add(face.declared);
+  }
+  const size = lenOf(s.fontSize, scale);
+  if (size && size !== lenOf(cell.style.fontSize, scale)) out.push(`font-size:${size}px`);
+  const weight = parseInt(s.fontWeight, 10);
+  const cellWeight = parseInt(cell.style.fontWeight, 10);
+  if (weight && weight !== cellWeight) {
+    out.push(`font-weight:${String(Math.round(weight / 100) * 100)}`);
+  }
+  // Tracking is part of the type treatment wherever a label is set in caps,
+  // and a line that does not carry it renders tighter than the build by the
+  // character count times the tracking — 4.2px to 7.2px on a pill, which
+  // reads as the text sitting loose in its box rather than as a missing
+  // property. The exporter emits it everywhere else; this path did not.
+  // Leading, because the runtime's default is not this deck's. The format's
+  // reference gives a <p> a default line-height of 1.4; a theme on 1.25 that
+  // says nothing therefore renders every line ~0.15 of its font-size taller
+  // than the build — about 2.9px on a 19px line, doubled per two-line cell
+  // and multiplied by the rows, which grows the table rather than only
+  // loosening it. The failure is a table pushing into whatever sits beneath
+  // it, which is why this is carried on a documented difference rather than
+  // waiting for a deck to look wrong.
+  const leading = lenOf(s.lineHeight, scale);
+  if (leading > 0) out.push(`line-height:${leading}px`);
+  const track = lenOf(s.letterSpacing, scale);
+  const cellTrack = lenOf(cell.style.letterSpacing, scale);
+  if (s.letterSpacing && s.letterSpacing !== "normal" && track !== cellTrack) {
+    out.push(`letter-spacing:${track}px`);
+  }
+  if (s.whiteSpace === "nowrap") out.push("white-space:nowrap");
+
+  return out.length
+    ? `<p style="${out.join(";")}">${runsToHtml(line.runs, ctx)}</p>`
+    : `<p>${runsToHtml(line.runs, ctx)}</p>`;
+}
+
 function emitTableAsBoxes(node, ctx, style) {
   const scale = ctx.scale;
   const rows = node.rows
@@ -2291,12 +2545,44 @@ function emitTableAsBoxes(node, ctx, style) {
           if (size) parts.push(`font-size:${size}px`);
           const weight = parseInt(cell.style.fontWeight, 10);
           if (weight) parts.push(`font-weight:${String(Math.round(weight / 100) * 100)}`);
+          // Where the content sits when the row is taller than this cell, and
+          // how its lines stack.
+          //
+          // The cell is laid out as a column rather than aligned as an item:
+          // align-self would shrink the cell to its content, which takes the
+          // row's banding with it wherever the fill is on a cell rather than
+          // the row. Stretched cell, justified content, so a centred column
+          // keeps its background.
+          //
+          // Both are emitted only when the deck asks for something — a cell
+          // that is top-aligned with no block children is left exactly as it
+          // was, so a deck already exporting correctly does not move.
+          const vmid = cell.valign === "middle";
+          const vend = cell.valign === "bottom";
+          if (cell.lines || vmid || vend) {
+            parts.push("display:flex", "flex-direction:column");
+            if (vmid) parts.push("justify-content:center");
+            else if (vend) parts.push("justify-content:flex-end");
+          }
           // The words go in a <p>, not straight into the div. An inline mark
           // needs a text element around it — a <td> is one and a <div> is not,
           // so a bold inside a cell div is rejected outright by the editor:
           // "<b> is not a tag in this format" at that position. The format
           // says the same in general terms: text must sit in a text element.
-          return `<div style="${parts.join(";")}"><p>${runsToHtml(cell.runs, ctx)}</p></div>`;
+          // A cell with no block children carries its leading too, and for a
+          // reason the line path alone does not cover: a row is as tall as
+          // its tallest cell, so a plain cell left at the runtime's default
+          // sets the row's height whatever its neighbours do. Carrying it on
+          // the lines and not here would leave the table exactly as tall as
+          // it was and only change which cell decided.
+          const lead = lenOf(cell.style.lineHeight, scale);
+          const plain = lead > 0
+            ? `<p style="line-height:${lead}px">${runsToHtml(cell.runs, ctx)}</p>`
+            : `<p>${runsToHtml(cell.runs, ctx)}</p>`;
+          const body = cell.lines
+            ? cell.lines.map((line) => emitCellLine(line, cell, ctx, scale)).join("")
+            : plain;
+          return `<div style="${parts.join(";")}">${body}</div>`;
         })
         .join("\n");
       const rowParts = ["display:flex"];

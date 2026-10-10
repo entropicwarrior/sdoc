@@ -102,7 +102,58 @@ function collapse(text) {
 // A slide, reduced to what a reader would notice
 // ---------------------------------------------------------------------------
 
-function readSlide(html) {
+// What identifies an element beyond its tag, its box and its words.
+//
+// The fingerprint used to be tag, style and text, which means a collaborator
+// could swap a photograph, send a link somewhere else, change an icon or a
+// shape, or move a connector's ends, and this tool — whose whole job is
+// saying what they changed — reported nothing at all. A false negative in a
+// change detector is worse than a false positive: the second wastes an hour
+// and the first ships.
+//
+// `assets` maps an asset's name to the url it was exported with and the blob
+// id it was published under. An exported file carries `sdoc-asset:photo.png`
+// and the same image pulled back carries `/_blob/<id>`, so comparing the urls
+// reports every picture as changed on every run. Both are resolved to the
+// asset's NAME, which is the thing that is actually the same or not.
+function identityOf(el, assets) {
+  const a = el.attrs || {};
+  switch (el.tag) {
+    case "img":
+      return { src: assetName(a.src, assets), alt: a.alt || "" };
+    case "a":
+      return { href: a.href || "" };
+    case "x-icon":
+      return { name: a.name || "" };
+    case "x-shape":
+      return { kind: a.kind || "" };
+    case "x-connector":
+      return {
+        x1: a.x1 || "", y1: a.y1 || "", x2: a.x2 || "", y2: a.y2 || "",
+        route: a.route || "", head: a.head || "",
+      };
+    default:
+      return null;
+  }
+}
+
+// A url back to the asset it names, so a placeholder and a published blob of
+// the same picture compare equal. An unrecognised url is its own identity —
+// an image the deck did not export is still an image, and a change from one
+// unknown url to another is a real change.
+function assetName(src, assets) {
+  if (!src) return "";
+  const placeholder = /^sdoc-asset:(.+)$/.exec(src);
+  if (placeholder) return placeholder[1];
+  for (const [name, rec] of Object.entries(assets || {})) {
+    if (!rec) continue;
+    if (rec.src === src) return name;
+    if (rec.blob && (src === rec.blob || src.endsWith(`/${rec.blob}`))) return name;
+  }
+  return src;
+}
+
+function readSlide(html, assets) {
   const { root } = parseSubsetHtml(html);
   const section = root.children.find((c) => c.tag === "section");
   if (!section) return null;
@@ -116,13 +167,29 @@ function readSlide(html) {
     if (el.tag === "#text") return;
     if (el.tag === "aside") { notes = collapse(textOf(el)); return; }
     structure.push(el.tag);
-    const entry = { tag: el.tag, style: canonStyle(el.attrs.style), textIndex: -1 };
+    const entry = {
+      tag: el.tag,
+      style: canonStyle(el.attrs.style),
+      identity: identityOf(el, assets),
+      textIndex: -1,
+    };
     styles.push(entry);
     const kids = el.children.filter((c) => c.tag !== "#text");
     const isLeaf = kids.every((k) => ["b", "i", "u", "a", "span", "br"].includes(k.tag));
     if (isLeaf) {
       const text = collapse(textOf(el));
       if (text) { entry.textIndex = texts.length; texts.push({ tag: el.tag, text }); }
+      // A link lives inside text, and the walk stops here — so its target
+      // travels with the leaf or not at all. Without this a retargeted link
+      // is invisible: the words are the same, the style is the same, and
+      // nothing else ever looks at the <a>.
+      const hrefs = [];
+      const collect = (n) => {
+        if (n.tag === "a" && n.attrs && n.attrs.href) hrefs.push(n.attrs.href);
+        for (const k of n.children || []) collect(k);
+      };
+      collect(el);
+      if (hrefs.length) entry.identity = { ...(entry.identity || {}), hrefs: hrefs.join(" ") };
       return;
     }
     for (const c of el.children) walk(c);
@@ -150,7 +217,7 @@ function readSlide(html) {
 const MEANINGFUL = /pipe-step|scatter-point|is-marked|accent|bar-fill|stat-value|col-index/;
 
 function classifySlide(before, after, manifestSlide) {
-  const out = { classification: [], textChanges: [], notesChange: null, accentFlags: [], styleChanges: [] };
+  const out = { classification: [], textChanges: [], notesChange: null, accentFlags: [], styleChanges: [], identityChanges: [] };
   if (!after) { out.classification.push("removed"); return out; }
   if (!before) { out.classification.push("added"); return out; }
 
@@ -175,13 +242,28 @@ function classifySlide(before, after, manifestSlide) {
 
     for (let i = 0; i < before.styles.length; i++) {
       const b = before.styles[i], a = after.styles[i];
-      if (!a || b.style === a.style) continue;
+      if (!a) continue;
       const slot = b.textIndex >= 0 ? roles[b.textIndex] : null;
       const role = (slot && slot.role) || b.tag;
+
+      // What the element IS, before what it looks like. A swapped picture or
+      // a retargeted link is not a restyling and should not be reported as
+      // one — it is the element pointing somewhere else.
+      const bi = JSON.stringify(b.identity || null);
+      const ai = JSON.stringify(a.identity || null);
+      if (bi !== ai) {
+        out.identityChanges.push({
+          index: i, tag: b.tag, role,
+          from: b.identity || null, to: a.identity || null,
+        });
+      }
+
+      if (b.style === a.style) continue;
       const change = { index: i, tag: b.tag, role, from: b.style, to: a.style };
       out.styleChanges.push(change);
       if (MEANINGFUL.test(role) && colourDiffers(b.style, a.style)) out.accentFlags.push(change);
     }
+    if (out.identityChanges.length) out.classification.push("retargeted");
     if (before.sectionStyle !== after.sectionStyle) {
       out.styleChanges.push({ index: -1, tag: "section", role: "slide", from: before.sectionStyle, to: after.sectionStyle });
     }
@@ -256,6 +338,14 @@ function buildReport(result) {
         lines.push("- the slide's structure changed: elements were added, removed or reordered.",
                    "  This is not applied automatically — the `.sdoc` structure carries meaning the slide does not.");
       }
+      // Named individually rather than counted. A changed picture or link is
+      // a different thing being pointed at, which a reader needs to see here
+      // — unlike a style change, where the count plus changes.json is enough.
+      for (const c of s.identityChanges) {
+        const say = (v) => (v ? Object.entries(v).filter(([, x]) => x !== "").map(([k, x]) => `${k}=${x}`).join(" ") || "(none)" : "(none)");
+        lines.push(`- **${c.role}** <${c.tag}> points somewhere else`,
+                   `  - was: ${say(c.from)}`, `  - now: ${say(c.to)}`);
+      }
       const plain = s.styleChanges.filter((c) => !s.accentFlags.includes(c));
       if (plain.length) lines.push(`- ${plain.length} style change(s), listed in changes.json`);
       lines.push("");
@@ -314,8 +404,8 @@ function main() {
     const beforeRaw = readFile(dir, rel);
     const afterRaw = readFile(pulledDir, rel);
     const gone = !afterRaw || !pulledOrder.includes(entry.id);
-    const before = beforeRaw ? readSlide(beforeRaw) : null;
-    const after = gone ? null : readSlide(afterRaw);
+    const before = beforeRaw ? readSlide(beforeRaw, manifest.assets) : null;
+    const after = gone ? null : readSlide(afterRaw, manifest.assets);
     const c = classifySlide(before, after, entry);
     result.slides.push({ id: entry.id, sdocId: entry.sdocId, layout: entry.layout, ...c });
   }
