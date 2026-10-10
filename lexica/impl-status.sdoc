@@ -96,7 +96,7 @@
 
     # Current State @current-state
     {
-        SDOC v0.3.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.4.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
