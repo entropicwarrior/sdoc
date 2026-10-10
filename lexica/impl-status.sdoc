@@ -16,22 +16,32 @@
 
     # Handover @handover
     {
-        Where this is as of 8 Oct 2026, after v0.3.0 was released, half-failed to
-        publish, and was finished by hand.
+        Where this is as of 10 Oct 2026, after v0.4.0 was released and published
+        cleanly to both registries.
 
         ## State @handover-state
         {
-            - **v0.3.0 is released and live on both registries**: npm as
-              \`@entropicwarrior/sdoc@0.3.0\`, published over OIDC with a signed
-              provenance statement, and the VS Code Marketplace as
-              \`entropicwarrior-msenfin.vscode-sdoc\`
-            - PRs #73 and #74 are merged. \`origin/develop\` carries one commit
-              \`origin/main\` does not — the release-workflow split — which reaches
-              \`main\` at the next release. That is the only drift
-            - All eight suites green as of the v0.3.0 cut: 918 tests, 0 failures
-            - The next tag is the first that will exercise the split workflow, so
-              cut it from \`develop\` and watch both jobs rather than the run's
-              overall result
+            - **v0.4.0 is released and live on both registries**: npm as
+              \`@entropicwarrior/sdoc@0.4.0\`, over OIDC with a signed provenance
+              statement, and the VS Code Marketplace as
+              \`entropicwarrior-msenfin.vscode-sdoc\`. Both verified at the
+              registry rather than from the workflow's exit code, and the
+              published tarball install-tested
+            - \`main\` and \`develop\` have identical trees, both at 0.4.0. The
+              remote carries only those two branches and the tags. No drift
+            - 1,101 tests green: 749 fast, 352 browser. The Python binding is
+              37 of 38 — the wheel test needs \`setuptools\`, which Python 3.12+
+              no longer bundles, and that failure is environmental
+            - **The split release workflow is proven.** v0.4.0 was its first
+              real run: npm finished while the Marketplace job was still going,
+              which is exactly the coupling that cost v0.3.0 its npm publish
+            - Open, in the order worth taking them: the colour-safety rule for
+              the artifact export (a foreground colour whose background was
+              dropped should not be carried — unwritten); the 31s a one-slide
+              PDF takes, which is repeatable and unexplained and which the
+              frame-rate flag does not touch; and the Chrome process-group kill
+              in \`slide-geometry.js\`, where the mechanism is proven and the fix
+              is not — see the traps below
 
         }
 
@@ -62,9 +72,15 @@
               permanently
             - **A publish that reports success may not be visible yet.** The PUT
               returns \`202 Accepted\` and npm processes it asynchronously — 0.3.0
-              took about seven minutes to appear. \`npm view\` reads a local cache
-              too, so query \`registry.npmjs.org\` directly before concluding that a
-              publish failed and re-running one
+              took about seven minutes to appear, 0.4.0 about thirty seconds, and
+              the Marketplace five to eight minutes either time. \`npm view\` reads
+              a local cache too, so query \`registry.npmjs.org\` directly before
+              concluding that a publish failed and re-running one
+            - **"Bypassed rule violations" is a success notice, not a failure.**
+              Deleting a branch or pushing to \`main\` prints the rule it waived —
+              \`- Cannot delete this branch\` — above the line that says what
+              actually happened. Read to the \`- [deleted]\` or the ref update
+              before concluding anything, and note git exits 0 either way
 
         }
 
@@ -79,11 +95,42 @@
             - **A clean number from \`artifact-fidelity.js\` is not a correct slide.**
               It renders in Chrome, not the Slides viewer, and it measures geometry.
               Its own header says what it cannot see; read that before trusting it
-            - **Every serious defect this week produced a reassuring output.** Five
-              separate checks could not fail — a guard over an empty corpus, a
-              fixture that passed either way, a measurement whose two sides shared
-              a flaw, a placement check whose loop had no body. The only reliable
-              test is: if this were broken, would the output look any different?
+            - **Every serious defect here produces a reassuring output, and the
+              checks that miss them agree with themselves.** A guard over an empty
+              corpus; a fixture that passed either way; a measurement whose two
+              sides shared a flaw; a placement check whose loop had no body; an
+              assertion that searched a whole slide for a property the
+              \`<section>\` also sets, written inside the test meant to prove a
+              cell carried it. The only reliable test is: **break it on purpose
+              and watch the check fail**, one assertion at a time so none masks
+              another. If it cannot be made to fail it is not a check
+            - **When the corpus lacks the case, extend the fixture.** 885 tests
+              passed over an exporter with four live defects because nothing in
+              this repo had an inline-block inside a table cell, and nothing used
+              \`text-indent\` at all. Adding the case to the theme the test builds
+              is the version of this lesson that scales; "look at the rendered
+              output" finds the defect but does not become a suite
+            - **Reasoning from source loses to measuring, reliably.** Four
+              diagnoses in one evening did not survive a computed value: a
+              harvest-timeout blamed on image weight, a cover defect blamed on
+              pseudo-element pinning, a \`:first-child\` that was matching all
+              along, and a flex guard written to exclude the wrong initial value
+              (\`0 1 auto\`, not \`0 0 auto\` — verified in the browser). Each was
+              settled by one measurement
+            - **Your own greps and normalisers will mislead you.** A \`sed\` that
+              strips \`flex:none\` leaves the semicolon and reports every file as
+              changed; \`grep\` patterns holding \`${...}\` or \`$\` get eaten by the
+              shell or treated as anchors; BSD \`find -newermt\` fails silently.
+              A normaliser that removes a thing is a parser written badly — parse
+              the structure and compare the parse, and use \`grep -F\` for literals
+            - **Headless Chrome needs \`--disable-frame-rate-limit\` here.** No
+              display means no vsync, which means no frames and no
+              \`requestAnimationFrame\`; the measuring script waits on one. The
+              flag is in \`dumpDom\`, deliberately not in \`slide-pdf.js\` where it
+              was measured and made no difference. Chrome also never exits on
+              this machine while the DOM lands in seconds, so the harvest polls
+              for its sentinel — anything that waits on process exit hangs
+              forever, which is how two wrong timeout theories were reached
             - **The viewer differs from Chrome** in ways that have shipped broken
               slides four times. AGENTS.md lists what publishing has proved it will
               not carry. Probe anything load-bearing on a live artifact
