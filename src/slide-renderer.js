@@ -9,7 +9,10 @@
 
 const fs = require("fs");
 const path = require("path");
-const { parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, svgBlockIds, colorSwatchHtml } = require("./sdoc");
+const {
+  parseInline, renderKatex, escapeHtml, escapeAttr, sanitizeSvg, svgBlockIds,
+  colorSwatchHtml, RESERVED_SCOPE_IDS, getDocumentScope,
+} = require("./sdoc");
 const { extractConfig, buildBody, accentClass, slug, truthy } = require("./slide-layouts");
 const {
   readConnector,
@@ -1207,17 +1210,13 @@ function renderSlides(nodes, options = {}) {
   const fitMode = FIT_MODES.has(requested) ? requested : "contain";
 
   // The nodes from extractMeta have @meta already stripped.
-  // If there's a document scope wrapper, unwrap it to get the slides.
-  let slideScopes;
-  if (nodes.length === 1 && nodes[0].type === "scope" && nodes[0].children) {
-    slideScopes = nodes[0].children;
-  } else {
-    slideScopes = nodes;
-  }
+  // If there's a document scope wrapper, unwrap it to get the slides. The
+  // reserved and :comment scopes beside it are not slides, so they can go.
+  const deckScope = getDocumentScope(nodes);
+  const slideScopes = deckScope ? deckScope.children : nodes;
 
   // Filter to scope nodes only (skip stray paragraphs, :comment scopes, and the
-  // reserved @meta / @about metadata scopes — these are document metadata, not slides).
-  const RESERVED_SCOPE_IDS = new Set(["meta", "about"]);
+  // reserved scopes, @meta and the signposts — these describe the document, not slides).
   const slides = slideScopes.filter(
     (n) =>
       n.type === "scope" &&
@@ -1321,7 +1320,7 @@ function renderSlides(nodes, options = {}) {
     .join("\n\n");
 
   const title = meta.properties?.title
-    || (nodes.length === 1 && nodes[0].title ? nodes[0].title : "Slides");
+    || (deckScope && deckScope.title ? deckScope.title : "Slides");
 
   // Structural styles — always injected regardless of theme.
   const structuralCss = `

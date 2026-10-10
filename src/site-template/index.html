@@ -246,7 +246,11 @@
             footer: doc.config.footer || ""
           },
           cssOverride: cssOverride || undefined,
-          cssAppend: cssAppend || undefined
+          cssAppend: cssAppend || undefined,
+          // A live view, like the preview: someone browsing a knowledge base
+          // is deciding what to read next, which is what @about, @not-about
+          // and @related-resources are for. Only exports drop them.
+          includeSignposts: true
         }
       );
     }

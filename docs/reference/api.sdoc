@@ -56,6 +56,24 @@ const { nodes, meta } = extractMeta(parsed.nodes);
             - Returns `{ nodes, meta }` where `meta` contains `stylePath`, `styleAppendPath`, `headerNodes`, `footerNodes`, `headerText`, `footerText`, and `properties`
             - `headerText` and `footerText` are set by key:value meta syntax (e.g., `header: My Header`)
             - `properties` is an object of arbitrary key:value pairs from the meta scope (e.g., `author`, `date`, `version`)
+            - The reserved and `:comment` scopes written beside the root scope are moved into it in the returned `nodes`, as `foldRootSiblings` does, so a renderer sees a single root either way
+        }
+    }
+
+    # getDocumentScope(nodes) and foldRootSiblings(nodes)
+    {
+        Find the document's root scope, which may have reserved scopes (`@meta` and the signposts) and `:comment` scopes written beside it.
+
+        ```javascript
+const { parseSdoc, getDocumentScope, foldRootSiblings } = require("@entropicwarrior/sdoc");
+const nodes = parseSdoc(text).nodes;
+const root = getDocumentScope(nodes);   // the root scope node, or null
+const body = foldRootSiblings(nodes);   // [root] with the scopes beside it as children
+        ```
+
+        {[.]
+            - `getDocumentScope` returns the only top-level scope left once the reserved and `:comment` scopes are set aside, or `null` when any other top-level content (a paragraph, a second scope) means there is no single root
+            - `foldRootSiblings` returns a one-element array holding a copy of the root, with the scopes written before it at the front of its children and those after it at the end. Without a single root, or with nothing beside it, it returns `nodes` unchanged. The parsed nodes are not modified
         }
     }
 
@@ -78,7 +96,9 @@ const html = renderHtmlDocument(sdocText, "Page Title", {
             - `options.config` -- object with `header` and `footer` strings
             - `options.cssOverride` -- replaces the default stylesheet
             - `options.cssAppend` -- appended after the base stylesheet
-            - `options.includeAbout` -- whether to render the `@about` scope (default `false`). Set to `true` for preview-style rendering where the discovery summary should remain visible. See **Hiding @about in exports** below.
+            - `options.includeSignposts` -- `true` keeps every signpost. By default only `@reading-guide` is kept. Set to `true` for preview-style rendering
+            - `options.includeAbout` -- `true` keeps `@about` as well as the default. Ignored when `includeSignposts` is given
+            - `options.signposts` -- keeps or drops single signposts, as a map from id to `true` or `false`, on top of the two options above. See **Signposts in exports** below
             - Automatically extracts and applies `@meta` scope settings
         }
     }
@@ -98,31 +118,53 @@ const html = renderHtmlDocumentFromParsed(
 );
         ```
 
-        Accepts the same `options.includeAbout` flag as `renderHtmlDocument` (default `false`).
+        Accepts the same `options.includeSignposts`, `options.includeAbout` and `options.signposts` as `renderHtmlDocument`.
     }
 
-    # Hiding `@about` in exports @hiding-about-in-exports
+    # Signposts in exports @signposts-in-exports
     {
-        The `@about` scope is a discovery summary — it answers "should I read this document?" for an audience that hasn't decided yet (e.g. an agent doing `list_knowledge`, or a reader browsing a doc index). When a document is exported to HTML or PDF and sent to a specific recipient, that audience has already been told to read it, so the discovery framing adds noise rather than signal.
+        Signposts are the reserved scopes that describe a document rather than its subject: `@about`, `@not-about`, `@related-resources`, `@reading-guide` and `@editing-guide` (see [Signposts](sdoc-authoring.sdoc#signposts)). Four of them serve someone deciding whether to read, or someone editing the file. When a document is exported to HTML or PDF and sent to a recipient, that reader has already been asked to read it and will not edit it, so those four add noise. `@reading-guide` is written for exactly that reader.
 
-        For that reason, **all HTML and PDF rendering paths hide `@about` by default**. This applies uniformly to `renderHtmlDocument`, `renderHtmlDocumentFromParsed`, `renderHtmlBody`, the `tools/build-doc.js` CLI, and the VS Code `sdoc.exportHtml` / `sdoc.exportPdf` commands. The live preview in the VS Code extension is the only path that explicitly opts in by passing `includeAbout: true`, so authors still see the meta-section while editing.
+        For that reason, **all HTML and PDF rendering paths drop every signpost except `@reading-guide` by default**. Only signposts at the top level (the root's children, or scopes beside the root) are dropped: a scope with a reserved id deeper down is an ordinary scope and is exported with its content, and `build-doc` and the VS Code export commands warn about it. This applies uniformly to `renderHtmlDocument`, `renderHtmlDocumentFromParsed`, `renderHtmlBody`, the `tools/build-doc.js` CLI, and the VS Code `sdoc.exportHtml` / `sdoc.exportPdf` commands. The live preview in the VS Code extension and the document browser pass `includeSignposts: true`, so authors see every section while editing and readers browsing a knowledge base see what each document covers and links to.
+
+        Three options change which sections are kept. They are resolved in this order:
+
+        {[#]
+            - Start from the default: `@reading-guide` only.
+            - `includeSignposts: true` keeps every section. When `includeSignposts` is not given, `includeAbout: true` keeps `@about` as well. An explicit `includeSignposts: false` keeps the default and ignores `includeAbout`.
+            - `signposts` keeps (`true`) or drops (`false`) single sections on top of the result. Ids are matched case-insensitively. Unknown ids and values other than `true` and `false` are ignored.
+        }
 
         ```javascript
-// Default — @about is hidden (export-shape output)
+// Default — only @reading-guide is kept (export-shape output)
 const html = renderHtmlDocument(sdocText, "Title");
-const html = renderHtmlDocument(sdocText, "Title", { includeAbout: false });
 
-// Opt in to keep @about (preview-style rendering)
-const html = renderHtmlDocument(sdocText, "Title", { includeAbout: true });
+// Keep every signpost (preview-style rendering)
+const html = renderHtmlDocument(sdocText, "Title", { includeSignposts: true });
+
+// The default plus @related-resources, without @reading-guide
+const html = renderHtmlDocument(sdocText, "Title", {
+    signposts: { "related-resources": true, "reading-guide": false }
+});
+
+// Everything except @editing-guide
+const html = renderHtmlDocument(sdocText, "Title", { includeSignposts: true, signposts: { "editing-guide": false } });
         ```
 
-        Empty or whitespace-only `@about` scopes are never rendered, regardless of the flag.
+        Empty or whitespace-only signposts are never rendered, whatever the options say.
 
-        **Helpers.** Two small helpers back this feature, both exported for custom renderers:
+        **Helpers.** These are exported for custom renderers and tooling:
 
         {[.]
-            - `isAboutEmpty(scope)` -- returns `true` when an `@about` scope has no children, or only whitespace-only paragraphs
-            - `stripAboutScopes(nodes)` -- returns a new node array with all `@about` scopes recursively removed; the input is not mutated
+            - `SIGNPOSTS` -- the table behind all of this: per id, its default label (`title`), whether exports keep it (`exportVisible`), its content model (`model`) and, for structured sections, its table header (`table`)
+            - `SIGNPOST_IDS` -- the five ids, in conventional order
+            - `EXPORT_HIDDEN_SIGNPOST_IDS` -- the ids dropped from exports by default
+            - `RESERVED_SCOPE_IDS` -- a `Set` of `meta` plus the five ids
+            - `getSignpost(scope)` -- the `SIGNPOSTS` entry for a scope node, matched case-insensitively, or `null`
+            - `isSignpostEmpty(scope)` -- `true` when a signpost has no children, or only whitespace-only paragraphs
+            - `stripSignposts(nodes, ids)` -- a new node array with the given signposts removed from the top level (the root's children and the scopes beside the root); a scope with one of those ids deeper down is ordinary and stays; `ids` defaults to `EXPORT_HIDDEN_SIGNPOST_IDS`; the input is not mutated
+            - `hiddenSignposts(options)` -- the ids a render with these options drops, resolved as above. `stripSignposts(nodes, hiddenSignposts(options))` is what the HTML renderers do
+            - `isAboutEmpty(scope)` and `stripAboutScopes(nodes)` -- older names. `isAboutEmpty` is `isSignpostEmpty`; `stripAboutScopes` removes the top-level `@about` only
         }
     }
 
@@ -188,59 +230,121 @@ await resolveIncludes(parsed.nodes, async (src) => {
 
     # Progressive Disclosure @progressive-disclosure
     {
-        These functions enable token-efficient navigation of SDOC files. Instead of loading an entire file (\~5,000-50,000 tokens), an agent can discover what sections exist (\~50-100 tokens) and then extract only the one it needs (\~200-1,000 tokens).
+        These functions enable token-efficient navigation of SDOC files. Instead of loading an entire file, an agent can discover what sections exist and then extract only the one it needs.
 
-        # listSections(text)
+        All of these take the `nodes` that `parseSdoc(text)` returns, not the source text.
+
+        # listSections(nodes)
         {
-            Returns a flat list of sections with their IDs, titles, and depth.
+            Returns a flat list of every scope with a heading, at any depth, in document order. `@meta` and the signposts are excluded, with everything inside them. A scope with a reserved id below the top level is an ordinary scope and is listed.
 
             ```javascript
-const { listSections } = require("@entropicwarrior/sdoc");
-const sections = listSections(sdocText);
-// [{ id: "tables", title: "Tables", depth: 2 },
-//  { id: "table-formulas", title: "Table Formulas", depth: 3 }, ...]
+const { parseSdoc, listSections } = require("@entropicwarrior/sdoc");
+const sections = listSections(parseSdoc(sdocText).nodes);
+// [{ id: "tables", derivedId: "tables", title: "Tables", scopeType: null, preview: "Opened with..." }, ...]
             ```
 
             {[.]
-                - `text` -- the SDOC source string
-                - Returns an array of `{ id, title, depth }` objects
-                - IDs are explicit (`@id`) or derived from the title via `slugify`
+                - `nodes` -- the parsed nodes
+                - Returns an array of `{ id, derivedId, title, scopeType, preview }` objects. `id` is the explicit `@id` or `null`; `derivedId` is the title through `slugify`, for addressing the section with `extractSection` (an `@ref` in a document does not resolve to it); `preview` is the start of the first paragraph
                 - Use this as the "table of contents" step before extracting a section
             }
         }
 
-        # extractSection(text, id)
+        # extractSection(nodes, id)
         {
             Extracts a single section and its children by ID. This is the key function for surgical section retrieval.
 
             ```javascript
-const { extractSection } = require("@entropicwarrior/sdoc");
-const section = extractSection(sdocText, "table-formulas");
-// Returns the raw SDOC source for just that section, including children
+const { parseSdoc, extractSection } = require("@entropicwarrior/sdoc");
+const section = extractSection(parseSdoc(sdocText).nodes, "table-formulas");
+// { title: "Table Formulas", content: "..." }
             ```
 
             {[.]
-                - `text` -- the SDOC source string
-                - `id` -- the section ID (explicit `@id` or derived slug)
-                - Returns the SDOC source for that section, or `null` if not found
-                - Includes all child scopes
+                - `nodes` -- the parsed nodes
+                - `id` -- the section ID: an explicit `@id` (matched exactly), else a derived slug (matched case-insensitively)
+                - Returns `{ title, content }`, plus `data` when the section holds data blocks, or `null` if not found
+                - `content` is the plain text of the section and all its children
+                - `@meta` and the signposts are never matched, nor anything inside them. A scope with a reserved id below the top level is ordinary and is matched
             }
         }
 
-        # extractAbout(text)
+        # extractAbout(nodes)
         {
-            Extracts the `@about` scope text -- a one-paragraph summary of the document.
+            Extracts the `@about` scope text -- a short summary of the document.
 
             ```javascript
-const { extractAbout } = require("@entropicwarrior/sdoc");
-const about = extractAbout(sdocText);
+const { parseSdoc, extractAbout } = require("@entropicwarrior/sdoc");
+const about = extractAbout(parseSdoc(sdocText).nodes);
 // "Implementation status for the SDOC project. Tracks what is..."
             ```
 
             {[.]
-                - `text` -- the SDOC source string
-                - Returns the plain text content of the `@about` scope, or `null`
+                - `nodes` -- the parsed nodes
+                - Returns the paragraphs of the top-level `@about` joined with a space, or `null`. List content is ignored; use `extractSignpost(nodes, "about")` to keep it
                 - Use this for file discovery: list files with their `@about` summaries
+            }
+        }
+
+        # extractSignpost(nodes, id)
+        {
+            Extracts any signpost as plain text.
+
+            ```javascript
+const { parseSdoc, extractSignpost } = require("@entropicwarrior/sdoc");
+const notAbout = extractSignpost(parseSdoc(sdocText).nodes, "not-about");
+// "Slide decks: see the slide authoring guide.\n\nParser internals: not documented yet."
+            ```
+
+            {[.]
+                - `nodes` -- the parsed nodes
+                - `id` -- one of `about`, `not-about`, `related-resources`, `reading-guide`, `editing-guide`
+                - Returns the section's paragraphs, list items and table rows (not the table's header, which the section's model fixes) joined with a blank line, inline markup left as written so links survive. Returns `null` when the id is not a signpost, or the section is absent or empty
+                - Looks only at the top level: the root scope's children, and reserved scopes written beside the root
+            }
+        }
+
+        # extractSignposts(nodes)
+        {
+            Returns every present, non-empty signpost as `{ [id]: text }`, each value as `extractSignpost` returns it, or `{}` when there are none.
+        }
+
+        # extractRelatedResources(nodes)
+        {
+            Reads the `@related-resources` table as data.
+
+            ```javascript
+const resources = extractRelatedResources(parseSdoc(sdocText).nodes);
+// [{ label: "Specification", href: "../../lexica/specification.sdoc", kind: "sdoc",
+//    relation: "Normative source for everything this guide teaches", lineStart: 21 },
+//  { label: "https://github.com/entropicwarrior/sdoc", href: "https://github.com/entropicwarrior/sdoc",
+//    kind: "external", relation: "Upstream repository", lineStart: 22 }]
+            ```
+
+            {[.]
+                - Returns one object per row, or `null` when the document has no `@related-resources`
+                - `kind` is `"sdoc"` for another SDOC document, `"file"` for any other file of the project, and `"external"` for a URL with a scheme. `resourceKind(href)` computes it on its own, and returns `null` when `href` is not a string
+                - `label` is the link text, or the URL itself for a bare URL
+                - `lineStart` is the row's own source line
+                - Rows that do not fit the schema are skipped, including a link into this document or to an absolute path. `validateSignposts` reports them
+            }
+        }
+
+        # extractReadingGuide(nodes)
+        {
+            Reads `@reading-guide` as data: the free part, and the table that maps sections to notes.
+
+            ```javascript
+const guide = extractReadingGuide(parseSdoc(sdocText).nodes);
+// { text: "Read the Quick Reference once, then ...",
+//   entries: [{ sections: ["quick-reference"], note: "Everyday authoring", lineStart: 30 }] }
+            ```
+
+            {[.]
+                - `text` -- the paragraphs and lists before the table, as plain text
+                - `entries` -- one per well-formed row; `sections` holds the ids without the `@`, and `lineStart` is the row's own source line
+                - Returns `null` when the document has no `@reading-guide`
             }
         }
 
@@ -257,15 +361,59 @@ slugify("Table Formulas"); // "table-formulas"
         # Typical agent workflow
         {
             ```javascript
-            // 1. Discovery: list files with summaries (~200 tokens for 50 files)
-            const about = extractAbout(fileText);
+            const { nodes } = parseSdoc(fileText);
 
-            // 2. Orientation: list sections of one file (~50-100 tokens)
-            const sections = listSections(fileText);
+            // 1. Discovery: list files with summaries (~200 tokens for 50 files)
+            const about = extractAbout(nodes);
+
+            // 2. Orientation: list sections of one file (~50-100 tokens),
+            //    and how the author suggests reading them
+            const sections = listSections(nodes);
+            const guide = extractReadingGuide(nodes);
 
             // 3. Detail: extract just the section needed (~200-1000 tokens)
-            const content = extractSection(fileText, "table-formulas");
+            const section = extractSection(nodes, "table-formulas");
             ```
+        }
+    }
+
+    # validateSignposts(nodes) @validate-signposts
+    {
+        Checks the signposts against their content models. The VS Code extension shows the findings in the Problems panel, and `tools/build-doc.js --check` prints them.
+
+        ```javascript
+const { parseSdoc, validateSignposts } = require("@entropicwarrior/sdoc");
+const findings = validateSignposts(parseSdoc(sdocText).nodes);
+// [{ type: "signpost-table", id: "related-resources",
+//    message: "@related-resources table row 2: \"Resource\" must be exactly one link, [label](target) or a bare URL",
+//    lineStart: 18, lineEnd: 18 }]
+        ```
+
+        {[.]
+            - `nodes` -- the parsed nodes, before `extractMeta` so a misplaced `@meta` is caught too
+            - Returns an array of findings, `{ type, id, severity, message, lineStart, lineEnd }`: the same shape as `validateRefs` and `validateCitations`, which also set a severity. `severity` is `"warning"` for `signpost-order` and `"error"` for every other type. It never throws
+            - `type` is one of `reserved-scope-placement` (the scope is then ordinary, and the message says so; one inside a `:comment` scope is not reported), `reserved-scope-duplicate`, `signpost-root` (the document's only scope is a signpost, so it renders empty), `signpost-content`, `signpost-table`, `signpost-order`. A `Sections` entry is a reference like any other: `validateRefs` reports one that does not resolve, or that names a reserved scope, as `broken-ref`. The rules are in [the specification](../../lexica/specification.sdoc#signpost-validation)
+            - A finding about one table row carries that row's line, and the message names the row. A finding about the whole table, such as a wrong header, carries the table's lines
+        }
+    }
+
+    # fixSignpostOrder(text) @fix-signpost-order
+    {
+        Puts `@meta` and the signposts in their conventional order, ahead of the body, the fix for a `signpost-order` warning. The VS Code quick fix **Reorder signposts** and `tools/build-doc.js --fix` both call it.
+
+        ```javascript
+const { fixSignpostOrder } = require("@entropicwarrior/sdoc");
+const fix = fixSignpostOrder(sdocText);
+if (fix.changed) fs.writeFileSync(file, fix.text);
+else if (fix.reason) console.error(fix.reason);
+        ```
+
+        {[.]
+            - `text` -- the SDOC source string; it takes text, not nodes, because it moves source lines
+            - Returns `{ text, changed, reason }`. `changed` is `false` when the order was already right (`reason` is `null`) or when no safe fix exists (`reason` says why); `text` is then the input, unchanged
+            - Each scope moves with the `//` comment lines directly above it and is re-indented to its new place. Line endings and the trailing newline are kept
+            - A fix is returned only when it reparses to the same tree with just those scopes moved, keeps every non-blank line, and leaves no order warning
+            - `RESERVED_ORDER` is the order it applies: `meta`, then the five signpost ids
         }
     }
 
@@ -278,7 +426,7 @@ slugify("Table Formulas"); // "table-formulas"
             - `paragraph` -- a text block with `text`
             - `list` -- a list with `listType` (`"bullet"` or `"number"`) and `items`
             - `blockquote` -- a quote with `paragraphs` (array of strings)
-            - `table` -- a table with `headers` (array of strings), `rows` (array of string arrays), and optional `options` (`{ borderless, headerless }`), `columnAlign`, `columnFormat`, and `columnCopy` (per-column booleans marking a copy column)
+            - `table` -- a table with `headers` (array of strings), `rows` (array of string arrays), `rowLines` (the 1-based source line of each entry in `rows`, same order), and optional `options` (`{ borderless, headerless }`), `columnAlign`, `columnFormat`, and `columnCopy` (per-column booleans marking a copy column)
             - `code` -- a code block with `lang`, `text`, and optional `src` (file path/URL) and `lines` (`{ start, end }`). Special `lang` values: `mermaid` (rendered as diagram via Mermaid), `svg` (rendered as inline SVG with script/foreignObject stripping), `math` (rendered as display equation via KaTeX)
             - `citations` -- a citation definition block with `entries` (array of `{ key, text, lineStart, lineEnd }`)
             - `hr` -- a horizontal rule

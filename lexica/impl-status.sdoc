@@ -1,5 +1,18 @@
 # SDOC — Implementation Status @sdoc-impl-status
 {
+    # Meta @meta
+    {
+        type: doc
+
+        status: active
+
+        sdoc-version: 0.2
+    }
+
+    # About @about
+    {
+        Implementation status for the SDOC project. Tracks what is completed, what is in progress, and what is next. Read this first when starting a new task.
+    }
 
     # Handover @handover
     {
@@ -80,23 +93,10 @@
         }
 
     }
-    # Meta @meta
-    {
-        type: doc
-
-        status: active
-
-        sdoc-version: 0.2
-    }
-
-    # About @about
-    {
-        Implementation status for the SDOC project. Tracks what is completed, what is in progress, and what is next. Read this first when starting a new task.
-    }
 
     # Current State @current-state
     {
-        SDOC v0.3.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.4.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
@@ -119,6 +119,7 @@
             - v0.2.22 — drilldown navigation driven by position rather than a build-time class; independent navigation axes (left/right is the spine, up/down the column); deck images resolved against the \`.sdoc\` and embedded in every output format
             - v0.2.24 — the default design box became 1920x1080, the canvas a Claude Slides artifact is fixed at, with the print page following at 20 x 11.25in (the same geometry at 96 dpi). Nothing changes on screen, since a deck is scaled to the window whatever its box; the Claude Slides export now copies lengths across instead of scaling them. The theme's type scale was deliberately left in proportion rather than raised to that format's recommendation, which overflowed two example slides
             - v0.2.23 — the \`scatter\` layout; slide background images with placement, scale, flip and linear or radial fades; a Claude Slides artifact export with its own validator and a pull/diff that reads a collaborator's edits back; a deck-scoped stylesheet through the existing \`style-append:\` key; the presenter filmstrip; and two silent-corruption fixes — a scope left unclosed no longer parses to a different tree without saying so, and a theme's \`text-transform\` no longer turns "40 mW" into "40 MW"
+            - Unreleased, on \`feat/signpost-sections\` — signposts, the reserved scopes that describe a document rather than its subject: \`\@about\` and four new optional ones, \`\@not-about\`, \`\@related-resources\`, \`\@reading-guide\` and \`\@editing-guide\`. Each has a content model (prose, or a table with a fixed header) that \`validateSignposts\` checks, with \`\@not-about\` holding no links and \`\@about\` no section references; findings reach the VS Code Problems panel and \`build-doc.js --check\`. Exports keep only \`\@reading-guide\` by default; \`includeSignposts\` keeps all of them, \`includeAbout\` adds \`\@about\`, and \`signposts\` keeps or drops single sections (\`--include-signposts\`, \`--include-about\`, \`--signposts\` on the CLI). \`extractRelatedResources\` and \`extractReadingGuide\` read the two structured sections as data. Out-of-order signposts are a warning, fixed by the VS Code quick fix "Reorder signposts" or \`build-doc.js --fix\` (\`fixSignpostOrder\`), which refuses when moving the text would change the tree. The repo's own documents have not adopted the new sections; \`examples/example.sdoc\` shows all five
         }
 
         # GitHub Adoption

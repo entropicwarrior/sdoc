@@ -90,14 +90,12 @@ parse_inline(["**bold** {+ok+}"])   # [[{"type": "strong", ...}, ...]]
 
 ## What the binding adds to the reference
 
-One thing, and only one: a **1-based source line for every table row**
-(`SdocTable.row_lines`). The reference's table node carries `lineStart` and
-`lineEnd` for the block but no per-row line, and a consumer that cites rows
-("`tests.sdoc:412:`") needs them. They are recovered from the reference's own
-output rather than by re-parsing rows — see the note at the top of
-[`src/sdoc/bridge.js`](src/sdoc/bridge.js). When the shape is one the worker
-cannot attribute confidently it raises, because a row on the wrong line is a
-wrong citation and a dropped row is a short table.
+Nothing: even the **1-based source line of every table row**
+(`SdocTable.row_lines`), which a consumer that cites rows ("`tests.sdoc:412:`")
+needs, is the reference table node's own `rowLines`. When a table comes back
+without one line per row, the worker raises rather than guessing, because a
+row on the wrong line is a wrong citation and a dropped row is a short table —
+see the note at the top of [`src/sdoc/bridge.js`](src/sdoc/bridge.js).
 
 ## How it runs
 

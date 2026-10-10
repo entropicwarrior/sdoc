@@ -441,6 +441,8 @@ Content of Section B.
             }
             ```
 
+            A reference resolves only to a slug assigned with \`@slug\`. A heading without one cannot be referenced, even by a slug made from its title: give it an \`@slug\` first. The broken-reference message names the heading when the slug matches its title.
+
             References are **document-local only** — \`@slug\` resolves within the current file. To point a reader to a section in another file, use a link with a fragment:
 
             ```
@@ -624,22 +626,161 @@ Content of Section B.
             emitted when this key is missing from \`@meta\`.
         }
 
-        # About Scope @about-scope
+        # Signposts @signposts
         {
-            The reserved \`@about\` scope provides a discovery summary for the document. It is used by \`list_knowledge\` to describe the file and is also rendered in the live preview with a distinct meta-section style so readers can tell it apart from regular body content. Use the bare \`@about\` form (preferred) or the heading form:
+            Signposts are optional reserved scopes that describe the document itself rather than its subject. Unlike `@meta`, which is configuration and is never rendered, they are written for people and agents and render as labelled boxes. Each one answers exactly one question, for one audience, in one fixed shape. A sentence that answers a different question belongs in a different section or in the body. Content of another shape is reported by the validator.
 
-            ```sdoc
-            @about {
-                How to write correct SDOC files.
-                Covers document structure, inline formatting, block types, and common mistakes.
+            {[table]
+                Section | Question it answers | Shape | In exports default
+                `@about` | What is this document, and should I read it? | Paragraphs and lists, no section references | Hidden
+                `@not-about` | What does it deliberately leave out, and why? | Paragraphs and lists, no links | Hidden
+                `@related-resources` | What else can I open that goes with it? | One table: Resource, Relation | Hidden
+                `@reading-guide` | I am going to read this. Where do I start, and what can I skip? | Paragraphs and lists, then one table: Sections, Note | Shown
+                `@editing-guide` | I am going to change this file. What are the rules? | Paragraphs and lists | Hidden
             }
-            ```
 
-            The heading form \`# About @about { }\` also works but the bare form is preferred. With the bare form, the renderer synthesizes an \`About\` heading so the meta-section is always labelled. The heading form lets you override that label — \`# Document Discovery @about { }\` renders with `Document Discovery` as the title.
+            # Rules for All Signposts @signpost-rules
+            {
+                {[.]
+                    - Every signpost is optional, and a document has at most one of each.
+                    - Place them as direct children of the root scope. This is required: written anywhere else, the scope is an ordinary section, and the validator reports it as an error.
+                    - Put them after `@meta` and before the body, in the order of the table above. This is a convention: a signpost out of order still works where it is written, and the validator reports a warning. The VS Code quick fix **Reorder signposts**, or `build-doc.js --fix`, puts them in order for you.
+                    - Use the bare form, `@reading-guide { ... }`. The heading form, `# Start Here @reading-guide { }`, also works, and its title replaces the default label.
+                    - The ids are reserved. Never give an ordinary section one of them, and never point a reference at one: a reference to a signpost or to `@meta` is reported as broken, since most signposts are dropped from exports.
+                    - A signpost written deeper than the root's children is not a signpost. It renders and exports as an ordinary section, content and all, and the validator and the export tools flag it.
+                    - **Paragraphs and lists** means exactly that: paragraphs, and lists whose items hold only paragraphs and lists. Inline formatting, links and `@id` references are fine. Tables, code blocks, data blocks, blockquotes, horizontal rules and sub-scopes are not.
+                    - An empty signpost is never rendered.
+                }
+            }
 
-            **Hidden by default in HTML / PDF exports.** Exported files are usually sent to a recipient who has already decided to read the document, so the \`@about\` discovery summary is redundant in that context. To keep it in an export, pass the opt-in flag — \`--include-about\` (see [CLI and Tools Reference](./cli.sdoc)).
+            # Choosing the Section @choosing-signpost
+            {
+                Ask what a sentence does for its reader.
 
-            An empty or whitespace-only \`@about\` scope is never rendered, regardless of the include flag.
+                {[.]
+                    - It helps someone decide whether to read: `@about`.
+                    - It says what this document leaves out, and why: `@not-about`.
+                    - It links to something a reader can open, such as a document, a file or a URL: a row in `@related-resources`.
+                    - It tells a committed reader where to start or what to skip: `@reading-guide`.
+                    - It tells an editor how to change this file: `@editing-guide`.
+                    - It tells the reader about the subject: the body, not a signpost.
+                }
+            }
+
+            # About Scope @about-scope
+            {
+                `@about` is the discovery summary: what the document covers, who it is for, and when to reach for it. It helps a reader decide whether to read, never how. Write two to five sentences, and use a list only when the coverage is a genuine enumeration. Discovery tooling such as `list_knowledge` shows it to describe the file without loading the body.
+
+                ```sdoc
+                @about {
+                    How to write correct SDOC files.
+                    Covers document structure, inline formatting, block types, and common mistakes.
+                }
+                ```
+
+                Keep pointers to other resources out of it: list them in `@related-resources`. A topic a reader might wrongly look for here goes in `@not-about`. A reference to one of the document's own sections, such as `@intro`, is a validation error here: discovery tools show the summary without the body, so it leads nowhere. Point to sections from `@reading-guide`.
+
+                With the bare form the renderer adds an `About` label. The heading form lets you choose the label: `# Document Discovery @about { }` renders with `Document Discovery` as the title.
+            }
+
+            # Not About @not-about-scope
+            {
+                `@not-about` names topics a reader could plausibly expect here that this document deliberately leaves out, and says why each is left out. Write one list item per topic: the topic, then the reason in one clause. If a topic is missing because nobody has written it yet, say that.
+
+                This is what this guide's own `@not-about` could say:
+
+                ```sdoc
+                @not-about {
+                    - The formal grammar: this guide teaches by example, and exact rules would bury the examples.
+                    - Exporting to HTML or PDF: export is a tooling task, not an authoring one, and its options change with the tools.
+                }
+                ```
+
+                It does not redirect. The resources that cover a left-out topic belong in `@related-resources`, and a link here is a validation error. [Not About or Related Resources](#not-about-or-related-resources) explains the split.
+
+                It does not restate what the document covers; that is `@about`. Keep each reason to one clause: a longer argument for the boundary belongs in the body, or in `@editing-guide` when it binds editors. List only plausible expectations, not everything the document is not.
+            }
+
+            # Related Resources @related-resources-scope
+            {
+                `@related-resources` lists the resources that go with this document: what to read or use alongside it, and what covers the topics it leaves out. A resource can be another SDOC document, any other file of the project, or something outside the project, such as a GitHub repository or a web page. The section holds exactly one table with the header `Resource | Relation`, and nothing else.
+
+                Each `Resource` cell is exactly one link:
+
+                {[.]
+                    - another SDOC document or any file of the project, by a path relative to this document: `[Specification](../../lexica/specification.sdoc)`, `[Default Theme](../../themes/default/theme.css)`
+                    - an external resource, by URL: `[SDOC Repository](https://github.com/entropicwarrior/sdoc)`, or the bare URL
+                }
+
+                Each `Relation` cell is one clause on how that resource relates to this document. Leading with the kind of relation keeps the tables uniform across documents: prerequisite, sibling, source, implementation, supersedes, superseded by, or "covers X, which this document leaves out".
+
+                ```sdoc
+                @related-resources {
+                    {[table]
+                        Resource | Relation
+                        [Specification](../../lexica/specification.sdoc) | Normative source for everything this guide teaches, including the grammar it leaves out
+                        [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+                        [CLI and Tools Reference](cli.sdoc) | Covers exporting to HTML and PDF, which this guide leaves out
+                        [SDOC Repository](https://github.com/entropicwarrior/sdoc) | Upstream repository, for issues and releases
+                    }
+                }
+                ```
+
+                A link to a section of this document is an error here; those sections belong in `@reading-guide`, or in an inline `@id` reference. An absolute path or a `file:` URL is an error too, since it would not resolve on anyone else's machine. List only resources worth opening, not every passing cross-reference in the body.
+            }
+
+            # Reading Guide @reading-guide-scope
+            {
+                `@reading-guide` tells a reader who has already decided to read how to go about it. It has two parts, in this order. First come paragraphs and lists, which may be left out: the overall approach, what can be skipped, what the reader should already know. Then comes exactly one table with the header `Sections | Note`, and nothing after it. Each `Sections` cell is a comma-separated list of `@id` references to sections of this document, and every one must resolve. Each `Note` cell says in one clause when or why to read them.
+
+                ```sdoc
+                @reading-guide {
+                    Read the Quick Reference once, then keep Common Mistakes open while writing.
+
+                    {[table]
+                        Sections | Note
+                        @quick-reference | Everyday authoring
+                        @common-mistakes | Before generating SDOC for the first time
+                    }
+                }
+                ```
+
+                It does not summarise the content, which is `@about`, or the sections, which their headings already name. If the free part ends with a list, write it as an explicit `{[.]` block: a `{[table]` written straight after a `- item` line attaches to that item.
+
+                This is the only signpost kept in HTML and PDF exports, because the person holding an exported copy is exactly the reader it serves.
+            }
+
+            # Editing Guide @editing-guide-scope
+            {
+                `@editing-guide` tells someone about to change this file how to do it: what belongs in which section, conventions to keep, what must change together, which parts are normative, and who owns the file or how changes are proposed. It holds paragraphs and lists only.
+
+                ```sdoc
+                @editing-guide {
+                    - A new feature gets a Quick Reference entry. A pitfall goes in Common Mistakes, not in the entry.
+                    - Examples use the bare form for reserved scopes.
+                }
+                ```
+
+                Instructions about changing the subject itself, such as the code or the product, are body content, not edit guidance. The only audience is the editor of this file.
+            }
+
+            # Validation and Exports @signpost-validation
+            {
+                The parser accepts any content in a signpost, and `validateSignposts` checks the rules above. Its findings appear in the VS Code Problems panel as you type, and `node tools/build-doc.js file.sdoc --check` prints them with line numbers. These are errors, and make `--check` exit 1: It reports:
+
+                {[.]
+                    - a signpost below the top level of the document, which then renders as an ordinary section. One inside a `:comment` scope is not reported
+                    - a document whose only scope is a signpost, such as `# Editing Guide @editing-guide { ... }` on its own: it is read as the signpost, and the document renders empty. Give the root another id
+                    - the same signpost twice
+                    - a block the section's shape does not allow, or a link in `@not-about`
+                    - a missing, doubled or malformed table, including a wrong header, a wrong cell count, an empty cell, or a `Resource` cell that is not one link, links into this document, or uses an absolute path
+                    - a `Sections` reference that does not resolve to an explicit `@id` in this document, or that names a signpost, reported as a broken reference
+                }
+
+                A signpost out of the conventional order is a warning, which `--check` prints without failing. Fix it with the **Reorder signposts** quick fix in VS Code, or with `node tools/build-doc.js file.sdoc --fix`, which rewrites the file. The fix moves each signpost with the `//` comments directly above it. It refuses, and says why, when moving the text would change the document's structure, as a braceless signpost next to body text can.
+
+                HTML and PDF exports drop `@about`, `@not-about`, `@related-resources` and `@editing-guide` by default. An exported copy goes to someone already asked to read it, who will not edit it. `@reading-guide` stays. Pass `--include-signposts` to keep all of them, or `--signposts` to keep or drop single sections, such as `--signposts related-resources` (see [CLI and Tools Reference](./cli.sdoc)). The live preview and the document browser always show all of them. Only top-level signposts are dropped: one written deeper down is exported as an ordinary section, and the export prints a warning for it.
+            }
         }
 
         # Escaping @escaping
@@ -902,6 +1043,126 @@ Content of Section B.
             }
 
             Rule of thumb: square brackets mean citation, bare \`@\` means section.
+        }
+
+        # Pointers in the About Section @pointers-in-about
+        {
+            `@about` is read by someone deciding whether to open the document, and discovery tools show it on its own. A pointer there sends the reader away before the summary is finished, and an agent cannot tell "read this instead" from "read this as well".
+
+            **Wrong:**
+
+            ```
+            @about {
+                How to write slides. For the format itself, see the authoring guide.
+            }
+            ```
+
+            **Right:**
+
+            ```
+            @about {
+                How to write slides.
+            }
+
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Authoring Guide](sdoc-authoring.sdoc) | Prerequisite; covers the format itself
+                }
+            }
+            ```
+        }
+
+        # Not About or Related Resources @not-about-or-related-resources
+        {
+            `@not-about` and `@related-resources` answer different questions. `@not-about` says what this document deliberately leaves out, and why. `@related-resources` says what else a reader can open, including the resources that cover what this document leaves out. Redirecting is the job of `@related-resources`. A link in `@not-about` is a validation error, since every resource is linked once, in `@related-resources`. A pointer written without a link, such as "see Slide Authoring", is the same mistake: the validator cannot see it, but it belongs in a `Relation` cell.
+
+            **Wrong:** `@not-about` redirects instead of giving the reason.
+
+            ```
+            @not-about {
+                - Slide decks: see [Slide Authoring](slide-authoring.sdoc).
+            }
+            ```
+
+            **Right:** `@not-about` gives the reason, and `@related-resources` gives the destination.
+
+            ```
+            @not-about {
+                - Slide decks: they follow their own layout rules, which would double the length of this guide.
+            }
+
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+                }
+            }
+            ```
+        }
+
+        # Prose in Related Resources @prose-in-related-resources
+        {
+            `@related-resources` is one table and nothing else, so tooling can read it without understanding prose. A sentence introducing the table, or a list of links in place of it, is a validation error.
+
+            **Wrong:**
+
+            ```
+            @related-resources {
+                These pages go well with this one:
+
+                - [Specification](specification.sdoc)
+            }
+            ```
+
+            **Right:** put the reason for each document in its `Relation` cell.
+
+            ```
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Specification](specification.sdoc) | Normative source for this guide
+                }
+            }
+            ```
+        }
+        # Related Resources as a Bibliography @related-resources-not-bibliography
+        {
+            `@related-resources` lists what a reader may open alongside the document as a whole. It is not a bibliography. A source that backs a specific claim in the body is a citation: cite it where the claim is made with `[@key]`, and define it in a `{[citations]` block (see [Citations](#citations)). A citation renders as a numbered reference next to its claim, and the validator checks that every cited key is defined and every defined key is cited. A row in `@related-resources` gets neither, and it is hidden in HTML and PDF exports, which is where a reader checks sources.
+
+            The test: if removing the source would leave a sentence of the body unsupported, it is a citation. If a reader would want to open it even with the body unchanged, it is a related resource. A source that is both, because it backs a claim and is worth reading whole, is cited where it supports the claim and also listed in `@related-resources`.
+
+            **Wrong:** the sources of the body's claims, listed as related resources.
+
+            ```
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Edge AI Hardware Market](https://example.com/edge-ai) | Source for the growth figure
+                    [Edge AI Chips Market](https://example.com/edge-chips) | Source for the 2031 forecast
+                }
+            }
+
+            # Findings {
+                Edge AI is growing rapidly. The chip market is expected to double by 2031.
+            }
+            ```
+
+            **Right:** each claim cites its source.
+
+            ```
+            # Findings {
+                Edge AI is growing rapidly [@mm-edge-ai]. The chip market
+                is expected to double by 2031 [@mordor-chips].
+
+                {[citations]
+                    - @mm-edge-ai MarketsandMarkets, "Edge AI Hardware
+                      Market," Report SE 7017, June 2025.
+                    - @mordor-chips Mordor Intelligence, "Edge AI Chips
+                      Market Size & Share Analysis," 2026.
+                }
+            }
+            ```
         }
     }
 }

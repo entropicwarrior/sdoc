@@ -7,7 +7,7 @@
 //   const { nodes, meta } = extractMeta(parsed.nodes);
 //   const blocks = renderNotionBlocks(nodes);
 
-const { parseInline, isAboutEmpty } = require("./sdoc");
+const { parseInline, getSignpost, isSignpostEmpty, getDocumentScope, foldRootSiblings } = require("./sdoc");
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -242,11 +242,29 @@ function headingBlock(level, text, children) {
 // where tables and nested lists work correctly.
 const MAX_NEST = 1;
 
+// The scopes the current render shows as signpost callouts, set by
+// renderNotionBlocks. A reserved id anywhere else renders as an ordinary scope.
+let _signpostScopes = new Set();
+
 function renderNotionBlocks(nodes) {
-  // Unwrap document scope wrapper (single root scope)
-  if (nodes.length === 1 && nodes[0].type === "scope" && nodes[0].children) {
-    const doc = nodes[0];
-    if (doc.scopeType === "comment") return [];
+  // Unwrap document scope wrapper (single root scope), with the reserved and
+  // :comment scopes written beside it folded in. A lone :comment scope is not
+  // a root; renderScope drops it below.
+  const body = foldRootSiblings(nodes);
+  const doc = getDocumentScope(body);
+  // Signposts live at the reserved level: the root's children, or the
+  // top-level nodes when there is no single root.
+  const saved = _signpostScopes;
+  _signpostScopes = new Set((doc ? doc.children : body).filter((node) => getSignpost(node)));
+  try {
+    return renderDocument(body, doc);
+  } finally {
+    _signpostScopes = saved;
+  }
+}
+
+function renderDocument(body, doc) {
+  if (doc) {
     if (doc.hasHeading && doc.title) {
       // Document title scope: render as top-level toggle heading
       const childBlocks = renderChildren(doc.children, 2, 1);
@@ -255,7 +273,7 @@ function renderNotionBlocks(nodes) {
     return renderChildren(doc.children, 1, 0);
   }
 
-  return renderChildren(nodes, 1, 0);
+  return renderChildren(body, 1, 0);
 }
 
 function renderChildren(nodes, depth, nestLevel) {
@@ -293,9 +311,10 @@ function renderNode(node, depth, nestLevel) {
 function renderScope(scope, depth, nestLevel) {
   if (scope.scopeType === "comment") return [];
 
-  if (scope.id && scope.id.toLowerCase() === "about") {
-    if (isAboutEmpty(scope)) return [];
-    return renderAboutCallout(scope, depth, nestLevel);
+  const signpost = _signpostScopes.has(scope) ? getSignpost(scope) : null;
+  if (signpost) {
+    if (isSignpostEmpty(scope)) return [];
+    return renderSignpostCallout(scope, signpost, depth, nestLevel);
   }
 
   const level = Math.min(3, Math.max(1, depth));
@@ -315,10 +334,13 @@ function renderScope(scope, depth, nestLevel) {
   return [headingBlock(level, scope.title, null), ...childBlocks];
 }
 
-// Render @about as a Notion callout so readers can tell it apart from body
-// content. Paragraph children fold into the callout's rich_text (separated by
-// newlines); anything else becomes a child block.
-function renderAboutCallout(scope, depth, nestLevel) {
+// Render a signpost as a Notion callout so readers can tell it apart from
+// body content. Paragraph children fold into the callout's rich_text (separated
+// by newlines); anything else (lists, the @related-resources table) becomes a child
+// block. Every section but @about opens with a bold label — its heading title,
+// or the default ("Reading Guide", ...) — so the callouts are distinguishable;
+// @about keeps its unlabelled output so already-synced pages do not change.
+function renderSignpostCallout(scope, signpost, depth, nestLevel) {
   // Callout children sit one level deeper in the Notion block tree than the
   // callout itself. Clamp to MAX_NEST so we never produce blocks past Notion's
   // nesting limit.
@@ -326,6 +348,13 @@ function renderAboutCallout(scope, depth, nestLevel) {
   const childNestLevel = Math.min(nestLevel + 1, MAX_NEST);
   const richTexts = [];
   const childBlocks = [];
+
+  if (signpost.id !== "about") {
+    const label = scope.hasHeading && scope.title && scope.title.trim() ? scope.title.trim() : signpost.title;
+    // The title's inline markup is rendered as in any heading, on a bold base
+    // so the whole label stays bold.
+    richTexts.push(...flattenInlineNodes(parseInline(label), { ...defaultAnnotations(), bold: true }));
+  }
 
   for (const child of scope.children || []) {
     if (child.type === "paragraph") {
