@@ -1123,6 +1123,89 @@ if (findChrome()) {
 
 // --- A deck can ask for its tables as boxes --------------------------------
 if (findChrome()) {
+  test("a text-indent travels as a translate, and a wrapped one is warned about", async () => {
+    // text-indent is not in the subset and nothing stood in for it, so a
+    // theme using it to optically align a title lost the alignment silently —
+    // the one property whose whole purpose is to put ink where the box does
+    // not say it is. Measured on a real cover: -0.0817em on a 133px wordmark
+    // is -10.87px, and without it the glyphs sat that far right of the rule
+    // drawn beneath them.
+    //
+    // An indent applies to the first line and a translate moves every line,
+    // so the wrapped case must be refused rather than approximated. Nothing
+    // in this repo's corpus uses text-indent at all, so the theme is extended
+    // here rather than hoping a deck covers it.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const extraCss = `
+#ti-one p { text-indent: -12px; }
+#ti-many { width: 300px; }
+#ti-many p { text-indent: 9px; }
+#ti-inherit { text-indent: 7px; }
+`;
+    const src = `
+# Indented {
+    @meta {
+        type: slides
+    }
+
+    # Title @ti-slide {
+        # @ti-one {
+            Short line
+        }
+
+        # @ti-many {
+            A much longer passage of words that is certain to wrap onto more than one line inside three hundred pixels of width.
+        }
+
+        # @ti-inherit {
+            Handed down
+        }
+    }
+}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-indent-"));
+    const htmlPath = path.join(dir, "deck.html");
+    const parsed = parseSdoc(src);
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss + extraCss, themeConfig: theme.themeConfig,
+    }), "utf-8");
+    try {
+      const built = buildArtifact(await harvestArtifact(htmlPath), {
+        title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z",
+      });
+      assert(built.errors.length === 0,
+        "inside the subset: " + JSON.stringify(built.errors.slice(0, 3)));
+      const html = Object.entries(built.files)
+        .filter(([f]) => f.endsWith(".html")).map(([, b]) => b).join("\n");
+
+      // The single line carries the offset, with its sign.
+      const one = /<p style="([^"]*)"[^>]*>Short line/.exec(html);
+      assert(one, "the indented line is emitted: " + html.slice(0, 400));
+      assert(/translateX\(-1[12](\.\d+)?px\)/.test(one[1]),
+        "a one-line indent travels as a translate: " + one[1]);
+
+      // The wrapped one does not, and says so.
+      const many = /<p style="([^"]*)"[^>]*>A much longer/.exec(html);
+      assert(many, "the wrapped paragraph is emitted");
+      assert(!/translateX/.test(many[1]),
+        "a wrapped indent is not silently shifted: " + many[1]);
+      const warned = (built.warnings || []).some((w) => w.kind === "text-indent-wrapped");
+      assert(warned, "and is warned about: " +
+        JSON.stringify((built.warnings || []).map((w) => w.kind)));
+
+      // An indent inherits; a transform composes. A container that sets one
+      // must move once, not once per descendant that inherited it — the
+      // first version of this moved the text twice.
+      const sevens = (html.match(/translateX\(7(\.\d+)?px\)/g) || []).length;
+      assert(sevens === 1,
+        "an inherited indent moves the element that declared it, once: " +
+        sevens + " translates");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a cell drawn as a box keeps its lines, its pill and its alignment", async () => {
     // Three defects with one cause: runsOf flattens a cell to inline runs, so
     // a child the theme made block or inline-block arrived as bare words. A

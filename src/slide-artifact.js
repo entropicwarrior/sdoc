@@ -79,6 +79,12 @@ const ARTIFACT_SCRIPT = `
              "transform","transformOrigin"];
   var TYPE = ["fontFamily","fontSize","fontWeight","fontStyle","lineHeight",
               "letterSpacing","textAlign","textTransform","whiteSpace","color",
+              // Optical alignment. Not in the subset, and not emitted as
+              // anything else either, so a theme that nudges a title's glyphs
+              // off their box lost the nudge in silence — the one property
+              // whose whole job is to move ink away from where the box says
+              // it is.
+              "textIndent",
               // Paint on text, lost for the same reason a box-shadow was.
               "textShadow"];
 
@@ -1740,6 +1746,46 @@ function declarationsFor(node, ctx, inherited) {
       offs.push(dy && !dx ? `translateY(${dy}px)` : dx && !dy ? `translateX(${dx}px)` : `translate(${dx}px, ${dy}px)`);
     }
   }
+
+  // A text-indent, as the same kind of translate.
+  //
+  // The subset has no text-indent, and nothing stood in for it, so a theme
+  // using it to optically align a title lost the alignment with no warning —
+  // the one property whose entire purpose is to put ink somewhere the box
+  // does not say. Measured on a real cover: a -0.0817em indent on a 133px
+  // wordmark is -10.87px, and without it the glyphs sat that far right of the
+  // rule drawn under them, which is what a reader notices.
+  //
+  // Flow only, like the leading-pseudo padding above and for the same reason:
+  // a traced box is pinned at its ink, and the ink already has the indent in
+  // it. Folding it again there would move the glyphs twice.
+  //
+  // An indent applies to the FIRST line; a translate moves the whole box. On
+  // one line those are the same thing and on more than one they are not, so a
+  // wrapped element is warned about rather than quietly shifted — every use
+  // of this in the theme that prompted it is a single line, and the case that
+  // is not should be visible rather than approximated.
+  if (!ctx.pinHere) {
+    const indent = lenOf(s.textIndent, scale);
+    // Only where this element declares it. Inherited, the same offset would
+    // be applied again at every level beneath the one that set it.
+    const own = indent - (inherited.indent || 0);
+    if (Math.abs(indent) > 0.5 && Math.abs(own) > 0.5) {
+      if (node.ink && node.ink.lines > 1) {
+        ctx.warnings.push({
+          slide: ctx.slide,
+          kind: "text-indent-wrapped",
+          message:
+            `<${node.tag}>${node.cls ? " ." + node.cls.split(/\s+/)[0] : ""} has a ` +
+            `${Math.round(indent * 10) / 10}px text-indent over ${node.ink.lines} lines. The ` +
+            "subset has no text-indent and a transform moves every line, not the first, so it " +
+            "is not carried; the first line will start where the others do",
+        });
+      } else {
+        offs.push(`translateX(${own}px)`);
+      }
+    }
+  }
   // And a rotation, which the subset also has. The box this is applied to is
   // the UPRIGHT one — the harvest measured it with the transform off — so this
   // reproduces exactly what the deck draws, about the same centre.
@@ -2035,6 +2081,12 @@ function emitNodeInner(node, ctx, inherited, depth) {
     size: lenOf(node.style.fontSize, ctx.scale) || inherited.size,
     weight: parseInt(node.style.fontWeight, 10) || inherited.weight,
     colour: colourOf(node.style.color) || inherited.colour,
+    // text-indent inherits, so a container that sets one hands it to every
+    // text element beneath it. The offset is carried as a transform, and a
+    // transform does not inherit — it composes. Tracking what came down
+    // means only the element that actually declares an indent is moved,
+    // rather than it and each of its descendants in turn.
+    indent: lenOf(node.style.textIndent, ctx.scale) || 0,
   };
 
   if (node.tag === "img") {
