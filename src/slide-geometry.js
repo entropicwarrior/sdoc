@@ -597,6 +597,14 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, atte
         "--dump-dom",
         fileUrl,
       ],
+      // NOT detached, deliberately. Chrome's GPU process, renderers and
+      // zygote are separate processes that a kill on this handle does not
+      // reap, and `detached: true` plus a process-group kill is the usual
+      // remedy — but it also takes the child out of this process's group, so
+      // an interrupt at a terminal would no longer reach Chrome and would
+      // orphan it. That trades a leak that was never reproduced here for a
+      // new source of the same symptom. Left alone until someone can make
+      // the leak happen on demand and watch it stop.
       { stdio: ["ignore", out, "ignore"] }
     );
 
@@ -608,7 +616,24 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, atte
       clearTimeout(limit);
       try { fs.closeSync(out); } catch {}
       try { child.kill("SIGKILL"); } catch {}
-      fs.rm(profile, { recursive: true, force: true }, () => {});
+      // Then the profile, synchronously, once nothing is left alive to write
+      // into it — and loudly if it still will not go.
+      //
+      // This was an async rm with an empty callback, which is the whole
+      // reason the leak ran for twelve days. The surviving helper wrote files
+      // back behind the walk, the final rmdir failed ENOTEMPTY — which
+      // `force` does not suppress, it only covers ENOENT — and the error went
+      // into a function that ignored it. 2,544 profiles and 8.7GB had
+      // accumulated before anyone looked at the disk rather than the process
+      // table. A single printed error would have shown it on the first day.
+      try {
+        fs.rmSync(profile, { recursive: true, force: true });
+      } catch (rmErr) {
+        console.error(
+          `sdoc: could not remove the Chrome profile ${profile} (${rmErr.code || rmErr.message}). ` +
+          "Something is still writing to it; it will be left on disk."
+        );
+      }
       err ? reject(err) : resolve(value);
     };
 
