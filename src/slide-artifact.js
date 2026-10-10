@@ -1848,6 +1848,37 @@ function declarationsFor(node, ctx, inherited) {
         "flex",
         grow === 1 && sh === 1 && basisPart === "0%" ? "1" : `${grow} ${sh} ${basisPart}`
       );
+    } else {
+      // An item that does not grow still said something, and nothing was
+      // written for it at all — not the basis, not the shrink. A column
+      // written `flex: 0 0 286px` sized from its content instead, its
+      // siblings took the slack, and the row relaid itself. Measured on the
+      // deck that found it: one such column, and 32 more items declaring
+      // `flex: none` whose refusal to shrink was being dropped just as
+      // quietly. That one is invisible until something overflows, which is
+      // the same shape as a leading that silently took the runtime's default.
+      //
+      // The guard is the whole of the risk here, and the obvious form of it
+      // is backwards. The CSS initial value is `0 1 auto` — verified in the
+      // browser rather than recalled: an item with nothing declared computes
+      // `0 1 auto`, `flex: none` computes `0 0 auto`, `flex: 1` computes
+      // `1 1 0%`. So `0 0 auto` is a real declaration to carry, and skipping
+      // it while emitting everything else would put a flex on all 1,294
+      // elements of that deck that had declared nothing, to rescue 33 that
+      // had. Only the initial value is silence.
+      const sh = isFinite(shrink) ? shrink : 1;
+      const auto = !basis || basis === "auto";
+      if (!(grow === 0 && sh === 1 && auto)) {
+        const basisPart = auto
+          ? "auto"
+          : basis === "0%" || basis === "0px"
+            ? "0%"
+            : `${lenOf(basis, scale)}px`;
+        push(
+          "flex",
+          grow === 0 && sh === 0 && basisPart === "auto" ? "none" : `${grow} ${sh} ${basisPart}`
+        );
+      }
     }
   }
 
