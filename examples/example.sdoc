@@ -19,19 +19,13 @@
     Quick reference showing every SDOC feature in one file. Read it when you need to see a construct in context rather than in the specification.
 }
 
-@not-about {
-    - Slide decks: a deck uses its own layouts and renderer, so it has an example file of its own.
-    - The formal grammar and parser behaviour: this file shows constructs in use, and their exact rules would bury the examples.
-    - Styling a rendered document: styling is configuration, not content; this file loads one override only to show the mechanism.
-    - Exporting to Word: no exporter exists yet.
-}
-
 @related-resources {
     {[table]
         Resource | Relation
         [Authoring Guide](../docs/reference/sdoc-authoring.sdoc) | Prerequisite; explains the rules this file only shows
-        [Specification](../lexica/specification.sdoc) | Normative source for every construct used here, and the grammar this file leaves out
+        [Specification](../lexica/specification.sdoc) | Normative source for every construct used here, and for the grammar and parser behaviour this file leaves out
         [Slide Authoring](../docs/reference/slide-authoring.sdoc) | Covers slide decks, which this file leaves out
+        [Setup: Configuration](../docs/guide/setup.sdoc#configuration) | Covers styling a rendered document, which this file leaves out
         [Overrides Stylesheet](example-overrides.css) | The stylesheet this file loads through `@meta`; an example of restyling a document
         https://github.com/entropicwarrior/sdoc | Upstream repository, for issues and releases
     }

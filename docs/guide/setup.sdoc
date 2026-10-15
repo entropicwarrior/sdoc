@@ -4,6 +4,19 @@
         sdoc-version: 0.2
     }
 
+    @about {
+        How to install the SDOC extension for VS Code and use it: previewing, formatting, exporting and printing, configuration, and the document server.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [First Steps with SDOC](../tutorials/first-steps.sdoc) | Next step: writing a first document with the extension installed
+            [CLI and Tools Reference](../reference/cli.sdoc) | Every command, and the command-line export
+            [Notion Sync](notion-sync.sdoc) | Mirroring documents to Notion, which this setup leaves out
+        }
+    }
+
     # Requirements
     {
         {[.]

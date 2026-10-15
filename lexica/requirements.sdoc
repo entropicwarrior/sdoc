@@ -1,17 +1,30 @@
 # SDOC Requirements @sdoc-requirements
 {
-    # Meta @meta
-    {
+    @meta {
         type: doc
 
         sdoc-version: 0.2
     }
 
-    # About @about
-    {
-        Why SDOC exists and what it must achieve. Defines ten abstract
-        requirements (R1-R10) and concrete implementation constraints
-        (C1-C6). Read before proposing spec changes or new features.
+    @about {
+        Why SDOC exists and what it must achieve. Defines abstract
+        requirements and concrete implementation constraints.
+        Read before proposing spec changes or new features.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Specification](specification.sdoc) | Covers the syntax that meets these requirements, which this file leaves out
+            [Suggestions](suggestions.sdoc) | Covers proposed features, each naming the requirements it serves
+            [Why SDOC Over Markdown](../docs/guide/why-sdoc.sdoc) | The same case made for users evaluating the format
+        }
+    }
+
+    @editing-guide {
+        - Other documents link to the requirements by id, such as `requirements.sdoc#r10`. Never renumber or reuse an id; a new requirement takes the next number.
+        - Every change to the format is evaluated against R1-R10, so change one only as a deliberate decision, not in passing.
+        - A concrete requirement opens with `Supports:`, naming the abstract requirements it derives from.
     }
 
     # Why SDOC Exists @why

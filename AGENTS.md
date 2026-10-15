@@ -71,6 +71,8 @@ src/                Source code
   theme.js            Theme loading, theme.json, CSS asset inlining
   zip.js              Minimal ZIP writer (zlib only), for the PPTX package
   extension.js        VS Code extension with preview and document server
+  knowledge-template.js  The skeleton "New Knowledge File" writes; kept out of
+                      extension.js so test-all.js can parse it
   href-path.js        Resolves a link href to a file on disk (raw, then percent-
                       decoded); shared by extension.js and build-doc --check
   site-template/      Shared viewer templates (index.html, viewer.css)

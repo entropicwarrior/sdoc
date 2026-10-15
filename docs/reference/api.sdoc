@@ -4,9 +4,37 @@
         sdoc-version: 0.2
     }
 
+    @about {
+        Reference for the JavaScript API of the `@entropicwarrior/sdoc` package: parsing, rendering to HTML, progressive disclosure for agents, signpost validation, and the slide exports. Read it when calling the parser or a renderer from code.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [CLI and Tools Reference](cli.sdoc) | Covers the command-line tools, which this reference leaves out
+            [Python Binding](../../bindings/python/README.md) | Covers the Python binding, which this reference leaves out
+            [Specification](../../lexica/specification.sdoc) | Normative behaviour the parser and renderers implement
+            [Parser and Renderer](../../src/sdoc.js) | Source of most of the functions documented here
+        }
+    }
+
+    @reading-guide {
+        {[table]
+            Sections | Note
+            @installation, @parse-sdoc | Start here: almost every other function takes the nodes `parseSdoc` returns
+            @progressive-disclosure | For an agent reading documents a section at a time
+            @signposts-in-exports | Before exporting, since most signposts are dropped by default
+            @ast-node-types | When writing a renderer of your own
+        }
+    }
+
+    @editing-guide {
+        - Each function's heading is its signature, such as `extractSection(nodes, id)`. Keep it in step with the code.
+    }
+
     The SDOC parser and renderer are in `src/sdoc.js`. All functions are exported via CommonJS. The package is available on npm as `@entropicwarrior/sdoc`.
 
-    # Installation
+    # Installation @installation
     {
         ```bash
 npm install @entropicwarrior/sdoc
@@ -26,7 +54,7 @@ const { knowledgeDir } = require("@entropicwarrior/sdoc/knowledge");
         ```
     }
 
-    # parseSdoc(text)
+    # parseSdoc(text) @parse-sdoc
     {
         Parses an SDOC string into an AST.
 
@@ -417,7 +445,7 @@ else if (fix.reason) console.error(fix.reason);
         }
     }
 
-    # AST Node Types
+    # AST Node Types @ast-node-types
     {
         The parser produces these node types:
 

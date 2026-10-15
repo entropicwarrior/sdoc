@@ -25,6 +25,7 @@ vendor/
 themes/
 syntaxes/
 src/extension.js
+src/knowledge-template.js
 src/site-template/
 node_modules/
 *.vsix

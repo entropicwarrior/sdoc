@@ -43,6 +43,7 @@ const {
   sanitizeSvg,
   readableTextColor
 } = require("../src/sdoc.js");
+const { buildKnowledgeSkeleton } = require("../src/knowledge-template.js");
 const fs = require("fs");
 const path = require("path");
 
@@ -2537,6 +2538,28 @@ test("every .sdoc file in the repo passes validateSignposts", () => {
     const f = validateSignposts(r.nodes);
     assert(f.length === 0, path.relative(root, file) + ": " + f.map((x) => x.lineStart + " " + x.message).join("; "));
   }
+});
+
+// The "New Knowledge File" command writes this skeleton, and nothing else ever
+// parses it: it once wrote its @meta as one paragraph, losing every key after
+// the first, and gave two scopes the same id.
+test("knowledge skeleton: every @meta key is read, at the current format version", () => {
+  const r = parseSdoc(buildKnowledgeSkeleton("Error Handling Conventions", "Skill", "u-1", "2026-10-15"));
+  assert(r.errors.length === 0, r.errors.map((e) => e.message).join("; "));
+  const { meta, warnings } = extractMeta(r.nodes);
+  assert(meta.uuid === "u-1" && meta.type === "skill", JSON.stringify(meta.properties));
+  assert(meta.properties.date === "2026-10-15", JSON.stringify(meta.properties));
+  assert(meta.properties["sdoc-version"] === SDOC_FORMAT_VERSION, JSON.stringify(meta.properties));
+  assert(warnings.length === 0, warnings.join("; "));
+});
+
+test("knowledge skeleton: passes validateSignposts and has no duplicate id", () => {
+  const src = buildKnowledgeSkeleton("Error Handling Conventions", "Skill", "u-1", "2026-10-15");
+  const f = validateSignposts(parseSdoc(src).nodes);
+  assert(f.length === 0, f.map((x) => x.message).join("; "));
+  const ids = [...renderHtmlDocument(src, "t").matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+  const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+  assert(dupes.length === 0, "duplicate ids: " + dupes.join(", "));
 });
 
 // ============================================================

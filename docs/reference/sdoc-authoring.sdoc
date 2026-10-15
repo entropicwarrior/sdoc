@@ -1,18 +1,42 @@
 # SDOC Authoring Guide @sdoc-authoring
 {
-    # Meta @meta
-    {
+    @meta {
         type: skill
 
         sdoc-version: 0.2
     }
 
-    # About @about
-    {
+    @about {
         How to write correct SDOC files. Covers document structure, inline
-        formatting, block types (lists, tables, code, blockquotes), and common
-        mistakes. Read the Quick Reference for everyday authoring. Read Common
-        Mistakes before generating SDOC for the first time.
+        formatting, block types (lists, tables, code, blockquotes), the
+        reserved scopes, and common mistakes.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Specification](../../lexica/specification.sdoc) | Normative source for everything this guide teaches, including the grammar it leaves out
+            [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+            [CLI and Tools Reference](cli.sdoc) | Covers exporting to HTML and PDF, which this guide leaves out
+            [Example Document](../../examples/example.sdoc) | Every construct in one file, to see them in context
+            [SDOC Repository](https://github.com/entropicwarrior/sdoc) | Upstream repository, for issues and releases
+        }
+    }
+
+    @reading-guide {
+        Read the Quick Reference once, then keep Common Mistakes open while writing.
+
+        {[table]
+            Sections | Note
+            @quick-reference | Everyday authoring
+            @common-mistakes | Before generating SDOC for the first time
+            @signposts | Before writing a document's reserved scopes
+        }
+    }
+
+    @editing-guide {
+        - A new feature gets a Quick Reference entry. A pitfall goes in Common Mistakes, not in the entry.
+        - Examples use the bare form for reserved scopes.
     }
 
     # Quick Reference @quick-reference
@@ -659,7 +683,7 @@ Content of Section B.
 
                 {[.]
                     - It helps someone decide whether to read: `@about`.
-                    - It says what this document leaves out, and why: `@not-about`.
+                    - It says what this document leaves out, and why, and no resource in `@related-resources` covers it: `@not-about`.
                     - It links to something a reader can open, such as a document, a file or a URL: a row in `@related-resources`.
                     - It tells a committed reader where to start or what to skip: `@reading-guide`.
                     - It tells an editor how to change this file: `@editing-guide`.
@@ -673,30 +697,29 @@ Content of Section B.
 
                 ```sdoc
                 @about {
-                    How to write correct SDOC files.
-                    Covers document structure, inline formatting, block types, and common mistakes.
+                    How to install the project on Linux or macOS and start it with the sample configuration.
+                    For anyone setting it up for the first time.
                 }
                 ```
 
-                Keep pointers to other resources out of it: list them in `@related-resources`. A topic a reader might wrongly look for here goes in `@not-about`. A reference to one of the document's own sections, such as `@intro`, is a validation error here: discovery tools show the summary without the body, so it leads nowhere. Point to sections from `@reading-guide`.
+                Keep pointers to other resources out of it: list them in `@related-resources`. A topic a reader might wrongly look for here goes in `@related-resources` when another resource covers it, and in `@not-about` when none does. A reference to one of the document's own sections, such as `@intro`, is a validation error here: discovery tools show the summary without the body, so it leads nowhere. Point to sections from `@reading-guide`.
 
                 With the bare form the renderer adds an `About` label. The heading form lets you choose the label: `# Document Discovery @about { }` renders with `Document Discovery` as the title.
             }
 
             # Not About @not-about-scope
             {
-                `@not-about` names topics a reader could plausibly expect here that this document deliberately leaves out, and says why each is left out. Write one list item per topic: the topic, then the reason in one clause. If a topic is missing because nobody has written it yet, say that.
+                `@not-about` names topics a reader could plausibly expect here that this document deliberately leaves out and that no other resource covers, and says why each is left out. Write one list item per topic: the topic, then the reason in one clause. If a topic is missing because nobody has written it yet, say that.
 
-                This is what this guide's own `@not-about` could say:
+                For example:
 
                 ```sdoc
                 @not-about {
-                    - The formal grammar: this guide teaches by example, and exact rules would bury the examples.
-                    - Exporting to HTML or PDF: export is a tooling task, not an authoring one, and its options change with the tools.
+                    - Converting Markdown to SDOC: no converter exists yet.
                 }
                 ```
 
-                It does not redirect. The resources that cover a left-out topic belong in `@related-resources`, and a link here is a validation error. [Not About or Related Resources](#not-about-or-related-resources) explains the split.
+                It does not redirect. The resources that cover a left-out topic belong in `@related-resources`, and a link here is a validation error. Nor does it repeat them: a row whose `Relation` says it covers a topic this document leaves out already puts that topic out of scope, so the topic is not named here too. A document whose left-out topics are all covered elsewhere has no `@not-about`. [Not About or Related Resources](#not-about-or-related-resources) explains the split.
 
                 It does not restate what the document covers; that is `@about`. Keep each reason to one clause: a longer argument for the boundary belongs in the body, or in `@editing-guide` when it binds editors. List only plausible expectations, not everything the document is not.
             }
@@ -718,10 +741,10 @@ Content of Section B.
                 @related-resources {
                     {[table]
                         Resource | Relation
-                        [Specification](../../lexica/specification.sdoc) | Normative source for everything this guide teaches, including the grammar it leaves out
-                        [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
-                        [CLI and Tools Reference](cli.sdoc) | Covers exporting to HTML and PDF, which this guide leaves out
-                        [SDOC Repository](https://github.com/entropicwarrior/sdoc) | Upstream repository, for issues and releases
+                        [Getting Started](getting-started.sdoc) | Prerequisite; introduces the concepts this guide assumes
+                        [Configuration Reference](configuration.sdoc) | Covers every configuration key, which this guide leaves out
+                        [Sample Config](../examples/sample.config.json) | The file the steps in this guide start from
+                        [Project Repository](https://github.com/example/project) | Upstream repository, for issues and releases
                     }
                 }
                 ```
@@ -735,12 +758,13 @@ Content of Section B.
 
                 ```sdoc
                 @reading-guide {
-                    Read the Quick Reference once, then keep Common Mistakes open while writing.
+                    Follow the steps in order: each one assumes the previous one succeeded.
 
                     {[table]
                         Sections | Note
-                        @quick-reference | Everyday authoring
-                        @common-mistakes | Before generating SDOC for the first time
+                        @requirements | Before starting, to check the machine
+                        @linux, @macos | Only the one for your platform
+                        @troubleshooting | When a step fails
                     }
                 }
                 ```
@@ -756,8 +780,8 @@ Content of Section B.
 
                 ```sdoc
                 @editing-guide {
-                    - A new feature gets a Quick Reference entry. A pitfall goes in Common Mistakes, not in the entry.
-                    - Examples use the bare form for reserved scopes.
+                    - Run every command on both platforms before changing it.
+                    - A new configuration key goes in the Configuration Reference, not here.
                 }
                 ```
 
@@ -1075,9 +1099,9 @@ Content of Section B.
 
         # Not About or Related Resources @not-about-or-related-resources
         {
-            `@not-about` and `@related-resources` answer different questions. `@not-about` says what this document deliberately leaves out, and why. `@related-resources` says what else a reader can open, including the resources that cover what this document leaves out. Redirecting is the job of `@related-resources`. A link in `@not-about` is a validation error, since every resource is linked once, in `@related-resources`. A pointer written without a link, such as "see Slide Authoring", is the same mistake: the validator cannot see it, but it belongs in a `Relation` cell.
+            `@not-about` and `@related-resources` answer different questions. `@not-about` says what this document deliberately leaves out that nothing else covers, and why. `@related-resources` says what else a reader can open, including the resources that cover what this document leaves out. Redirecting is the job of `@related-resources`. A link in `@not-about` is a validation error, since every resource is linked once, in `@related-resources`. A pointer written without a link, such as "see Slide Authoring", is the same mistake: the validator cannot see it, but it belongs in a `Relation` cell.
 
-            **Wrong:** `@not-about` redirects instead of giving the reason.
+            **Wrong:** `@not-about` redirects.
 
             ```
             @not-about {
@@ -1085,11 +1109,42 @@ Content of Section B.
             }
             ```
 
-            **Right:** `@not-about` gives the reason, and `@related-resources` gives the destination.
+            **Right:** `@related-resources` gives the destination, and its `Relation` says the topic is left out here.
+
+            ```
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+                }
+            }
+            ```
+        }
+
+        # Not About Repeating Related Resources @not-about-repeats-related-resources
+        {
+            A row in `@related-resources` that covers a topic this document leaves out already tells the reader the topic is out of scope. Naming the same topic in `@not-about` says it twice, and the two copies drift apart. The validator does not catch it, since `@not-about` holds no link to compare. Keep `@not-about` for the topics no listed resource covers: one nobody has written about yet, or one that is out of the project's scope.
+
+            **Wrong:** the same topic in both sections.
 
             ```
             @not-about {
                 - Slide decks: they follow their own layout rules, which would double the length of this guide.
+            }
+
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+                }
+            }
+            ```
+
+            **Right:** the row alone says slide decks are left out, and `@not-about` keeps only what nothing covers.
+
+            ```
+            @not-about {
+                - Converting Markdown to SDOC: no converter exists yet.
             }
 
             @related-resources {

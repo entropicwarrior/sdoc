@@ -4,6 +4,25 @@
         sdoc-version: 0.2
     }
 
+    @about {
+        Reference for the SDOC tools: the VS Code extension's commands, the command-line tools that build documents and slide decks and sync to Notion, the npm package, building the extension, and the document server. Read it to find a command or an option.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [JavaScript API Reference](api.sdoc) | Covers the API the tools are built on, which this reference leaves out
+            [SDOC Authoring Guide](sdoc-authoring.sdoc) | Covers writing documents, which this reference leaves out
+            [Slide Authoring Guide](slide-authoring.sdoc) | Covers writing the decks `build-slides.js` builds, which this reference leaves out
+            [Notion Sync](../guide/notion-sync.sdoc) | Full setup for the Notion sync tool
+            [Setup](../guide/setup.sdoc) | Installing the extension that provides the commands
+        }
+    }
+
+    @editing-guide {
+        - Keep the extension's command list in step with `contributes.commands` in `package.json`, and each tool's options in step with its usage text.
+    }
+
     # VSCode Extension Commands
     {
         The SDOC extension registers eight commands, available from the Command Palette:
