@@ -94,7 +94,7 @@ code --install-extension dist/sdoc-*.vsix
         HTML and browser outputs support collapsible scope toggles. PDF export requires Chrome or Chromium installed on the system. For command-line export, see `tools/build-doc.js` in the [CLI reference](../reference/cli.sdoc).
     }
 
-    # Configuration
+    # Configuration @configuration
     {
         Place a `sdoc.config.json` in your project root to set defaults for all documents:
 
