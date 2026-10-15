@@ -17,8 +17,9 @@
 // The files are restored when the command exits, whatever its outcome.
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawn } = require("child_process");
 const { parseSdoc, collectInlineRefs } = require("../src/sdoc");
 const { hrefCandidates } = require("../src/href-path");
 
@@ -95,7 +96,61 @@ function tagBaseUrl(pkg) {
   return `${repo}/blob/v${pkg.version}/`;
 }
 
-function main(argv) {
+// Signals that stop a run. Ctrl-C reaches the command through the process
+// group, but a cancelled CI job may send SIGTERM to this process alone.
+const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+
+// Runs the command between setup and teardown, and resolves with its exit
+// status. From before setup until after teardown a signal is caught, so
+// teardown always runs: it is passed on to the command, the run waits for the
+// command to stop, and it resolves 128 plus the signal's number, as a shell
+// reports it, never 0. A second signal kills the command, so one that ignores
+// the first cannot keep teardown waiting.
+async function runCommand(argv, setup = () => {}, teardown = () => {}) {
+  let child = null;
+  let received = null;
+  const onSignal = (signal) => {
+    const first = !received;
+    received = received || signal;
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill(first ? signal : "SIGKILL");
+    }
+  };
+  for (const s of SIGNALS) process.on(s, onSignal);
+  try {
+    setup();
+    child = spawn(argv[0], argv.slice(1), { stdio: "inherit", shell: process.platform === "win32" });
+    const status = await exitStatus(child);
+    if (received) {
+      console.error(`pack-links: stopped by ${received}`);
+      return 128 + os.constants.signals[received];
+    }
+    return status;
+  } finally {
+    try {
+      teardown();
+    } finally {
+      for (const s of SIGNALS) process.removeListener(s, onSignal);
+    }
+  }
+}
+
+// The command's exit status: its code, or 128 plus the number of the signal
+// that ended it. An 'error' with no pid means it never started, and may come
+// without an 'exit'.
+function exitStatus(child) {
+  return new Promise((resolve) => {
+    child.on("error", (err) => {
+      console.error(`pack-links: ${err.message}`);
+      if (child.pid === undefined) resolve(1);
+    });
+    child.on("exit", (code, signal) => {
+      resolve(code !== null ? code : 128 + (os.constants.signals[signal] || 0));
+    });
+  });
+}
+
+async function main(argv) {
   if (argv.length === 0) {
     console.error("Usage: pack-links <command> [args...]");
     return 1;
@@ -124,29 +179,18 @@ function main(argv) {
     return 1;
   }
 
-  // While the command runs, a Ctrl-C reaches it too; holding the signal here
-  // lets the files be restored once it has stopped, instead of being left
-  // rewritten in the working tree.
-  const hold = () => {};
-  const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
-  for (const s of signals) process.on(s, hold);
-  try {
+  return runCommand(argv, () => {
     for (const [file, text] of outputs) fs.writeFileSync(file, text);
     console.log(`pack-links: ${count} links in ${files.length} knowledge files point at ${baseUrl}`);
-    const run = spawnSync(argv[0], argv.slice(1), { stdio: "inherit", shell: process.platform === "win32" });
-    if (run.error) {
-      console.error(`pack-links: ${run.error.message}`);
-      return 1;
-    }
-    return run.status === null ? 1 : run.status;
-  } finally {
+  }, () => {
     for (const [file, original] of originals) fs.writeFileSync(file, original);
-    for (const s of signals) process.removeListener(s, hold);
-  }
+  });
 }
 
-module.exports = { rewriteLinks, tagBaseUrl };
+module.exports = { rewriteLinks, tagBaseUrl, runCommand };
 
 if (require.main === module) {
-  process.exitCode = main(process.argv.slice(2));
+  main(process.argv.slice(2)).then((status) => {
+    process.exitCode = status;
+  });
 }

@@ -2597,6 +2597,46 @@ test("pack-links: every knowledge file rewrites cleanly, and only its links chan
   }
 });
 
+// A run stopped by a signal sent to pack-links alone, as a cancelled CI job
+// sends SIGTERM. A driver process starts runCommand on a command that prints
+// "started" and then waits five seconds, signals the runner once the command
+// is up, and reports how the runner ended and how long it took. Driven from a
+// child so this suite stays synchronous; the command's own timeout keeps a
+// failure from leaving it running.
+const { spawnSync } = require("child_process");
+function stopPackLinksRun(commandSource, signals) {
+  const packLinks = path.join(__dirname, "..", "tools", "pack-links.js");
+  const runner = `require(${JSON.stringify(packLinks)}).runCommand([process.execPath, "-e", ${JSON.stringify(commandSource)}])` +
+    ".then((status) => process.exit(status));";
+  const driver = `
+    const { spawn } = require("child_process");
+    const run = spawn(process.execPath, ["-e", ${JSON.stringify(runner)}], { stdio: ["ignore", "pipe", "ignore"] });
+    let start = 0;
+    run.stdout.once("data", () => {
+      start = Date.now();
+      ${JSON.stringify(signals)}.forEach((s, i) => setTimeout(() => run.kill(s), i * 300));
+    });
+    run.on("exit", (code) => console.log(JSON.stringify({ code, ms: Date.now() - start })));
+  `;
+  const r = spawnSync(process.execPath, ["-e", driver], { encoding: "utf8", timeout: 15000 });
+  return JSON.parse(r.stdout || "null");
+}
+const WAITING = "process.stdout.write('started\\n'); setTimeout(() => {}, 5000);";
+
+if (process.platform !== "win32") {
+  test("pack-links: a SIGTERM sent to pack-links alone stops the command, and the run fails", () => {
+    const r = stopPackLinksRun(WAITING, ["SIGTERM"]);
+    assert(r && r.code === 143, "exit status " + JSON.stringify(r));
+    assert(r.ms < 3000, "the command ran to its end instead of stopping: " + r.ms + "ms");
+  });
+
+  test("pack-links: a second signal kills a command that ignores the first", () => {
+    const r = stopPackLinksRun("process.on('SIGTERM', () => {}); " + WAITING, ["SIGTERM", "SIGTERM"]);
+    assert(r && r.code === 143, "exit status " + JSON.stringify(r));
+    assert(r.ms < 3000, "the command was not killed: " + r.ms + "ms");
+  });
+}
+
 // The "New Knowledge File" command writes this skeleton, and nothing else ever
 // parses it: it once wrote its @meta as one paragraph, losing every key after
 // the first, and gave two scopes the same id.
