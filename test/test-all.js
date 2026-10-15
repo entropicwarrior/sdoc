@@ -37,6 +37,7 @@ const {
   parseInline,
   renderKatex,
   collectAllIds,
+  collectInlineRefs,
   collectCitationDefinitions,
   validateRefs,
   validateCitations,
@@ -2537,6 +2538,62 @@ test("every .sdoc file in the repo passes validateSignposts", () => {
     const r = parseSdoc(fs.readFileSync(file, "utf8"));
     const f = validateSignposts(r.nodes);
     assert(f.length === 0, path.relative(root, file) + ": " + f.map((x) => x.lineStart + " " + x.message).join("; "));
+  }
+});
+
+// The packaged knowledge files have their relative links pointed at GitHub
+// (tools/pack-links.js); the repo keeps the relative ones.
+const { rewriteLinks, tagBaseUrl } = require("../tools/pack-links.js");
+const PACK_BASE = "https://github.com/o/r/blob/v1.0.0/";
+
+test("pack-links: a link to a repo file becomes a tag URL, fragment kept", () => {
+  const src = "# D {\n    See [Spec](../../lexica/spec.sdoc#grammar).\n\n    {[table]\n        Resource | Relation\n        [CLI](cli.sdoc) | Tools\n    }\n}\n";
+  const exists = (p) => p === "lexica/spec.sdoc" || p === "docs/reference/cli.sdoc";
+  const r = rewriteLinks(src, "docs/reference/guide.sdoc", PACK_BASE, exists);
+  assert(r.errors.length === 0, r.errors.join("; "));
+  assert(r.text.includes("](" + PACK_BASE + "lexica/spec.sdoc#grammar)"), r.text);
+  assert(r.text.includes("](" + PACK_BASE + "docs/reference/cli.sdoc)"), r.text);
+});
+
+test("pack-links: anchors, URLs, missing files and code are left alone", () => {
+  const src = "# D {\n    [Here](#here), [Web](https://x.org), [Gone](gone.sdoc) and `[Code](a.sdoc)`.\n\n    ```\n    [Fenced](a.sdoc)\n    ```\n}\n";
+  const r = rewriteLinks(src, "d.sdoc", PACK_BASE, (p) => p === "a.sdoc");
+  assert(r.errors.length === 0 && r.text === src, r.text);
+});
+
+test("pack-links: a link it cannot place is an error, not a guess", () => {
+  // The same target as a link and as code on one line: the counts disagree.
+  const src = "# D {\n    [A](a.sdoc) and `[A](a.sdoc)`\n}\n";
+  const r = rewriteLinks(src, "d.sdoc", PACK_BASE, () => true);
+  assert(r.errors.length === 1 && r.text === src, JSON.stringify(r));
+});
+
+test("pack-links: tagBaseUrl reads the repository and version from package.json", () => {
+  const url = tagBaseUrl({ version: "0.4.1", repository: { url: "git+https://github.com/entropicwarrior/sdoc.git" } });
+  assert(url === "https://github.com/entropicwarrior/sdoc/blob/v0.4.1/", url);
+});
+
+test("pack-links: every knowledge file rewrites cleanly, and only its links change", () => {
+  const root = path.join(__dirname, "..");
+  const exists = (p) => fs.existsSync(path.join(root, p));
+  for (const { path: file } of require("../knowledge.js").knowledgeFiles) {
+    const docPath = path.relative(root, file).split(path.sep).join("/");
+    const original = fs.readFileSync(file, "utf8");
+    const r = rewriteLinks(original, docPath, PACK_BASE, exists);
+    assert(r.errors.length === 0, r.errors.join("; "));
+    // No link left that resolves in the repo but not in a package.
+    const left = collectInlineRefs(parseSdoc(r.text).nodes).links
+      .filter((l) => !l.href.startsWith("#") && !/^[a-z][a-z0-9+.-]*:/i.test(l.href))
+      .filter((l) => exists(path.posix.join(path.posix.dirname(docPath), l.href.split("#")[0])));
+    assert(left.length === 0, docPath + ": " + left.map((l) => l.href).join(", "));
+    // Putting each href back on its own lines gives the original bytes.
+    const lines = r.text.split("\n");
+    for (const w of r.rewritten) {
+      for (let i = w.lineStart - 1; i < w.lineEnd; i += 1) {
+        lines[i] = lines[i].split("](" + w.url + ")").join("](" + w.href + ")");
+      }
+    }
+    assert(lines.join("\n") === original, docPath + ": something other than a link target changed");
   }
 });
 

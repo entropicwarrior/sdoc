@@ -20,6 +20,7 @@ skills/
 tools/build-slides.js
 tools/artifact-resolve-assets.js
 tools/serve_docs.py
+tools/pack-links.js
 dist/
 vendor/
 themes/

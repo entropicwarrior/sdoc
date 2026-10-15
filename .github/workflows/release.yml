@@ -35,7 +35,9 @@ jobs:
 
       - run: npm install
 
-      - run: mkdir -p dist && npx vsce package --out dist/
+      # pack-links points the packaged knowledge files' relative links at this
+      # tag on GitHub, and puts them back when the command exits.
+      - run: mkdir -p dist && node tools/pack-links.js npx vsce package --out dist/
 
       - name: Upload VSIX to release
         env:
@@ -45,7 +47,7 @@ jobs:
       - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx vsce publish --pat "$VSCE_PAT"
+        run: node tools/pack-links.js npx vsce publish --pat "$VSCE_PAT"
 
   npm:
     runs-on: ubuntu-latest
@@ -74,7 +76,8 @@ jobs:
           npm --version
 
       # Nothing is installed for the package itself: it has no dependencies, no
-      # publish lifecycle script and nothing to build, and npm does not pack
+      # publish lifecycle script and nothing to build (pack-links needs only
+      # node), and npm does not pack
       # node_modules. An install here would buy nothing and add one more
       # registry round-trip that can fail, in the job whose whole point is not
       # to be stopped by something unrelated to it.
@@ -97,4 +100,4 @@ jobs:
             pkg.name = '@entropicwarrior/sdoc';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish --access public
+          node tools/pack-links.js npm publish --access public

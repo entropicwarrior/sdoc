@@ -210,7 +210,7 @@
     {
         - [ ] Awaiting feedback on github/markup issue (#2030) and github-linguist issue (#7838)
         - [ ] Growing .sdoc file count on GitHub toward linguist recognition threshold (~200 unique repos)
-        - [x] Unreleased, on \`feat/adopt-signposts\` — the repo's own documents adopt the signposts, and a topic another resource covers moves from \`\@not-about\` to \`\@related-resources\`
+        - [x] Unreleased, on \`feat/adopt-signposts\` — the repo's own documents adopt the signposts, and a topic another resource covers moves from \`\@not-about\` to \`\@related-resources\`. The packaged knowledge files point each link to a repo file at the release tag on GitHub instead, since the package does not carry the file: \`tools/pack-links.js\` wraps the packaging commands and restores the relative links after
 
         # Slide Layouts and Export @slides-wip
         {

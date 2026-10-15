@@ -156,6 +156,10 @@ tools/              CLI tools
                       bar, a mark that loses its colour — reads as 0px.
                       A regression detector, not a verdict
   serve_docs.py       CLI to start a local SDOC document server
+  pack-links.js       Runs a packaging command with the knowledge files' relative
+                      links pointed at this version's tag on GitHub, and restores
+                      them after. `npm run package` and both release workflows
+                      go through it; a bare `vsce package` does not
 ```
 
 ## Before Making Changes
