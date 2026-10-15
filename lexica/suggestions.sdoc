@@ -156,6 +156,27 @@
         This follows the existing list type pattern ({[.]} for bullet, {[#]} for numbered, {[def]} for definition).
     }
 
+    # S12: Link Base for Exports @s12
+    {
+        Priority: Medium
+        Serves: R6, R9 ([requirements.sdoc](requirements.sdoc))
+
+        An exported HTML or PDF renders a link exactly as written, so a relative link such as `[CLI](cli.sdoc#options)` points at a file beside the exported copy. Once the copy leaves the project, sent by email or attached to a ticket, every link to another file of the project is broken. The source is right to keep relative links: they open the local file, work offline, and `build-doc.js --check` verifies them. Only the exported copy needs another target.
+
+        Suggested approach: an opt-in base URL that the renderer resolves relative links against.
+
+        {[.]
+            - `linkBase` in `sdoc.config.json`, set once per project and resolved against the config file's folder, the way `style` is. The VS Code export commands and `build-doc.js` read it from there; `--link-base <url>` on `build-doc.js` overrides it for one export, such as one pinned to a tag.
+            - At render time, a relative link whose target exists becomes the base URL plus the target's path from the config file's folder, keeping its fragment.
+            - `#anchors`, URLs and links to files that do not exist are left as written.
+            - Without the setting, exports behave as they do today.
+        }
+
+        It is opt-in rather than automatic because the exporter cannot know what the URL depends on: whether the project is hosted at all, whether the recipient can open it, and which branch or tag to point at. A wrong guess is worse than a relative link: it looks right and returns a 404, where `cli.sdoc` at least names the file that was meant.
+
+        `tools/pack-links.js` already does this for the packaged knowledge files, against the release tag. It rewrites the source, because a package ships source; an export can do it in the renderer, which already holds every link node. The two should share the rule for which links are rewritten.
+    }
+
     # S8: Admonitions/Callouts @s8
     {
         Priority: Low
