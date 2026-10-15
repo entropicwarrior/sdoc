@@ -683,7 +683,7 @@ Content of Section B.
 
                 {[.]
                     - It helps someone decide whether to read: `@about`.
-                    - It says what this document leaves out, and why, and no resource in `@related-resources` covers it: `@not-about`.
+                    - It names a topic a reader might expect here but will not find, and says why: `@not-about`.
                     - It links to something a reader can open, such as a document, a file or a URL: a row in `@related-resources`.
                     - It tells a committed reader where to start or what to skip: `@reading-guide`.
                     - It tells an editor how to change this file: `@editing-guide`.
@@ -709,7 +709,7 @@ Content of Section B.
 
             # Not About @not-about-scope
             {
-                `@not-about` names topics a reader could plausibly expect here that this document deliberately leaves out and that no other resource covers, and says why each is left out. Write one list item per topic: the topic, then the reason in one clause. If a topic is missing because nobody has written it yet, say that.
+                `@not-about` names topics a reader could plausibly expect to find here but will not, and says why each is left out. Write one list item per topic: the topic, then the reason in one clause. If a topic is missing because nobody has written it yet, say that.
 
                 For example:
 
@@ -719,7 +719,7 @@ Content of Section B.
                 }
                 ```
 
-                It does not redirect. The resources that cover a left-out topic belong in `@related-resources`, and a link here is a validation error. Nor does it repeat them: a row whose `Relation` says it covers a topic this document leaves out already puts that topic out of scope, so the topic is not named here too. A document whose left-out topics are all covered elsewhere has no `@not-about`. [Not About or Related Resources](#not-about-or-related-resources) explains the split.
+                A topic left out because another document covers it is not named here: list that document in `@related-resources`, whose row already puts the topic out of scope. `@not-about` keeps the topics left out for any other reason, and a document whose left-out topics are all covered elsewhere has none. It never redirects: a link here is a validation error. [Not About or Related Resources](#not-about-or-related-resources) explains the split.
 
                 It does not restate what the document covers; that is `@about`. Keep each reason to one clause: a longer argument for the boundary belongs in the body, or in `@editing-guide` when it binds editors. List only plausible expectations, not everything the document is not.
             }
@@ -1099,7 +1099,7 @@ Content of Section B.
 
         # Not About or Related Resources @not-about-or-related-resources
         {
-            `@not-about` and `@related-resources` answer different questions. `@not-about` says what this document deliberately leaves out that nothing else covers, and why. `@related-resources` says what else a reader can open, including the resources that cover what this document leaves out. Redirecting is the job of `@related-resources`. A link in `@not-about` is a validation error, since every resource is linked once, in `@related-resources`. A pointer written without a link, such as "see Slide Authoring", is the same mistake: the validator cannot see it, but it belongs in a `Relation` cell.
+            `@not-about` and `@related-resources` answer different questions. `@not-about` says what a reader might expect here but will not find, and why. `@related-resources` says what else a reader can open, including the resources that cover what this document leaves out. Redirecting is the job of `@related-resources`. A link in `@not-about` is a validation error, since every resource is linked once, in `@related-resources`. A pointer written without a link, such as "see Slide Authoring", is the same mistake: the validator cannot see it, but it belongs in a `Relation` cell.
 
             **Wrong:** `@not-about` redirects.
 
@@ -1123,7 +1123,7 @@ Content of Section B.
 
         # Not About Repeating Related Resources @not-about-repeats-related-resources
         {
-            A row in `@related-resources` that covers a topic this document leaves out already tells the reader the topic is out of scope. Naming the same topic in `@not-about` says it twice, and the two copies drift apart. The validator does not catch it, since `@not-about` holds no link to compare. Keep `@not-about` for the topics no listed resource covers: one nobody has written about yet, or one that is out of the project's scope.
+            A row in `@related-resources` that covers a topic this document leaves out already tells the reader the topic is out of scope. Naming the same topic in `@not-about` says it twice, and the two copies drift apart. The validator does not catch it, since `@not-about` holds no link to compare. Keep `@not-about` for the topics left out for any other reason, such as one nobody has written about yet.
 
             **Wrong:** the same topic in both sections.
 
@@ -1140,7 +1140,7 @@ Content of Section B.
             }
             ```
 
-            **Right:** the row alone says slide decks are left out, and `@not-about` keeps only what nothing covers.
+            **Right:** the row alone says slide decks are left out, and `@not-about` keeps only a topic left out for another reason.
 
             ```
             @not-about {
