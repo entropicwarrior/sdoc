@@ -1,21 +1,49 @@
-# SDOC Specification v0.2 @sdoc-spec
+# SDOC Specification @sdoc-spec
 {
-    # Meta @meta
-    {
+    @meta {
         type: doc
 
         sdoc-version: 0.2
     }
 
-    # About @about
-    {
-        The formal SDOC v0.2 specification. Defines syntax for scopes,
+    @about {
+        The formal SDOC specification. Defines syntax for scopes,
         lists, tables (with formulas), code blocks, inline formatting,
-        references, autolinks (including bare email detection), the meta
-        scope, scope types, data blocks, comments, and collapsible scopes.
-        Includes the formal EBNF grammar. Read for edge cases and
-        parser behaviour questions. For a friendlier user-facing
-        reference, see \`docs/reference/syntax.sdoc\`.
+        references, citations, autolinks (including bare email detection),
+        the meta scope and the signposts, scope types, data blocks, comments,
+        and collapsible scopes. Includes the formal EBNF grammar. Read for
+        edge cases and parser behaviour questions.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Syntax Reference](../docs/reference/syntax.sdoc) | Friendlier user-facing reference to the same syntax
+            [SDOC Authoring Guide](../docs/reference/sdoc-authoring.sdoc) | Teaches the format by example, with common mistakes
+            [Slide Authoring Guide](../docs/reference/slide-authoring.sdoc) | Covers slide decks, which this specification leaves out
+            [Requirements](requirements.sdoc) | The goals every change to this specification is evaluated against
+            [Suggestions](suggestions.sdoc) | Proposed additions not yet specified
+            [Parser and Renderer](../src/sdoc.js) | The implementation of this specification
+        }
+    }
+
+    @reading-guide {
+        Read the Overview once for the model. After that, go straight to the construct you need: each section of the syntax stands on its own.
+
+        {[table]
+            Sections | Note
+            @overview | The model everything else builds on
+            @syntax | One section per construct; read only the one in question
+            @parsing-rules, @grammar | When a construct's section leaves an input undecided
+            @signposts | Before writing or validating a reserved scope
+            @open-questions | Before proposing a change, in case it is already open
+        }
+    }
+
+    @editing-guide {
+        - This file is normative: change it in the same change as the parser, and keep the user-facing references in step.
+        - Existing documents must remain valid or be mechanically migrateable (R10). Evaluate every change against the requirements.
+        - A new construct gets its own section under Syntax, and its rule in Parsing Rules and the Formal Grammar.
     }
 
     # Overview @overview
@@ -1047,7 +1075,7 @@ Content of Section B.
 
             # Not About @not-about-scope
             {
-                `@not-about` names topics a reader could plausibly expect in this document that it deliberately leaves out, and gives the reason each is left out. It answers "why is this not here?" for someone who opened the document looking for something. One list item per topic is recommended: the topic, then the reason in one clause. It does not redirect: the resources that cover a left-out topic are listed in `@related-resources`, whose `Relation` says what each covers. It does not restate what the document covers (`@about`), and a longer argument for the boundary belongs in the body, or in `@editing-guide` when it binds editors.
+                `@not-about` names topics a reader could plausibly expect to find in this document but will not, and gives the reason each is left out. It answers "why is this not here?" for someone who opened the document looking for something. One list item per topic is recommended: the topic, then the reason in one clause. A topic left out because another resource covers it is not named here: that resource is listed in `@related-resources`, and its row is enough to put the topic out of scope. `@not-about` does not redirect, and it does not restate what the document covers (`@about`); a longer argument for the boundary belongs in the body, or in `@editing-guide` when it binds editors.
 
                 Content model: prose, with no links. A link in `@not-about` is reported as `signpost-content`. The rule keeps every resource the document points to linked in exactly one place, `@related-resources`: a target cannot drift between two copies, and that table is the complete list a tool reads.
             }
@@ -1079,13 +1107,13 @@ Content of Section B.
 
             # Not About and Related Resources @not-about-vs-related-resources
             {
-                The two sections answer different questions, so an entry belongs in exactly one of them. `@not-about` says what this document leaves out, and why. `@related-resources` says what a reader can open: a document, a file or a URL. Redirecting is the job of `@related-resources`: among the signposts, every link to a resource lives there, and `@not-about` holds no links and no pointers.
+                The two sections answer different questions, so an entry belongs in exactly one of them. `@not-about` says what a reader might expect here but will not find, and why. `@related-resources` says what a reader can open: a document, a file or a URL. Redirecting is the job of `@related-resources`: among the signposts, every link to a resource lives there, and `@not-about` holds no links and no pointers.
 
-                A topic left out of this document and covered by another resource appears in both, each answering its own question. `@not-about` gives the reason the topic is left out. `@related-resources` lists the resource, with a `Relation` saying what it covers.
+                A topic left out of this document and covered by another resource appears only in `@related-resources`, with a `Relation` saying what the resource covers. Listing the resource implies the topic is out of scope here; naming it in `@not-about` too would say the same thing twice. `@not-about` keeps the topics left out for any other reason, such as one nobody has written about yet.
 
                 ```sdoc
                 @not-about {
-                    - Slide decks: they follow their own layout rules, which would double the length of this guide.
+                    - Converting Markdown to SDOC: no converter exists yet.
                 }
 
                 @related-resources {
@@ -1147,7 +1175,7 @@ Content of Section B.
 
                 An empty `@related-resources` or `@reading-guide` is not reported. Rendering does not depend on validation: a section that fails it renders whatever it contains.
 
-                Not validated, and left to authoring guidance: length, links and other pointers to resources inside `@about`, and the vocabulary used in `Relation`.
+                Not validated, and left to authoring guidance: length, links and other pointers to resources inside `@about`, the vocabulary used in `Relation`, and a `@not-about` topic that a `@related-resources` row already covers.
             }
 
             # Export Visibility @signpost-visibility

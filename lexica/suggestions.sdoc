@@ -1,24 +1,31 @@
 # SDOC Feature Suggestions @sdoc-suggestions
 {
-    # Meta @meta
-    {
+    @meta {
         type: doc
 
         sdoc-version: 0.2
     }
 
-    # About @about
-    {
-        Proposed additions to the SDOC spec. Each suggestion references
-        requirements it serves, includes priority, and explains rationale.
-        Check here before designing new features.
+    @about {
+        Proposed additions to the SDOC spec, based on gaps identified in v0.1.
+        Each suggestion references the requirements it serves, includes
+        priority, and explains rationale. Check here before designing new
+        features.
     }
 
-    # Context @context
-    {
-        This document suggests additions to the SDOC spec based on gaps identified in v0.1. Each suggestion references the requirements it serves (see [requirements.sdoc](requirements.sdoc)). Suggestions are ordered by priority.
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Requirements](requirements.sdoc) | The requirements each suggestion names under `Serves:`
+            [Specification](specification.sdoc) | Normative definition of every suggestion that has been accepted
+            [SDOC Plan](sdoc-plan.sdoc) | Roadmap that schedules the highest-priority suggestions
+        }
+    }
 
-        When a suggestion is accepted and implemented, it is retained here for historical context. The specification.sdoc carries the normative definition.
+    @editing-guide {
+        - Suggestions are ordered by priority. Each opens with `Priority:` and `Serves:`, the requirements it serves.
+        - A suggestion keeps its number for good: other documents link to it by id, such as `suggestions.sdoc#s2`.
+        - When a suggestion is accepted and implemented, keep it here for historical context, and mark what was done. The normative definition goes in the specification.
     }
 
     # S2: Document Metadata Beyond Styling @s2
@@ -147,6 +154,27 @@
         ```
 
         This follows the existing list type pattern ({[.]} for bullet, {[#]} for numbered, {[def]} for definition).
+    }
+
+    # S12: Link Base for Exports @s12
+    {
+        Priority: Medium
+        Serves: R6, R9 ([requirements.sdoc](requirements.sdoc))
+
+        An exported HTML or PDF renders a link exactly as written, so a relative link such as `[CLI](cli.sdoc#options)` points at a file beside the exported copy. Once the copy leaves the project, sent by email or attached to a ticket, every link to another file of the project is broken. The source is right to keep relative links: they open the local file, work offline, and `build-doc.js --check` verifies them. Only the exported copy needs another target.
+
+        Suggested approach: an opt-in base URL that the renderer resolves relative links against.
+
+        {[.]
+            - `linkBase` in `sdoc.config.json`, set once per project and resolved against the config file's folder, the way `style` is. The VS Code export commands and `build-doc.js` read it from there; `--link-base <url>` on `build-doc.js` overrides it for one export, such as one pinned to a tag.
+            - At render time, a relative link whose target exists becomes the base URL plus the target's path from the config file's folder, keeping its fragment.
+            - `#anchors`, URLs and links to files that do not exist are left as written.
+            - Without the setting, exports behave as they do today.
+        }
+
+        It is opt-in rather than automatic because the exporter cannot know what the URL depends on: whether the project is hosted at all, whether the recipient can open it, and which branch or tag to point at. A wrong guess is worse than a relative link: it looks right and returns a 404, where `cli.sdoc` at least names the file that was meant.
+
+        `tools/pack-links.js` already does this for the packaged knowledge files, against the release tag. It rewrites the source, because a package ships source; an export can do it in the renderer, which already holds every link node. The two should share the rule for which links are rewritten.
     }
 
     # S8: Admonitions/Callouts @s8

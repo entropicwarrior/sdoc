@@ -4252,12 +4252,13 @@ function validateSignposts(nodes) {
     }
   }
 
-  // @not-about says what is left out and why; the resources that cover it are
-  // linked from @related-resources, so a link here is the boundary being crossed.
+  // @not-about says what a reader might expect here but will not find, and why;
+  // a topic another resource covers is listed in @related-resources instead, so
+  // a link here is the boundary being crossed.
   // @about is shown by discovery tools without the body, where a reference to
   // one of its sections leads nowhere; pointing into the body is @reading-guide's job.
   const NO_INLINE = {
-    "not-about": { type: "link", message: "@not-about says what this document leaves out and why, and holds no links: list the resource in @related-resources instead" },
+    "not-about": { type: "link", message: "@not-about holds no links: a topic another resource covers goes in @related-resources instead, and not here" },
     "about": { type: "ref", message: "@about is read without the body, and holds no section references: point to sections from @reading-guide instead" }
   };
   function hasInline(text, type) {

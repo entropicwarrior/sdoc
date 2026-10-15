@@ -10,6 +10,14 @@
     Demonstrates mermaid diagram support in SDOC. Each section shows a different diagram type rendered inline using the Mermaid JS library.
 }
 
+@related-resources {
+    {[table]
+        Resource | Relation
+        [SDOC Authoring Guide](../docs/reference/sdoc-authoring.sdoc#mermaid) | Explains the `mermaid` code block this file demonstrates
+        [Example Document](example.sdoc) | Every construct of the format, in one file
+    }
+}
+
 # Flowchart @flowchart {
     A basic flowchart showing a decision process:
 

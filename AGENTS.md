@@ -71,6 +71,8 @@ src/                Source code
   theme.js            Theme loading, theme.json, CSS asset inlining
   zip.js              Minimal ZIP writer (zlib only), for the PPTX package
   extension.js        VS Code extension with preview and document server
+  knowledge-template.js  The skeleton "New Knowledge File" writes; kept out of
+                      extension.js so test-all.js can parse it
   href-path.js        Resolves a link href to a file on disk (raw, then percent-
                       decoded); shared by extension.js and build-doc --check
   site-template/      Shared viewer templates (index.html, viewer.css)
@@ -154,6 +156,10 @@ tools/              CLI tools
                       bar, a mark that loses its colour — reads as 0px.
                       A regression detector, not a verdict
   serve_docs.py       CLI to start a local SDOC document server
+  pack-links.js       Runs a packaging command with the knowledge files' relative
+                      links pointed at this version's tag on GitHub, and restores
+                      them after. `npm run package` and both release workflows
+                      go through it; a bare `vsce package` does not
 ```
 
 ## Before Making Changes

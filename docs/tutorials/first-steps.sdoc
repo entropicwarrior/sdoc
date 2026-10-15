@@ -4,6 +4,20 @@
         sdoc-version: 0.2
     }
 
+    @about {
+        A hands-on tutorial that builds a first SDOC document step by step: creating the file, nesting sections, previewing, formatting, references, blockquotes and code. For readers new to SDOC with VS Code at hand.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Setup](../guide/setup.sdoc) | Prerequisite; installs the extension the preview step uses
+            [Syntax Reference](../reference/syntax.sdoc) | Next step: every available feature
+            [CLI and Tools Reference](../reference/cli.sdoc) | The document server and the command-line tools
+            [Example Document](../../examples/example.sdoc) | Every construct in one file, as a quick reference
+        }
+    }
+
     # Step 1: Create a File
     {
         Create a new file with a `.sdoc` extension, for example `notes.sdoc`:
@@ -104,14 +118,5 @@ Hello, this is my first SDOC document.
         ```
 
         Code blocks use three backticks as opening and closing fences, with an optional language tag. Everything inside is raw text -- braces, `#`, and `@` are not parsed.
-    }
-
-    # What's Next
-    {
-        {[.]
-            - Read `docs/reference/syntax.sdoc` for all available features
-            - Read `docs/reference/cli.sdoc` for the document server and CLI tools
-            - Look at `examples/example.sdoc` for a quick-reference document
-        }
     }
 }
