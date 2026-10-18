@@ -491,7 +491,124 @@ console.log("\n--- References ---");
 test("reference renders as link", () => {
   const html = renderHtmlDocument("# Section @sec\n{\n  Hello.\n}\n# Other\n{\n  See @sec.\n}", "Test");
   assert(html.includes('href="#sec"'));
-  assert(html.includes("@sec"));
+});
+
+// The text of each reference in rendered HTML, in document order.
+function refLabels(html) {
+  return [...html.matchAll(/<a class="sdoc-ref[^"]*" href="[^"]*">(.*?)<\/a>(?!<\/a>)/g)].map((m) => m[1]);
+}
+
+function assertSame(actual, expected) {
+  assert(actual === expected, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+
+test("reference shows its target's title, with the href unchanged", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Platform Model @model {\n        x\n    }\n    See @model.\n}\n");
+  assert(html.includes('<a class="sdoc-ref" href="#model">Platform Model</a>'), html);
+});
+
+test("reference title keeps its inline formatting", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # The `sdoc` *CLI* @cli {\n        x\n    }\n    See @cli.\n}\n");
+  assertSame(refLabels(html)[0], 'The <code class="sdoc-inline-code">sdoc</code> <em>CLI</em>');
+});
+
+test("reference title drops a link it holds, so no <a> nests in another", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Read [the docs](https://example.com) @rd {\n        x\n    }\n    See @rd.\n}\n");
+  assertSame(refLabels(html)[0], "Read the docs");
+});
+
+test("reference title holding a reference shows that one's title, and a cycle stops", () => {
+  const html = renderHtmlBody(
+    "# Doc @doc {\n    # Model @model {\n        x\n    }\n    # Notes on @model @notes {\n        x\n    }\n" +
+    "    # A, see @b @a {\n        x\n    }\n    # B, see @a @b {\n        x\n    }\n    See @notes and @a.\n}\n"
+  );
+  const para = html.match(/<p[^>]*>See .*?<\/p>/)[0];
+  assert(para.includes('href="#notes">Notes on Model</a>'), para);
+  assert(para.includes('href="#a">A, see B, see @a</a>'), para);
+});
+
+test("reference to a scope with no title shows the @id", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # @untitled {\n        x\n    }\n    See @untitled.\n}\n");
+  assertSame(refLabels(html)[0], "@untitled");
+});
+
+test("reference to an svg element id shows the @id", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    ```svg\n<svg><circle id=\"dot\" r=\"2\"/></svg>\n    ```\n    See @dot.\n}\n");
+  assertSame(refLabels(html)[0], "@dot");
+});
+
+test("reference to a list item shows the item's text", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    {[.]\n        - First step @step\n    }\n    Do @step.\n}\n");
+  assertSame(refLabels(html)[0], "First step");
+});
+
+test("reference to a reserved scope stays @id, since validateRefs reports it", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Reading Guide @reading-guide {\n        x\n    }\n    See @reading-guide.\n}\n", { includeSignposts: true });
+  assertSame(refLabels(html)[0], "@reading-guide");
+});
+
+test("reference matching only a title slug stays @slug, since it does not resolve", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Project Areas {\n        x\n    }\n    See @project-areas.\n}\n");
+  assertSame(refLabels(html)[0], "@project-areas");
+});
+
+test("reference to a duplicated id shows the first scope's title, where the link lands", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # First @dup {\n        x\n    }\n    # Second @dup {\n        x\n    }\n    See @dup.\n}\n");
+  assertSame(refLabels(html)[0], "First");
+});
+
+test("reference in a heading shows its target's title there too", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Model @model {\n        x\n    }\n    # About @model @rel {\n        x\n    }\n}\n");
+  assert(html.includes('<span class="sdoc-toggle"></span>About <a class="sdoc-ref" href="#model">Model</a></h2>'), html);
+});
+
+test("reference in a table cell and in the footer shows its target's title", () => {
+  const html = renderHtmlDocument(
+    "# Meta @meta {\n    footer: Questions go to @contact\n}\n# Doc @doc {\n    # Contact Us @contact {\n        x\n    }\n" +
+    "    {[table]\n        Topic | Where\n        Help | @contact\n    }\n}\n",
+    "Test"
+  );
+  assert(html.includes('<td class="sdoc-table-td"><a class="sdoc-ref" href="#contact">Contact Us</a></td>'), "table cell");
+  const footer = html.match(/<footer class="sdoc-page-footer">[\s\S]*?<\/footer>/)[0];
+  assert(footer.includes('href="#contact">Contact Us</a>'), footer);
+});
+
+test("broken reference in preview still shows the warning and the @id", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  # Project Areas\n  {\n    x\n  }\n  See @project-areas.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const brokenRefIds = new Set(validateRefs(metaResult.nodes).map((w) => w.id));
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { renderOptions: { brokenRefIds } }
+  );
+  assert(
+    html.includes('<a class="sdoc-ref sdoc-broken-ref" href="#project-areas"><span class="sdoc-broken-icon">⚠</span>@project-areas</a>'),
+    "expected the unchanged broken-reference rendering"
+  );
+});
+
+test("refLabels: \"id\" keeps every reference as @id", () => {
+  const src = "# Doc @doc {\n    # Platform Model @model {\n        x\n    }\n    See @model.\n}\n";
+  assertSame(refLabels(renderHtmlBody(src, { refLabels: "id" }))[0], "@model");
+  assertSame(refLabels(renderHtmlDocument(src, "Test", { refLabels: "id" }))[0], "@model");
+  const parsed = parseSdoc(src);
+  const html = renderHtmlDocumentFromParsed({ nodes: extractMeta(parsed.nodes).nodes, errors: [] }, "Test", { refLabels: "id" });
+  assertSame(refLabels(html)[0], "@model");
+});
+
+test("reference labels do not leak from one render into the next", () => {
+  const src = "# Doc @doc {\n    # Platform Model @model {\n        x\n    }\n}\n";
+  renderHtmlBody(src);
+  assertSame(refLabels(renderFragment(parseSdoc("See @model.").nodes))[0], "@model");
+  renderHtmlDocument(src, "Test");
+  assertSame(refLabels(renderFragment(parseSdoc("See @model.").nodes))[0], "@model");
+});
+
+test("reference reads the same whether or not its target's signpost is exported", () => {
+  const src = "# Doc @doc {\n    # Editing Guide @editing-guide {\n        # Style Rules @style {\n            x\n        }\n    }\n    # Body @body {\n        See @style.\n    }\n}\n";
+  assertSame(refLabels(renderHtmlBody(src))[0], "Style Rules");
+  assertSame(refLabels(renderHtmlBody(src, { includeSignposts: true }))[0], "Style Rules");
 });
 
 test("scope gets id attribute", () => {
