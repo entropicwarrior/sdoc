@@ -406,7 +406,7 @@ Content of Section B.
 }
         ```
 
-        References render as clickable links to the target scope. Note: `@references` are parsed inside link labels too — use `\@` if you need a literal `@` in a label.
+        References render as clickable links to the target scope, showing its title, so the example above reads "See Overview for the introduction." A scope with no title shows the `@id` instead. Note: `@references` are parsed inside link labels too — use `\@` if you need a literal `@` in a label.
     }
 
     # Citations

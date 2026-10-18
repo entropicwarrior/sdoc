@@ -1724,6 +1724,44 @@ function withSignpostScopes(nodes, render) {
 let _citationNumbering = new Map();
 let _citationDefinitions = new Map(); // key → { text, lineStart, lineEnd }
 
+// --- Reference labels ---
+// Set for the duration of a render; maps each @id a reference can resolve to
+// onto the scope that holds it (collectRefTargets' byId). Empty when the
+// caller asked for `refLabels: "id"`, which leaves every reference as @id.
+let _refTargets = new Map();
+
+function refTargetsFor(nodes, options) {
+  return options.refLabels === "id" ? new Map() : collectRefTargets(nodes).byId;
+}
+
+// What a reference shows: its target's heading, so a reader sees "Platform
+// Model" where the source says @model. A target with no title (a heading
+// holding only an @id, an svg element, an id from another file), an id that
+// resolves to nothing, and a reserved id, which validateRefs reports even
+// though its scope exists, show the @id, as every reference did before.
+function refLabelNodes(id, seen) {
+  const scope = RESERVED_SCOPE_IDS.has(id.toLowerCase()) ? null : _refTargets.get(id);
+  if (!scope || !scope.title || !scope.title.trim() || seen.has(id)) {
+    return [{ type: "text", value: `@${id}` }];
+  }
+  return linkFreeNodes(parseInline(scope.title), new Set(seen).add(id));
+}
+
+// A heading's inline nodes, made fit to sit inside the reference's own <a>:
+// the formatting is kept, but a link keeps only its label, a reference becomes
+// its own label (`seen` stops two headings that refer to each other), a
+// citation is dropped and a copyable value loses its button.
+function linkFreeNodes(nodes, seen) {
+  return nodes.flatMap((node) => {
+    if (node.type === "link") return linkFreeNodes(node.children, seen);
+    if (node.type === "ref") return refLabelNodes(node.id, seen);
+    if (node.type === "citation_ref") return [];
+    if (node.type === "copyable") return [{ type: "code", value: node.value }];
+    if (node.children) return [{ ...node, children: linkFreeNodes(node.children, seen) }];
+    return [node];
+  });
+}
+
 function buildCitationNumbering(nodes) {
   const numbering = new Map();
   const definitions = new Map();
@@ -1901,7 +1939,7 @@ function renderInlineNodes(nodes) {
           if (_renderOptions.brokenRefIds && _renderOptions.brokenRefIds.has(node.id)) {
             return `<a class="sdoc-ref sdoc-broken-ref" href="${href}"><span class="sdoc-broken-icon">\u26A0</span>@${escapeHtml(node.id)}</a>`;
           }
-          return `<a class="sdoc-ref" href="${href}">@${escapeHtml(node.id)}</a>`;
+          return `<a class="sdoc-ref" href="${href}">${renderInlineNodes(refLabelNodes(node.id, new Set()))}</a>`;
         }
         case "citation_ref": {
           if (!_renderOptions._citationRefSeen) _renderOptions._citationRefSeen = new Set();
@@ -3367,7 +3405,11 @@ function renderHtmlBody(text, options = {}) {
   const parsed = parseSdoc(text);
   const metaResult = extractMeta(parsed.nodes);
   const savedOptions = _renderOptions;
+  const savedRefTargets = _refTargets;
   _renderOptions = {};
+  // Built from the whole document, before signposts are dropped, so a
+  // reference reads the same in an export as in the preview.
+  _refTargets = refTargetsFor(metaResult.nodes, options);
   // HTML output is "export-shape" by default: the signposts meant for
   // someone deciding whether to read, or for an editor, are dropped, and
   // @reading-guide stays. The preview path in extension.js passes
@@ -3380,12 +3422,17 @@ function renderHtmlBody(text, options = {}) {
   const result = renderBodyNodes(renderNodes);
   _citationNumbering = new Map();
   _citationDefinitions = new Map();
+  _refTargets = savedRefTargets;
   _renderOptions = savedOptions;
   return result;
 }
 
 function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   _renderOptions = options.renderOptions ?? {};
+  // Built from the whole document, before signposts are dropped, so a
+  // reference reads the same in an export as in the preview. Kept until the
+  // header and footer are rendered, since a reference there points into the body.
+  _refTargets = refTargetsFor(parsed.nodes, options);
   // An exported file is normally sent to someone who has already been asked
   // to read it and will not edit it, so by default the signposts for
   // discovery (@about, @not-about, @related-resources) and for editors
@@ -3414,6 +3461,7 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const footerHtml = meta.footerNodes ? renderFragment(meta.footerNodes, 2)
     : meta.footerText ? renderTextParagraphs(meta.footerText)
     : renderTextParagraphs(config.footer);
+  _refTargets = new Map();
   // A specific footer (footer: meta, or config.footer) overrides the company
   // auto-footer so the two do not stack into a doubled footer. The company name
   // is used only as the fallback footer when no footer text is provided.
@@ -3981,14 +4029,21 @@ function collectAllIds(nodes) {
 // addresses a section for tools (listSections' derivedId, extractSection), but
 // a reference to it would break silently when the title changes, so it does
 // not resolve. Also returns, by slug, the first scope with that title slug,
-// so a broken reference can name the heading it was probably meant for.
+// so a broken reference can name the heading it was probably meant for; and,
+// by id, the first scope holding that @id, so the renderer can show a
+// reference as its target's title. The renderer reads the same walk as
+// validateRefs so the two cannot disagree about what a reference resolves to.
 function collectRefTargets(nodes) {
   const ids = new Set();
   const bySlug = new Map();
+  const byId = new Map();
   function walk(nodeList) {
     for (const node of nodeList) {
       if (node.type === "scope") {
-        if (node.id) ids.add(node.id);
+        if (node.id) {
+          ids.add(node.id);
+          if (!byId.has(node.id)) byId.set(node.id, node);
+        }
         if (node.title) {
           const slug = slugify(node.title);
           if (!bySlug.has(slug)) bySlug.set(slug, node);
@@ -4002,7 +4057,7 @@ function collectRefTargets(nodes) {
     }
   }
   walk(nodes);
-  return { ids, bySlug };
+  return { ids, bySlug, byId };
 }
 
 // The end of a broken-reference message when the id is a heading's title slug:

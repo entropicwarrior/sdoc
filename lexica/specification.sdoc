@@ -548,6 +548,7 @@ Content of Section B.
                 - References are document-local: `@id` resolves to a scope within the same file only. Cross-document reference syntax may be introduced in a future version but is not part of v0.2
                 - To link to a section in another file, use a standard link with a fragment: `[Label](./other-file.sdoc#section-id)`
                 - References link to the scope with that ID. Only an explicit `@id` is a reference target: a scope's title, or the slug derived from it, never is, so a reference does not break when a title changes. A reference that matches only a title slug is broken; validation names the heading so the `@id` can be added to it. Tools may still address a section by its derived slug (`listSections`' `derivedId`, `extractSection`), which is not a reference
+                - A renderer shows a resolved reference as a link to the target whose text is the target scope's title, keeping the title's inline formatting; the source still says `@id`. A target with no title, and a reference that does not resolve, show `@id` instead
                 - ID uniqueness is strongly recommended; tooling may warn on duplicates
                 - References are parsed inside link labels — use `\@` to include a literal `@` in a link label without triggering a reference
             }
