@@ -99,6 +99,7 @@ const html = renderHtmlDocument(sdocText, "Page Title", {
             - `options.includeSignposts` -- `true` keeps every signpost. By default only `@reading-guide` is kept. Set to `true` for preview-style rendering
             - `options.includeAbout` -- `true` keeps `@about` as well as the default. Ignored when `includeSignposts` is given
             - `options.signposts` -- keeps or drops single signposts, as a map from id to `true` or `false`, on top of the two options above. See **Signposts in exports** below
+            - `options.refLabels` -- what an `@id` reference shows. By default (`"title"`) it shows the target scope's title as its link text; `"id"` shows `@id` as the source writes it. A target with no title shows `@id` either way
             - Automatically extracts and applies `@meta` scope settings
         }
     }
@@ -118,7 +119,7 @@ const html = renderHtmlDocumentFromParsed(
 );
         ```
 
-        Accepts the same `options.includeSignposts`, `options.includeAbout` and `options.signposts` as `renderHtmlDocument`.
+        Accepts the same `options.includeSignposts`, `options.includeAbout`, `options.signposts` and `options.refLabels` as `renderHtmlDocument`.
     }
 
     # Signposts in exports @signposts-in-exports
