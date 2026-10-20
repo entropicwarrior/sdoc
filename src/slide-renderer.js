@@ -1677,7 +1677,13 @@ blockquote p { color: #9d9d9d; }
   const hasConnectors = slidesHtml.includes("data-sdoc-connectors=");
   const connectorCss = hasConnectors ? CONNECTOR_CSS : "";
 
-  const cssTag = `<style>\n${structuralCss}\n${connectorCss}${themeCss}\n${darkCss}\n${deckCss}</style>`;
+  // Without comments: they are for whoever reads the stylesheet, and a built
+  // deck is read by whoever it is sent to. A deck's own stylesheet can carry a
+  // great deal of internal reasoning — one real deck had 264 comments, 149,000
+  // characters naming people and decisions — all of it legible in the page's
+  // source. A /*! comment stays, by the usual convention for a licence notice.
+  const css = stripCssComments(`${structuralCss}\n${connectorCss}${themeCss}\n${darkCss}\n${deckCss}`);
+  const cssTag = `<style>\n${css}</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
   // After the theme, so the navigation it couples to already exists.
   const filmstripTag = `<script>\n${FILMSTRIP_JS}\n</script>`;
@@ -1709,7 +1715,59 @@ ${jsTag}${filmstripTag}${connectorTag}${mermaidTag}
 </html>`;
 }
 
+// CSS without its comments, except /*! ones. A comment inside a string or an
+// unquoted url() is not a comment and stays. Where a removed comment was the
+// only thing between two words — `1px/**/2px` — a space takes its place, so
+// they do not run together; anywhere else nothing does, since a space there
+// can change meaning (`a/**/.b` is `a.b`, and `a .b` is something else).
+function stripCssComments(css) {
+  const word = /[A-Za-z0-9_%-]/;
+  let out = "";
+  let i = 0;
+  while (i < css.length) {
+    const ch = css[i];
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < css.length && css[j] !== ch && css[j] !== "\n") j += css[j] === "\\" ? 2 : 1;
+      out += css.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    if ((ch === "u" || ch === "U") && /^url\(/i.test(css.slice(i, i + 4)) && !word.test(css[i - 1] || "")) {
+      // An unquoted url() runs to its closing parenthesis; a quoted one is a
+      // string, which the branch above copies as it is.
+      let j = i + 4;
+      while (j < css.length && /\s/.test(css[j])) j++;
+      if (css[j] !== '"' && css[j] !== "'") {
+        const close = css.indexOf(")", j);
+        const end = close < 0 ? css.length : close + 1;
+        out += css.slice(i, end);
+        i = end;
+        continue;
+      }
+      out += css.slice(i, j);
+      i = j;
+      continue;
+    }
+    if (ch === "/" && css[i + 1] === "*") {
+      const close = css.indexOf("*/", i + 2);
+      const end = close < 0 ? css.length : close + 2;
+      if (css[i + 2] === "!") {
+        out += css.slice(i, end);
+      } else if (word.test(out[out.length - 1] || "") && word.test(css[end] || "")) {
+        out += " ";
+      }
+      i = end;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 module.exports = {
+  stripCssComments,
   renderSlides,
   renderSlide,
   renderNode,
