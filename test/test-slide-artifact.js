@@ -1083,6 +1083,122 @@ if (findChrome()) {
   });
 }
 
+// --- A grid's cells are emitted in the order the grid placed them -----------
+// The direct children of the first grid whose columns start with `first`, as
+// their opening tags and leading text, in emitted order.
+function gridCells(html, first) {
+  const start = html.search(new RegExp(`<div style="display:grid;grid-template-columns:${first}`));
+  if (start < 0) return null;
+  const cells = [];
+  let depth = 0;
+  const tag = /<(\/?)(div|p|h[1-6])\b[^>]*>/g;
+  tag.lastIndex = start;
+  for (let m; (m = tag.exec(html));) {
+    if (m[1]) {
+      if (--depth === 0) break;
+      continue;
+    }
+    if (depth === 1) cells.push(m[0] + html.slice(tag.lastIndex, tag.lastIndex + 40).split("<")[0]);
+    depth++;
+  }
+  return cells;
+}
+
+function gridHarvest() {
+  const text = (words, cell) => ({
+    tag: "p", cls: "", style: fakeStyle({ fontSize: "24px" }), anchors: {},
+    box: { x: 0, y: 0, w: 100, h: 30 }, runs: [{ text: words }], gridCell: cell,
+  });
+  const h = fakeHarvest({ w: 1920, h: 1080 });
+  h.slides[0].children.push({
+    tag: "div", cls: "bar", anchors: {}, box: { x: 0, y: 100, w: 600, h: 80 },
+    style: fakeStyle({ display: "grid", gridTemplateColumns: "120px 275px 44px" }),
+    children: [
+      // label and value share a display:contents wrapper, written before the bar
+      { tag: "div", cls: "bar-head", transparent: true, anchors: {}, box: { x: 0, y: 0, w: 0, h: 0 },
+        style: fakeStyle({ display: "contents" }),
+        children: [text("Label", { r: 0, c: 0, rs: 1, cs: 1 }), text("42", { r: 0, c: 2, rs: 1, cs: 1 })] },
+      { tag: "div", cls: "bar-track", anchors: {}, box: { x: 120, y: 100, w: 275, h: 20 },
+        style: fakeStyle({ backgroundColor: "rgb(64, 102, 178)" }), children: [],
+        gridCell: { r: 0, c: 1, rs: 1, cs: 1 } },
+      // under the bar, across two tracks, leaving the first column of its row empty
+      text("A note", { r: 1, c: 1, rs: 1, cs: 2 }),
+    ],
+  });
+  return h;
+}
+
+test("grid cells are emitted in placement order, with spans and empty cells", () => {
+  // The subset places a cell with `span N` only — "cells fill in source order",
+  // no line numbers — so a cell a deck placed with grid-column cannot be told
+  // where to go. Found on a real deck: label and value in one wrapper, the bar
+  // after it, all three placed with grid-column, and the export put the value
+  // in the bar's column and squeezed the bar into the value's.
+  const built = buildArtifact(gridHarvest(), { title: "T", now: "2026-01-01T00:00:00Z" });
+  const cells = gridCells(built.files["project/slides/one.html"], "120px");
+  assert(cells, "the grid is emitted");
+  assert(cells.length === 5, "label, track, value, an empty cell, the note:\n" + cells.join("\n"));
+  assert(/>Label$/.test(cells[0]), "the label first: " + cells[0]);
+  assert(/background/.test(cells[1]) && !/>/.test(cells[1].split(">")[1] || ""), "then the bar: " + cells[1]);
+  assert(/>42$/.test(cells[2]), "then the value: " + cells[2]);
+  assert(cells[3] === "<div>", "an empty cell holds the note's row open under the label: " + cells[3]);
+  assert(/grid-column:span 2/.test(cells[4]) && />A note$/.test(cells[4]), "and the note spans two tracks: " + cells[4]);
+  assert(built.errors.length === 0, "inside the subset: " + JSON.stringify(built.errors.slice(0, 2)));
+});
+
+test("grid cells that overlap keep their source order and say so", () => {
+  const h = gridHarvest();
+  const bar = h.slides[0].children[1];
+  bar.children[1].gridCell = { r: 0, c: 0, rs: 1, cs: 1 }; // the bar on top of the label
+  const built = buildArtifact(h, { title: "T", now: "2026-01-01T00:00:00Z" });
+  const cells = gridCells(built.files["project/slides/one.html"], "120px");
+  assert(/>Label$/.test(cells[0]) && />42$/.test(cells[1]), "source order: " + cells.join(" | "));
+  assert(built.warnings.some((w) => w.kind === "grid-overlap"), "with a warning: " + JSON.stringify(built.warnings));
+});
+
+if (findChrome()) {
+  test("a grid placed out of source order exports in placement order (integration)", async () => {
+    // The real shape: a bars child is .bar > [.bar-head > (.bar-label, .bar-value)],
+    // .bar-track, [.bar-note]. The deck dissolves the head and places all three.
+    const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-gridplace-"));
+    const parsed = parseSdoc(
+      "# Deck {\n    # Bars {\n        config: bars\n\n" +
+      "        # Indexed {\n            value: 4200\n\n            A note under the bar.\n        }\n" +
+      "        # Reviewed {\n            value: 2150\n        }\n    }\n}"
+    );
+    assert(parsed.errors.length === 0, "fixture parses");
+    const { nodes, meta } = extractMeta(parsed.nodes);
+    const htmlPath = path.join(dir, "deck.html");
+    fs.writeFileSync(htmlPath, renderSlides(nodes, {
+      meta, themeCss: theme.themeCss, themeConfig: theme.themeConfig,
+      deckCss:
+        ".slide .bar { display: grid; grid-template-columns: 120px 1fr auto; column-gap: 24px; align-items: center; }" +
+        ".slide .bar-head { display: contents; }" +
+        ".slide .bar-label { grid-column: 1; grid-row: 1; }" +
+        ".slide .bar-track { grid-column: 2; grid-row: 1; }" +
+        ".slide .bar-value { grid-column: 3; grid-row: 1; }" +
+        ".slide .bar-note { grid-column: 2 / 4; grid-row: 2; }",
+    }), "utf-8");
+    try {
+      const harvest = await harvestArtifact(htmlPath);
+      const built = buildArtifact(harvest, { title: "t", theme: theme.themeConfig, now: "2026-01-01T00:00:00Z" });
+      const html = Object.values(built.files).find((v) => typeof v === "string" && /grid-template-columns:120px/.test(v)) || "";
+      const cells = gridCells(html, "120px");
+      assert(cells && cells.length === 5, "label, bar, value, an empty cell, the note:\n" + html.slice(0, 600));
+      const list = "\n" + cells.join("\n");
+      assert(/^<p [^>]*>Indexed$/.test(cells[0]), "the label first" + list);
+      assert(/^<div style="width:[\d.]+px;height:\d+px;background:/.test(cells[1]), "the bar second, in the 1fr column" + list);
+      assert(/^<p [^>]*>4,?200$/.test(cells[2]), "the value third, in the auto column" + list);
+      assert(cells[3] === "<div>", "an empty cell under the label" + list);
+      assert(/grid-column:span 2/.test(cells[4]), "the note under the bar, across two tracks" + list);
+      assert(built.errors.length === 0, "inside the subset: " + JSON.stringify(built.errors.slice(0, 2)));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 // --- A gap too wide for padding is given back as a spacer ------------------
 if (findChrome()) {
   test("a leading gap wider than padding allows becomes a spacer (integration)", async () => {
