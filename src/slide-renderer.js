@@ -750,7 +750,7 @@ function slideBackground(config, baked) {
 
 // position: { spine: 1-based spine index, detail: 0 for spine, 1..N for details,
 //             totalSpines: total number of spine slides, hasDetails: bool (spine only) }
-function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade, warnings) {
+function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade, warnings, includeNotes = true) {
   // Pull :detail children out first so they don't appear inline in the spine
   // slide's content; they're rendered as sibling vertical slides instead.
   const { contentNodes: afterDetails } = extractDetails(scope.children);
@@ -816,7 +816,7 @@ function renderSlide(scope, slideIndex, overlayHtml, position, bakedFade, warnin
 
   const bodyHtml = `<div class="slide-body">\n${bodyInner}\n</div>${tailHtml}`;
 
-  const notesHtml = notes.length
+  const notesHtml = notes.length && includeNotes
     ? `\n<aside class="notes">${notes.map((n) => renderChildren(n.children)).join("\n")}</aside>`
     : "";
 
@@ -1182,6 +1182,13 @@ function renderSlides(nodes, options = {}) {
     themeConfig = {},
     fit = null,
     includeOptional = true,
+    // false leaves every slide's @notes out of the page. They are hidden on
+    // screen either way, but hidden is not absent: they are in the file, for
+    // anyone who opens its source, and every export reads them back out of
+    // it — the PowerPoint's speaker notes, a Claude Slides <aside>. A deck
+    // whose notes are for the presenter alone needs them gone before it is
+    // sent anywhere.
+    includeNotes = true,
     // slide index -> a data URI with the fade already in its pixels. Only an
     // export fills this in; the HTML build keeps the real CSS mask, which a
     // browser renders correctly and which costs no browser to produce.
@@ -1316,7 +1323,7 @@ function renderSlides(nodes, options = {}) {
 
   const slidesHtml = emitted
     .map(({ scope, position }, index) =>
-      renderSlide(scope, index, overlayHtml, position, bakedFades[index], warnings))
+      renderSlide(scope, index, overlayHtml, position, bakedFades[index], warnings, includeNotes))
     .join("\n\n");
 
   const title = meta.properties?.title
