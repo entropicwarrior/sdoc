@@ -3323,8 +3323,117 @@ hljs.COMMENT('^\\\\s*//','$'),
 
 // Highlight.js GitHub light theme (inline so it works inside shadow DOM in the web viewer)
 const HLJS_LIGHT_CSS = "pre code.hljs{display:block;overflow-x:auto;padding:1em}code.hljs{padding:3px 5px}.hljs{color:#24292e;background:#fff}.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#d73a49}.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#6f42c1}.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#005cc5}.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#032f62}.hljs-built_in,.hljs-symbol{color:#e36209}.hljs-code,.hljs-comment,.hljs-formula{color:#6a737d}.hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#22863a}.hljs-subst{color:#24292e}.hljs-section{color:#005cc5;font-weight:700}.hljs-bullet{color:#735c0f}.hljs-emphasis{color:#24292e;font-style:italic}.hljs-strong{color:#24292e;font-weight:700}.hljs-addition{color:#22863a;background-color:#f0fff4}.hljs-deletion{color:#b31d28;background-color:#ffeef0}";
-// Highlight.js GitHub dark theme color overrides (used in @media and VS Code dark-mode CSS)
-const HLJS_DARK_COLORS_CSS = ".hljs{color:#c9d1d9;background:transparent}.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#ff7b72}.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#d2a8ff}.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#79c0ff}.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#a5d6ff}.hljs-built_in,.hljs-symbol{color:#ffa657}.hljs-code,.hljs-comment,.hljs-formula{color:#8b949e}.hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#7ee787}.hljs-subst{color:#c9d1d9}.hljs-section{color:#1f6feb;font-weight:700}.hljs-bullet{color:#f2cc60}.hljs-emphasis{color:#c9d1d9;font-style:italic}.hljs-strong{color:#c9d1d9;font-weight:700}.hljs-addition{color:#aff5b4;background-color:#033a16}.hljs-deletion{color:#ffdcd7;background-color:#67060c}";
+// Highlight.js GitHub dark theme color overrides, keyed on dark mode by darkHighlightCss
+const HLJS_DARK_COLORS_CSS =".hljs{color:#c9d1d9;background:transparent}.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#ff7b72}.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#d2a8ff}.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#79c0ff}.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#a5d6ff}.hljs-built_in,.hljs-symbol{color:#ffa657}.hljs-code,.hljs-comment,.hljs-formula{color:#8b949e}.hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#7ee787}.hljs-subst{color:#c9d1d9}.hljs-section{color:#1f6feb;font-weight:700}.hljs-bullet{color:#f2cc60}.hljs-emphasis{color:#c9d1d9;font-style:italic}.hljs-strong{color:#c9d1d9;font-weight:700}.hljs-addition{color:#aff5b4;background-color:#033a16}.hljs-deletion{color:#ffdcd7;background-color:#67060c}";
+
+// --- Colour scheme ---
+// A rendered document carries data-sdoc-theme="light" or "dark" on its root
+// element, and that attribute is the one hook a stylesheet needs for dark mode:
+// the standalone page sets it from the reader's system setting, or from a
+// forced colorScheme, and the VS Code preview from the editor's theme. The
+// dark palette below is keyed on it, so a document looks the same in both.
+//
+// The selectors are weighed against the stylesheets around them. The palette
+// is `:root[data-sdoc-theme="dark"]`, which outranks a stylesheet's plain
+// `:root` palette, as the preview's dark theme always has. The element rules
+// are `[data-sdoc-theme="dark"] .x`, which outrank a stylesheet's `.x` but not
+// the preview's high-contrast rules (`body.vscode-high-contrast .x`). And it
+// is all placed before any appended stylesheet, so a rule there with the same
+// selector wins without having to outrank sdoc's.
+//
+// Screen only, and the attribute turns light while printing, so print and PDF
+// stay light.
+const COLOR_SCHEMES = new Set(["auto", "light", "dark"]);
+
+const DARK_STYLE = `
+  @media screen {
+    :root[data-sdoc-theme="dark"] {
+      color-scheme: dark;
+      --sdoc-bg: #1e1e1e;
+      --sdoc-fg: #d4d4d4;
+      --sdoc-muted: #9d9d9d;
+      --sdoc-accent: #e0934a;
+      --sdoc-accent-soft: rgba(224, 147, 74, 0.15);
+      --sdoc-border: rgba(255, 255, 255, 0.12);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-table-th {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-table-body tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-table-td {
+      border-bottom-color: rgba(255, 255, 255, 0.06);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-inline-code {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-code {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-confidential-notice {
+      background: rgba(187, 68, 68, 0.15);
+      border-bottom-color: rgba(187, 68, 68, 0.35);
+      color: rgba(235, 120, 120, 0.9);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-errors {
+      background: rgba(187, 112, 68, 0.18);
+      border-color: rgba(187, 112, 68, 0.5);
+    }
+
+    [data-sdoc-theme="dark"] .sdoc-broken-ref, [data-sdoc-theme="dark"] .sdoc-link.sdoc-broken-link {
+      color: #f77;
+      text-decoration-color: #f77;
+      background: rgba(255, 119, 119, 0.1);
+    }
+
+    [data-sdoc-theme="dark"] td.sdoc-formula-cell {
+      color: #5cc6d0 !important;
+      border-bottom-color: rgba(92, 198, 208, 0.25);
+    }
+
+    [data-sdoc-theme="dark"] td.sdoc-formula-error {
+      color: #f77 !important;
+    }
+  }
+`;
+
+// HLJS_DARK_COLORS_CSS with every selector put under dark mode, on screen.
+function darkHighlightCss() {
+  const keyed = HLJS_DARK_COLORS_CSS.replace(/([^{}]+)\{/g, (match, selectors) =>
+    selectors.split(",").map((s) => `[data-sdoc-theme="dark"] ${s.trim()}`).join(",") + "{");
+  return `@media screen{${keyed}}`;
+}
+
+// The value data-sdoc-theme is written with. "auto" starts light, so a page
+// whose script cannot run is light throughout rather than half dark.
+function initialTheme(colorScheme) {
+  return colorScheme === "dark" ? "dark" : "light";
+}
+
+// Keeps data-sdoc-theme right while the page is open: the reader's system
+// setting for "auto", following it when it changes, and light while printing
+// in either mode, so a stylesheet keyed on the attribute never prints dark.
+// In <head>, so it runs before the body paints. "light" needs none.
+function colorSchemeScript(colorScheme) {
+  if (colorScheme === "light") return "";
+  const current = colorScheme === "dark"
+    ? `function current(){return "dark";}`
+    : `var q=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)");` +
+      `function current(){return q&&q.matches?"dark":"light";}` +
+      `if(q&&q.addEventListener)q.addEventListener("change",set);else if(q&&q.addListener)q.addListener(set);`;
+  return `\n<script>(function(){var r=document.documentElement;` +
+    `function set(){r.setAttribute("data-sdoc-theme",current());}${current}set();` +
+    `window.addEventListener("beforeprint",function(){r.setAttribute("data-sdoc-theme","light");});` +
+    `window.addEventListener("afterprint",set);})();</script>`;
+}
 
 function hasMermaidBlocks(nodes) {
   for (const node of nodes) {
@@ -3468,12 +3577,20 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
   const footerContent = footerHtml || companyHtml;
 
   const cssBase = options.cssOverride ?? DEFAULT_STYLE;
+  // "auto" follows the reader's system setting; "light" and "dark" force one,
+  // for an output that must look the same whoever opens it. An unknown value
+  // is "auto", in keeping with renderers that never throw.
+  const colorScheme = COLOR_SCHEMES.has(options.colorScheme) ? options.colorScheme : "auto";
+  // Between the base stylesheet and the appended ones: see DARK_STYLE.
+  const darkCss = colorScheme === "light" ? "" : DARK_STYLE;
   const cssAppend = options.cssAppend ? `\n${options.cssAppend}\n${PRINT_STYLE}` : `\n${PRINT_STYLE}`;
   const builtinScript = COLLAPSE_SCRIPT + COPY_SCRIPT;
   const scriptTag = options.script ? `\n<script>${options.script}</script>` : `\n<script>${builtinScript}</script>`;
-  const mermaidTheme = options.mermaidTheme ?? "neutral";
+  // A diagram follows the page unless the caller names a theme. It is drawn
+  // once, so "auto" reads the attribute as it stands when the page loads.
+  const mermaidTheme = options.mermaidTheme ?? (colorScheme === "dark" ? "dark" : colorScheme === "light" ? "neutral" : "auto");
   const mermaidInit = mermaidTheme === "auto"
-    ? `var isDark=window.matchMedia("(prefers-color-scheme:dark)").matches;mermaid.initialize({startOnLoad:true,theme:isDark?"dark":"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`
+    ? `var isDark=document.documentElement.getAttribute("data-sdoc-theme")==="dark";mermaid.initialize({startOnLoad:true,theme:isDark?"dark":"neutral",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`
     : `mermaid.initialize({startOnLoad:true,theme:"${mermaidTheme}",themeCSS:".node rect, .node polygon, .node circle { rx: 4; ry: 4; }"});`;
   const mermaidScript = hasMermaidBlocks(renderNodes)
     ? `\n<script src="${MERMAID_CDN}"></script>\n<script>${mermaidInit}</script>`
@@ -3483,22 +3600,22 @@ function renderHtmlDocumentFromParsed(parsed, title, options = {}) {
     : "";
   const hasHljs = hasHighlightableCodeBlocks(renderNodes);
   // Highlight.js CSS is inlined (not a <link>) so it is extracted by parseDocHtml in the web viewer
-  // and applied inside shadow DOM. The @media query handles dark mode in browsers.
+  // and applied inside shadow DOM. Its dark colours follow data-sdoc-theme, like DARK_STYLE.
   const hljsCssInline = hasHljs
-    ? `\n${HLJS_LIGHT_CSS}\n.sdoc-code code.hljs{padding:0;background:transparent}\n@media (prefers-color-scheme:dark){${HLJS_DARK_COLORS_CSS}}`
+    ? `\n${HLJS_LIGHT_CSS}\n.sdoc-code code.hljs{padding:0;background:transparent}${colorScheme === "light" ? "" : `\n${darkHighlightCss()}`}`
     : "";
   const hljsScript = hasHljs
     ? `\n<script src="${HLJS_CDN}"></script>\n<script>${HLJS_SDOC_GRAMMAR}\ndocument.querySelectorAll('pre.sdoc-code code[class*="language-"]').forEach(function(b){hljs.highlightElement(b);});</script>`
     : "";
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-sdoc-theme="${initialTheme(colorScheme)}">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />${colorSchemeScript(colorScheme)}
 <title>${escapeHtml(title)}</title>
 <style>
-${cssBase}${cssAppend}${hljsCssInline}
+${cssBase}${darkCss}${cssAppend}${hljsCssInline}
 </style>${katexCssTag}
 </head>
 <body>

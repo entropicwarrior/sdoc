@@ -2852,17 +2852,13 @@ test("regular code blocks still render normally", () => {
   assert(html.includes("<code"), "should have code element");
 });
 
-test("mermaid theme defaults to neutral", () => {
+test("mermaid theme follows the colour scheme unless one is named", () => {
   const text = "# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}";
-  const parsed = parseSdoc(text);
-  const metaResult = extractMeta(parsed.nodes);
-  const html = renderHtmlDocumentFromParsed(
-    { nodes: metaResult.nodes, errors: parsed.errors },
-    "Test",
-    { meta: metaResult.meta }
-  );
-  assert(html.includes('theme:"neutral"'), "should default to neutral theme");
-  assert(!html.includes("prefers-color-scheme"), "should not have auto detection");
+  const render = (options) => renderHtmlDocument(text, "Test", options);
+  assert(render({}).includes('theme:isDark?"dark":"neutral"'), "auto by default");
+  assert(render({ colorScheme: "light" }).includes('theme:"neutral"'), "neutral when forced light");
+  assert(render({ colorScheme: "dark" }).includes('theme:"dark"'), "dark when forced dark");
+  assert(render({ colorScheme: "dark", mermaidTheme: "forest" }).includes('theme:"forest"'), "a named theme wins");
 });
 
 test("mermaid theme dark produces theme:dark", () => {
@@ -2875,10 +2871,10 @@ test("mermaid theme dark produces theme:dark", () => {
     { meta: metaResult.meta, mermaidTheme: "dark" }
   );
   assert(html.includes('theme:"dark"'), "should use dark theme");
-  assert(!html.includes("prefers-color-scheme"), "should not have auto detection");
+  assert(!html.includes("isDark"), "should not have auto detection");
 });
 
-test("mermaid theme auto uses matchMedia for prefers-color-scheme", () => {
+test("mermaid theme auto reads data-sdoc-theme, as the page's own palette does", () => {
   const text = "# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}";
   const parsed = parseSdoc(text);
   const metaResult = extractMeta(parsed.nodes);
@@ -2887,8 +2883,8 @@ test("mermaid theme auto uses matchMedia for prefers-color-scheme", () => {
     "Test",
     { meta: metaResult.meta, mermaidTheme: "auto" }
   );
-  assert(html.includes('prefers-color-scheme:dark'), "should use matchMedia for dark detection");
-  assert(html.includes('theme:isDark?"dark":"neutral"'), "should pick dark or neutral based on media query");
+  assert(html.includes('var isDark=document.documentElement.getAttribute("data-sdoc-theme")==="dark"'), "should read the attribute");
+  assert(html.includes('theme:isDark?"dark":"neutral"'), "should pick dark or neutral from it");
 });
 
 test("mermaid theme option has no effect without mermaid blocks", () => {
@@ -3012,6 +3008,97 @@ test("sanitizeSvg returns empty string for non-svg input", () => {
 });
 
 // ============================================================
+console.log("\n--- Colour scheme ---");
+
+const SCHEME_DOC = "# Doc {\n    Text.\n}";
+
+// The <style> element's text with every `@media screen { ... }` block removed,
+// braces balanced, so what is left applies in print too.
+function styleOutsideScreenMedia(html) {
+  let css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  for (let at = css.indexOf("@media screen"); at >= 0; at = css.indexOf("@media screen")) {
+    let i = css.indexOf("{", at);
+    let depth = 0;
+    for (; i < css.length; i++) {
+      if (css[i] === "{") depth++;
+      else if (css[i] === "}" && --depth === 0) break;
+    }
+    css = css.slice(0, at) + css.slice(i + 1);
+  }
+  return css;
+}
+
+test("auto, the default, starts light and follows the system setting from a head script", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test");
+  assert(html.includes('<html lang="en" data-sdoc-theme="light">'), "starts light, so a page without scripts is light throughout");
+  const head = html.slice(0, html.indexOf("<style>"));
+  assert(head.includes('window.matchMedia("(prefers-color-scheme: dark)")'), "reads the system setting before the body paints");
+  assert(head.includes('addEventListener("change",set)'), "and follows it when it changes");
+  assert(html.includes(':root[data-sdoc-theme="dark"] {'), "the dark palette is there to switch to");
+});
+
+test("colorScheme light forces light: no dark palette and no script", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme: "light" });
+  assert(html.includes('data-sdoc-theme="light"'), "light attribute");
+  assert(!html.includes('data-sdoc-theme="dark"'), "no dark rules");
+  assert(!html.includes("prefers-color-scheme") && !html.includes("beforeprint"), "no script");
+});
+
+test("colorScheme dark forces dark, without consulting the system", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme: "dark" });
+  assert(html.includes('<html lang="en" data-sdoc-theme="dark">'), "dark attribute");
+  assert(html.includes(':root[data-sdoc-theme="dark"] {'), "dark palette");
+  assert(!html.includes("prefers-color-scheme"), "the system setting is not read");
+});
+
+test("an unknown colorScheme is auto, and renderHtmlDocumentFromParsed takes the option too", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme: "purple" });
+  assert(html.includes('data-sdoc-theme="light"') && html.includes("prefers-color-scheme: dark"), "auto");
+  const parsed = parseSdoc(SCHEME_DOC);
+  const forced = renderHtmlDocumentFromParsed({ nodes: extractMeta(parsed.nodes).nodes, errors: [] }, "Test", { colorScheme: "dark" });
+  assert(forced.includes('<html lang="en" data-sdoc-theme="dark">'), "fromParsed");
+});
+
+test("the attribute turns light while printing, in auto and forced dark alike", () => {
+  for (const colorScheme of ["auto", "dark"]) {
+    const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme });
+    assert(html.includes('window.addEventListener("beforeprint",function(){r.setAttribute("data-sdoc-theme","light");});'), colorScheme + ": light for print");
+    assert(html.includes('window.addEventListener("afterprint",set);'), colorScheme + ": restored after");
+  }
+});
+
+test("every dark rule is screen-only, so print is light whatever the attribute says", () => {
+  const src = "# Doc {\n    ```js\n    const a = 1;\n    ```\n}";
+  for (const colorScheme of ["auto", "dark"]) {
+    const html = renderHtmlDocument(src, "Test", { colorScheme });
+    assert(html.includes('[data-sdoc-theme="dark"] .hljs-keyword'), colorScheme + ": highlight.js dark colours are present");
+    assert(!styleOutsideScreenMedia(html).includes('data-sdoc-theme="dark"'), colorScheme + ": a dark rule outside @media screen");
+  }
+});
+
+test("the dark palette is the documented hook: :root for the variables, an ancestor for the elements", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test");
+  const palette = html.match(/:root\[data-sdoc-theme="dark"\] \{([^}]*)\}/)[1];
+  for (const decl of ["color-scheme: dark", "--sdoc-bg: #1e1e1e", "--sdoc-fg: #d4d4d4", "--sdoc-accent: #e0934a", "--sdoc-border: rgba(255, 255, 255, 0.12)"]) {
+    assert(palette.includes(decl), "palette declares " + decl);
+  }
+  assert(html.includes('[data-sdoc-theme="dark"] .sdoc-table-th {'), "element rules sit under the attribute");
+});
+
+test("the dark rules come after the base stylesheet and before the appended ones", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { cssAppend: "/* COMPANY */" });
+  const base = html.indexOf(".sdoc-heading {");
+  const dark = html.indexOf(':root[data-sdoc-theme="dark"] {');
+  const appended = html.indexOf("/* COMPANY */");
+  assert(base > 0 && base < dark && dark < appended, `base ${base}, dark ${dark}, appended ${appended}`);
+});
+
+test("a custom base stylesheet still gets the dark rules, as the preview always has", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { cssOverride: ":root { --sdoc-bg: #fff; }" });
+  assert(html.includes(':root[data-sdoc-theme="dark"] {'), "dark palette alongside cssOverride");
+});
+
+// ============================================================
 console.log("\n--- Syntax highlighting ---");
 
 test("language-tagged code block injects highlight.js CDN script", () => {
@@ -3023,7 +3110,13 @@ test("language-tagged code block injects highlight.js CDN script", () => {
 test("highlight.js CSS is inlined in the style block", () => {
   const html = renderHtmlDocument("# Doc {\n    ```python\n    print('hi')\n    ```\n}", "Test");
   assert(html.includes(".hljs{"), "should include highlight.js CSS");
-  assert(html.includes("prefers-color-scheme:dark"), "should include dark mode CSS");
+  assert(/\[data-sdoc-theme="dark"\] \.hljs-keyword[,{]/.test(html), "should include dark mode CSS, keyed on the attribute");
+  assert(!/<style>[\s\S]*prefers-color-scheme[\s\S]*<\/style>/.test(html), "no media query decides the colours: the attribute does");
+});
+
+test("highlight.js dark colours are left out when the page is forced light", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```python\n    print('hi')\n    ```\n}", "Test", { colorScheme: "light" });
+  assert(html.includes(".hljs{") && !html.includes('data-sdoc-theme="dark"'), "light colours only");
 });
 
 test("code block without language tag does not trigger highlight.js", () => {
