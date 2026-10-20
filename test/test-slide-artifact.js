@@ -29,20 +29,40 @@ const { CONNECTOR_JS, CONNECTOR_RUNTIME } = require("../src/slide-connectors.js"
 
 let pass = 0, fail = 0;
 const asyncTests = [];
-function test(name, fn) {
+// An async test waits for the one before it to finish. They used to start
+// together the moment the file loaded, and nearly every async test here
+// launches a headless Chrome, so a suite put twenty or thirty browsers on the
+// machine at once and froze it. A synchronous test still runs where it is
+// declared, so the output keeps its sections.
+let browserQueue = Promise.resolve();
+function runTest(name, fn) {
   try {
     const result = fn();
     if (result && typeof result.then === "function") {
-      asyncTests.push(result.then(
+      return result.then(
         () => { pass++; console.log("  PASS: " + name); },
         (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
-      ));
-    } else {
-      pass++; console.log("  PASS: " + name);
+      );
     }
+    pass++; console.log("  PASS: " + name);
   } catch (e) {
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
+  return undefined;
+}
+function test(name, fn) {
+  if (fn.constructor.name === "AsyncFunction") {
+    browserQueue = browserQueue.then(() => runTest(name, fn));
+    asyncTests.push(browserQueue);
+    return;
+  }
+  const pending = runTest(name, fn);
+  if (pending) asyncTests.push(pending);
+}
+// Everything queued, including anything a test queued while it ran.
+function allSettled() {
+  const count = asyncTests.length;
+  return Promise.all(asyncTests).then(() => (asyncTests.length === count ? null : allSettled()));
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
@@ -438,15 +458,18 @@ if (!findChrome()) {
 
   const NOW = "2026-01-01T00:00:00Z";
   const buildOptions = { title: "SDOC Slide Layouts", theme: theme.themeConfig, now: NOW };
-  const builtPromise = harvestArtifact(htmlPath).then((harvest) => ({
+  // Shared by the tests below, and started by the first of them rather than at
+  // load, so it runs in the queue with every other browser.
+  let builtRun = null;
+  const builtPromise = () => builtRun || (builtRun = harvestArtifact(htmlPath).then((harvest) => ({
     harvest,
     built: buildArtifact(harvest, buildOptions),
-  }));
+  })));
 
   test("every layout in the example exports with no validator errors", async () => {
     // The example carries one slide per layout, so this is the whole renderer
     // checked against the subset at once — including a layout added later.
-    const { built } = await builtPromise;
+    const { built } = await builtPromise();
     assert(built.errors.length === 0, "errors: " + JSON.stringify(built.errors.slice(0, 5), null, 2));
     assert(built.manifest.slides.length >= 10, "every slide exported");
     const layouts = new Set(built.manifest.slides.map((s) => s.layout));
@@ -454,7 +477,7 @@ if (!findChrome()) {
   });
 
   test("deck.json orders exactly the slides the manifest names, cover first", async () => {
-    const { built } = await builtPromise;
+    const { built } = await builtPromise();
     const ids = built.manifest.slides.map((s) => s.id);
     assert(built.deck.order.join() === ids.join(), "order matches the manifest");
     assert(built.deck.cover === ids[0], `cover should be the first slide, got ${built.deck.cover}`);
@@ -467,7 +490,7 @@ if (!findChrome()) {
     // Since 0.2.24 the default box is 1920x1080, which is what a Claude Slides
     // artifact is fixed at. Lengths copy across instead of being scaled, and a
     // theme's small type clears the format's 24px floor without being raised.
-    const { built } = await builtPromise;
+    const { built } = await builtPromise();
     assert(built.manifest.designBox.w === 1920 && built.manifest.designBox.h === 1080,
       "design box measured: " + JSON.stringify(built.manifest.designBox));
     assert(built.manifest.canvas.w === 1920 && built.manifest.canvas.h === 1080, "canvas is fixed");
@@ -483,7 +506,7 @@ if (!findChrome()) {
   test("two builds of one harvest differ only where the timestamp does", async () => {
     // The manifest records a sha256 per slide and the publish step diffs on it,
     // so an unstable build would republish every slide on every run.
-    const { harvest, built } = await builtPromise;
+    const { harvest, built } = await builtPromise();
     const again = buildArtifact(harvest, buildOptions);
     for (const [file, body] of Object.entries(built.files)) {
       assert(again.files[file] === body, `${file} is not reproducible`);
@@ -2347,7 +2370,7 @@ if (findChrome()) {
 }
 
 // ============================================================
-Promise.all(asyncTests).then(() => {
+allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
   console.log(`Results: ${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

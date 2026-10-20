@@ -13,20 +13,40 @@ const { inlineCssAssets, readThemeConfig } = require("../src/theme.js");
 
 let pass = 0, fail = 0;
 const asyncTests = [];
-function test(name, fn) {
+// An async test waits for the one before it to finish. They used to start
+// together the moment the file loaded, and nearly every async test here
+// launches a headless Chrome, so a suite put twenty or thirty browsers on the
+// machine at once and froze it. A synchronous test still runs where it is
+// declared, so the output keeps its sections.
+let browserQueue = Promise.resolve();
+function runTest(name, fn) {
   try {
     const result = fn();
     if (result && typeof result.then === "function") {
-      asyncTests.push(result.then(
+      return result.then(
         () => { pass++; console.log("  PASS: " + name); },
         (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
-      ));
-    } else {
-      pass++; console.log("  PASS: " + name);
+      );
     }
+    pass++; console.log("  PASS: " + name);
   } catch (e) {
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
+  return undefined;
+}
+function test(name, fn) {
+  if (fn.constructor.name === "AsyncFunction") {
+    browserQueue = browserQueue.then(() => runTest(name, fn));
+    asyncTests.push(browserQueue);
+    return;
+  }
+  const pending = runTest(name, fn);
+  if (pending) asyncTests.push(pending);
+}
+// Everything queued, including anything a test queued while it ran.
+function allSettled() {
+  const count = asyncTests.length;
+  return Promise.all(asyncTests).then(() => (asyncTests.length === count ? null : allSettled()));
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
@@ -1334,17 +1354,19 @@ if (!findChrome()) {
     "utf-8"
   );
 
-  const geometryPromise = harvestGeometry(htmlPath);
+  // Started by the first test that needs it, not at load: see test().
+  let geometryRun = null;
+  const geometryPromise = () => geometryRun || (geometryRun = harvestGeometry(htmlPath));
 
   test("harvest reports the design box and one record per slide", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     assert(geometry.box.w === 1920 && geometry.box.h === 1080, "design box measured");
     assert(geometry.slides.length >= 10, "every slide measured");
     assert(geometry.slides.every((s) => s.atoms.length > 0), "no empty slide");
   });
 
   test("harvest places the kicker on the theme's grid", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     const slide = geometry.slides.find((s) => s.layout === "pipeline");
     const kicker = slide.atoms.find((a) => a.kind === "text" && a.cls === "kicker");
     assert(Math.abs(kicker.box.x - 100) < 0.5, "100px gutter");
@@ -1354,7 +1376,7 @@ if (!findChrome()) {
   });
 
   test("harvest reads a partial border from the side that has width", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     const slide = geometry.slides.find((s) => s.layout === "pipeline");
     const head = slide.atoms.find((a) => a.kind === "box" && /slide-head/.test(a.cls));
     assert(head.border.sides.join() === "bottom", "bottom edge only");
@@ -1362,7 +1384,7 @@ if (!findChrome()) {
   });
 
   test("nav chevrons are not measured — they mean nothing off-screen", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     for (const slide of geometry.slides) {
       const nav = slide.atoms.filter((a) => /nav-(prev|next)/.test(a.cls || ""));
       assert(nav.length === 0, `slide ${slide.spine} measured a chevron`);
@@ -1374,14 +1396,14 @@ if (!findChrome()) {
   });
 
   test("footer chrome is measured but excluded from the content extent", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     const slide = geometry.slides[0];
     assert(slide.atoms.some((a) => a.chrome), "chrome atoms present");
     assert(slide.extent.maxY <= geometry.box.h - slide.padding.bottom + 1, "extent stops at the margin");
   });
 
   test("the example deck overflows no margin", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     const findings = overflowReport(geometry);
     assert(findings.length === 0, "overflow: " + JSON.stringify(findings));
   });
@@ -1607,7 +1629,9 @@ if (!findChrome()) {
       }),
       "utf-8"
     );
-    return { dir, promise: harvestGeometry(file) };
+    // Started by the first test that needs it, not at load: see test().
+    let run = null;
+    return { dir, promise: () => run || (run = harvestGeometry(file)) };
   })();
 
   function labelColours(slide) {
@@ -1621,14 +1645,14 @@ if (!findChrome()) {
     // are wrapped in :where() like the defaults are, the two sit at equal
     // (zero) specificity and source order decides — and the defaults come
     // later in theme.css, so the author's explicit choice loses in silence.
-    const geometry = await accentDeck.promise;
+    const geometry = await accentDeck.promise();
     const colours = labelColours(geometry.slides[0]);
     assert(colours.length === 1, "one labelled row");
     assert(colours[0] === "B45309", `accent: tertiary should win, got ${colours[0]}`);
   });
 
   test("the theme still alternates accents where the deck states none", async () => {
-    const geometry = await accentDeck.promise;
+    const geometry = await accentDeck.promise();
     const colours = labelColours(geometry.slides[1]);
     assert(colours.length === 2, "two labelled rows");
     assert(colours[0] === "2563EB", `first row default, got ${colours[0]}`);
@@ -1642,7 +1666,7 @@ if (!findChrome()) {
     // only because the harvest makes each slide visible and then calls for the
     // lines. A fixture whose connector slide happened to be the active one
     // would pass with the call removed.
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     const slide = geometry.slides.find((sl) => sl.id === "connectors-slide");
     assert(slide, "the example deck has a connectors slide");
     const runs = slide.atoms.filter((a) => a.kind === "box" && /\bsdoc-conn\b/.test(a.cls || ""));
@@ -2124,7 +2148,7 @@ if (!findChrome()) {
   });
 
   test("PPTX export produces a package with one slide part per slide", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     const { buffer } = buildPptx(geometry, { baseDir: tmpDir, title: "Test" });
     assert(buffer.length > 5000, "non-trivial archive");
     assert(buffer.slice(0, 2).toString() === "PK", "zip magic");
@@ -2137,7 +2161,7 @@ if (!findChrome()) {
   });
 
   test("PPTX slide XML carries the harvested geometry in EMU", async () => {
-    const geometry = await geometryPromise;
+    const geometry = await geometryPromise();
     const { buildPptx: build } = require("../src/slide-pptx.js");
     const { buffer } = build(geometry, { baseDir: tmpDir });
     // Unpack the first slide part with the same deflate Node used to write it.
@@ -2203,7 +2227,7 @@ if (!findChrome()) {
 }
 
 // ============================================================
-Promise.all(asyncTests).then(() => {
+allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
   console.log(`Results: ${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

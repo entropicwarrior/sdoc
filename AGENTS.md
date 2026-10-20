@@ -195,7 +195,8 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run the fast suites — no browser, half a second, 578 tests:
   `npm test`
-- Run the browser-gated ones too (several minutes, needs Chrome):
+- Run the browser-gated ones too (under a minute, needs Chrome; each suite runs its
+  browser tests one at a time, since starting them together froze the machine):
   `npm run test:browser`   — or `npm run test:all` for both
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
