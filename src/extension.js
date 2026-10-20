@@ -910,92 +910,15 @@ ${buildCollapseCss()}
 `;
 }
 
-function darkModeVarsCss() {
-  return `
-    --sdoc-bg: #1e1e1e;
-    --sdoc-fg: #d4d4d4;
-    --sdoc-muted: #9d9d9d;
-    --sdoc-accent: #e0934a;
-    --sdoc-accent-soft: rgba(224, 147, 74, 0.15);
-    --sdoc-border: rgba(255, 255, 255, 0.12);`;
-}
-
-function darkModeElementsCss(prefix) {
-  return `
-  ${prefix} .sdoc-table-th {
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  ${prefix} .sdoc-table-body tr:nth-child(even) {
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  ${prefix} .sdoc-table-td {
-    border-bottom-color: rgba(255, 255, 255, 0.06);
-  }
-
-  ${prefix} .sdoc-inline-code {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  ${prefix} .sdoc-code {
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  ${prefix} .sdoc-confidential-notice {
-    background: rgba(187, 68, 68, 0.15);
-    border-bottom-color: rgba(187, 68, 68, 0.35);
-    color: rgba(235, 120, 120, 0.9);
-  }
-
-  ${prefix} .sdoc-errors {
-    background: rgba(187, 112, 68, 0.18);
-    border-color: rgba(187, 112, 68, 0.5);
-  }
-
-  ${prefix} .sdoc-broken-ref, ${prefix} .sdoc-link.sdoc-broken-link {
-    color: #f77;
-    text-decoration-color: #f77;
-    background: rgba(255, 119, 119, 0.1);
-  }
-
-  ${prefix} td.sdoc-formula-cell {
-    color: #5cc6d0 !important;
-    border-bottom-color: rgba(92, 198, 208, 0.25);
-  }
-
-  ${prefix} td.sdoc-formula-error {
-    color: #f77 !important;
-  }`;
-}
-
-function buildHighlightDarkCss(prefix) {
-  return `
-  ${prefix} .hljs { color: #c9d1d9; background: transparent; }
-  ${prefix} .hljs-doctag, ${prefix} .hljs-keyword, ${prefix} .hljs-meta .hljs-keyword, ${prefix} .hljs-template-tag, ${prefix} .hljs-template-variable, ${prefix} .hljs-type, ${prefix} .hljs-variable.language_ { color: #ff7b72; }
-  ${prefix} .hljs-title, ${prefix} .hljs-title.class_, ${prefix} .hljs-title.class_.inherited__, ${prefix} .hljs-title.function_ { color: #d2a8ff; }
-  ${prefix} .hljs-attr, ${prefix} .hljs-attribute, ${prefix} .hljs-literal, ${prefix} .hljs-meta, ${prefix} .hljs-number, ${prefix} .hljs-operator, ${prefix} .hljs-selector-attr, ${prefix} .hljs-selector-class, ${prefix} .hljs-selector-id, ${prefix} .hljs-variable { color: #79c0ff; }
-  ${prefix} .hljs-meta .hljs-string, ${prefix} .hljs-regexp, ${prefix} .hljs-string { color: #a5d6ff; }
-  ${prefix} .hljs-built_in, ${prefix} .hljs-symbol { color: #ffa657; }
-  ${prefix} .hljs-code, ${prefix} .hljs-comment, ${prefix} .hljs-formula { color: #8b949e; }
-  ${prefix} .hljs-name, ${prefix} .hljs-quote, ${prefix} .hljs-selector-pseudo, ${prefix} .hljs-selector-tag { color: #7ee787; }
-  ${prefix} .hljs-subst { color: #c9d1d9; }
-  ${prefix} .hljs-section { color: #1f6feb; font-weight: 700; }
-  ${prefix} .hljs-bullet { color: #f2cc60; }
-  ${prefix} .hljs-emphasis { color: #c9d1d9; font-style: italic; }
-  ${prefix} .hljs-strong { color: #c9d1d9; font-weight: 700; }
-  ${prefix} .hljs-addition { color: #aff5b4; background-color: #033a16; }
-  ${prefix} .hljs-deletion { color: #ffdcd7; background-color: #67060c; }`;
-}
-
+// The high-contrast layer, which only VS Code has. The dark palette itself comes
+// from sdoc.js (DARK_STYLE), keyed on data-sdoc-theme, which buildHtml sets from
+// the editor's theme: a high-contrast dark theme is "dark", so these rules only
+// adjust it. They set the palette on body and the element rules as
+// body.vscode-high-contrast .x, both of which outrank DARK_STYLE. VS Code gives
+// a high-contrast light theme both vscode-high-contrast classes, which is why
+// the light block follows and overrides the dark one.
 function buildDarkModeCss() {
   return `
-  /* Dark mode overrides */
-  body.vscode-dark {${darkModeVarsCss()}
-  }
-${darkModeElementsCss("body.vscode-dark")}
-${buildHighlightDarkCss("body.vscode-dark")}
-
   /* High contrast dark */
   body.vscode-high-contrast {
     --sdoc-bg: #000000;
@@ -1036,7 +959,6 @@ ${buildHighlightDarkCss("body.vscode-dark")}
     background: rgba(187, 112, 68, 0.25);
     border-color: rgba(187, 112, 68, 0.6);
   }
-${buildHighlightDarkCss("body.vscode-high-contrast")}
 
   /* High contrast light */
   body.vscode-high-contrast-light {
@@ -1058,16 +980,6 @@ ${buildHighlightDarkCss("body.vscode-high-contrast")}
 
   body.vscode-high-contrast-light .sdoc-code {
     background: rgba(0, 0, 0, 0.08);
-  }
-`;
-}
-
-function buildExportDarkModeCss() {
-  return `
-  @media screen and (prefers-color-scheme: dark) {
-    :root {${darkModeVarsCss()}
-    }
-${darkModeElementsCss("")}
   }
 `;
 }
@@ -1134,6 +1046,10 @@ async function buildHtml(document, title, webview) {
       cssAppend: cssAppendParts.join("\n"),
       script: buildWebviewScript(),
       mermaidTheme: isDark ? "dark" : "neutral",
+      // The editor's theme, not the system's: a webview's prefers-color-scheme
+      // need not match it. Every theme change re-renders (see
+      // onDidChangeActiveColorTheme), so a fixed value is never stale.
+      colorScheme: isDark ? "dark" : "light",
       // Live preview keeps every signpost visible — the renderer
       // defaults to hiding most of them for export-style output.
       includeSignposts: true,
@@ -1416,7 +1332,6 @@ async function buildCleanHtml(document, exportOptions = {}) {
   const title = path.basename(document.uri.fsPath, ".sdoc");
 
   cssAppendParts.push(buildCollapseCss());
-  cssAppendParts.push(buildExportDarkModeCss());
 
   const html = renderHtmlDocumentFromParsed(
     { nodes: metaResult.nodes, errors: parsed.errors },
@@ -1430,7 +1345,10 @@ async function buildCleanHtml(document, exportOptions = {}) {
       mermaidTheme: "auto",
       includeSignposts: exportOptions.includeSignposts,
       includeAbout: exportOptions.includeAbout,
-      signposts: exportOptions.signposts
+      signposts: exportOptions.signposts,
+      // Follows the reader's system setting unless the caller forces one;
+      // exportPdfDoc forces light, since nobody views that HTML on a screen.
+      colorScheme: exportOptions.colorScheme
     }
   );
 
@@ -1511,7 +1429,10 @@ async function exportPdfDoc(exportOptions = {}) {
 
   if (!target) return;
 
-  const html = await buildCleanHtml(document, exportOptions);
+  // Light, whatever the system setting: Chrome prints with print media, which
+  // the dark rules exclude anyway, but a Mermaid diagram is drawn before
+  // printing and would keep a dark theme.
+  const html = await buildCleanHtml(document, { ...exportOptions, colorScheme: "light" });
   const tmpHtml = path.join(os.tmpdir(), "sdoc-pdf-" + Date.now() + ".html");
   fs.writeFileSync(tmpHtml, html, "utf8");
 
