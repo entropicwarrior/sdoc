@@ -30,20 +30,40 @@ const { STRUCTURED_LAYOUTS } = require("../src/slide-layouts.js");
 
 let pass = 0, fail = 0;
 const asyncTests = [];
-function test(name, fn) {
+// An async test waits for the one before it to finish. They used to start
+// together the moment the file loaded, and nearly every async test here
+// launches a headless Chrome, so a suite put twenty or thirty browsers on the
+// machine at once and froze it. A synchronous test still runs where it is
+// declared, so the output keeps its sections.
+let browserQueue = Promise.resolve();
+function runTest(name, fn) {
   try {
     const result = fn();
     if (result && typeof result.then === "function") {
-      asyncTests.push(result.then(
+      return result.then(
         () => { pass++; console.log("  PASS: " + name); },
         (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
-      ));
-    } else {
-      pass++; console.log("  PASS: " + name);
+      );
     }
+    pass++; console.log("  PASS: " + name);
   } catch (e) {
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
+  return undefined;
+}
+function test(name, fn) {
+  if (fn.constructor.name === "AsyncFunction") {
+    browserQueue = browserQueue.then(() => runTest(name, fn));
+    asyncTests.push(browserQueue);
+    return;
+  }
+  const pending = runTest(name, fn);
+  if (pending) asyncTests.push(pending);
+}
+// Everything queued, including anything a test queued while it ran.
+function allSettled() {
+  const count = asyncTests.length;
+  return Promise.all(asyncTests).then(() => (asyncTests.length === count ? null : allSettled()));
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
@@ -358,7 +378,7 @@ if (UPDATE) {
 }
 
 // ============================================================
-Promise.all(asyncTests).then(() => {
+allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
   console.log(`Results: ${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

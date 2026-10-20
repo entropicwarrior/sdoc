@@ -1586,6 +1586,16 @@
 
             Each of these is reported as a warning rather than dropped in
             silence, so the build tells you what the deck lost.
+
+            Grid placement does survive, though not as written. The subset
+            places a grid cell with \`grid-column: span N\` and nothing else:
+            cells fill in source order, and there are no line numbers or
+            areas. So a deck that places cells out of source order, with
+            \`grid-column: 3\` or through a \`display: contents\` wrapper,
+            is exported with its cells in the order the grid placed them. A
+            cell wider or taller than one track gets a span, and an empty cell
+            fills any place the grid left empty. Two cells sharing a track
+            cannot be expressed: they keep their source order, with a warning.
         }
 
         # Type size and typefaces @artifact-type
