@@ -318,6 +318,29 @@ test("notes are separated from content", () => {
   assert(notesStart > scaleClose, "notes appear after the content-scale wrapper, not inside it");
 });
 
+test("includeNotes false leaves the notes out of the page, not just out of sight", () => {
+  // Hidden is not absent: the aside is in the file for anyone who reads its
+  // source, and the PowerPoint and Claude Slides exports read it back out as
+  // speaker notes. A deck whose notes are internal needs them gone.
+  const src = `
+# Deck {
+    # My Slide {
+        Visible content.
+
+        # Speaker Notes @notes {
+            Only the presenter should read this.
+        }
+    }
+}
+`;
+  const kept = parseAndRender(src);
+  assert(kept.includes("Only the presenter should read this."), "kept by default");
+  const html = parseAndRender(src, { includeNotes: false });
+  assert(!html.includes("Only the presenter should read this."), "the words are nowhere in the file");
+  assert(!html.includes('<aside class="notes">'), "and there is no notes aside");
+  assert(html.includes("<p>Visible content.</p>"), "the slide itself is untouched");
+});
+
 // ============================================================
 console.log("\n--- Content rendering ---");
 
@@ -789,6 +812,39 @@ test("exportPdf produces a file (integration)", async () => {
   } finally {
     try { fs.unlinkSync(tmpHtml); } catch {}
     try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+});
+
+test("a PDF export makes its folder, and fails when nothing was written (integration)", async () => {
+  // Chrome neither creates the folder nor reports that it could not write the
+  // file: it exits 0, so a missing folder used to print "PDF: <path>", exit 0
+  // and write nothing.
+  const { exportSlidePdf, findChrome } = require("../src/slide-pdf");
+  if (!findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-pdf-dir-"));
+  try {
+    const tmpHtml = path.join(dir, "deck.html");
+    fs.writeFileSync(tmpHtml, parseAndRender("# Deck {\n    # Slide {\n        Hello.\n    }\n}"), "utf-8");
+
+    const nested = path.join(dir, "not", "yet", "there", "deck.pdf");
+    await exportSlidePdf(tmpHtml, nested);
+    assert(fs.existsSync(nested) && fs.statSync(nested).size > 0, "the folder is made and the PDF written");
+
+    // A path Chrome cannot write to: an existing directory. It still exits 0.
+    const blocked = path.join(dir, "blocked.pdf");
+    fs.mkdirSync(blocked);
+    let failed = null;
+    try {
+      await exportSlidePdf(tmpHtml, blocked);
+    } catch (err) {
+      failed = err;
+    }
+    assert(failed && /wrote no PDF/.test(failed.message), "a PDF that was not written is an error: " + (failed && failed.message));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -1669,6 +1725,46 @@ test("the CLI resolves optional slides per format, and the flags override it", (
   assert(!build("--with-optional", "--no-optional").includes("Only when asked."), "last flag wins");
 
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the CLI's --no-notes leaves every slide's notes out of the HTML", () => {
+  const { execFileSync } = require("child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-cli-notes-"));
+  try {
+    const input = path.join(dir, "deck.sdoc");
+    fs.writeFileSync(input, `
+# Deck {
+    # One {
+        First.
+
+        # Notes @notes {
+            Internal guardrail one.
+        }
+    }
+    # Two {
+        Second.
+
+        # Notes @notes {
+            Internal guardrail two.
+        }
+    }
+}
+`);
+    const cli = path.join(__dirname, "..", "tools", "build-slides.js");
+    const build = (...flags) => {
+      const out = path.join(dir, "out-" + (flags.join("") || "default") + ".html");
+      execFileSync(process.execPath, [cli, input, "-o", out, ...flags], { stdio: "ignore" });
+      return fs.readFileSync(out, "utf-8");
+    };
+    const withNotes = build();
+    assert(withNotes.includes("Internal guardrail one.") && withNotes.includes("Internal guardrail two."), "notes kept by default");
+    const without = build("--no-notes");
+    assert(!/Internal guardrail/.test(without), "no slide's notes survive --no-notes");
+    assert(!without.includes('<aside class="notes">'), "and no notes aside is left behind");
+    assert(without.includes("First.") && without.includes("Second."), "the slides themselves are all there");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("isOptionalSlide reads the flag off a scope", () => {

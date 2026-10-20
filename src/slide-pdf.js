@@ -67,6 +67,12 @@ function chromePdf(htmlPath, pdfPath, options = {}) {
 
     const fileUrl = "file://" + path.resolve(htmlPath);
     const resolvedPdf = path.resolve(pdfPath);
+    // Chrome does not create the folder, and when it cannot write the file it
+    // says nothing and exits 0 — so a missing folder printed "PDF: <path>"
+    // and wrote nothing. The folder is made here, as the HTML build makes its
+    // own, and the file is checked for afterwards rather than assumed.
+    fs.mkdirSync(path.dirname(resolvedPdf), { recursive: true });
+    const started = Date.now();
 
     // Use a temporary user-data-dir so headless Chrome doesn't conflict
     // with any running browser session (Chrome 112+ new headless shares
@@ -99,9 +105,17 @@ function chromePdf(htmlPath, pdfPath, options = {}) {
 
       if (err) {
         reject(new Error(`Chrome PDF export failed: ${err.message}\n${stderr}`));
-      } else {
-        resolve(resolvedPdf);
+        return;
       }
+      // Written by this run, not left over from an earlier one. The clock is
+      // given a second's grace for a filesystem that stores whole seconds.
+      let written = null;
+      try { written = fs.statSync(resolvedPdf); } catch (e) { written = null; }
+      if (!written || !written.isFile() || written.size === 0 || written.mtimeMs < started - 1000) {
+        reject(new Error(`Chrome reported success but wrote no PDF at ${resolvedPdf}\n${stderr || ""}`.trim()));
+        return;
+      }
+      resolve(resolvedPdf);
     });
   });
 }

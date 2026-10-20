@@ -203,7 +203,12 @@
         # Speaker Notes @notes
         {
             Add a child scope with id \`notes\` inside any slide. Notes are
-            hidden in the output but present in the HTML.
+            hidden in the output but present in the HTML, and the PowerPoint
+            and Claude Slides exports carry them as speaker notes. The Claude
+            Slides export also uses the start of a slide's notes as the
+            description of its section in the deck's outline. To send a deck
+            whose notes are internal, build it with \`--no-notes\`, which
+            leaves them out of every format.
 
             ```
             # My Slide {
