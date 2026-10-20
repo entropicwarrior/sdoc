@@ -121,6 +121,7 @@ node tools/build-slides.js deck.sdoc --no-optional         # HTML without them
                 - `--theme <dir>` -- a theme directory holding `theme.css`, and optionally `theme.js`, `theme.json` and assets (default: the built-in theme)
                 - `--fit contain|cover|stretch` -- what happens when the window is not the slide's shape: letterbox, crop, or distort (default: `contain`)
                 - `--with-optional` / `--no-optional` -- force slides marked `optional: true` in or out, in any output format. By default the HTML build keeps them and the `--pdf` and `--pptx` exports drop them, which is the common case for each; an HTML deck you are sending rather than presenting wants `--no-optional`
+                - `--no-notes` -- leave every slide's `@notes` out, in any output format. Notes are hidden on screen but present in the HTML file, and the `--pptx` and `--artifact` exports carry them as speaker notes, so a deck whose notes are internal wants this before it is sent
                 - `--dark` -- dark-mode colour overrides
                 - `--help` / `-h` -- show usage information and exit
             }

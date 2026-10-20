@@ -6,20 +6,40 @@ const { renderSlides, renderSlide, renderNode, renderInline, isOptionalSlide, in
 
 let pass = 0, fail = 0;
 const asyncTests = [];
-function test(name, fn) {
+// An async test waits for the one before it to finish. They used to start
+// together the moment the file loaded, and nearly every async test here
+// launches a headless Chrome, so a suite put twenty or thirty browsers on the
+// machine at once and froze it. A synchronous test still runs where it is
+// declared, so the output keeps its sections.
+let browserQueue = Promise.resolve();
+function runTest(name, fn) {
   try {
     const result = fn();
     if (result && typeof result.then === "function") {
-      asyncTests.push(result.then(
+      return result.then(
         () => { pass++; console.log("  PASS: " + name); },
         (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
-      ));
-    } else {
-      pass++; console.log("  PASS: " + name);
+      );
     }
+    pass++; console.log("  PASS: " + name);
   } catch (e) {
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
+  return undefined;
+}
+function test(name, fn) {
+  if (fn.constructor.name === "AsyncFunction") {
+    browserQueue = browserQueue.then(() => runTest(name, fn));
+    asyncTests.push(browserQueue);
+    return;
+  }
+  const pending = runTest(name, fn);
+  if (pending) asyncTests.push(pending);
+}
+// Everything queued, including anything a test queued while it ran.
+function allSettled() {
+  const count = asyncTests.length;
+  return Promise.all(asyncTests).then(() => (asyncTests.length === count ? null : allSettled()));
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
@@ -296,6 +316,67 @@ test("notes are separated from content", () => {
   const scaleClose = html.indexOf('</div>', scaleOpen);
   const notesStart = html.indexOf('<aside class="notes">');
   assert(notesStart > scaleClose, "notes appear after the content-scale wrapper, not inside it");
+});
+
+test("includeNotes false leaves the notes out of the page, not just out of sight", () => {
+  // Hidden is not absent: the aside is in the file for anyone who reads its
+  // source, and the PowerPoint and Claude Slides exports read it back out as
+  // speaker notes. A deck whose notes are internal needs them gone.
+  const src = `
+# Deck {
+    # My Slide {
+        Visible content.
+
+        # Speaker Notes @notes {
+            Only the presenter should read this.
+        }
+    }
+}
+`;
+  const kept = parseAndRender(src);
+  assert(kept.includes("Only the presenter should read this."), "kept by default");
+  const html = parseAndRender(src, { includeNotes: false });
+  assert(!html.includes("Only the presenter should read this."), "the words are nowhere in the file");
+  assert(!html.includes('<aside class="notes">'), "and there is no notes aside");
+  assert(html.includes("<p>Visible content.</p>"), "the slide itself is untouched");
+});
+
+test("the built page carries no CSS comments from the theme or the deck", () => {
+  // A comment is for whoever reads the stylesheet; a built deck is read by
+  // whoever it is sent to. One real deck carried 264 of them — 149,000
+  // characters naming people and decisions — in the source of a page meant
+  // to be emailed.
+  const theme = require("../src/theme.js").loadTheme(path.join(__dirname, "..", "themes", "default"));
+  assert(theme.themeCss.includes("/*"), "the default theme has comments to lose");
+  const html = parseAndRender("# Deck {\n    # Slide {\n        Hello.\n    }\n}", {
+    themeCss: theme.themeCss,
+    deckCss: "/* decided with the CTO on 3 Oct: keep the bar blue */ .bar-track { background: blue; }\n/*! Licence: keep */",
+  });
+  const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || "";
+  assert(!css.includes("decided with the CTO"), "the deck's comment is gone");
+  assert(css.includes(".bar-track { background: blue; }"), "and its rule is kept");
+  assert(css.includes("/*! Licence: keep */"), "a /*! comment stays");
+  assert(!/\/\*(?!!)/.test(css), "no other comment is left: " + (css.match(/\/\*(?!!)[\s\S]{0,60}/) || [""])[0]);
+});
+
+test("stripCssComments leaves strings, urls and token boundaries alone", () => {
+  const { stripCssComments: strip } = require("../src/slide-renderer");
+  const cases = [
+    ["/*! (c) Licence */ .x{}", "/*! (c) Licence */ .x{}"],
+    ['.x::before { content: "/* not a comment */"; }', '.x::before { content: "/* not a comment */"; }'],
+    [".x { content: 'a */ b'; }", ".x { content: 'a */ b'; }"],
+    ['.x { content: "a\\"/*b*/"; }', '.x { content: "a\\"/*b*/"; }'],
+    [".x { background: url(data:image/svg+xml;utf8,<svg>/*x*/</svg>); }", ".x { background: url(data:image/svg+xml;utf8,<svg>/*x*/</svg>); }"],
+    ['.x { background: url( "a/*b*/.png" ); }', '.x { background: url( "a/*b*/.png" ); }'],
+    // Two words a comment separated keep a space; a selector it sat inside does not gain one.
+    [".x { margin: 1px/**/2px; }", ".x { margin: 1px 2px; }"],
+    ["a/**/.b { }", "a.b { }"],
+    [".x { color: red; } /* unterminated", ".x { color: red; } "],
+  ];
+  for (const [input, want] of cases) {
+    const got = strip(input);
+    assert(got === want, `${JSON.stringify(input)} gave ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`);
+  }
 });
 
 // ============================================================
@@ -769,6 +850,39 @@ test("exportPdf produces a file (integration)", async () => {
   } finally {
     try { fs.unlinkSync(tmpHtml); } catch {}
     try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+});
+
+test("a PDF export makes its folder, and fails when nothing was written (integration)", async () => {
+  // Chrome neither creates the folder nor reports that it could not write the
+  // file: it exits 0, so a missing folder used to print "PDF: <path>", exit 0
+  // and write nothing.
+  const { exportSlidePdf, findChrome } = require("../src/slide-pdf");
+  if (!findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-pdf-dir-"));
+  try {
+    const tmpHtml = path.join(dir, "deck.html");
+    fs.writeFileSync(tmpHtml, parseAndRender("# Deck {\n    # Slide {\n        Hello.\n    }\n}"), "utf-8");
+
+    const nested = path.join(dir, "not", "yet", "there", "deck.pdf");
+    await exportSlidePdf(tmpHtml, nested);
+    assert(fs.existsSync(nested) && fs.statSync(nested).size > 0, "the folder is made and the PDF written");
+
+    // A path Chrome cannot write to: an existing directory. It still exits 0.
+    const blocked = path.join(dir, "blocked.pdf");
+    fs.mkdirSync(blocked);
+    let failed = null;
+    try {
+      await exportSlidePdf(tmpHtml, blocked);
+    } catch (err) {
+      failed = err;
+    }
+    assert(failed && /wrote no PDF/.test(failed.message), "a PDF that was not written is an error: " + (failed && failed.message));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -1651,6 +1765,46 @@ test("the CLI resolves optional slides per format, and the flags override it", (
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("the CLI's --no-notes leaves every slide's notes out of the HTML", () => {
+  const { execFileSync } = require("child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-cli-notes-"));
+  try {
+    const input = path.join(dir, "deck.sdoc");
+    fs.writeFileSync(input, `
+# Deck {
+    # One {
+        First.
+
+        # Notes @notes {
+            Internal guardrail one.
+        }
+    }
+    # Two {
+        Second.
+
+        # Notes @notes {
+            Internal guardrail two.
+        }
+    }
+}
+`);
+    const cli = path.join(__dirname, "..", "tools", "build-slides.js");
+    const build = (...flags) => {
+      const out = path.join(dir, "out-" + (flags.join("") || "default") + ".html");
+      execFileSync(process.execPath, [cli, input, "-o", out, ...flags], { stdio: "ignore" });
+      return fs.readFileSync(out, "utf-8");
+    };
+    const withNotes = build();
+    assert(withNotes.includes("Internal guardrail one.") && withNotes.includes("Internal guardrail two."), "notes kept by default");
+    const without = build("--no-notes");
+    assert(!/Internal guardrail/.test(without), "no slide's notes survive --no-notes");
+    assert(!without.includes('<aside class="notes">'), "and no notes aside is left behind");
+    assert(without.includes("First.") && without.includes("Second."), "the slides themselves are all there");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("isOptionalSlide reads the flag off a scope", () => {
   const { nodes } = parseSlides(OPTIONAL_DECK);
   const slides = nodes[0].children;
@@ -1724,7 +1878,8 @@ test("a deck's own stylesheet is emitted after the theme's", () => {
     deckCss: "/* deck.css */\n#slide h2 { color: teal }",
   });
   const theme = html.indexOf("rebeccapurple");
-  const deck = html.indexOf("/* deck.css */");
+  // Found by its rule: comments are stripped from the built page.
+  const deck = html.indexOf("color: teal");
   assert(theme > 0 && deck > 0, "both stylesheets present");
   assert(deck > theme, "the deck's sheet comes after the theme's");
   assert(deck < html.indexOf("</style>"), "and inside the style tag");
@@ -2137,7 +2292,7 @@ test("baking a fade removes the soft mask Preview renders wrong (integration)", 
 
 // ============================================================
 // Summary — wait for async tests before reporting
-Promise.all(asyncTests).then(() => {
+allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
   console.log(`Results: ${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

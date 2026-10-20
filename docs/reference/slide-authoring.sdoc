@@ -203,7 +203,12 @@
         # Speaker Notes @notes
         {
             Add a child scope with id \`notes\` inside any slide. Notes are
-            hidden in the output but present in the HTML.
+            hidden in the output but present in the HTML, and the PowerPoint
+            and Claude Slides exports carry them as speaker notes. The Claude
+            Slides export also uses the start of a slide's notes as the
+            description of its section in the deck's outline. To send a deck
+            whose notes are internal, build it with \`--no-notes\`, which
+            leaves them out of every format.
 
             ```
             # My Slide {
@@ -1479,6 +1484,12 @@
         the order given — so an ad-hoc sheet on the command line can override
         the deck's own.
 
+        The built page carries none of their comments. A comment is for
+        whoever reads the stylesheet, and the page is read by whoever it is
+        sent to, so the reasoning a deck's stylesheet records stays in the
+        \`.css\` file and out of the source of the page. A \`/*! … */\` comment
+        is kept, by the usual convention for a licence notice.
+
         \`style:\` is **not** read for a deck. On a document it replaces the
         stylesheet; on a deck, replacing the stylesheet is what \`--theme\`
         does, so a deck naming it gets a warning rather than a silent surprise.
@@ -1581,6 +1592,16 @@
 
             Each of these is reported as a warning rather than dropped in
             silence, so the build tells you what the deck lost.
+
+            Grid placement does survive, though not as written. The subset
+            places a grid cell with \`grid-column: span N\` and nothing else:
+            cells fill in source order, and there are no line numbers or
+            areas. So a deck that places cells out of source order, with
+            \`grid-column: 3\` or through a \`display: contents\` wrapper,
+            is exported with its cells in the order the grid placed them. A
+            cell wider or taller than one track gets a span, and an empty cell
+            fills any place the grid left empty. Two cells sharing a track
+            cannot be expressed: they keep their source order, with a warning.
         }
 
         # Type size and typefaces @artifact-type

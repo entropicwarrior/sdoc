@@ -195,11 +195,12 @@ should be evaluated against.
 - No test framework — tests are plain Node scripts with assert helpers
 - Run the fast suites — no browser, half a second, 578 tests:
   `npm test`
-- Run the browser-gated ones too (several minutes, needs Chrome):
+- Run the browser-gated ones too (under a minute, needs Chrome; each suite runs its
+  browser tests one at a time, since starting them together froze the machine):
   `npm run test:browser`   — or `npm run test:all` for both
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
-  (775 fast + 352 browser = 1127 as of v0.6.0)
+  (775 fast + 360 browser = 1135 as of v0.6.1)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
