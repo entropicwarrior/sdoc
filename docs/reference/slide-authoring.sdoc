@@ -1484,6 +1484,12 @@
         the order given — so an ad-hoc sheet on the command line can override
         the deck's own.
 
+        The built page carries none of their comments. A comment is for
+        whoever reads the stylesheet, and the page is read by whoever it is
+        sent to, so the reasoning a deck's stylesheet records stays in the
+        \`.css\` file and out of the source of the page. A \`/*! … */\` comment
+        is kept, by the usual convention for a licence notice.
+
         \`style:\` is **not** read for a deck. On a document it replaces the
         stylesheet; on a deck, replacing the stylesheet is what \`--theme\`
         does, so a deck naming it gets a warning rather than a silent surprise.

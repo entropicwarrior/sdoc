@@ -341,6 +341,44 @@ test("includeNotes false leaves the notes out of the page, not just out of sight
   assert(html.includes("<p>Visible content.</p>"), "the slide itself is untouched");
 });
 
+test("the built page carries no CSS comments from the theme or the deck", () => {
+  // A comment is for whoever reads the stylesheet; a built deck is read by
+  // whoever it is sent to. One real deck carried 264 of them — 149,000
+  // characters naming people and decisions — in the source of a page meant
+  // to be emailed.
+  const theme = require("../src/theme.js").loadTheme(path.join(__dirname, "..", "themes", "default"));
+  assert(theme.themeCss.includes("/*"), "the default theme has comments to lose");
+  const html = parseAndRender("# Deck {\n    # Slide {\n        Hello.\n    }\n}", {
+    themeCss: theme.themeCss,
+    deckCss: "/* decided with the CTO on 3 Oct: keep the bar blue */ .bar-track { background: blue; }\n/*! Licence: keep */",
+  });
+  const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || "";
+  assert(!css.includes("decided with the CTO"), "the deck's comment is gone");
+  assert(css.includes(".bar-track { background: blue; }"), "and its rule is kept");
+  assert(css.includes("/*! Licence: keep */"), "a /*! comment stays");
+  assert(!/\/\*(?!!)/.test(css), "no other comment is left: " + (css.match(/\/\*(?!!)[\s\S]{0,60}/) || [""])[0]);
+});
+
+test("stripCssComments leaves strings, urls and token boundaries alone", () => {
+  const { stripCssComments: strip } = require("../src/slide-renderer");
+  const cases = [
+    ["/*! (c) Licence */ .x{}", "/*! (c) Licence */ .x{}"],
+    ['.x::before { content: "/* not a comment */"; }', '.x::before { content: "/* not a comment */"; }'],
+    [".x { content: 'a */ b'; }", ".x { content: 'a */ b'; }"],
+    ['.x { content: "a\\"/*b*/"; }', '.x { content: "a\\"/*b*/"; }'],
+    [".x { background: url(data:image/svg+xml;utf8,<svg>/*x*/</svg>); }", ".x { background: url(data:image/svg+xml;utf8,<svg>/*x*/</svg>); }"],
+    ['.x { background: url( "a/*b*/.png" ); }', '.x { background: url( "a/*b*/.png" ); }'],
+    // Two words a comment separated keep a space; a selector it sat inside does not gain one.
+    [".x { margin: 1px/**/2px; }", ".x { margin: 1px 2px; }"],
+    ["a/**/.b { }", "a.b { }"],
+    [".x { color: red; } /* unterminated", ".x { color: red; } "],
+  ];
+  for (const [input, want] of cases) {
+    const got = strip(input);
+    assert(got === want, `${JSON.stringify(input)} gave ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`);
+  }
+});
+
 // ============================================================
 console.log("\n--- Content rendering ---");
 
@@ -1840,7 +1878,8 @@ test("a deck's own stylesheet is emitted after the theme's", () => {
     deckCss: "/* deck.css */\n#slide h2 { color: teal }",
   });
   const theme = html.indexOf("rebeccapurple");
-  const deck = html.indexOf("/* deck.css */");
+  // Found by its rule: comments are stripped from the built page.
+  const deck = html.indexOf("color: teal");
   assert(theme > 0 && deck > 0, "both stylesheets present");
   assert(deck > theme, "the deck's sheet comes after the theme's");
   assert(deck < html.indexOf("</style>"), "and inside the style tag");
