@@ -28,6 +28,7 @@ const {
   extractSignposts,
   extractRelatedResources,
   resourceKind,
+  hasUrlScheme,
   extractReadingGuide,
   validateSignposts,
   fixSignpostOrder,
@@ -37,12 +38,14 @@ const {
   parseInline,
   renderKatex,
   collectAllIds,
+  collectInlineRefs,
   collectCitationDefinitions,
   validateRefs,
   validateCitations,
   sanitizeSvg,
   readableTextColor
 } = require("../src/sdoc.js");
+const { buildKnowledgeSkeleton } = require("../src/knowledge-template.js");
 const fs = require("fs");
 const path = require("path");
 
@@ -2654,6 +2657,205 @@ test("every .sdoc file in the repo passes validateSignposts", () => {
     const f = validateSignposts(r.nodes);
     assert(f.length === 0, path.relative(root, file) + ": " + f.map((x) => x.lineStart + " " + x.message).join("; "));
   }
+});
+
+// The packaged knowledge files have their relative links pointed at GitHub
+// (tools/pack-links.js); the repo keeps the relative ones.
+const { rewriteLinks, blobBaseUrl, headCommit, committedFiles, restoreFiles } = require("../tools/pack-links.js");
+const PACK_BASE = "https://github.com/o/r/blob/0123456789ab/";
+
+test("pack-links: a link to a repo file becomes a commit URL, fragment kept", () => {
+  const src = "# D {\n    See [Spec](../../lexica/spec.sdoc#grammar).\n\n    {[table]\n        Resource | Relation\n        [CLI](cli.sdoc) | Tools\n    }\n}\n";
+  const exists = (p) => p === "lexica/spec.sdoc" || p === "docs/reference/cli.sdoc";
+  const r = rewriteLinks(src, "docs/reference/guide.sdoc", PACK_BASE, exists);
+  assert(r.errors.length === 0, r.errors.join("; "));
+  assert(r.text.includes("](" + PACK_BASE + "lexica/spec.sdoc#grammar)"), r.text);
+  assert(r.text.includes("](" + PACK_BASE + "docs/reference/cli.sdoc)"), r.text);
+});
+
+test("pack-links: anchors, URLs, missing files and code are left alone", () => {
+  const src = "# D {\n    [Here](#here), [Web](https://x.org), [Gone](gone.sdoc) and `[Code](a.sdoc)`.\n\n    ```\n    [Fenced](a.sdoc)\n    ```\n}\n";
+  const r = rewriteLinks(src, "d.sdoc", PACK_BASE, (p) => p === "a.sdoc");
+  assert(r.errors.length === 0 && r.text === src, r.text);
+});
+
+test("pack-links: a link it cannot place is an error, not a guess", () => {
+  // The same target as a link and as code on one line: the counts disagree.
+  const src = "# D {\n    [A](a.sdoc) and `[A](a.sdoc)`\n}\n";
+  const r = rewriteLinks(src, "d.sdoc", PACK_BASE, () => true);
+  assert(r.errors.length === 1 && r.text === src, JSON.stringify(r));
+});
+
+test("pack-links: an image to a link's target, on the link's line, is left alone", () => {
+  // The parser reports links only, so `](a.sdoc)` closing the image once made
+  // the counts disagree and stopped the release.
+  const src = "# D {\n    See [A](a.sdoc) and ![logo](a.sdoc)\n\n    ![logo](a.sdoc) then [A](a.sdoc)\n}\n";
+  const r = rewriteLinks(src, "d.sdoc", PACK_BASE, (p) => p === "a.sdoc");
+  assert(r.errors.length === 0, r.errors.join("; "));
+  const lines = r.text.split("\n");
+  assert(lines[1] === "    See [A](" + PACK_BASE + "a.sdoc) and ![logo](a.sdoc)", lines[1]);
+  assert(lines[3] === "    ![logo](a.sdoc) then [A](" + PACK_BASE + "a.sdoc)", lines[3]);
+});
+
+test("pack-links: an absolute path is never resolved from the document's folder", () => {
+  // `/lexica/spec.sdoc` once joined onto docs/reference/ and silently missed.
+  // Naming a repo file from the root, it is reported; otherwise, like a drive
+  // path (a path to --check, not a URL), it names no repo file and is left.
+  const src = "# D {\n    [Spec](/lexica/spec.sdoc), [Gone](/nowhere.sdoc) and [Drive](C:/lexica/spec.sdoc)\n}\n";
+  const exists = (p) => p === "lexica/spec.sdoc" || p === "docs/reference/lexica/spec.sdoc";
+  const r = rewriteLinks(src, "docs/reference/d.sdoc", PACK_BASE, exists);
+  assert(r.errors.length === 1 && r.errors[0].includes("/lexica/spec.sdoc is a path from the repo root"), r.errors.join("; "));
+  assert(r.text === src, r.text);
+});
+
+test("pack-links: blobBaseUrl reads the repository from package.json", () => {
+  const url = blobBaseUrl({ repository: { url: "git+https://github.com/entropicwarrior/sdoc.git" } }, "300ac73bfe11");
+  assert(url === "https://github.com/entropicwarrior/sdoc/blob/300ac73bfe11/", url);
+  assert(blobBaseUrl({ repository: "https://github.com/o/r" }, "abc") === "https://github.com/o/r/blob/abc/", "a string repository");
+});
+
+test("pack-links: the links pin HEAD's commit, at twelve characters whatever git would pick", () => {
+  // A published link cannot be changed, so the hash keeps a margin against a
+  // later commit sharing its prefix rather than git's shortest unique one.
+  const root = path.join(__dirname, "..");
+  const commit = headCommit(root);
+  const full = require("child_process").execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  assert(/^[0-9a-f]{12}$/.test(commit) && full.startsWith(commit), commit + " for " + full);
+});
+
+test("pack-links: only committed files count as in the repo", () => {
+  const root = path.join(__dirname, "..");
+  const committed = committedFiles(root);
+  assert(committed.has("lexica/specification.sdoc") && committed.has("tools/pack-links.js"), "the knowledge files are listed");
+  const stray = [...committed].filter((p) => /^(node_modules|dist)\//.test(p));
+  assert(stray.length === 0, "build outputs are not: " + stray.slice(0, 3).join(", "));
+});
+
+test("pack-links: restore keeps an edit made meanwhile, and one failure stops no other file", () => {
+  const dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "pack-links-"));
+  try {
+    const file = (name, content) => {
+      const f = path.join(dir, name);
+      fs.writeFileSync(f, content);
+      return { file: f, original: name + " relative", text: name + " rewritten" };
+    };
+    // A directory where a file was: reading it fails, as a locked file would.
+    const broken = { file: path.join(dir, "gone"), original: "o", text: "t" };
+    fs.mkdirSync(broken.file);
+    const plain = file("plain", "plain rewritten");
+    const edited = file("edited", "plain rewritten, then edited");
+    const back = file("back", "back relative");
+    const r = restoreFiles([broken, plain, edited, back]);
+    assert(fs.readFileSync(plain.file, "utf8") === "plain relative", "the untouched file is restored");
+    assert(fs.readFileSync(edited.file, "utf8") === "plain rewritten, then edited", "the edit survives");
+    assert(fs.readFileSync(back.file, "utf8") === "back relative", "a file already back is left");
+    assert(r.changed.length === 1 && r.changed[0].file === edited.file, JSON.stringify(r.changed));
+    assert(r.failed.length === 1 && r.failed[0].file === broken.file && r.failed[0].message, JSON.stringify(r.failed));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pack-links: every knowledge file rewrites cleanly, and only its links change", () => {
+  const root = path.join(__dirname, "..");
+  const exists = (p) => fs.existsSync(path.join(root, p));
+  for (const { path: file } of require("../knowledge.js").knowledgeFiles) {
+    const docPath = path.relative(root, file).split(path.sep).join("/");
+    const original = fs.readFileSync(file, "utf8");
+    const r = rewriteLinks(original, docPath, PACK_BASE, exists);
+    assert(r.errors.length === 0, r.errors.join("; "));
+    // No link left that resolves in the repo but not in a package.
+    const left = collectInlineRefs(parseSdoc(r.text).nodes).links
+      .filter((l) => !l.href.startsWith("#") && !hasUrlScheme(l.href))
+      .filter((l) => exists(path.posix.join(path.posix.dirname(docPath), l.href.split("#")[0])));
+    assert(left.length === 0, docPath + ": " + left.map((l) => l.href).join(", "));
+    // Putting each href back on its own lines gives the original bytes.
+    const lines = r.text.split("\n");
+    for (const w of r.rewritten) {
+      for (let i = w.lineStart - 1; i < w.lineEnd; i += 1) {
+        lines[i] = lines[i].split("](" + w.url + ")").join("](" + w.href + ")");
+      }
+    }
+    assert(lines.join("\n") === original, docPath + ": something other than a link target changed");
+  }
+});
+
+// A run stopped by a signal sent to pack-links alone, as a cancelled CI job
+// sends SIGTERM. A driver process starts runCommand on a command that prints
+// "started" and then waits five seconds, signals the runner once the command
+// is up, and reports how the runner ended and how long it took. Driven from a
+// child so this suite stays synchronous; the command's own timeout keeps a
+// failure from leaving it running.
+const { spawnSync } = require("child_process");
+function stopPackLinksRun(commandSource, signals) {
+  const packLinks = path.join(__dirname, "..", "tools", "pack-links.js");
+  const runner = `require(${JSON.stringify(packLinks)}).runCommand([process.execPath, "-e", ${JSON.stringify(commandSource)}])` +
+    ".then((status) => process.exit(status));";
+  const driver = `
+    const { spawn } = require("child_process");
+    const run = spawn(process.execPath, ["-e", ${JSON.stringify(runner)}], { stdio: ["ignore", "pipe", "ignore"] });
+    let start = 0;
+    run.stdout.once("data", () => {
+      start = Date.now();
+      ${JSON.stringify(signals)}.forEach((s, i) => setTimeout(() => run.kill(s), i * 300));
+    });
+    run.on("exit", (code) => console.log(JSON.stringify({ code, ms: Date.now() - start })));
+  `;
+  const r = spawnSync(process.execPath, ["-e", driver], { encoding: "utf8", timeout: 15000 });
+  return JSON.parse(r.stdout || "null");
+}
+const WAITING = "process.stdout.write('started\\n'); setTimeout(() => {}, 5000);";
+
+if (process.platform !== "win32") {
+  test("pack-links: a SIGTERM sent to pack-links alone stops the command, and the run fails", () => {
+    const r = stopPackLinksRun(WAITING, ["SIGTERM"]);
+    assert(r && r.code === 143, "exit status " + JSON.stringify(r));
+    assert(r.ms < 3000, "the command ran to its end instead of stopping: " + r.ms + "ms");
+  });
+
+  test("pack-links: a second signal kills a command that ignores the first", () => {
+    const r = stopPackLinksRun("process.on('SIGTERM', () => {}); " + WAITING, ["SIGTERM", "SIGTERM"]);
+    assert(r && r.code === 143, "exit status " + JSON.stringify(r));
+    assert(r.ms < 3000, "the command was not killed: " + r.ms + "ms");
+  });
+}
+
+// runCommand on a command, with a teardown that reports it could not undo
+// setup; its status, as the process exits with it.
+function packLinksRunWithFailedTeardown(commandSource) {
+  const packLinks = path.join(__dirname, "..", "tools", "pack-links.js");
+  const runner = `require(${JSON.stringify(packLinks)}).runCommand([process.execPath, "-e", ${JSON.stringify(commandSource)}], ` +
+    "() => {}, () => false).then((status) => process.exit(status));";
+  return spawnSync(process.execPath, ["-e", runner], { encoding: "utf8", timeout: 15000 }).status;
+}
+
+test("pack-links: a restore that fails fails the run, even after the command succeeded", () => {
+  const ok = packLinksRunWithFailedTeardown("");
+  assert(ok === 1, "status " + ok);
+  const failing = packLinksRunWithFailedTeardown("process.exit(3)");
+  assert(failing === 3, "the command's own failure is kept: " + failing);
+});
+
+// The "New Knowledge File" command writes this skeleton, and nothing else ever
+// parses it: it once wrote its @meta as one paragraph, losing every key after
+// the first, and gave two scopes the same id.
+test("knowledge skeleton: every @meta key is read, at the current format version", () => {
+  const r = parseSdoc(buildKnowledgeSkeleton("Error Handling Conventions", "Skill", "u-1", "2026-10-15"));
+  assert(r.errors.length === 0, r.errors.map((e) => e.message).join("; "));
+  const { meta, warnings } = extractMeta(r.nodes);
+  assert(meta.uuid === "u-1" && meta.type === "skill", JSON.stringify(meta.properties));
+  assert(meta.properties.date === "2026-10-15", JSON.stringify(meta.properties));
+  assert(meta.properties["sdoc-version"] === SDOC_FORMAT_VERSION, JSON.stringify(meta.properties));
+  assert(warnings.length === 0, warnings.join("; "));
+});
+
+test("knowledge skeleton: passes validateSignposts and has no duplicate id", () => {
+  const src = buildKnowledgeSkeleton("Error Handling Conventions", "Skill", "u-1", "2026-10-15");
+  const f = validateSignposts(parseSdoc(src).nodes);
+  assert(f.length === 0, f.map((x) => x.message).join("; "));
+  const ids = [...renderHtmlDocument(src, "t").matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+  const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+  assert(dupes.length === 0, "duplicate ids: " + dupes.join(", "));
 });
 
 // ============================================================

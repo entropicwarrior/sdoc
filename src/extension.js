@@ -6,6 +6,7 @@ const url = require("url");
 const vscode = require("vscode");
 const { hrefCandidates, hrefPathExists } = require("./href-path");
 const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, getDocumentScope, foldRootSiblings, RESERVED_SCOPE_IDS, validateRefs, validateCitations, validateSignposts, fixSignpostOrder } = require("./sdoc");
+const { buildKnowledgeSkeleton } = require("./knowledge-template");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -114,31 +115,7 @@ function activate(context) {
 
     const uuid = require("crypto").randomUUID();
     const date = new Date().toISOString().split("T")[0];
-    const typeName = kind.toLowerCase();
-
-    const skeleton = [
-      `# ${title} @${slug}`,
-      "{",
-      "    # Meta @meta",
-      "    {",
-      `        uuid: ${uuid}`,
-      `        type: ${typeName}`,
-      `        date: ${date}`,
-      "        sdoc-version: 0.1",
-      "    }",
-      "",
-      "    # About @about",
-      "    {",
-      "        (Write a 2-5 line summary of this file's content.)",
-      "    }",
-      "",
-      `    # ${title}`,
-      "    {",
-      "        (Content goes here.)",
-      "    }",
-      "}",
-      ""
-    ].join("\n");
+    const skeleton = buildKnowledgeSkeleton(title, kind, uuid, date);
 
     fs.writeFileSync(filePath, skeleton, "utf8");
     const doc = await vscode.workspace.openTextDocument(filePath);
@@ -353,12 +330,12 @@ function activate(context) {
       async invoke(options, token) {
         const guidePath = path.join(context.extensionPath, 'docs', 'reference', 'sdoc-authoring.sdoc');
         const content = fs.readFileSync(guidePath, 'utf8');
+        // Which sections to read is the guide's own @reading-guide, which
+        // the content below carries. This adds only what the guide cannot
+        // know: the project it is being read in.
         const preamble = [
           '## Reading Guidance',
           '',
-          '- The **Quick Reference** section is sufficient for writing correct SDOC.',
-          '- **Common Mistakes** is essential reading for any agent generating SDOC.',
-          '- For edge cases or parser behaviour questions, see `lexica/specification.sdoc`.',
           '- If this project uses Lexica, check `lexica/` directories for project-specific knowledge.',
           '',
           '---',

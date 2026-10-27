@@ -1,15 +1,31 @@
 # Why SDOC Over Markdown @why-sdoc
 {
-    @meta
-    {
+    @meta {
         type: doc
 
         sdoc-version: 0.2
     }
 
-    @about
-    {
+    @about {
         Why choose SDOC over Markdown for structured documentation. Opens with the bottom line (token savings, security, human/AI collaboration), then covers Markdown's structural problems, SDOC's capabilities, and the adoption path. Written for AI agents and humans evaluating documentation formats.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Introduction to SDOC](intro.sdoc) | What SDOC is and its core concepts, in brief
+            [SDOC Authoring Guide](../reference/sdoc-authoring.sdoc) | Covers writing SDOC, which this document leaves out
+            [Requirements](../../lexica/requirements.sdoc) | The goals behind the design argued for here
+        }
+    }
+
+    @reading-guide {
+        {[table]
+            Sections | Note
+            @bottom-line | The whole case in brief, enough to decide
+            @markdown-problems, @parsing-safety | The argument in detail
+            @where-to-start | When adopting SDOC in a project
+        }
     }
 
     # Bottom Line @bottom-line
