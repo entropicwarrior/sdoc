@@ -467,6 +467,8 @@ Content of Section B.
 
             A reference resolves only to a slug assigned with \`@slug\`. A heading without one cannot be referenced, even by a slug made from its title: give it an \`@slug\` first. The broken-reference message names the heading when the slug matches its title.
 
+            Rendered, a reference shows the target heading's title, so the example reads "Make sure you complete Setup first." Write the sentence so it reads well with the title in place of the slug. A heading with no title, or a reference that does not resolve, shows `@slug` as written.
+
             References are **document-local only** — \`@slug\` resolves within the current file. To point a reader to a section in another file, use a link with a fragment:
 
             ```

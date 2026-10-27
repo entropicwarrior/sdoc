@@ -112,6 +112,8 @@ code --install-extension dist/sdoc-*.vsix
             - `header` and `footer` set page-level text with inline formatting
         }
 
+        An exported page follows the reader's dark mode, and the preview follows VS Code's theme. To give an appended stylesheet a dark palette for both, key it on `:root[data-sdoc-theme="dark"]`; see [Dark mode](../reference/api.sdoc#dark-mode-hook).
+
         Configs are hierarchical: place `sdoc.config.json` in subfolders to override parent settings for documents in that folder.
 
         See `examples/sdoc.config.json` for a sample config and `examples/sdoc.template.css` for the default theme.

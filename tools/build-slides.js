@@ -5,7 +5,7 @@
 //   node tools/build-slides.js input.sdoc [-o output] [--theme path/to/theme]
 //                              [--css path/to/deck.css]
 //                              [--pdf] [--pptx] [--artifact] [--check] [--fit MODE] [--dark]
-//                              [--with-optional | --no-optional]
+//                              [--with-optional | --no-optional] [--no-notes]
 //
 // A theme is shared by every deck built from it. --css, and the existing
 // `style-append:` key in a deck's @meta, add a stylesheet scoped to the one
@@ -21,6 +21,11 @@
 // any format: --with-optional keeps them, --no-optional drops them. An HTML
 // deck is also something you send someone, so the choice belongs to the
 // invocation rather than to the format.
+//
+// --no-notes leaves every slide's @notes out, in any format. Notes are hidden
+// on screen but present in the HTML file, and the PowerPoint and Claude Slides
+// exports carry them as speaker notes, so a deck whose notes are internal
+// needs them gone before it is sent.
 //
 // If -o is omitted, writes to input.html (or input.pdf / input.pptx).
 // --pptx produces a PowerPoint file that Drive imports as a Google Slides deck.
@@ -64,7 +69,7 @@ function usage() {
     "                    [--artifact-pinned]\n" +
     "                    [--check]\n" +
     "                    [--fit contain|cover|stretch] [--dark]\n" +
-    "                    [--with-optional | --no-optional]"
+    "                    [--with-optional | --no-optional] [--no-notes]"
   );
   process.exit(1);
 }
@@ -84,6 +89,7 @@ async function main() {
   let darkMode = false;
   // null means "whatever this output format defaults to"; the flags force it.
   let optional = null;
+  let includeNotes = true;
   let fit = null;
 
   for (let i = 0; i < args.length; i++) {
@@ -117,6 +123,8 @@ async function main() {
       optional = true;
     } else if (args[i] === "--no-optional") {
       optional = false;
+    } else if (args[i] === "--no-notes") {
+      includeNotes = false;
     } else if (args[i] === "--help" || args[i] === "-h") {
       usage();
     } else if (!inputPath) {
@@ -211,7 +219,7 @@ async function main() {
   // added to stop, so it is said here rather than discovered by looking.
   const slideWarnings = [];
   let html = renderSlides(nodes, {
-    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional,
+    meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit, includeOptional, includeNotes,
     warnings: slideWarnings
   });
   for (const warning of slideWarnings) {
@@ -301,7 +309,7 @@ async function main() {
         const rebuilt = inlineDeckImages(
           renderSlides(nodes, {
             meta, themeCss, deckCss, themeJs, darkMode, themeConfig, fit,
-            includeOptional, bakedFades: baked
+            includeOptional, includeNotes, bakedFades: baked
           }),
           imageBase
         );

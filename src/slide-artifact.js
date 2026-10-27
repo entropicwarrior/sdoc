@@ -1030,6 +1030,76 @@ const ARTIFACT_SCRIPT = `
     });
   }
 
+  // Where a grid placed this element: the row and column it starts in, from
+  // 0, and how many tracks it spans. Measured against the grid's resolved
+  // tracks rather than read from grid-column, because the subset cannot say
+  // where a cell goes — only how wide it is, with cells filling in source
+  // order — so the export has to emit cells in the order the grid placed them,
+  // and only the layout knows that order however it was asked for (line
+  // numbers, areas, dense packing). null for anything not in a grid's flow.
+  //
+  // The grid is the nearest ancestor with a box: a display:contents wrapper
+  // between them hands its children straight to the grid, which is how a
+  // label and a value inside one wrapper become two separate cells.
+  function gridCellOf(el, cs, rect) {
+    if (cs.position === "absolute" || cs.position === "fixed") return null;
+    var grid = el.parentElement;
+    while (grid && getComputedStyle(grid).display === "contents") grid = grid.parentElement;
+    if (!grid) return null;
+    var gs = getComputedStyle(grid);
+    if (gs.display !== "grid" && gs.display !== "inline-grid") return null;
+    function tracks(v) {
+      var out = [];
+      var parts = String(v || "").split(/\\s+/);
+      for (var i = 0; i < parts.length; i++) {
+        var n = parseFloat(parts[i]);
+        if (isFinite(n)) out.push(n);
+      }
+      return out;
+    }
+    // The last track starting at or before this offset. A cell narrower than
+    // its area (justify-self) starts inside its track, never before it.
+    function trackAt(list, start, gap, at) {
+      var pos = start, found = 0;
+      for (var i = 0; i < list.length; i++) {
+        if (at + 1 >= pos) found = i;
+        pos += list[i] + gap;
+      }
+      return found;
+    }
+    function spanOf(a, b) {
+      var m = /span\\s+(\\d+)/.exec(a) || /span\\s+(\\d+)/.exec(b);
+      if (m) return parseInt(m[1], 10);
+      var x = parseInt(a, 10), y = parseInt(b, 10);
+      return isFinite(x) && isFinite(y) && x > 0 && y > x ? y - x : 1;
+    }
+    // The resolved track list names every track, implicit ones too.
+    var cols = tracks(gs.gridTemplateColumns), rows = tracks(gs.gridTemplateRows);
+    if (!cols.length || !rows.length) return null;
+    var gr = grid.getBoundingClientRect();
+    // Track sizes are layout pixels and rects are screen pixels; the deck may
+    // be scaled to the window, so offsets are brought back to layout pixels.
+    var k = grid.offsetWidth ? gr.width / grid.offsetWidth : 1;
+    if (!(k > 0)) k = 1;
+    var colGap = parseFloat(gs.columnGap) || 0, rowGap = parseFloat(gs.rowGap) || 0;
+    var x0 = (parseFloat(gs.borderLeftWidth) || 0) + (parseFloat(gs.paddingLeft) || 0);
+    var y0 = (parseFloat(gs.borderTopWidth) || 0) + (parseFloat(gs.paddingTop) || 0);
+    var left = (rect.left - gr.left) / k - (parseFloat(cs.marginLeft) || 0);
+    var top = (rect.top - gr.top) / k - (parseFloat(cs.marginTop) || 0);
+    var right = (rect.right - gr.left) / k + (parseFloat(cs.marginRight) || 0);
+    var bottom = (rect.bottom - gr.top) / k + (parseFloat(cs.marginBottom) || 0);
+    var c = trackAt(cols, x0, colGap, left), r = trackAt(rows, y0, rowGap, top);
+    // A stretched cell covers its whole area, so its far edge says how many
+    // tracks it spans; a narrower one does not, so the declared span counts too.
+    var c2 = trackAt(cols, x0, colGap, right - 2), r2 = trackAt(rows, y0, rowGap, bottom - 2);
+    return {
+      r: r,
+      c: c,
+      rs: Math.max(r2 - r + 1, spanOf(cs.gridRowStart, cs.gridRowEnd), 1),
+      cs: Math.max(c2 - c + 1, spanOf(cs.gridColumnStart, cs.gridColumnEnd), 1)
+    };
+  }
+
   function slideTree(slide) {
     var origin = slide.getBoundingClientRect();
     var pseudos = [];
@@ -1085,6 +1155,8 @@ const ARTIFACT_SCRIPT = `
         box: { x: rect.left - origin.left, y: rect.top - origin.top, w: rect.width, h: rect.height },
         children: []
       };
+      var cell = gridCellOf(el, cs, rect);
+      if (cell) node.gridCell = cell;
 
       var ps = pseudoBoxes(el, rect, origin);
       for (var pi = 0; pi < ps.length; pi++) {
@@ -1579,6 +1651,14 @@ function declarationsFor(node, ctx, inherited) {
     }
   }
 
+  // A cell wider or taller than one track. `span N` is all the subset has for
+  // placing a cell, and it is only meaningful where emitGridCells has put this
+  // node in the order its grid placed it.
+  if (node.gridSpan) {
+    if (node.gridSpan.cs > 1) push("grid-column", `span ${node.gridSpan.cs}`);
+    if (node.gridSpan.rs > 1) push("grid-row", `span ${node.gridSpan.rs}`);
+  }
+
   if (s.alignSelf && !["auto", "normal", "stretch"].includes(s.alignSelf)) {
     push("align-self", alignWord(s.alignSelf));
   }
@@ -2070,6 +2150,104 @@ function probed(html, node, ctx) {
   return html.slice(0, m[0].length) + ` data-sdoc-probe="${id}"` + html.slice(m[0].length);
 }
 
+// An empty cell, holding a place in a grid where the grid left one empty.
+const GRID_FILLER = "<div></div>";
+
+// A grid's cells, in the order the grid placed them.
+//
+// The subset has grid-column and grid-row as `span N` only: "cells fill in
+// source order", with no line numbers. So a cell a theme placed with
+// `grid-column: 3` cannot be told where to go, and emitted in source order it
+// lands in whichever cell is next. A deck that drew label, bar, value from a
+// label and value in one wrapper and the bar after it exported as label,
+// value, bar: the value took the bar's 275px column and the bar was squeezed
+// into the value's 44px. The default theme's scatter places its x axis the
+// same way, and every exported scatter had that axis under the y gutter.
+//
+// Emitted in the browser's placement order instead, measured per cell
+// (gridCell), the subset's own source-order filling puts each one back: an
+// empty cell holds every place the grid left empty, a span covers any cell
+// wider or taller than one track, and a cell the export would drop keeps its
+// place as an empty one. Pinned children are not cells, and the format paints
+// them over the flow content whatever their order, so they follow.
+function emitGridCells(node, ctx, inherited, depth) {
+  const emit = (c) => emitNode(c, ctx, inherited, depth + 1);
+  const plan = gridPlan(node, ctx);
+  if (!plan) return node.children.map(emit).join("\n");
+  return plan
+    .map((entry) => {
+      if (entry === null) return GRID_FILLER;
+      if (!entry.gridCell) return emit(entry);
+      entry.gridSpan = { cs: entry.gridCell.cs, rs: entry.gridCell.rs };
+      return emit(entry) || GRID_FILLER;
+    })
+    .join("\n");
+}
+
+// The order emitGridCells writes a grid's children in: its cells sorted by
+// where they start, row by row, with null wherever an empty cell must hold a
+// place, then the pinned children. null when no order can say it — a child
+// that is neither a measured cell nor pinned, or two cells sharing a track,
+// which source order cannot express — and the children then keep theirs.
+function gridPlan(node, ctx) {
+  const cells = [];
+  const pinned = [];
+  let unplaceable = false;
+  (function collect(list) {
+    for (const c of list) {
+      // display:contents: its children are the grid's cells, not it.
+      if (c.transparent) collect(c.children || []);
+      else if (c.gridCell) cells.push(c);
+      else if (c.style && (c.style.position === "absolute" || c.style.position === "fixed")) pinned.push(c);
+      else unplaceable = true;
+    }
+  })(node.children);
+  if (unplaceable || !cells.length) return null;
+
+  const cols = (gridTracks(node.style.gridTemplateColumns, 1) || "").split(" ").filter(Boolean).length;
+  if (!cols) return null;
+  // Every cell the layout gave each child, as a row-major index.
+  const taken = new Set();
+  for (const c of cells) {
+    const { r, c: col, rs, cs } = c.gridCell;
+    for (let rr = r; rr < r + rs; rr++) {
+      for (let cc = col; cc < col + cs; cc++) {
+        const at = rr * cols + cc;
+        if (cc >= cols || taken.has(at)) {
+          ctx.warnings.push({
+            slide: ctx.slide,
+            kind: "grid-overlap",
+            message:
+              "two cells of a grid share a track, or one runs past its last column, and the subset fills " +
+              "cells in source order with no way to overlap them; the cells keep their source order",
+          });
+          return null;
+        }
+        taken.add(at);
+      }
+    }
+  }
+
+  // Play the subset's own filling forward: each cell goes to the first free
+  // place after the previous one, never back. An empty cell takes every free
+  // place short of where the next one belongs, so it lands there.
+  const order = cells.slice().sort((a, b) => a.gridCell.r - b.gridCell.r || a.gridCell.c - b.gridCell.c);
+  const plan = [];
+  let cursor = 0;
+  for (const c of order) {
+    const target = c.gridCell.r * cols + c.gridCell.c;
+    for (; cursor < target; cursor++) {
+      if (!taken.has(cursor)) {
+        plan.push(null);
+        taken.add(cursor);
+      }
+    }
+    plan.push(c);
+    cursor = target + c.gridCell.cs;
+  }
+  return plan.concat(pinned);
+}
+
 function emitNodeInner(node, ctx, inherited, depth) {
   if (node.transparent) {
     // display:contents — the element has no box, so its children belong to the
@@ -2257,7 +2435,9 @@ function emitNodeInner(node, ctx, inherited, depth) {
     node.style.position === "absolute" || node.style.position === "fixed"
       ? { ...ctx, insidePinned: true }
       : ctx;
-  const inner = node.children.map((c) => emitNode(c, childCtx, next, depth + 1)).join("\n");
+  const inner = node.style.display === "grid"
+    ? emitGridCells(node, childCtx, next, depth)
+    : node.children.map((c) => emitNode(c, childCtx, next, depth + 1)).join("\n");
   if (!inner.trim() && !decls.some((d) => /^(background|border|flex)/.test(d))) return "";
   if (depth >= 14) {
     ctx.warnings.push({ slide: ctx.slide, message: "container nesting reached the 15-deep limit; some wrappers were flattened" });

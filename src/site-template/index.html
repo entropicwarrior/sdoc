@@ -250,7 +250,11 @@
           // A live view, like the preview: someone browsing a knowledge base
           // is deciding what to read next, which is what @about, @not-about
           // and @related-resources are for. Only exports drop them.
-          includeSignposts: true
+          includeSignposts: true,
+          // The browser's own chrome has no dark mode, so its documents stay
+          // light. (The shadow DOM would not see data-sdoc-theme anyway: only
+          // the document's <style> and body are carried into it.)
+          colorScheme: "light"
         }
       );
     }

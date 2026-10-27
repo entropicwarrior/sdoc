@@ -127,6 +127,9 @@ const html = renderHtmlDocument(sdocText, "Page Title", {
             - `options.includeSignposts` -- `true` keeps every signpost. By default only `@reading-guide` is kept. Set to `true` for preview-style rendering
             - `options.includeAbout` -- `true` keeps `@about` as well as the default. Ignored when `includeSignposts` is given
             - `options.signposts` -- keeps or drops single signposts, as a map from id to `true` or `false`, on top of the two options above. See **Signposts in exports** below
+            - `options.refLabels` -- what an `@id` reference shows. By default (`"title"`) it shows the target scope's title as its link text; `"id"` shows `@id` as the source writes it. A target with no title shows `@id` either way
+            - `options.colorScheme` -- `"auto"` (the default) follows the reader's system setting, `"light"` and `"dark"` force one. See **Dark mode** below
+            - `options.mermaidTheme` -- the Mermaid theme. By default it follows `colorScheme`: `"neutral"` when light, `"dark"` when dark, and `"auto"` to pick one as the page loads
             - Automatically extracts and applies `@meta` scope settings
         }
     }
@@ -146,7 +149,7 @@ const html = renderHtmlDocumentFromParsed(
 );
         ```
 
-        Accepts the same `options.includeSignposts`, `options.includeAbout` and `options.signposts` as `renderHtmlDocument`.
+        Accepts the same `options.includeSignposts`, `options.includeAbout`, `options.signposts`, `options.refLabels`, `options.colorScheme` and `options.mermaidTheme` as `renderHtmlDocument`.
     }
 
     # Signposts in exports @signposts-in-exports
@@ -193,6 +196,48 @@ const html = renderHtmlDocument(sdocText, "Title", { includeSignposts: true, sig
             - `stripSignposts(nodes, ids)` -- a new node array with the given signposts removed from the top level (the root's children and the scopes beside the root); a scope with one of those ids deeper down is ordinary and stays; `ids` defaults to `EXPORT_HIDDEN_SIGNPOST_IDS`; the input is not mutated
             - `hiddenSignposts(options)` -- the ids a render with these options drops, resolved as above. `stripSignposts(nodes, hiddenSignposts(options))` is what the HTML renderers do
             - `isAboutEmpty(scope)` and `stripAboutScopes(nodes)` -- older names. `isAboutEmpty` is `isSignpostEmpty`; `stripAboutScopes` removes the top-level `@about` only
+        }
+    }
+
+    # Dark mode @dark-mode
+    {
+        A page from `renderHtmlDocument` or `renderHtmlDocumentFromParsed` follows the reader's system setting: light, or dark when the reader's system is set to dark. The dark colours are the ones the VS Code preview uses in a dark theme, so a document looks the same in both. Print and PDF are always light.
+
+        `options.colorScheme` decides it:
+
+        {[.]
+            - `"auto"` (the default) -- follows the system setting, and changes with it while the page is open
+            - `"light"` -- always light. The page carries no dark rules at all. Use it for an output that must look the same whoever opens it
+            - `"dark"` -- always dark on screen, whatever the system says
+        }
+
+        `tools/build-doc.js` takes the same choice as `--color-scheme`. The VS Code preview follows the editor's theme rather than the system's, and the document browser stays light, since its own interface has no dark mode.
+
+        # The hook for stylesheets @dark-mode-hook
+        {
+            The page's root element carries `data-sdoc-theme="light"` or `data-sdoc-theme="dark"`, in the browser and in the VS Code preview alike. Key a stylesheet's dark palette on it, once, and it applies in both:
+
+            ```css
+:root {
+    --sdoc-accent: #4066b2;
+}
+
+:root[data-sdoc-theme="dark"] {
+    --sdoc-accent: #8fb0ec;
+}
+
+[data-sdoc-theme="dark"] .sdoc-table-th {
+    background: rgba(143, 176, 236, 0.10);
+}
+            ```
+
+            {[.]
+                - Set variables on `:root` with `:root[data-sdoc-theme="dark"]`, and style elements with `[data-sdoc-theme="dark"] .class`. Those are the selectors sdoc's own dark rules use, and sdoc places its rules before any appended stylesheet (`styleAppend`, `style-append:`), so yours win without having to outrank them
+                - Set variables on `:root`, not on `body`. A variable set on `body` overrides the dark palette set on the root, since `body` is the nearer ancestor
+                - No `@media` rule is needed, for screen or for print. The attribute is light while the page prints, so a rule keyed on it never reaches paper
+                - In `"auto"`, a script in the page's head sets the attribute. Where scripts cannot run it stays light, and so does everything keyed on it: the page is light throughout rather than half dark. A forced scheme is written into the page, so it shows without one
+                - VS Code's high-contrast themes keep the preview's high-contrast palette, which sits on `body` and so outranks a `:root` palette. A high-contrast dark theme does set `data-sdoc-theme="dark"`, so the rest of a stylesheet's dark rules still apply. To change the high-contrast palette itself, target `body.vscode-high-contrast`
+            }
         }
     }
 

@@ -3,7 +3,8 @@
 //
 // Usage:
 //   node tools/build-doc.js input.sdoc [-o output] [--html] [--include-signposts]
-//                           [--include-about] [--signposts LIST] [--check] [--fix]
+//                           [--include-about] [--signposts LIST] [--color-scheme MODE]
+//                           [--check] [--fix]
 //
 // Default output is PDF (requires Chrome/Chromium).
 // Use --html for HTML-only output (no Chrome needed).
@@ -12,6 +13,9 @@
 // --include-signposts keeps them all; --include-about keeps @about as well;
 // --signposts picks single sections on top of either: a comma-separated list of
 // ids, each kept, or dropped when prefixed with "-" (--signposts related-resources,-reading-guide).
+// --color-scheme sets what the HTML does in a reader's dark mode: auto (the
+// default) follows the system setting, light and dark force one. A PDF is
+// always light.
 // --check validates the document (parse errors, signposts, references,
 // citations), prints each finding as file:line: message (file:line: warning:
 // message for a warning), and exits 1 when it found an error.
@@ -31,7 +35,7 @@ const CONFIG_FILENAME = "sdoc.config.json";
 const EXPORT_WARNING_TYPES = new Set(["reserved-scope-placement", "signpost-root"]);
 
 function usage() {
-  console.error("Usage: build-doc <input.sdoc> [-o output] [--html] [--include-signposts] [--include-about] [--signposts LIST] [--check] [--fix]");
+  console.error("Usage: build-doc <input.sdoc> [-o output] [--html] [--include-signposts] [--include-about] [--signposts LIST] [--color-scheme auto|light|dark] [--check] [--fix]");
   process.exit(1);
 }
 
@@ -169,6 +173,7 @@ async function buildHtml(filePath, options = {}) {
       includeSignposts: options.includeSignposts,
       includeAbout: options.includeAbout,
       signposts: options.signposts,
+      colorScheme: options.colorScheme,
     }
   );
 
@@ -253,6 +258,7 @@ async function main() {
   const signposts = {};
   let checkMode = false;
   let fixMode = false;
+  let colorScheme;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-o" && i + 1 < args.length) {
@@ -266,6 +272,9 @@ async function main() {
     } else if (args[i] === "--signposts") {
       if (i + 1 >= args.length) usage();
       parseSignpostList(args[++i], signposts);
+    } else if (args[i] === "--color-scheme") {
+      if (i + 1 >= args.length || !["auto", "light", "dark"].includes(args[i + 1])) usage();
+      colorScheme = args[++i];
     } else if (args[i] === "--check") {
       checkMode = true;
     } else if (args[i] === "--fix") {
@@ -313,7 +322,13 @@ async function main() {
 
   if ((checkMode || fixMode) && !outputPath && !htmlMode) return;
 
-  const html = await buildHtml(resolvedInput, { includeSignposts, includeAbout, signposts, quiet: checkMode });
+  // A PDF is light whatever was asked: Chrome prints with print media, which
+  // the dark rules exclude anyway, but a Mermaid diagram is drawn before
+  // printing and would keep a dark theme.
+  const html = await buildHtml(resolvedInput, {
+    includeSignposts, includeAbout, signposts, quiet: checkMode,
+    colorScheme: htmlMode ? colorScheme : "light",
+  });
 
   if (htmlMode) {
     if (!outputPath) {

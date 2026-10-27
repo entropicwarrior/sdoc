@@ -494,7 +494,124 @@ console.log("\n--- References ---");
 test("reference renders as link", () => {
   const html = renderHtmlDocument("# Section @sec\n{\n  Hello.\n}\n# Other\n{\n  See @sec.\n}", "Test");
   assert(html.includes('href="#sec"'));
-  assert(html.includes("@sec"));
+});
+
+// The text of each reference in rendered HTML, in document order.
+function refLabels(html) {
+  return [...html.matchAll(/<a class="sdoc-ref[^"]*" href="[^"]*">(.*?)<\/a>(?!<\/a>)/g)].map((m) => m[1]);
+}
+
+function assertSame(actual, expected) {
+  assert(actual === expected, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+
+test("reference shows its target's title, with the href unchanged", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Platform Model @model {\n        x\n    }\n    See @model.\n}\n");
+  assert(html.includes('<a class="sdoc-ref" href="#model">Platform Model</a>'), html);
+});
+
+test("reference title keeps its inline formatting", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # The `sdoc` *CLI* @cli {\n        x\n    }\n    See @cli.\n}\n");
+  assertSame(refLabels(html)[0], 'The <code class="sdoc-inline-code">sdoc</code> <em>CLI</em>');
+});
+
+test("reference title drops a link it holds, so no <a> nests in another", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Read [the docs](https://example.com) @rd {\n        x\n    }\n    See @rd.\n}\n");
+  assertSame(refLabels(html)[0], "Read the docs");
+});
+
+test("reference title holding a reference shows that one's title, and a cycle stops", () => {
+  const html = renderHtmlBody(
+    "# Doc @doc {\n    # Model @model {\n        x\n    }\n    # Notes on @model @notes {\n        x\n    }\n" +
+    "    # A, see @b @a {\n        x\n    }\n    # B, see @a @b {\n        x\n    }\n    See @notes and @a.\n}\n"
+  );
+  const para = html.match(/<p[^>]*>See .*?<\/p>/)[0];
+  assert(para.includes('href="#notes">Notes on Model</a>'), para);
+  assert(para.includes('href="#a">A, see B, see @a</a>'), para);
+});
+
+test("reference to a scope with no title shows the @id", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # @untitled {\n        x\n    }\n    See @untitled.\n}\n");
+  assertSame(refLabels(html)[0], "@untitled");
+});
+
+test("reference to an svg element id shows the @id", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    ```svg\n<svg><circle id=\"dot\" r=\"2\"/></svg>\n    ```\n    See @dot.\n}\n");
+  assertSame(refLabels(html)[0], "@dot");
+});
+
+test("reference to a list item shows the item's text", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    {[.]\n        - First step @step\n    }\n    Do @step.\n}\n");
+  assertSame(refLabels(html)[0], "First step");
+});
+
+test("reference to a reserved scope stays @id, since validateRefs reports it", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Reading Guide @reading-guide {\n        x\n    }\n    See @reading-guide.\n}\n", { includeSignposts: true });
+  assertSame(refLabels(html)[0], "@reading-guide");
+});
+
+test("reference matching only a title slug stays @slug, since it does not resolve", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Project Areas {\n        x\n    }\n    See @project-areas.\n}\n");
+  assertSame(refLabels(html)[0], "@project-areas");
+});
+
+test("reference to a duplicated id shows the first scope's title, where the link lands", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # First @dup {\n        x\n    }\n    # Second @dup {\n        x\n    }\n    See @dup.\n}\n");
+  assertSame(refLabels(html)[0], "First");
+});
+
+test("reference in a heading shows its target's title there too", () => {
+  const html = renderHtmlBody("# Doc @doc {\n    # Model @model {\n        x\n    }\n    # About @model @rel {\n        x\n    }\n}\n");
+  assert(html.includes('<span class="sdoc-toggle"></span>About <a class="sdoc-ref" href="#model">Model</a></h2>'), html);
+});
+
+test("reference in a table cell and in the footer shows its target's title", () => {
+  const html = renderHtmlDocument(
+    "# Meta @meta {\n    footer: Questions go to @contact\n}\n# Doc @doc {\n    # Contact Us @contact {\n        x\n    }\n" +
+    "    {[table]\n        Topic | Where\n        Help | @contact\n    }\n}\n",
+    "Test"
+  );
+  assert(html.includes('<td class="sdoc-table-td"><a class="sdoc-ref" href="#contact">Contact Us</a></td>'), "table cell");
+  const footer = html.match(/<footer class="sdoc-page-footer">[\s\S]*?<\/footer>/)[0];
+  assert(footer.includes('href="#contact">Contact Us</a>'), footer);
+});
+
+test("broken reference in preview still shows the warning and the @id", () => {
+  const parsed = parseSdoc("# Doc @doc\n{\n  # Project Areas\n  {\n    x\n  }\n  See @project-areas.\n}");
+  const metaResult = extractMeta(parsed.nodes);
+  const brokenRefIds = new Set(validateRefs(metaResult.nodes).map((w) => w.id));
+  const html = renderHtmlDocumentFromParsed(
+    { nodes: metaResult.nodes, errors: parsed.errors },
+    "Test",
+    { renderOptions: { brokenRefIds } }
+  );
+  assert(
+    html.includes('<a class="sdoc-ref sdoc-broken-ref" href="#project-areas"><span class="sdoc-broken-icon">⚠</span>@project-areas</a>'),
+    "expected the unchanged broken-reference rendering"
+  );
+});
+
+test("refLabels: \"id\" keeps every reference as @id", () => {
+  const src = "# Doc @doc {\n    # Platform Model @model {\n        x\n    }\n    See @model.\n}\n";
+  assertSame(refLabels(renderHtmlBody(src, { refLabels: "id" }))[0], "@model");
+  assertSame(refLabels(renderHtmlDocument(src, "Test", { refLabels: "id" }))[0], "@model");
+  const parsed = parseSdoc(src);
+  const html = renderHtmlDocumentFromParsed({ nodes: extractMeta(parsed.nodes).nodes, errors: [] }, "Test", { refLabels: "id" });
+  assertSame(refLabels(html)[0], "@model");
+});
+
+test("reference labels do not leak from one render into the next", () => {
+  const src = "# Doc @doc {\n    # Platform Model @model {\n        x\n    }\n}\n";
+  renderHtmlBody(src);
+  assertSame(refLabels(renderFragment(parseSdoc("See @model.").nodes))[0], "@model");
+  renderHtmlDocument(src, "Test");
+  assertSame(refLabels(renderFragment(parseSdoc("See @model.").nodes))[0], "@model");
+});
+
+test("reference reads the same whether or not its target's signpost is exported", () => {
+  const src = "# Doc @doc {\n    # Editing Guide @editing-guide {\n        # Style Rules @style {\n            x\n        }\n    }\n    # Body @body {\n        See @style.\n    }\n}\n";
+  assertSame(refLabels(renderHtmlBody(src))[0], "Style Rules");
+  assertSame(refLabels(renderHtmlBody(src, { includeSignposts: true }))[0], "Style Rules");
 });
 
 test("scope gets id attribute", () => {
@@ -2937,17 +3054,13 @@ test("regular code blocks still render normally", () => {
   assert(html.includes("<code"), "should have code element");
 });
 
-test("mermaid theme defaults to neutral", () => {
+test("mermaid theme follows the colour scheme unless one is named", () => {
   const text = "# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}";
-  const parsed = parseSdoc(text);
-  const metaResult = extractMeta(parsed.nodes);
-  const html = renderHtmlDocumentFromParsed(
-    { nodes: metaResult.nodes, errors: parsed.errors },
-    "Test",
-    { meta: metaResult.meta }
-  );
-  assert(html.includes('theme:"neutral"'), "should default to neutral theme");
-  assert(!html.includes("prefers-color-scheme"), "should not have auto detection");
+  const render = (options) => renderHtmlDocument(text, "Test", options);
+  assert(render({}).includes('theme:isDark?"dark":"neutral"'), "auto by default");
+  assert(render({ colorScheme: "light" }).includes('theme:"neutral"'), "neutral when forced light");
+  assert(render({ colorScheme: "dark" }).includes('theme:"dark"'), "dark when forced dark");
+  assert(render({ colorScheme: "dark", mermaidTheme: "forest" }).includes('theme:"forest"'), "a named theme wins");
 });
 
 test("mermaid theme dark produces theme:dark", () => {
@@ -2960,10 +3073,10 @@ test("mermaid theme dark produces theme:dark", () => {
     { meta: metaResult.meta, mermaidTheme: "dark" }
   );
   assert(html.includes('theme:"dark"'), "should use dark theme");
-  assert(!html.includes("prefers-color-scheme"), "should not have auto detection");
+  assert(!html.includes("isDark"), "should not have auto detection");
 });
 
-test("mermaid theme auto uses matchMedia for prefers-color-scheme", () => {
+test("mermaid theme auto reads data-sdoc-theme, as the page's own palette does", () => {
   const text = "# Doc {\n    ```mermaid\n    graph LR\n      A --> B\n    ```\n}";
   const parsed = parseSdoc(text);
   const metaResult = extractMeta(parsed.nodes);
@@ -2972,8 +3085,8 @@ test("mermaid theme auto uses matchMedia for prefers-color-scheme", () => {
     "Test",
     { meta: metaResult.meta, mermaidTheme: "auto" }
   );
-  assert(html.includes('prefers-color-scheme:dark'), "should use matchMedia for dark detection");
-  assert(html.includes('theme:isDark?"dark":"neutral"'), "should pick dark or neutral based on media query");
+  assert(html.includes('var isDark=document.documentElement.getAttribute("data-sdoc-theme")==="dark"'), "should read the attribute");
+  assert(html.includes('theme:isDark?"dark":"neutral"'), "should pick dark or neutral from it");
 });
 
 test("mermaid theme option has no effect without mermaid blocks", () => {
@@ -3097,6 +3210,97 @@ test("sanitizeSvg returns empty string for non-svg input", () => {
 });
 
 // ============================================================
+console.log("\n--- Colour scheme ---");
+
+const SCHEME_DOC = "# Doc {\n    Text.\n}";
+
+// The <style> element's text with every `@media screen { ... }` block removed,
+// braces balanced, so what is left applies in print too.
+function styleOutsideScreenMedia(html) {
+  let css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  for (let at = css.indexOf("@media screen"); at >= 0; at = css.indexOf("@media screen")) {
+    let i = css.indexOf("{", at);
+    let depth = 0;
+    for (; i < css.length; i++) {
+      if (css[i] === "{") depth++;
+      else if (css[i] === "}" && --depth === 0) break;
+    }
+    css = css.slice(0, at) + css.slice(i + 1);
+  }
+  return css;
+}
+
+test("auto, the default, starts light and follows the system setting from a head script", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test");
+  assert(html.includes('<html lang="en" data-sdoc-theme="light">'), "starts light, so a page without scripts is light throughout");
+  const head = html.slice(0, html.indexOf("<style>"));
+  assert(head.includes('window.matchMedia("(prefers-color-scheme: dark)")'), "reads the system setting before the body paints");
+  assert(head.includes('addEventListener("change",set)'), "and follows it when it changes");
+  assert(html.includes(':root[data-sdoc-theme="dark"] {'), "the dark palette is there to switch to");
+});
+
+test("colorScheme light forces light: no dark palette and no script", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme: "light" });
+  assert(html.includes('data-sdoc-theme="light"'), "light attribute");
+  assert(!html.includes('data-sdoc-theme="dark"'), "no dark rules");
+  assert(!html.includes("prefers-color-scheme") && !html.includes("beforeprint"), "no script");
+});
+
+test("colorScheme dark forces dark, without consulting the system", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme: "dark" });
+  assert(html.includes('<html lang="en" data-sdoc-theme="dark">'), "dark attribute");
+  assert(html.includes(':root[data-sdoc-theme="dark"] {'), "dark palette");
+  assert(!html.includes("prefers-color-scheme"), "the system setting is not read");
+});
+
+test("an unknown colorScheme is auto, and renderHtmlDocumentFromParsed takes the option too", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme: "purple" });
+  assert(html.includes('data-sdoc-theme="light"') && html.includes("prefers-color-scheme: dark"), "auto");
+  const parsed = parseSdoc(SCHEME_DOC);
+  const forced = renderHtmlDocumentFromParsed({ nodes: extractMeta(parsed.nodes).nodes, errors: [] }, "Test", { colorScheme: "dark" });
+  assert(forced.includes('<html lang="en" data-sdoc-theme="dark">'), "fromParsed");
+});
+
+test("the attribute turns light while printing, in auto and forced dark alike", () => {
+  for (const colorScheme of ["auto", "dark"]) {
+    const html = renderHtmlDocument(SCHEME_DOC, "Test", { colorScheme });
+    assert(html.includes('window.addEventListener("beforeprint",function(){r.setAttribute("data-sdoc-theme","light");});'), colorScheme + ": light for print");
+    assert(html.includes('window.addEventListener("afterprint",set);'), colorScheme + ": restored after");
+  }
+});
+
+test("every dark rule is screen-only, so print is light whatever the attribute says", () => {
+  const src = "# Doc {\n    ```js\n    const a = 1;\n    ```\n}";
+  for (const colorScheme of ["auto", "dark"]) {
+    const html = renderHtmlDocument(src, "Test", { colorScheme });
+    assert(html.includes('[data-sdoc-theme="dark"] .hljs-keyword'), colorScheme + ": highlight.js dark colours are present");
+    assert(!styleOutsideScreenMedia(html).includes('data-sdoc-theme="dark"'), colorScheme + ": a dark rule outside @media screen");
+  }
+});
+
+test("the dark palette is the documented hook: :root for the variables, an ancestor for the elements", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test");
+  const palette = html.match(/:root\[data-sdoc-theme="dark"\] \{([^}]*)\}/)[1];
+  for (const decl of ["color-scheme: dark", "--sdoc-bg: #1e1e1e", "--sdoc-fg: #d4d4d4", "--sdoc-accent: #e0934a", "--sdoc-border: rgba(255, 255, 255, 0.12)"]) {
+    assert(palette.includes(decl), "palette declares " + decl);
+  }
+  assert(html.includes('[data-sdoc-theme="dark"] .sdoc-table-th {'), "element rules sit under the attribute");
+});
+
+test("the dark rules come after the base stylesheet and before the appended ones", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { cssAppend: "/* COMPANY */" });
+  const base = html.indexOf(".sdoc-heading {");
+  const dark = html.indexOf(':root[data-sdoc-theme="dark"] {');
+  const appended = html.indexOf("/* COMPANY */");
+  assert(base > 0 && base < dark && dark < appended, `base ${base}, dark ${dark}, appended ${appended}`);
+});
+
+test("a custom base stylesheet still gets the dark rules, as the preview always has", () => {
+  const html = renderHtmlDocument(SCHEME_DOC, "Test", { cssOverride: ":root { --sdoc-bg: #fff; }" });
+  assert(html.includes(':root[data-sdoc-theme="dark"] {'), "dark palette alongside cssOverride");
+});
+
+// ============================================================
 console.log("\n--- Syntax highlighting ---");
 
 test("language-tagged code block injects highlight.js CDN script", () => {
@@ -3108,7 +3312,13 @@ test("language-tagged code block injects highlight.js CDN script", () => {
 test("highlight.js CSS is inlined in the style block", () => {
   const html = renderHtmlDocument("# Doc {\n    ```python\n    print('hi')\n    ```\n}", "Test");
   assert(html.includes(".hljs{"), "should include highlight.js CSS");
-  assert(html.includes("prefers-color-scheme:dark"), "should include dark mode CSS");
+  assert(/\[data-sdoc-theme="dark"\] \.hljs-keyword[,{]/.test(html), "should include dark mode CSS, keyed on the attribute");
+  assert(!/<style>[\s\S]*prefers-color-scheme[\s\S]*<\/style>/.test(html), "no media query decides the colours: the attribute does");
+});
+
+test("highlight.js dark colours are left out when the page is forced light", () => {
+  const html = renderHtmlDocument("# Doc {\n    ```python\n    print('hi')\n    ```\n}", "Test", { colorScheme: "light" });
+  assert(html.includes(".hljs{") && !html.includes('data-sdoc-theme="dark"'), "light colours only");
 });
 
 test("code block without language tag does not trigger highlight.js", () => {
