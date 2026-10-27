@@ -3842,8 +3842,9 @@ function parseSectionsCell(cell) {
 // filesystem path or file: URL, which would not resolve anywhere else.
 // True when an href carries a URL scheme (https:, mailto:, tel:, data:, ...)
 // and so names no file. A scheme is two characters or more, so a Windows
-// drive letter (C:\docs) reads as a path. Shared by resource classification
-// and the broken-link check, so the two never disagree about what is a file.
+// drive letter (C:\docs) reads as a path. Shared by resource classification,
+// the broken-link check and tools/pack-links.js, so none of them disagree about
+// what is a file.
 function hasUrlScheme(href) {
   return /^[a-z][a-z0-9+.-]+:/i.test(href || "");
 }
@@ -4657,6 +4658,7 @@ module.exports = {
   extractSignposts,
   extractRelatedResources,
   resourceKind,
+  hasUrlScheme,
   extractReadingGuide,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,

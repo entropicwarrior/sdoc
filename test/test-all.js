@@ -28,6 +28,7 @@ const {
   extractSignposts,
   extractRelatedResources,
   resourceKind,
+  hasUrlScheme,
   extractReadingGuide,
   validateSignposts,
   fixSignpostOrder,
@@ -2543,10 +2544,10 @@ test("every .sdoc file in the repo passes validateSignposts", () => {
 
 // The packaged knowledge files have their relative links pointed at GitHub
 // (tools/pack-links.js); the repo keeps the relative ones.
-const { rewriteLinks, tagBaseUrl } = require("../tools/pack-links.js");
-const PACK_BASE = "https://github.com/o/r/blob/v1.0.0/";
+const { rewriteLinks, blobBaseUrl, headCommit, committedFiles, restoreFiles } = require("../tools/pack-links.js");
+const PACK_BASE = "https://github.com/o/r/blob/0123456789ab/";
 
-test("pack-links: a link to a repo file becomes a tag URL, fragment kept", () => {
+test("pack-links: a link to a repo file becomes a commit URL, fragment kept", () => {
   const src = "# D {\n    See [Spec](../../lexica/spec.sdoc#grammar).\n\n    {[table]\n        Resource | Relation\n        [CLI](cli.sdoc) | Tools\n    }\n}\n";
   const exists = (p) => p === "lexica/spec.sdoc" || p === "docs/reference/cli.sdoc";
   const r = rewriteLinks(src, "docs/reference/guide.sdoc", PACK_BASE, exists);
@@ -2568,9 +2569,74 @@ test("pack-links: a link it cannot place is an error, not a guess", () => {
   assert(r.errors.length === 1 && r.text === src, JSON.stringify(r));
 });
 
-test("pack-links: tagBaseUrl reads the repository and version from package.json", () => {
-  const url = tagBaseUrl({ version: "0.4.1", repository: { url: "git+https://github.com/entropicwarrior/sdoc.git" } });
-  assert(url === "https://github.com/entropicwarrior/sdoc/blob/v0.4.1/", url);
+test("pack-links: an image to a link's target, on the link's line, is left alone", () => {
+  // The parser reports links only, so `](a.sdoc)` closing the image once made
+  // the counts disagree and stopped the release.
+  const src = "# D {\n    See [A](a.sdoc) and ![logo](a.sdoc)\n\n    ![logo](a.sdoc) then [A](a.sdoc)\n}\n";
+  const r = rewriteLinks(src, "d.sdoc", PACK_BASE, (p) => p === "a.sdoc");
+  assert(r.errors.length === 0, r.errors.join("; "));
+  const lines = r.text.split("\n");
+  assert(lines[1] === "    See [A](" + PACK_BASE + "a.sdoc) and ![logo](a.sdoc)", lines[1]);
+  assert(lines[3] === "    ![logo](a.sdoc) then [A](" + PACK_BASE + "a.sdoc)", lines[3]);
+});
+
+test("pack-links: an absolute path is never resolved from the document's folder", () => {
+  // `/lexica/spec.sdoc` once joined onto docs/reference/ and silently missed.
+  // Naming a repo file from the root, it is reported; otherwise, like a drive
+  // path (a path to --check, not a URL), it names no repo file and is left.
+  const src = "# D {\n    [Spec](/lexica/spec.sdoc), [Gone](/nowhere.sdoc) and [Drive](C:/lexica/spec.sdoc)\n}\n";
+  const exists = (p) => p === "lexica/spec.sdoc" || p === "docs/reference/lexica/spec.sdoc";
+  const r = rewriteLinks(src, "docs/reference/d.sdoc", PACK_BASE, exists);
+  assert(r.errors.length === 1 && r.errors[0].includes("/lexica/spec.sdoc is a path from the repo root"), r.errors.join("; "));
+  assert(r.text === src, r.text);
+});
+
+test("pack-links: blobBaseUrl reads the repository from package.json", () => {
+  const url = blobBaseUrl({ repository: { url: "git+https://github.com/entropicwarrior/sdoc.git" } }, "300ac73bfe11");
+  assert(url === "https://github.com/entropicwarrior/sdoc/blob/300ac73bfe11/", url);
+  assert(blobBaseUrl({ repository: "https://github.com/o/r" }, "abc") === "https://github.com/o/r/blob/abc/", "a string repository");
+});
+
+test("pack-links: the links pin HEAD's commit, at twelve characters whatever git would pick", () => {
+  // A published link cannot be changed, so the hash keeps a margin against a
+  // later commit sharing its prefix rather than git's shortest unique one.
+  const root = path.join(__dirname, "..");
+  const commit = headCommit(root);
+  const full = require("child_process").execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  assert(/^[0-9a-f]{12}$/.test(commit) && full.startsWith(commit), commit + " for " + full);
+});
+
+test("pack-links: only committed files count as in the repo", () => {
+  const root = path.join(__dirname, "..");
+  const committed = committedFiles(root);
+  assert(committed.has("lexica/specification.sdoc") && committed.has("tools/pack-links.js"), "the knowledge files are listed");
+  const stray = [...committed].filter((p) => /^(node_modules|dist)\//.test(p));
+  assert(stray.length === 0, "build outputs are not: " + stray.slice(0, 3).join(", "));
+});
+
+test("pack-links: restore keeps an edit made meanwhile, and one failure stops no other file", () => {
+  const dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "pack-links-"));
+  try {
+    const file = (name, content) => {
+      const f = path.join(dir, name);
+      fs.writeFileSync(f, content);
+      return { file: f, original: name + " relative", text: name + " rewritten" };
+    };
+    // A directory where a file was: reading it fails, as a locked file would.
+    const broken = { file: path.join(dir, "gone"), original: "o", text: "t" };
+    fs.mkdirSync(broken.file);
+    const plain = file("plain", "plain rewritten");
+    const edited = file("edited", "plain rewritten, then edited");
+    const back = file("back", "back relative");
+    const r = restoreFiles([broken, plain, edited, back]);
+    assert(fs.readFileSync(plain.file, "utf8") === "plain relative", "the untouched file is restored");
+    assert(fs.readFileSync(edited.file, "utf8") === "plain rewritten, then edited", "the edit survives");
+    assert(fs.readFileSync(back.file, "utf8") === "back relative", "a file already back is left");
+    assert(r.changed.length === 1 && r.changed[0].file === edited.file, JSON.stringify(r.changed));
+    assert(r.failed.length === 1 && r.failed[0].file === broken.file && r.failed[0].message, JSON.stringify(r.failed));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("pack-links: every knowledge file rewrites cleanly, and only its links change", () => {
@@ -2583,7 +2649,7 @@ test("pack-links: every knowledge file rewrites cleanly, and only its links chan
     assert(r.errors.length === 0, r.errors.join("; "));
     // No link left that resolves in the repo but not in a package.
     const left = collectInlineRefs(parseSdoc(r.text).nodes).links
-      .filter((l) => !l.href.startsWith("#") && !/^[a-z][a-z0-9+.-]*:/i.test(l.href))
+      .filter((l) => !l.href.startsWith("#") && !hasUrlScheme(l.href))
       .filter((l) => exists(path.posix.join(path.posix.dirname(docPath), l.href.split("#")[0])));
     assert(left.length === 0, docPath + ": " + left.map((l) => l.href).join(", "));
     // Putting each href back on its own lines gives the original bytes.
@@ -2636,6 +2702,22 @@ if (process.platform !== "win32") {
     assert(r.ms < 3000, "the command was not killed: " + r.ms + "ms");
   });
 }
+
+// runCommand on a command, with a teardown that reports it could not undo
+// setup; its status, as the process exits with it.
+function packLinksRunWithFailedTeardown(commandSource) {
+  const packLinks = path.join(__dirname, "..", "tools", "pack-links.js");
+  const runner = `require(${JSON.stringify(packLinks)}).runCommand([process.execPath, "-e", ${JSON.stringify(commandSource)}], ` +
+    "() => {}, () => false).then((status) => process.exit(status));";
+  return spawnSync(process.execPath, ["-e", runner], { encoding: "utf8", timeout: 15000 }).status;
+}
+
+test("pack-links: a restore that fails fails the run, even after the command succeeded", () => {
+  const ok = packLinksRunWithFailedTeardown("");
+  assert(ok === 1, "status " + ok);
+  const failing = packLinksRunWithFailedTeardown("process.exit(3)");
+  assert(failing === 3, "the command's own failure is kept: " + failing);
+});
 
 // The "New Knowledge File" command writes this skeleton, and nothing else ever
 // parses it: it once wrote its @meta as one paragraph, losing every key after

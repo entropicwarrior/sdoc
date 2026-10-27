@@ -36,7 +36,7 @@ jobs:
       - run: npm install
 
       # pack-links points the packaged knowledge files' relative links at this
-      # tag on GitHub, and puts them back when the command exits.
+      # commit on GitHub, and puts them back when the command exits.
       - run: mkdir -p dist && node tools/pack-links.js npx vsce package --out dist/
 
       - name: Upload VSIX to release

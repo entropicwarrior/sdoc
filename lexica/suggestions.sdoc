@@ -174,7 +174,7 @@
 
         It is opt-in rather than automatic because the exporter cannot know what the URL depends on: whether the project is hosted at all, whether the recipient can open it, and which branch or tag to point at. A wrong guess is worse than a relative link: it looks right and returns a 404, where `cli.sdoc` at least names the file that was meant.
 
-        `tools/pack-links.js` already does this for the packaged knowledge files, against the release tag. It rewrites the source, because a package ships source; an export can do it in the renderer, which already holds every link node. The two should share the rule for which links are rewritten.
+        `tools/pack-links.js` already does this for the packaged knowledge files, against the commit being packaged. It rewrites the source, because a package ships source; an export can do it in the renderer, which already holds every link node. The two should share the rule for which links are rewritten.
     }
 
     # S8: Admonitions/Callouts @s8

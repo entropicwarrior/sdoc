@@ -11,31 +11,42 @@
 // right one — it opens the local file, works offline and `build-doc --check`
 // verifies it — so the source keeps it, and only the packaged copy changes.
 //
-// Every relative link whose target exists in the repo becomes a URL pinned to
-// this version's tag. A link to a file that does not exist is left alone: it is
-// an illustration in a guide, or a broken link that --check already reports.
-// The files are restored when the command exits, whatever its outcome.
+// Every relative link to a file committed in the repo becomes a URL pinned to
+// the commit being packaged, which in a release is the tagged one. A commit
+// cannot move, needs no version to have been bumped, and is the tree the links
+// were checked against. A link to a file that is not committed is left alone:
+// it is an illustration in a guide, a local build output GitHub does not have,
+// or a broken link that --check already reports. The files are restored
+// when the command exits, whatever its outcome, unless one was edited while it
+// ran.
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawn } = require("child_process");
-const { parseSdoc, collectInlineRefs } = require("../src/sdoc");
+const { spawn, spawnSync } = require("child_process");
+const { parseSdoc, collectInlineRefs, hasUrlScheme } = require("../src/sdoc");
 const { hrefCandidates } = require("../src/href-path");
 
 const ROOT = path.join(__dirname, "..");
 
-function hasUrlScheme(href) {
-  return /^[a-z][a-z0-9+.-]*:/i.test(href);
+// Whether the `](` at index p of a line closes an image's alt text rather than
+// a link's label. As the parser reads them, the label runs from the first `[`
+// after the previous `]`, and it is an image when that `[` follows a `!`. The
+// parser reports only links, so an image to the same target would otherwise
+// throw the count off. This reading ignores code and escapes; the count check
+// after it reports a line it gets wrong rather than rewriting it.
+function closesImage(line, p) {
+  const open = line.indexOf("[", line.lastIndexOf("]", p - 1) + 1);
+  return open !== -1 && open < p && line[open - 1] === "!";
 }
 
 // The parser says which links are real — a link inside code is not one — and
 // on which lines. The source is then edited only on those lines, and only
-// where the number of `](href)` there matches the number of links the parser
-// found; anything else is reported rather than guessed at.
+// where the number of `](href)` closing a link there matches the number of
+// links the parser found; anything else is reported rather than guessed at.
 //
 // docPath is the file's path from the repo root, with forward slashes.
-// exists(repoPath) says whether a file is in the repo.
+// exists(repoPath) says whether a file is committed in the repo.
 function rewriteLinks(text, docPath, baseUrl, exists) {
   const errors = [];
   const rewritten = [];
@@ -51,9 +62,21 @@ function rewriteLinks(text, docPath, baseUrl, exists) {
     const resolve = (p) => path.posix.normalize(path.posix.join(path.posix.dirname(docPath), p));
     // The URL keeps the path as written; the existence check also tries it
     // percent-decoded, as `build-doc --check` does.
+    const candidates = hrefCandidates(filePart);
+    // An absolute path is no file of the repo: --check reads `/lexica/x.sdoc`
+    // from the root of the disk, not of the repo. One that does name a repo
+    // file from its root was meant as one, and is reported so that the source
+    // and the package agree on it.
+    if (path.win32.isAbsolute(filePart)) {
+      if (filePart.startsWith("/") && candidates.some((c) => exists(path.posix.normalize(c.slice(1))))) {
+        errors.push(`${docPath}:${link.lineStart}: ${href} is a path from the repo root; ` +
+          "link the file by a path relative to this document");
+      }
+      continue;
+    }
     const target = resolve(filePart);
     if (target === ".." || target.startsWith("../")) continue;
-    if (!hrefCandidates(filePart).some((candidate) => exists(resolve(candidate)))) continue;
+    if (!candidates.some((candidate) => exists(resolve(candidate)))) continue;
     const key = `${link.lineStart}:${link.lineEnd}:${href}`;
     if (!groups.has(key)) {
       groups.set(key, { href, url: baseUrl + target + suffix, lineStart: link.lineStart, lineEnd: link.lineEnd, count: 0 });
@@ -67,17 +90,20 @@ function rewriteLinks(text, docPath, baseUrl, exists) {
     const overlaps = all.some((other) => other !== group && other.href === group.href &&
       other.lineStart <= group.lineEnd && group.lineStart <= other.lineEnd);
     const needle = `](${group.href})`;
-    let found = 0;
+    const found = [];
     for (let i = group.lineStart - 1; i < group.lineEnd; i += 1) {
-      found += lines[i].split(needle).length - 1;
+      for (let p = lines[i].indexOf(needle); p !== -1; p = lines[i].indexOf(needle, p + needle.length)) {
+        if (!closesImage(lines[i], p)) found.push([i, p]);
+      }
     }
-    if (overlaps || found !== group.count) {
+    if (overlaps || found.length !== group.count) {
       errors.push(`${docPath}:${group.lineStart}: cannot place the link to ${group.href}: ` +
-        `the parser found ${group.count}, the source has ${found} on those lines`);
+        `the parser found ${group.count}, the source has ${found.length} on those lines`);
       continue;
     }
-    for (let i = group.lineStart - 1; i < group.lineEnd; i += 1) {
-      lines[i] = lines[i].split(needle).join(`](${group.url})`);
+    // Last first, so the positions before each one still hold.
+    for (const [i, p] of found.reverse()) {
+      lines[i] = lines[i].slice(0, p) + `](${group.url})` + lines[i].slice(p + needle.length);
     }
     rewritten.push({ href: group.href, url: group.url, lineStart: group.lineStart, lineEnd: group.lineEnd, count: group.count });
   }
@@ -85,15 +111,64 @@ function rewriteLinks(text, docPath, baseUrl, exists) {
   return { text: lines.join("\n"), rewritten, errors };
 }
 
-// https://github.com/<owner>/<repo>/blob/v<version>/
-function tagBaseUrl(pkg) {
+// https://github.com/<owner>/<repo>/blob/<commit>/
+function blobBaseUrl(pkg, commit) {
   const repo = String((pkg.repository && pkg.repository.url) || pkg.repository || "")
     .replace(/^git\+/, "")
     .replace(/\.git$/, "");
   if (!/^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(repo)) {
     throw new Error(`package.json repository is not a GitHub URL: ${repo || "(none)"}`);
   }
-  return `${repo}/blob/v${pkg.version}/`;
+  return `${repo}/blob/${commit}/`;
+}
+
+function git(root, args, what) {
+  const r = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (r.error || r.status !== 0) {
+    throw new Error(`cannot ${what}: ${r.error ? r.error.message : r.stderr.trim()}`);
+  }
+  return r.stdout;
+}
+
+// HEAD's hash, at a fixed twelve characters. GitHub resolves an abbreviated
+// hash, but only while no other commit shares it, and a published link cannot
+// be changed: git's own --short picks the shortest prefix unique today, which
+// leaves no margin for the commits after it.
+function headCommit(root) {
+  return git(root, ["rev-parse", "--short=12", "HEAD"], "read the commit at HEAD").trim();
+}
+
+// The files committed at HEAD, with forward slashes. That is what GitHub holds
+// at the commit, where the working tree may also hold build outputs and other
+// untracked or ignored files, which it would answer with a 404.
+function committedFiles(root) {
+  const out = git(root, ["ls-tree", "-r", "-z", "--name-only", "HEAD"], "list the files committed at HEAD");
+  return new Set(out.split("\0").filter(Boolean));
+}
+
+// Puts back the text each file held before setup rewrote it. A file whose text
+// is no longer what setup wrote was edited while the command ran, and writing
+// the old text back would lose that edit, so it is left as it is and returned
+// in `changed`. Each file is restored on its own, so one that cannot be written
+// does not keep the others rewritten; it is returned in `failed`, with the
+// reason. written holds { file, original, text }.
+function restoreFiles(written) {
+  const changed = [];
+  const failed = [];
+  for (const entry of written) {
+    try {
+      const current = fs.readFileSync(entry.file, "utf8");
+      if (current === entry.original) continue;
+      if (current !== entry.text) {
+        changed.push(entry);
+        continue;
+      }
+      fs.writeFileSync(entry.file, entry.original);
+    } catch (err) {
+      failed.push({ ...entry, message: err.message });
+    }
+  }
+  return { changed, failed };
 }
 
 // Signals that stop a run. Ctrl-C reaches the command through the process
@@ -105,10 +180,12 @@ const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 // teardown always runs: it is passed on to the command, the run waits for the
 // command to stop, and it resolves 128 plus the signal's number, as a shell
 // reports it, never 0. A second signal kills the command, so one that ignores
-// the first cannot keep teardown waiting.
-async function runCommand(argv, setup = () => {}, teardown = () => {}) {
+// the first cannot keep teardown waiting. Teardown returns false when it could
+// not undo setup, and the run then fails even if the command succeeded.
+async function runCommand(argv, setup = () => {}, teardown = () => true) {
   let child = null;
   let received = null;
+  let status = 1;
   const onSignal = (signal) => {
     const first = !received;
     received = received || signal;
@@ -120,19 +197,19 @@ async function runCommand(argv, setup = () => {}, teardown = () => {}) {
   try {
     setup();
     child = spawn(argv[0], argv.slice(1), { stdio: "inherit", shell: process.platform === "win32" });
-    const status = await exitStatus(child);
+    status = await exitStatus(child);
     if (received) {
       console.error(`pack-links: stopped by ${received}`);
-      return 128 + os.constants.signals[received];
+      status = 128 + os.constants.signals[received];
     }
-    return status;
   } finally {
     try {
-      teardown();
+      if (!teardown() && status === 0) status = 1;
     } finally {
       for (const s of SIGNALS) process.removeListener(s, onSignal);
     }
   }
+  return status;
 }
 
 // The command's exit status: its code, or 128 plus the number of the signal
@@ -156,11 +233,11 @@ async function main(argv) {
     return 1;
   }
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
-  const baseUrl = tagBaseUrl(pkg);
+  const baseUrl = blobBaseUrl(pkg, headCommit(ROOT));
   const files = require("../knowledge.js").knowledgeFiles.map((f) => f.path);
-  const exists = (repoPath) => fs.existsSync(path.join(ROOT, repoPath));
+  const committed = committedFiles(ROOT);
+  const exists = (repoPath) => committed.has(repoPath);
 
-  const originals = new Map();
   const errors = [];
   const outputs = [];
   let count = 0;
@@ -169,8 +246,7 @@ async function main(argv) {
     const docPath = path.relative(ROOT, file).split(path.sep).join("/");
     const result = rewriteLinks(original, docPath, baseUrl, exists);
     errors.push(...result.errors);
-    originals.set(file, original);
-    outputs.push([file, result.text]);
+    outputs.push({ file, docPath, original, text: result.text });
     count += result.rewritten.reduce((n, r) => n + r.count, 0);
   }
   // Nothing is touched unless every file can be rewritten.
@@ -179,18 +255,33 @@ async function main(argv) {
     return 1;
   }
 
+  const written = [];
   return runCommand(argv, () => {
-    for (const [file, text] of outputs) fs.writeFileSync(file, text);
+    for (const output of outputs) {
+      fs.writeFileSync(output.file, output.text);
+      written.push(output);
+    }
     console.log(`pack-links: ${count} links in ${files.length} knowledge files point at ${baseUrl}`);
   }, () => {
-    for (const [file, original] of originals) fs.writeFileSync(file, original);
+    const { changed, failed } = restoreFiles(written);
+    for (const { docPath } of changed) {
+      console.warn(`pack-links: ${docPath} was edited while the command ran, so it was left as it is; ` +
+        `its links still point at ${baseUrl}`);
+    }
+    for (const { docPath, message } of failed) {
+      console.error(`pack-links: could not restore ${docPath}, whose links still point at ${baseUrl}: ${message}`);
+    }
+    return failed.length === 0;
   });
 }
 
-module.exports = { rewriteLinks, tagBaseUrl, runCommand };
+module.exports = { rewriteLinks, blobBaseUrl, headCommit, committedFiles, restoreFiles, runCommand };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((status) => {
     process.exitCode = status;
+  }, (err) => {
+    console.error(`pack-links: ${err.message}`);
+    process.exitCode = 1;
   });
 }

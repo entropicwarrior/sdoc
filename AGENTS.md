@@ -157,9 +157,11 @@ tools/              CLI tools
                       A regression detector, not a verdict
   serve_docs.py       CLI to start a local SDOC document server
   pack-links.js       Runs a packaging command with the knowledge files' relative
-                      links pointed at this version's tag on GitHub, and restores
-                      them after. `npm run package` and both release workflows
-                      go through it; a bare `vsce package` does not
+                      links to committed files pointed at the packaged commit on
+                      GitHub (12-character hash), and restores them after unless
+                      one was edited meanwhile. `npm run package` and both
+                      release workflows go through it; a bare `vsce package`
+                      does not
 ```
 
 ## Before Making Changes
