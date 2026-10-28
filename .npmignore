@@ -35,3 +35,7 @@ AGENTS.md
 language-configuration.json
 readme.md
 bindings/
+
+# The Claude Code plugin and its marketplace ship from git, not from npm
+.claude-plugin/
+plugins/

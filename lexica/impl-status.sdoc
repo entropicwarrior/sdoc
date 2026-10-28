@@ -188,6 +188,56 @@
         - [ ] Awaiting feedback on github/markup issue (#2030) and github-linguist issue (#7838)
         - [ ] Growing .sdoc file count on GitHub toward linguist recognition threshold (~200 unique repos)
 
+        # Claude Code Plugin @claude-plugin-wip
+        {
+            Unreleased, on \`feat/claude-plugin\`. A Claude Code plugin, \`plugins/sdoc-lexica\`, listed by the repo's own marketplace (\`.claude-plugin/marketplace.json\`), so a team installs it with one line or through managed settings. The user guide is \`docs/guide/claude-code-plugin.sdoc\`.
+
+            It has three parts:
+
+            {[.]
+                - **Skills:** \`/sdoc-lexica:authoring\` (the format, distilled, with the full authoring guide bundled to read by section) and \`/sdoc-lexica:lexica\` (finding and maintaining project knowledge; company-agnostic).
+                - **Read-only tools:** \`mcp__sdoc-lexica__list\`, \`outline\`, \`read\`, \`search\`, \`guides\` and \`check\`. They read only inside the project and the plugin, with no prompt; any other path is refused.
+                - **Hooks:**
+                {
+                    - the \`lexica/\` index with the first prompt;
+                    - a file's reading guide and related resources on its first Read, and its outline when a large file is read whole;
+                    - the first edit of a file with an \`\@editing-guide\` refused once, carrying the guide;
+                    - after each edit, the findings it added and only those.
+                }
+            }
+
+            **It runs as a mod, so coworkers need no Node.** The first design ran Node scripts from command hooks; it was dropped because Claude Code's standard installer ships no Node.
+
+            {[.]
+                - Claude Code runs \`hooks/register.mjs\` in its own runtime. That required \`src/knowledge-base.js\` (new) to be runtime-neutral, like \`src/sdoc.js\` already was.
+                - \`tools/build-plugin.js\` turns both into ES modules under \`plugins/sdoc-lexica/lib/\`. A test checks that the ES-module parser builds the same tree on every repo file.
+                - \`build-doc --check\` now calls the same \`checkText\`, with output unchanged on all 28 tracked files.
+            }
+
+            **Verified live on Claude Code 2.1.311** (\`claude -p --plugin-dir\`): the index arrives, the reading guide arrives after a Read, the guided edit is refused and then applied, a broken reference added by an edit is reported, a tool runs with no prompt inside the project and is refused outside it (a symbolic link pointing out included), and with \`verbose\` on each action shows as a line in the session.
+
+            **The plugin has no version, on purpose.** Claude Code then versions it by commit, so a fix merged to \`main\` reaches coworkers without an SDOC release. A fix for a Claude Code update that broke the mod goes through \`hotfix/plugin-*\` off \`main\`. The first build tied the version to \`package.json\`; with that, a plugin fix needed a full npm and Marketplace release to reach anyone.
+
+            Learned on the way: the index cannot go in \`prompt.context\`, the first message's context blocks, because the built-in \`cc-plugin-sec-default\` passes over a user plugin's hook there. It goes with \`prompt.submit\` instead.
+
+            Also learned:
+
+            {[.]
+                - **A tool call a mod answers never reaches Claude Code's permission check.** That check runs beneath \`next(e)\`. A \`tool.check\` hook meant to allow in-project calls never fired, and the tools read anywhere. The guard now sits in the \`tool.call\` hook, resolving links with \`\$.fs.stat\`.
+                - **The plugin's own tools are the path it encourages, so they must carry what Read carries.** A first test in another repo answered from two sections through \`read\` and never saw a reading guide. Now the first meeting with a file through Read, outline, read or guides gives its signposts, once per agent.
+                - **A summary is never cut short in the index.** A clipped one misleads more than none. The index lists every file with its whole \`\@about\` when that fits within the \`indexSize\` setting (\`6k\`, \`12k\` by default, or \`24k\` characters). Otherwise it lists every file by title, and only past that leaves files out, with a count.
+                - **A skill is named after its folder,** whatever the frontmatter \`name\` says. \`skills/lexica-workflow/\` was exposed as \`:lexica-workflow\`. The folder is \`lexica/\` now, and \`findKnowledgeDirs\` passes over a \`lexica/\` holding no \`.sdoc\` file.
+            }
+
+            Not verified:
+
+            {[.]
+                - the earliest Claude Code version that runs a hooks module;
+                - that a repository's \`.claude/settings.json\` loads the plugin with no install step;
+                - Cowork and claude.ai, for which only the absence of a top-level \`bin/\` has been seen to.
+            }
+        }
+
         # Slide Layouts and Export @slides-wip
         {
             Unreleased, on \`feat/slide-layouts\`. Structured slide layouts (\`columns\`,

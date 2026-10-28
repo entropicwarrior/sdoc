@@ -1,0 +1,37 @@
+{
+  "name": "sdoc-lexica",
+  "displayName": "SDOC and Lexica",
+  "description": "Read, write and navigate SDOC files and Lexica knowledge trees: skills for the format, read-only tools that outline, read and search files by section, and hooks that show each file's reading and editing guides and check every edit.",
+  "author": {
+    "name": "Entropic Warrior",
+    "url": "https://github.com/entropicwarrior"
+  },
+  "homepage": "https://github.com/entropicwarrior/sdoc",
+  "repository": "https://github.com/entropicwarrior/sdoc",
+  "license": "MIT",
+  "keywords": [
+    "sdoc",
+    "lexica",
+    "documentation",
+    "knowledge-base"
+  ],
+  "userConfig": {
+    "verbose": {
+      "type": "boolean",
+      "title": "Verbose",
+      "description": "Show a line in the session for everything the plugin does: the index it attaches, the guides it adds after a Read, an edit it refuses, the findings it reports, each tool call. Claude is not sent these lines. Off, they go to the debug log only (claude --debug-file).",
+      "default": false
+    },
+    "indexSize": {
+      "type": "string",
+      "title": "Knowledge index size",
+      "description": "The most the lexica/ index may add to a conversation's first prompt: 6k, 12k or 24k characters (about 1,500, 3,000 or 6,000 tokens). When the summaries do not fit, every file is listed with its title instead.",
+      "options": [
+        "6k",
+        "12k",
+        "24k"
+      ],
+      "default": "12k"
+    }
+  }
+}

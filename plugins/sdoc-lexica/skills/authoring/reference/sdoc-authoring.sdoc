@@ -1,0 +1,1170 @@
+# SDOC Authoring Guide @sdoc-authoring
+{
+    # Meta @meta
+    {
+        type: skill
+
+        sdoc-version: 0.2
+    }
+
+    # About @about
+    {
+        How to write correct SDOC files. Covers document structure, inline
+        formatting, block types (lists, tables, code, blockquotes), and common
+        mistakes. Read the Quick Reference for everyday authoring. Read Common
+        Mistakes before generating SDOC for the first time.
+    }
+
+    # Quick Reference @quick-reference
+    {
+        # Core Principle @core-principle
+        {
+            Structure comes from explicit brace scoping. \`{ }\` provides unambiguous scope boundaries. Whitespace and indentation are cosmetic — use them freely for readability but they never affect meaning.
+
+            Write each paragraph as a single long line. Do not hard-wrap body text at 72 or 80 characters. The renderer handles line wrapping based on the viewer's window width. A blank line separates paragraphs.
+        }
+
+        # Scopes @scopes
+        {
+            A scope is a heading followed by content in braces:
+
+            ```
+            # Document Title
+            {
+                # Section @section-id
+                {
+                    Paragraph text goes here.
+
+                    # Subsection
+                    {
+                        Deeper content.
+                    }
+                }
+            }
+            ```
+
+            {[.]
+                - \`#\` starts a heading (multiple \`#\` characters are allowed but don't affect depth — only nesting does)
+                - \`@slug\` at the end of a heading line assigns a referenceable ID — the \`@\` character followed directly by the slug. There is no \`@id\` keyword.
+                - \`{ }\` delimits the scope's content
+            }
+
+            The opening brace can appear at the end of the heading line (K&R style):
+
+            ```
+            # Title {
+                Content goes here.
+            }
+
+            # Smart Pointers @smart-ptrs {
+                The @slug goes before the brace.
+            }
+
+            # Error Handling @error-handling {
+                Another example with a slug.
+            }
+            ```
+        }
+
+        # Braceless Scopes @braceless-scopes
+        {
+            A heading not followed by \`{\` creates a braceless scope. Content
+            runs until the next \`#\` heading, a closing \`}\`, or end of file:
+
+            ```
+            # Section A
+            Content of Section A.
+            It can span multiple lines.
+
+            # Section B
+            Content of Section B.
+            ```
+
+            Braceless and explicit scopes can be mixed freely in the same
+            document.
+        }
+
+        # Headingless Scopes @headingless-scopes
+        {
+            A bare \`{ }\` block without a heading creates a section with no title — useful for grouping content:
+
+            ```
+            {
+                This content is grouped but has no heading.
+            }
+            ```
+
+            Headingless scopes nest like any other scope and can appear anywhere a headed scope can.
+        }
+
+        # Inline Blocks @inline-blocks
+        {
+            Short content can be written on a single line:
+
+            ```
+            # Author
+            { Jane Doe }
+
+            # Version
+            { 1.0 }
+            ```
+
+            Inline blocks must not contain unescaped \`{\` or \`}\` characters.
+        }
+
+        # Implicit Root @implicit-root
+        {
+            If the first heading is not followed by \`{\`, the document uses implicit root mode — the first heading becomes the document title and everything after it becomes the body:
+
+            ```
+# My Document
+
+# Section A
+Content of Section A.
+
+# Section B
+Content of Section B.
+            ```
+
+            This is equivalent to wrapping the entire body in braces after the first heading. Use implicit root for simple flat documents.
+        }
+
+        # Paragraphs @paragraphs
+        {
+            Consecutive text lines form a paragraph. A blank line or a new scope
+            ends the paragraph.
+
+            ```
+            # About
+            {
+                This is the first paragraph.
+                These lines join together.
+
+                This is a second paragraph.
+            }
+            ```
+        }
+
+        # Lists @lists
+        {
+            **Simple bullet lists** — inside a normal scope, a run of \`-\` lines automatically becomes an implicit list. This is the easiest form for simple single-line items:
+
+            ```
+            # Features {
+                - Fast parsing
+                - Explicit structure
+                - Easy references
+            }
+            ```
+
+            **Explicit list blocks** — use \`{[.]\` (note: no closing \`}\` on this line) for bullet lists or \`{[#]\` for numbered lists. The block is closed by a separate \`}\` after the items. Use explicit blocks when items need body content or for numbered lists:
+
+            ```
+            {[.]
+                - Item with details
+                {
+                    This paragraph belongs to the item above.
+                    Code blocks, nested lists, etc. go here too.
+                }
+                - Simple item
+            }
+
+            {[#]
+                1. Install the extension
+                2. Create a .sdoc file
+                3. Open the preview
+            }
+            ```
+
+            **Important:** \`{[.]}\` with the closing brace on the same line creates an empty list — the brace closes the block immediately. Always put the closing \`}\` on a separate line after the items.
+
+            Implicit lists work for both bullet (\`-\`) and numbered (\`1.\`, \`2.\`, etc.) items. Each item must be a single line. For multi-line item titles or item body content, use the explicit \`{[.]}\` or \`{[#]\` block form.
+
+            **Task lists** — checkbox syntax inside explicit list blocks:
+
+            ```
+            {[.]
+                - [ ] Pending task
+                - [x] Completed task
+            }
+            ```
+
+            **Anonymous list items** — items with no title, just a body block:
+
+            ```
+            {[.]
+                {
+                    First item, body only.
+                }
+                {
+                    Second item, body only.
+                }
+            }
+            ```
+
+            **Multi-line titles** — in explicit list blocks, item titles can span multiple lines. Continuation stops at blank lines, list markers, braces, and other command tokens:
+
+            ```
+            {[.]
+                - This is a long list item
+                  that continues on the next line
+                - Short item
+            }
+            ```
+        }
+
+        # Tables @tables
+        {
+            Opened with \`{[table]\` (no closing brace on this line). First row is the header, columns separated by \`|\`. Closed by a separate \`}\`:
+
+            ```
+            {[table]
+                Name | Age | City
+                Alice | 30 | NYC
+                Bob | 25 | LA
+            }
+            ```
+
+            Optional flags control rendering:
+
+            ```
+            {[table borderless]
+                Feature | Status
+                Parser | Complete
+            }
+
+            {[table headerless]
+                Alice | 30
+                Bob | 25
+            }
+
+            {[table borderless headerless]
+                ![](a.png =100%) | ![](b.png =100%)
+            }
+            ```
+
+            \`borderless\` removes borders and row striping. \`headerless\` treats all rows as data (no header). Flags combine in any order.
+
+            Width and alignment flags control table sizing and position:
+
+            ```
+            {[table 60% center]
+                Endpoint | Status
+                /v2/weather | Active
+            }
+
+            {[table auto]
+                Key | Value
+                Version | 2.0
+            }
+
+            {[table 400px right borderless]
+                v2.0 | Current
+                v1.0 | Deprecated
+            }
+            ```
+
+            Width: \`auto\` (shrink to content), \`NN%\` (percentage), or \`NNpx\` (pixels). Default is 100%. Alignment: \`left\` (default), \`center\`, or \`right\`. All flags compose freely in any order.
+
+            To include a literal \`|\` in a cell (e.g. for math), escape it with \`\\|\`:
+
+            ```
+            {[table]
+                Expression | Value
+                \|x\| + \|y\| | 8
+            }
+            ```
+
+            # Column Directives @column-directives
+            {
+                An optional directive row after the header controls per-column alignment and number formatting. It is consumed by the parser and not rendered as data.
+
+                # Column Alignment
+                {
+                    Use \`<\` (left), \`>\` (right), or \`=\` (center):
+
+                    ```
+                    {[table]
+                        Programme | Amount | Status
+                        < | > | =
+                        Alpha | $1,000,000 | Active
+                        Beta | $2,500,000 | Pending
+                    }
+                    ```
+
+                    If absent, all columns default to left. Empty cells in the directive row keep the default. Alignment applies to both header and data cells.
+
+                    For headerless tables, the directive row is the first row — it is consumed but no header is rendered:
+
+                    ```
+                    {[table headerless]
+                        < | >
+                        Alice | 100
+                        Bob | 200
+                    }
+                    ```
+                }
+
+                # Column Formatting
+                {
+                    A format token in the directive row formats numeric cells and formula results in that column. Text cells (like bold labels) pass through unchanged. The format is display-only — formulas always use raw numeric values.
+
+                    {[.]
+                        - \`$\` — currency, no decimals: \`$1,000,000\`
+                        - \`$.N\` — currency with N decimals: \`$.2\` → \`$1,234.50\`
+                        - \`,\` — thousands separator: \`1,000,000\`
+                        - \`,.N\` — thousands with N decimals: \`,.2\` → \`1,234,567.89\`
+                        - \`.N\` — fixed N decimals: \`.2\` → \`3.14\`
+                        - \`%\` — percentage (value × 100): \`0.452\` → \`45.2%\`
+                        - \`%.N\` — percentage with N decimals: \`%.1\` → \`45.7%\`
+                    }
+
+                    Alignment and format combine in a single directive cell:
+
+                    ```
+                    {[table]
+                        Item | Amount
+                        < | > $
+                        Widget | 1000000
+                        Gadget | 2500000
+                        **Total** | =SUM(B1:B2)
+                    }
+                    ```
+
+                    The \`Amount\` column is right-aligned and formatted as currency. The formula result and data cells all display as \`$1,000,000\` style. The \`**Total**\` label renders as bold text.
+                }
+
+                # Copyable Columns
+                {
+                    A \`copy\` token in the directive row gives every body cell in that column a click-to-copy icon (copying the cell's raw text). Ideal for columns of sequences, IDs, or commands.
+
+                    ```
+                    {[table]
+                        Gene | Sequence
+                             | copy
+                        BRCA1 | ACGTACGTGGCA
+                        TP53 | GGCATTACGATT
+                    }
+                    ```
+
+                    \`copy\` can share a directive row with alignment/format directives on other columns.
+                }
+            }
+
+            # Table Formulas @table-formulas
+            {
+                Cells starting with \`=\` are evaluated as formulas. Hover a computed cell in preview to see the original formula.
+
+                ```
+                {[table]
+                    Investor | Shares | Ownership
+                    < | > , | > %
+                    Seed Fund | 500000 | 0.25
+                    Founder A | 1000000 | 0.50
+                    Founder B | 500000 | 0.25
+                    **Total** | =SUM(B1:B3) | =SUM(C1:C3)
+                }
+                ```
+
+                Cell references use A1 notation (column letter + row number). Headers are excluded from row numbering, so the first data row is row 1.
+
+                {[.]
+                    - \`=SUM(range)\` — sum of values
+                    - \`=AVG(range)\` — arithmetic mean
+                    - \`=COUNT(range)\` — number of cells
+                    - Arithmetic: \`=B1+B2\`, \`=B1*3\`, \`=(A1+A2)/2\`, \`=-B1\`
+                    - Function names are uppercase only
+                    - Escape with \`\\=\` for a literal equals sign at the start of a cell
+                }
+
+                Errors display in red italic: \`#DIV/0!\` (division by zero), \`#VALUE!\` (bad reference), \`#REF!\` (invalid syntax), \`#NAME!\` (unknown function), \`#CIRCULAR!\` (circular dependency).
+
+                **Tip:** Use numeric values with a column format directive (e.g. \`> $\`) instead of pre-formatted strings like \`$1,000,000\`. Formatted strings are text — formulas cannot reference them.
+            }
+        }
+
+        # Inline Formatting @inline-formatting
+        {
+            {[table]
+                Syntax | Result
+                \`*text*\` | Emphasis
+                \`**text**\` | Strong
+                \`~~text~~\` | Strikethrough
+                \`\\\`code\\\`\` | Inline code
+                \`\$x^2\$\` | Inline math (KaTeX)
+                \`\$\$E = mc^2\$\$\` | Display math (centered)
+                \`\{+text+\}\` | Positive marker (green)
+                \`\{=text=\}\` | Neutral marker (blue)
+                \`\{^text^\}\` | Note marker (amber)
+                \`\{?text?\}\` | Caution marker (dark amber)
+                \`\{!text!\}\` | Warning marker (orange)
+                \`\{-text-\}\` | Negative marker (red)
+                \`\{~text~\}\` | Highlight (yellow)
+                \`#1a73e8\` | Hex color swatch (auto-readable text)
+                \`\{copy\}text\{/copy\}\` | Copyable text with click-to-copy icon
+            }
+
+            Hex color codes (\`#rgb\`, \`#rgba\`, \`#rrggbb\`, \`#rrggbbaa\`) render as inline swatches — a rounded box filled with the color and labelled with the code, with the text color chosen automatically (black or white) for legibility. They are detected in normal text, list items, table cells, and headings, but not inside \`\\\`inline code\\\`\` (which stays literal). A bare \`#\` at the start of a line is a heading; escape with \`\\#\` to keep a literal hash.
+
+            Copyable text: \`\{copy\}ACGTACGTGGCA\{/copy\}\` renders the inner text verbatim in monospace with a copy icon; clicking it copies the text. Great for DNA/protein sequences, IDs, hashes, and commands. Escape with \`\\\{copy\}\` for a literal. Copy icons show in HTML output (preview, exported HTML, web viewer) and are hidden when printed/exported to PDF.
+
+            Links: \`[Link text](https://example.com)\` or \`[Other doc](./other-file.sdoc)\`. Relative paths resolve from the document's directory.
+
+            Images: \`![Alt text](path/to/image.png)\`
+
+            Images with width and alignment:
+
+            ```
+            ![Alt](image.png =50%)
+            ![Alt](image.png =50% center)
+            ![Alt](image.png =35% left)
+            ![Alt](image.png =35% right)
+            ![A](a.png =48%) ![B](b.png =48%)
+            ```
+
+            Autolinks: \`\<https://example.com\>\` — angle brackets are optional; bare URLs starting with \`http://\`, \`https://\`, or \`mailto:\` are also auto-linked. Bare email addresses (e.g. \`hello@example.com\`) are automatically rendered as \`mailto:\` links.
+
+            Math: Use \`\$...\$\` for inline math and \`\$\$...\$\$\` for display math. Use \`\\\`\\\`\\\`math\` code fences for multi-line equations. A plain \`\$\` followed by a digit (e.g. \`\$100\`) does not trigger math mode.
+        }
+
+        # References @references
+        {
+            Assign a slug with \`@slug\` on a heading, then reference it elsewhere in the same document with \`@slug\`:
+
+            ```
+            # Setup @setup {
+                Follow these instructions.
+            }
+
+            # Usage {
+                Make sure you complete @setup first.
+            }
+            ```
+
+            A reference resolves only to a slug assigned with \`@slug\`. A heading without one cannot be referenced, even by a slug made from its title: give it an \`@slug\` first. The broken-reference message names the heading when the slug matches its title.
+
+            Rendered, a reference shows the target heading's title, so the example reads "Make sure you complete Setup first." Write the sentence so it reads well with the title in place of the slug. A heading with no title, or a reference that does not resolve, shows `@slug` as written.
+
+            References are **document-local only** — \`@slug\` resolves within the current file. To point a reader to a section in another file, use a link with a fragment:
+
+            ```
+            See [Setup](./other-file.sdoc#setup) for details.
+            ```
+
+            Do not write \`@setup\` when the target scope is in a different file — it will be flagged as a broken reference.
+        }
+
+        # Citations @citations
+        {
+            Use \`[@key]\` in text to cite a source. Define citations in a \`{[citations]\` block. The renderer assigns numbers by order of first appearance and links everything together.
+
+            ```
+            # Findings {
+                Edge AI is growing rapidly [@mm-edge-ai]. The chip market
+                is expected to double by 2031 [@mordor-chips].
+
+                {[citations]
+                    - @mm-edge-ai MarketsandMarkets, "Edge AI Hardware
+                      Market," Report SE 7017, June 2025.
+                    - @mordor-chips Mordor Intelligence, "Edge AI Chips
+                      Market Size & Share Analysis," 2026.
+                }
+            }
+            ```
+
+            {[.]
+                - \`[@key]\` renders as a clickable superscript number (e.g. \`[1]\`) linking to the citation entry
+                - \`[@key1, @key2]\` renders as \`[1, 3]\` with each number individually linked
+                - The same \`[@key]\` used multiple times always renders the same number
+                - Keys follow \`@slug\` conventions: lowercase kebab-case
+                - Citation text is free-form SDOC inline content — links, bold, italics all work
+                - Each citation entry includes a back-link (\`\u21A9\`) to the first place it was cited
+                - Numbering is by order of first \`[@key]\` appearance, not by definition order
+                - Multiple \`{[citations]\` blocks are allowed — numbering is unified across all blocks
+                - A \`[@key]\` with no matching definition is flagged as a broken citation
+                - A defined citation that is never referenced produces a warning
+                - Citation keys are document-local, like \`@slug\` references
+            }
+        }
+
+        # Code Blocks @code-blocks
+        {
+            Fenced with triple backticks. Content inside is raw (no parsing):
+
+            ````
+            ```javascript
+            function hello() {
+                console.log("Hello!");
+            }
+            ```
+            ````
+
+            # Include by Link @code-includes
+            {
+                A code block can reference an external file with \`src:\` on the fence line — the content stays in sync:
+
+                `````
+                ```json src:./data.json
+                ```
+
+                ```json src:./data.json lines:3-5
+                ```
+                `````
+
+                \`src:\` takes a file path (relative to the document) or URL. \`lines:\` optionally limits to a range (1-based, inclusive). The code block body is replaced by the resolved content.
+            }
+        }
+
+        # Mermaid Diagrams @mermaid
+        {
+            Code blocks with the \`mermaid\` language tag are rendered as SVG diagrams using the Mermaid JS library. No special syntax is needed — use a standard code fence:
+
+            ````
+            ```mermaid
+            graph LR
+              A[Client] --> B[Server]
+              B --> C[Database]
+            ```
+            ````
+
+            Mermaid supports flowcharts (\`graph\`), sequence diagrams (\`sequenceDiagram\`), class diagrams (\`classDiagram\`), state diagrams (\`stateDiagram-v2\`), and more. The Mermaid library is loaded from CDN only when a document contains mermaid blocks.
+        }
+
+        # SVG Diagrams @svg
+        {
+            Code blocks with the \`svg\` language tag render as inline SVG graphics. This gives full control over shapes, layout, and styling for diagrams that need more precision than Mermaid offers:
+
+            ````
+            ```svg
+            <svg viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg">
+              <rect x="10" y="10" width="80" height="40" rx="5" fill="#4a90d9" />
+              <text x="50" y="35" text-anchor="middle" fill="white" font-family="sans-serif" font-size="13">Hello</text>
+            </svg>
+            ```
+            ````
+
+            For security, the following are stripped before rendering: \`<script>\` tags, \`<foreignObject>\` tags, event-handler attributes (\`onload\`, \`onclick\`, etc.), and \`javascript:\` URLs. Content outside the \`<svg>\` root element is discarded. All other SVG elements and attributes pass through as-is.
+        }
+
+        # Math Blocks @math-blocks
+        {
+            Code blocks with the \`math\` language tag are rendered as display equations via KaTeX:
+
+            ````
+            ```math
+            \\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}
+            ```
+            ````
+
+            Math blocks render as centered display equations with no copy button. The KaTeX CSS is loaded from CDN only when a document contains math content.
+        }
+
+        # Blockquotes @blockquotes
+        {
+            ```
+            > This is a quoted line.
+            > Another line in the same quote.
+            ```
+        }
+
+        # Horizontal Rules @horizontal-rules
+        {
+            A line of three or more \`-\`, \`*\`, or \`_\`:
+
+            ```
+            ---
+            ```
+        }
+
+        # Meta Scope @meta-scope
+        {
+            The reserved \`@meta\` scope configures per-file settings and is not rendered in the document body. Use the bare \`@meta\` form (preferred) or the heading form:
+
+            ```sdoc
+            @meta {
+                type: doc
+
+                sdoc-version: 0.2
+
+                company: Acme Corp
+
+                confidential: true
+
+                style: styles/custom.css
+
+                header: My Header
+
+                footer: My Footer
+            }
+            ```
+
+            The heading form \`# Meta @meta { }\` also works but the bare form is preferred because \`@meta\` is structural, not content.
+
+            Supported properties (separate each with a blank line):
+
+            \`type: doc\` or \`type: skill\` or \`type: slides\` — document type.
+
+            \`company: Name\` — company name, shown in the document footer.
+
+            \`confidential: true\` — adds a confidentiality notice banner.
+            Uses the \`company\` name if set. Use \`confidential: Custom Entity\`
+            to override with a specific entity name.
+
+            \`style: path/to/file.css\` — custom stylesheet (replaces default).
+
+            \`style-append: path/to/file.css\` — additional stylesheet (appended).
+
+            \`header: text\` — page header text (or use a \`# Header\` sub-scope
+            for rich content).
+
+            \`footer: text\` — page footer text (or use a \`# Footer\` sub-scope
+            for rich content).
+
+            \`uuid: ...\` — unique identifier.
+
+            \`tags: tag1, tag2\` — comma-separated tags.
+
+            \`sdoc-version: 0.2\` — SDOC format version. A parser warning is
+            emitted when this key is missing from \`@meta\`.
+        }
+
+        # Signposts @signposts
+        {
+            Signposts are optional reserved scopes that describe the document itself rather than its subject. Unlike `@meta`, which is configuration and is never rendered, they are written for people and agents and render as labelled boxes. Each one answers exactly one question, for one audience, in one fixed shape. A sentence that answers a different question belongs in a different section or in the body. Content of another shape is reported by the validator.
+
+            {[table]
+                Section | Question it answers | Shape | In exports default
+                `@about` | What is this document, and should I read it? | Paragraphs and lists, no section references | Hidden
+                `@not-about` | What does it deliberately leave out, and why? | Paragraphs and lists, no links | Hidden
+                `@related-resources` | What else can I open that goes with it? | One table: Resource, Relation | Hidden
+                `@reading-guide` | I am going to read this. Where do I start, and what can I skip? | Paragraphs and lists, then one table: Sections, Note | Shown
+                `@editing-guide` | I am going to change this file. What are the rules? | Paragraphs and lists | Hidden
+            }
+
+            # Rules for All Signposts @signpost-rules
+            {
+                {[.]
+                    - Every signpost is optional, and a document has at most one of each.
+                    - Place them as direct children of the root scope. This is required: written anywhere else, the scope is an ordinary section, and the validator reports it as an error.
+                    - Put them after `@meta` and before the body, in the order of the table above. This is a convention: a signpost out of order still works where it is written, and the validator reports a warning. The VS Code quick fix **Reorder signposts**, or `build-doc.js --fix`, puts them in order for you.
+                    - Use the bare form, `@reading-guide { ... }`. The heading form, `# Start Here @reading-guide { }`, also works, and its title replaces the default label.
+                    - The ids are reserved. Never give an ordinary section one of them, and never point a reference at one: a reference to a signpost or to `@meta` is reported as broken, since most signposts are dropped from exports.
+                    - A signpost written deeper than the root's children is not a signpost. It renders and exports as an ordinary section, content and all, and the validator and the export tools flag it.
+                    - **Paragraphs and lists** means exactly that: paragraphs, and lists whose items hold only paragraphs and lists. Inline formatting, links and `@id` references are fine. Tables, code blocks, data blocks, blockquotes, horizontal rules and sub-scopes are not.
+                    - An empty signpost is never rendered.
+                }
+            }
+
+            # Choosing the Section @choosing-signpost
+            {
+                Ask what a sentence does for its reader.
+
+                {[.]
+                    - It helps someone decide whether to read: `@about`.
+                    - It says what this document leaves out, and why: `@not-about`.
+                    - It links to something a reader can open, such as a document, a file or a URL: a row in `@related-resources`.
+                    - It tells a committed reader where to start or what to skip: `@reading-guide`.
+                    - It tells an editor how to change this file: `@editing-guide`.
+                    - It tells the reader about the subject: the body, not a signpost.
+                }
+            }
+
+            # About Scope @about-scope
+            {
+                `@about` is the discovery summary: what the document covers, who it is for, and when to reach for it. It helps a reader decide whether to read, never how. Write two to five sentences, and use a list only when the coverage is a genuine enumeration. Discovery tooling such as `list_knowledge` shows it to describe the file without loading the body.
+
+                ```sdoc
+                @about {
+                    How to write correct SDOC files.
+                    Covers document structure, inline formatting, block types, and common mistakes.
+                }
+                ```
+
+                Keep pointers to other resources out of it: list them in `@related-resources`. A topic a reader might wrongly look for here goes in `@not-about`. A reference to one of the document's own sections, such as `@intro`, is a validation error here: discovery tools show the summary without the body, so it leads nowhere. Point to sections from `@reading-guide`.
+
+                With the bare form the renderer adds an `About` label. The heading form lets you choose the label: `# Document Discovery @about { }` renders with `Document Discovery` as the title.
+            }
+
+            # Not About @not-about-scope
+            {
+                `@not-about` names topics a reader could plausibly expect here that this document deliberately leaves out, and says why each is left out. Write one list item per topic: the topic, then the reason in one clause. If a topic is missing because nobody has written it yet, say that.
+
+                This is what this guide's own `@not-about` could say:
+
+                ```sdoc
+                @not-about {
+                    - The formal grammar: this guide teaches by example, and exact rules would bury the examples.
+                    - Exporting to HTML or PDF: export is a tooling task, not an authoring one, and its options change with the tools.
+                }
+                ```
+
+                It does not redirect. The resources that cover a left-out topic belong in `@related-resources`, and a link here is a validation error. [Not About or Related Resources](#not-about-or-related-resources) explains the split.
+
+                It does not restate what the document covers; that is `@about`. Keep each reason to one clause: a longer argument for the boundary belongs in the body, or in `@editing-guide` when it binds editors. List only plausible expectations, not everything the document is not.
+            }
+
+            # Related Resources @related-resources-scope
+            {
+                `@related-resources` lists the resources that go with this document: what to read or use alongside it, and what covers the topics it leaves out. A resource can be another SDOC document, any other file of the project, or something outside the project, such as a GitHub repository or a web page. The section holds exactly one table with the header `Resource | Relation`, and nothing else.
+
+                Each `Resource` cell is exactly one link:
+
+                {[.]
+                    - another SDOC document or any file of the project, by a path relative to this document: `[Specification](../../lexica/specification.sdoc)`, `[Default Theme](../../themes/default/theme.css)`
+                    - an external resource, by URL: `[SDOC Repository](https://github.com/entropicwarrior/sdoc)`, or the bare URL
+                }
+
+                Each `Relation` cell is one clause on how that resource relates to this document. Leading with the kind of relation keeps the tables uniform across documents: prerequisite, sibling, source, implementation, supersedes, superseded by, or "covers X, which this document leaves out".
+
+                ```sdoc
+                @related-resources {
+                    {[table]
+                        Resource | Relation
+                        [Specification](../../lexica/specification.sdoc) | Normative source for everything this guide teaches, including the grammar it leaves out
+                        [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+                        [CLI and Tools Reference](cli.sdoc) | Covers exporting to HTML and PDF, which this guide leaves out
+                        [SDOC Repository](https://github.com/entropicwarrior/sdoc) | Upstream repository, for issues and releases
+                    }
+                }
+                ```
+
+                A link to a section of this document is an error here; those sections belong in `@reading-guide`, or in an inline `@id` reference. An absolute path or a `file:` URL is an error too, since it would not resolve on anyone else's machine. List only resources worth opening, not every passing cross-reference in the body.
+            }
+
+            # Reading Guide @reading-guide-scope
+            {
+                `@reading-guide` tells a reader who has already decided to read how to go about it. It has two parts, in this order. First come paragraphs and lists, which may be left out: the overall approach, what can be skipped, what the reader should already know. Then comes exactly one table with the header `Sections | Note`, and nothing after it. Each `Sections` cell is a comma-separated list of `@id` references to sections of this document, and every one must resolve. Each `Note` cell says in one clause when or why to read them.
+
+                ```sdoc
+                @reading-guide {
+                    Read the Quick Reference once, then keep Common Mistakes open while writing.
+
+                    {[table]
+                        Sections | Note
+                        @quick-reference | Everyday authoring
+                        @common-mistakes | Before generating SDOC for the first time
+                    }
+                }
+                ```
+
+                It does not summarise the content, which is `@about`, or the sections, which their headings already name. If the free part ends with a list, write it as an explicit `{[.]` block: a `{[table]` written straight after a `- item` line attaches to that item.
+
+                This is the only signpost kept in HTML and PDF exports, because the person holding an exported copy is exactly the reader it serves.
+            }
+
+            # Editing Guide @editing-guide-scope
+            {
+                `@editing-guide` tells someone about to change this file how to do it: what belongs in which section, conventions to keep, what must change together, which parts are normative, and who owns the file or how changes are proposed. It holds paragraphs and lists only.
+
+                ```sdoc
+                @editing-guide {
+                    - A new feature gets a Quick Reference entry. A pitfall goes in Common Mistakes, not in the entry.
+                    - Examples use the bare form for reserved scopes.
+                }
+                ```
+
+                Instructions about changing the subject itself, such as the code or the product, are body content, not edit guidance. The only audience is the editor of this file.
+            }
+
+            # Validation and Exports @signpost-validation
+            {
+                The parser accepts any content in a signpost, and `validateSignposts` checks the rules above. Its findings appear in the VS Code Problems panel as you type, and `node tools/build-doc.js file.sdoc --check` prints them with line numbers. These are errors, and make `--check` exit 1: It reports:
+
+                {[.]
+                    - a signpost below the top level of the document, which then renders as an ordinary section. One inside a `:comment` scope is not reported
+                    - a document whose only scope is a signpost, such as `# Editing Guide @editing-guide { ... }` on its own: it is read as the signpost, and the document renders empty. Give the root another id
+                    - the same signpost twice
+                    - a block the section's shape does not allow, or a link in `@not-about`
+                    - a missing, doubled or malformed table, including a wrong header, a wrong cell count, an empty cell, or a `Resource` cell that is not one link, links into this document, or uses an absolute path
+                    - a `Sections` reference that does not resolve to an explicit `@id` in this document, or that names a signpost, reported as a broken reference
+                }
+
+                A signpost out of the conventional order is a warning, which `--check` prints without failing. Fix it with the **Reorder signposts** quick fix in VS Code, or with `node tools/build-doc.js file.sdoc --fix`, which rewrites the file. The fix moves each signpost with the `//` comments directly above it. It refuses, and says why, when moving the text would change the document's structure, as a braceless signpost next to body text can.
+
+                HTML and PDF exports drop `@about`, `@not-about`, `@related-resources` and `@editing-guide` by default. An exported copy goes to someone already asked to read it, who will not edit it. `@reading-guide` stays. Pass `--include-signposts` to keep all of them, or `--signposts` to keep or drop single sections, such as `--signposts related-resources` (see [CLI and Tools Reference](./cli.sdoc)). The live preview and the document browser always show all of them. Only top-level signposts are dropped: one written deeper down is exported as an ordinary section, and the export prints a warning for it.
+            }
+        }
+
+        # Escaping @escaping
+        {
+            Backslash escapes special characters: \`\\\\\` \`\\{\` \`\\}\` \`\\@\`
+            \`\\[\` \`\\]\` \`\\(\` \`\\)\` \`\\*\` \`\\~\` \`\\#\` \`\\!\` \`\\\<\`
+            \`\\\>\` \`\\\$\` \`\\+\` \`\\=\` \`\\-\` \`\\^\` \`\\?\` \`\\|\`
+
+            A line starting with \`\\#\` renders as a literal \`#\` (not a heading). Use \`\\\$\` to prevent a dollar sign from starting math mode.
+        }
+
+        # Conventions @conventions
+        {
+            {[.]
+                - **Indentation:** cosmetic — use any whitespace you like. Most authors use 4 spaces.
+                - **IDs:** lowercase kebab-case (\`@my-section\`). IDs should be unique within a document.
+                - **Commas:** commas between list items or scopes are allowed but ignored — use them if you find them readable.
+            }
+        }
+
+        # Scope Types @scope-types
+        {
+            A \`:type\` annotation on a heading gives the scope semantic meaning. Place it after the optional \`@id\`:
+
+            ```
+            # User Authentication @auth :requirement
+            {
+                The system shall authenticate users via OAuth 2.0.
+            }
+
+            # OAuth Flow :specification @oauth-flow
+            {
+                Implements @auth using the authorization code flow.
+            }
+
+            # Deprecation Notice :warning
+            {
+                This API will be removed in v3.0.
+            }
+            ```
+
+            {[.]
+                - Syntax: \`# Title @id :type\` or \`# Title :type @id\` or \`# Title :type\` — both orderings work
+                - The colon requires whitespace before it: \`# Note: Important\` is NOT a type — the colon is part of the title
+                - Any string is valid. Well-known types: \`schema\`, \`example\`, \`requirement\`, \`specification\`, \`definition\`, \`note\`, \`warning\`, \`test\`, \`task\`, \`api\`, \`config\`, \`deprecated\`, \`comment\`
+                - Works with K&R style: \`# Title :warning {\`
+            }
+
+            The special type \`:comment\` makes a scope that is in the AST but not rendered — useful for editorial notes and AI agent instructions:
+
+            ```
+            # TODO :comment
+            {
+                Rewrite this section after the API stabilises.
+            }
+            ```
+        }
+
+        # Data Blocks @data-blocks
+        {
+            Add \`:data\` to a JSON code fence to have the parser parse the content into structured data on the AST node:
+
+            `````
+            ```json :data
+            {
+                "name": "SDOC",
+                "version": "0.2",
+                "features": ["scopes", "lists", "tables"]
+            }
+            ```
+            `````
+
+            {[.]
+                - Syntax: \` \`\`\`json :data \` — the \`:data\` flag follows the language tag
+                - Invalid JSON produces a parse error
+                - JSON-only in v0.2
+                - Without \`:data\`, JSON code blocks remain raw text (existing behaviour)
+            }
+        }
+
+        # Comments @comments
+        {
+            **Line comments** — \`//\` at the start of a line (after optional indentation) skips the line entirely. Not in the AST, not rendered:
+
+            ```
+            # Config @config
+            {
+                // TODO: add validation
+                The config file uses JSON format.
+
+                // hidden from output
+                See @setup for details.
+            }
+            ```
+
+            {[.]
+                - Mid-line \`//\` has no effect — URLs like \`https://example.com\` are safe
+                - Inside code blocks: \`//\` has no special meaning
+            }
+
+            **Comment scopes** — use the \`:comment\` scope type for structured non-rendered content (see @scope-types above).
+        }
+    }
+
+    # Common Mistakes @common-mistakes
+    {
+        These are easy errors to make — especially for AI agents generating SDOC.
+
+        # Self-Closing Block Syntax @self-closing-blocks
+        {
+            Writing \`{[.]}\` or \`{[table]}\` with the closing brace on the same line creates an empty block — the \`}\` closes it immediately. Items that follow are bare content outside the block and will not render correctly.
+
+            **Wrong** — the \`}\` closes the block on the same line:
+
+            ```
+            {[.]}
+            - Item one
+            - Item two
+            ```
+
+            **Right** — the opening \`{[.]\` has no closing brace; items go inside; a separate \`}\` closes:
+
+            ```
+            {[.]
+                - Item one
+                - Item two
+            }
+            ```
+
+            Same applies to \`{[#]}\` and \`{[table]}\`.
+        }
+
+        # Bare Content Inside List Blocks @bare-content-in-lists
+        {
+            Inside a list block (\`{[.]}\` or \`{[#]}\`), the **only** valid
+            children are list items (\`-\`, \`1.\`, \`#\` headings, or anonymous
+            \`{ }\` blocks). Bare paragraphs, code fences, or other content
+            floating between items is a **parser error**.
+
+            **Wrong** — bare paragraph inside a list block:
+
+            ```
+            {[.]
+                - First item title
+
+                  This paragraph is NOT inside a body block.
+                  It will cause a parser error.
+
+                - Second item
+            }
+            ```
+
+            **Right** — wrap rich content in a \`{ }\` body block:
+
+            ```
+            {[.]
+                - First item title
+                {
+                    This paragraph belongs to the item above.
+
+                    So does this one, and any code blocks, nested lists, etc.
+                }
+                - Second item
+            }
+            ```
+
+            This is the single most common SDOC mistake. If a list item needs
+            **anything** beyond its title line, that content **must** go in a
+            \`{ }\` body block immediately after the item.
+        }
+
+        # Unescaped Angle Brackets @unescaped-angles
+        {
+            Angle brackets in regular text (outside of inline code backticks)
+            can be misinterpreted as autolinks. Escape them with \`\\\<\` and
+            \`\\\>\`:
+
+            **Wrong:** \`observer<T>\`
+
+            **Right:** \`observer\\\<T\\\>\` or \`\\\`observer<T>\\\`\`
+
+            Inside backtick code spans, angle brackets are fine — code spans
+            are raw.
+        }
+
+        # Blank Lines Stop Multi-Line List Titles @blank-lines-in-lists
+        {
+            A list item title can span multiple continuation lines, but a blank
+            line terminates the title. Content after the blank line is bare
+            content in the list block (a parser error) unless wrapped in a body
+            block:
+
+            **Wrong:**
+
+            ```
+            {[.]
+                - This is a long item title
+                  that continues here
+
+                  But this is NOT a continuation — it's a bare paragraph (error).
+            }
+            ```
+
+            **Right:**
+
+            ```
+            {[.]
+                - This is a long item title
+                  that continues here
+                {
+                    This extra content is properly in a body block.
+                }
+            }
+            ```
+        }
+
+        # Cross-Document @slug References @cross-doc-refs
+        {
+            \`@slug\` references are document-local. Using \`@slug\` to refer to a section in another file produces a broken reference error. This is the most common reference mistake — especially in audits, reviews, and documents that discuss other documents, where writing \`file.sdoc @section\` reads naturally but is wrong.
+
+            **Wrong** — \`@extension\` looks for a local section, not one in \`foundations.sdoc\`:
+
+            ```
+            See `foundations.sdoc` @extension for the design rationale.
+            ```
+
+            **Right** — use a link with a fragment:
+
+            ```
+            See [Extension](./foundations.sdoc#extension) for the design rationale.
+            ```
+
+            The fragment (\`#extension\`) matches the target scope's \`@id\`. Use \`\\@\` if you need a literal \`@\` in text without triggering reference resolution.
+        }
+
+        # @References Inside Link Labels @refs-in-link-labels
+        {
+            Inline \`@references\` are parsed everywhere, including inside link labels. If you mention a scope ID in a link label, escape the \`@\` to prevent it being treated as a reference to the current document:
+
+            **Wrong:** \`[See domain-model.sdoc @my-section](./domain-model.sdoc#my-section)\`
+
+            The \`@my-section\` is parsed as a reference and flagged as broken (it does not exist in *this* file).
+
+            **Right:** \`[See domain-model.sdoc \\@my-section](./domain-model.sdoc#my-section)\`
+
+            Or simply omit the \`@\` from the label — the URL fragment already carries the target:
+
+            **Also right:** \`[See domain-model.sdoc § my-section](./domain-model.sdoc#my-section)\`
+        }
+
+        # [@key] vs @key @citation-vs-ref
+        {
+            \`[@key]\` is a **citation reference** — it renders as a numbered superscript linking to a citation entry. \`@key\` is a **section reference** — it renders as a clickable link to a heading with that ID.
+
+            Confusing them will produce errors:
+
+            {[.]
+                - Writing \`@smith2020\` when you mean \`[@smith2020]\` creates a broken section reference (there is no heading with ID \`smith2020\`)
+                - Writing \`[@setup]\` when you mean \`@setup\` creates a broken citation (there is no citation definition for \`setup\`)
+            }
+
+            Rule of thumb: square brackets mean citation, bare \`@\` means section.
+        }
+
+        # Pointers in the About Section @pointers-in-about
+        {
+            `@about` is read by someone deciding whether to open the document, and discovery tools show it on its own. A pointer there sends the reader away before the summary is finished, and an agent cannot tell "read this instead" from "read this as well".
+
+            **Wrong:**
+
+            ```
+            @about {
+                How to write slides. For the format itself, see the authoring guide.
+            }
+            ```
+
+            **Right:**
+
+            ```
+            @about {
+                How to write slides.
+            }
+
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Authoring Guide](sdoc-authoring.sdoc) | Prerequisite; covers the format itself
+                }
+            }
+            ```
+        }
+
+        # Not About or Related Resources @not-about-or-related-resources
+        {
+            `@not-about` and `@related-resources` answer different questions. `@not-about` says what this document deliberately leaves out, and why. `@related-resources` says what else a reader can open, including the resources that cover what this document leaves out. Redirecting is the job of `@related-resources`. A link in `@not-about` is a validation error, since every resource is linked once, in `@related-resources`. A pointer written without a link, such as "see Slide Authoring", is the same mistake: the validator cannot see it, but it belongs in a `Relation` cell.
+
+            **Wrong:** `@not-about` redirects instead of giving the reason.
+
+            ```
+            @not-about {
+                - Slide decks: see [Slide Authoring](slide-authoring.sdoc).
+            }
+            ```
+
+            **Right:** `@not-about` gives the reason, and `@related-resources` gives the destination.
+
+            ```
+            @not-about {
+                - Slide decks: they follow their own layout rules, which would double the length of this guide.
+            }
+
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Slide Authoring](slide-authoring.sdoc) | Covers slide decks, which this guide leaves out
+                }
+            }
+            ```
+        }
+
+        # Prose in Related Resources @prose-in-related-resources
+        {
+            `@related-resources` is one table and nothing else, so tooling can read it without understanding prose. A sentence introducing the table, or a list of links in place of it, is a validation error.
+
+            **Wrong:**
+
+            ```
+            @related-resources {
+                These pages go well with this one:
+
+                - [Specification](specification.sdoc)
+            }
+            ```
+
+            **Right:** put the reason for each document in its `Relation` cell.
+
+            ```
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Specification](specification.sdoc) | Normative source for this guide
+                }
+            }
+            ```
+        }
+        # Related Resources as a Bibliography @related-resources-not-bibliography
+        {
+            `@related-resources` lists what a reader may open alongside the document as a whole. It is not a bibliography. A source that backs a specific claim in the body is a citation: cite it where the claim is made with `[@key]`, and define it in a `{[citations]` block (see [Citations](#citations)). A citation renders as a numbered reference next to its claim, and the validator checks that every cited key is defined and every defined key is cited. A row in `@related-resources` gets neither, and it is hidden in HTML and PDF exports, which is where a reader checks sources.
+
+            The test: if removing the source would leave a sentence of the body unsupported, it is a citation. If a reader would want to open it even with the body unchanged, it is a related resource. A source that is both, because it backs a claim and is worth reading whole, is cited where it supports the claim and also listed in `@related-resources`.
+
+            **Wrong:** the sources of the body's claims, listed as related resources.
+
+            ```
+            @related-resources {
+                {[table]
+                    Resource | Relation
+                    [Edge AI Hardware Market](https://example.com/edge-ai) | Source for the growth figure
+                    [Edge AI Chips Market](https://example.com/edge-chips) | Source for the 2031 forecast
+                }
+            }
+
+            # Findings {
+                Edge AI is growing rapidly. The chip market is expected to double by 2031.
+            }
+            ```
+
+            **Right:** each claim cites its source.
+
+            ```
+            # Findings {
+                Edge AI is growing rapidly [@mm-edge-ai]. The chip market
+                is expected to double by 2031 [@mordor-chips].
+
+                {[citations]
+                    - @mm-edge-ai MarketsandMarkets, "Edge AI Hardware
+                      Market," Report SE 7017, June 2025.
+                    - @mordor-chips Mordor Intelligence, "Edge AI Chips
+                      Market Size & Share Analysis," 2026.
+                }
+            }
+            ```
+        }
+    }
+}
