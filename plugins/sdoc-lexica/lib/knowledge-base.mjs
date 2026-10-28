@@ -22,6 +22,7 @@ import {
   extractSection,
   listSections,
   getDocumentScope,
+  slugify,
   RESERVED_SCOPE_IDS,
   SIGNPOST_IDS,
   extractSignpost,
@@ -229,8 +230,10 @@ function outlineText(text, filePath) {
     lineEnd: node.lineEnd,
     preview: listed[i] ? listed[i].preview : ""
   }));
+  const doc = getDocumentScope(nodes);
   return {
     path: filePath,
+    id: doc && doc.hasHeading && doc.id ? doc.id : null,
     title: documentTitle(nodes, filePath),
     lines: lineCount(text),
     about: extractAbout(nodes),
@@ -252,16 +255,38 @@ function findSectionNode(nodes, id) {
   return index >= 0 && walked[index] ? walked[index].node : null;
 }
 
-// One section as written: { title, id, lineStart, lineEnd, source }, source
-// being the raw lines from the heading to the closing brace. With
-// { text: true }, content is the section flattened to plain text instead.
-// Null when no section has that id.
+// The document's own heading scope when id names it, by its @id or its title
+// slug, else null.
+function documentScopeNamed(nodes, id) {
+  const doc = getDocumentScope(nodes);
+  if (!doc || !doc.hasHeading) return null;
+  const wanted = String(id || "").trim().replace(/^[@#]/, "");
+  if (doc.id === wanted) return doc;
+  return doc.title && slugify(doc.title).toLowerCase() === wanted.toLowerCase() ? doc : null;
+}
+
+// One section as written: { title, id, lineStart, lineEnd, whole, source },
+// source being the raw lines from the heading to the closing brace. The
+// document's own id names the whole file (whole: true). With { text: true },
+// content is the section flattened to plain text instead. Null when no
+// section has that id.
 function readSectionText(text, id, { text: asText = false } = {}) {
   const { nodes } = parseSdoc(text);
-  const node = findSectionNode(nodes, id);
+  const doc = documentScopeNamed(nodes, id);
+  const node = doc || findSectionNode(nodes, id);
   if (!node) return null;
-  const result = { title: node.title, id: node.id || null, lineStart: node.lineStart, lineEnd: node.lineEnd };
-  if (asText) {
+  const result = { title: node.title, id: node.id || null, lineStart: node.lineStart, lineEnd: node.lineEnd, whole: Boolean(doc) };
+  if (asText && doc) {
+    // extractSection finds no document scope: its sections one by one.
+    const listed = listSections(nodes);
+    result.content = sectionNodes(nodes)
+      .map(({ node: n, depth }, i) => ({ n, depth, derivedId: listed[i] ? listed[i].derivedId : null }))
+      .filter(({ depth }) => depth === 0)
+      .map(({ n, derivedId }) => {
+        const extracted = extractSection(nodes, n.id || derivedId);
+        return extracted && extracted.content ? `${n.title}\n${extracted.content}` : n.title;
+      }).join("\n\n");
+  } else if (asText) {
     const extracted = extractSection(nodes, node.id || String(id).replace(/^[@#]/, ""));
     result.content = extracted ? extracted.content : "";
   } else {
@@ -419,11 +444,11 @@ function formatFileList(files, { base, aboutMax = Infinity } = {}) {
   }).join("\n");
 }
 
-// The title and signposts, then one line per section, indented by depth:
-// L<start>-<end> @id Title — preview. Sections deeper than maxDepth are left
-// out (a deep outline of a large file is itself long).
+// The document's id, title and signposts, then one line per section,
+// indented by depth: L<start>-<end> @id Title — preview. Sections deeper than
+// maxDepth are left out (a deep outline of a large file is itself long).
 function formatOutline(o, { base, maxDepth = Infinity, previews = true } = {}) {
-  const out = [`${shownPath(o.path, base)} — ${o.title} (${o.lines} lines)`];
+  const out = [`${shownPath(o.path, base)}${o.id ? " @" + o.id : ""} — ${o.title} (${o.lines} lines)`];
   if (o.signposts.length) out.push("signposts: " + o.signposts.map((id) => "@" + id).join(", "));
   for (const s of o.sections) {
     if (s.depth > maxDepth) continue;

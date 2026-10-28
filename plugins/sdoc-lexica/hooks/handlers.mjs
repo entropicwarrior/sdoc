@@ -5,8 +5,11 @@
 //   io.read(path)   → the file's text
 //   io.list(dir)    → [{ name, kind }], kind "file", "dir" or other
 //   io.exists(path) → boolean
-//   io.log(text)    → optional: one line saying what the plugin just did, for
-//                     whoever is checking that it works (the verbose option)
+//   io.log(text, { quiet })
+//                   → optional: one line saying what the plugin just did, for
+//                     whoever is checking that it works (the verbose option);
+//                     quiet when the session already shows it (a tool's answer)
+//   io.realPath(p)  → optional: where p leads through links
 //
 // each possibly a promise. Paths are absolute; cwd is the session's directory.
 // Nothing here throws on a missing or unparsable file: the plugin stays quiet
@@ -33,7 +36,7 @@ export function indexBudget(size) {
 // and the editing guide on a first edit. Reset when the conversation is
 // compacted or cleared, since what was shown is then gone from it.
 export function createState() {
-  return { indexSent: false, readSeen: new Set(), nudged: new Set(), editAcked: new Set() };
+  return { indexSent: false, readSeen: new Set(), nudged: new Set(), editAcked: new Set(), opening: null };
 }
 
 export function resetState(state) {
@@ -43,13 +46,38 @@ export function resetState(state) {
   state.editAcked.clear();
 }
 
+// A short fingerprint of the conversation's opening message (FNV-1a over its
+// content), or null when it has none yet.
+export function openingOf(messages) {
+  const first = messages && messages[0];
+  if (!first) return null;
+  const text = JSON.stringify(first.content);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${text.length}:${hash.toString(16)}`;
+}
+
+// Whether the conversation lost its opening since the last prompt, recording
+// the one it has now. Only a compaction (its summary takes the place of what
+// it replaced) or a /clear changes the opening message, so this tells the
+// plugin that what it showed is gone. Claude Code's own signals for either
+// are passed over for a user plugin (docs/guide/claude-code-plugin.sdoc).
+export function lostOpening(state, opening) {
+  const lost = state.opening !== null && opening !== state.opening;
+  state.opening = opening;
+  return lost;
+}
+
 function seenKey(agentId, filePath) {
   return (agentId || "main") + "\n" + kb.normalizePath(filePath);
 }
 
-function note(io, text) {
+function note(io, text, { quiet = false } = {}) {
   if (!io.log) return;
-  try { io.log(text); } catch { /* a log line must never break a hook */ }
+  try { io.log(text, { quiet }); } catch { /* a log line must never break a hook */ }
 }
 
 function plural(n, word) {
@@ -211,6 +239,67 @@ function fingerprint(finding) {
   return finding.type + "\n" + String(finding.message).replace(/\d+/g, "#");
 }
 
+// The most an editing guide's linked sections add to it, in characters.
+export const LINKED_GUIDE_CHARS = 6000;
+
+// Where a path leads through links, when the io can tell; else the path.
+async function realPath(io, path) {
+  if (!io.realPath) return path;
+  try { return (await io.realPath(path)) || path; } catch { return path; }
+}
+
+// The sections an editing guide links to ([text](file.sdoc#id), or #id in
+// the same file), whole: a guide that only points elsewhere is followed less
+// often than one that is read. At most LINKED_GUIDE_CHARS in all; a section
+// that does not fit is named with its range instead, never cut. Only .sdoc
+// files inside the project are followed, as written and through links.
+// { text, count }, text "" when the guide links to no section.
+export async function linkedSections(io, filePath, guide, cwd) {
+  const parts = [];
+  const pointers = [];
+  const seen = new Set();
+  let room = LINKED_GUIDE_CHARS;
+  const roots = [cwd, await realPath(io, cwd)];
+  for (const [, href] of String(guide).matchAll(/\]\(([^)\s]+)\)/g)) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) continue;
+    const [file, fragment] = href.split("#");
+    if (!fragment) continue;
+    let decoded = file;
+    try { decoded = decodeURIComponent(file); } catch { /* a literal %: as written */ }
+    const target = file ? kb.joinPath(kb.dirName(filePath), decoded) : kb.normalizePath(filePath);
+    if (!kb.isSdocFile(target) || !kb.isInside(cwd, target) || seen.has(target + "#" + fragment)) continue;
+    seen.add(target + "#" + fragment);
+    const real = await realPath(io, target);
+    if (!roots.some((root) => kb.isInside(root, real))) continue;
+    const text = await readText(io, target);
+    const section = text === null ? null : kb.readSectionText(text, fragment, { text: true });
+    if (!section) continue;
+    const shown = kb.formatSection(target, section, { base: cwd });
+    if (shown.length <= room) {
+      parts.push(shown);
+      room -= shown.length;
+    } else {
+      pointers.push(`- ${kb.shownPath(target, cwd)} @${section.id || fragment} (L${section.lineStart}-${section.lineEnd}): ` +
+        "too long to include; read it with mcp__sdoc-lexica__read before editing.");
+    }
+  }
+  const count = parts.length + pointers.length;
+  if (!count) return { text: "", count: 0 };
+  return { text: "The sections the guide links to:\n\n" + parts.concat(pointers.length ? [pointers.join("\n")] : []).join("\n\n"), count };
+}
+
+// The editing guide of a file, with the sections it links to: { text, what },
+// or null when the file has none.
+async function editingGuideOf(io, filePath, fileText, cwd) {
+  const guide = kb.guidesText(fileText).editingGuide;
+  if (!guide) return null;
+  const linked = await linkedSections(io, filePath, guide, cwd);
+  return {
+    text: `Editing guide:\n${guide}${linked.text ? "\n\n" + linked.text : ""}`,
+    what: "its editing guide" + (linked.count ? ` and ${plural(linked.count, "linked section")}` : "")
+  };
+}
+
 // Before an edit of an .sdoc file: { deny } when the file has an
 // @editing-guide this agent has not been shown yet (the edit is refused once,
 // with the guide; the retry goes through), else { snapshot }, the file's
@@ -222,16 +311,35 @@ export async function beforeEdit(io, state, { filePath, agentId, cwd }) {
   const key = seenKey(agentId, filePath);
   if (!state.editAcked.has(key)) {
     state.editAcked.add(key);
-    const guide = kb.guidesText(text).editingGuide;
+    const guide = await editingGuideOf(io, filePath, text, cwd);
     if (guide) {
-      note(io, `Edit ${kb.shownPath(filePath, cwd)}${agentId ? ` (agent ${agentId})` : ""}: refused once, with its editing guide`);
+      note(io, `Edit ${kb.shownPath(filePath, cwd)}${agentId ? ` (agent ${agentId})` : ""}: refused once, with ${guide.what}`);
       return {
         deny: `Not applied yet: ${kb.shownPath(filePath, cwd)} has an editing guide, and this is the first edit to it. ` +
-          `Make the edit again following the guide below; it will go through.\n\nEditing guide:\n${guide}`
+          `Make the edit again following the guide below; it will go through.\n\n${guide.text}`
       };
     }
   }
   return { snapshot: await findingsOf(io, filePath, text) };
+}
+
+// The findings in text that snapshot did not have, a finding counted as
+// often as it occurs.
+async function addedFindings(io, filePath, text, snapshot) {
+  const before = new Map();
+  for (const f of snapshot || []) before.set(fingerprint(f), (before.get(fingerprint(f)) || 0) + 1);
+  return (await findingsOf(io, filePath, text)).filter((f) => {
+    const left = before.get(fingerprint(f)) || 0;
+    if (left) before.set(fingerprint(f), left - 1);
+    return !left;
+  });
+}
+
+function findingsReport(filePath, added, cwd, by) {
+  const errors = added.filter((f) => f.severity !== "warning").length;
+  const advice = errors ? " Fix the errors before going on." : "";
+  return `${by} added ${plural(added.length, "finding")} to ${kb.shownPath(filePath, cwd)}.${advice}\n` +
+    kb.formatFindings(filePath, added, { base: cwd });
 }
 
 // After an edit: the findings the edit added (parse errors, signposts,
@@ -239,23 +347,82 @@ export async function beforeEdit(io, state, { filePath, agentId, cwd }) {
 export async function afterEdit(io, { filePath, snapshot, cwd }) {
   const text = await readText(io, filePath);
   if (text === null) return null;
-  const before = new Map();
-  for (const f of snapshot || []) before.set(fingerprint(f), (before.get(fingerprint(f)) || 0) + 1);
-  const added = (await findingsOf(io, filePath, text)).filter((f) => {
-    const left = before.get(fingerprint(f)) || 0;
-    if (left) before.set(fingerprint(f), left - 1);
-    return !left;
-  });
+  const added = await addedFindings(io, filePath, text, snapshot);
   const shown = kb.shownPath(filePath, cwd);
   if (!added.length) {
     note(io, `Edit ${shown}: checked, no new findings`);
     return null;
   }
   note(io, `Edit ${shown}: checked, reported ${plural(added.length, "new finding")}`);
-  const errors = added.filter((f) => f.severity !== "warning").length;
-  const advice = errors ? " Fix the errors before going on." : "";
-  return `The edit added ${added.length} finding${added.length === 1 ? "" : "s"} to ${kb.shownPath(filePath, cwd)}.${advice}\n` +
-    kb.formatFindings(filePath, added, { base: cwd });
+  return findingsReport(filePath, added, cwd, "The edit");
+}
+
+// --- Changes made through Bash ---
+//
+// sed -i, a script or a redirect changes a file without Edit, so without the
+// hooks above. A command that names .sdoc files has them read before it runs
+// and again after; a file it changed gets what an edit would: the editing
+// guide, after the fact here, and the findings the change added. A file the
+// command changes without naming it goes unseen.
+
+// The most files one command is watched for.
+export const MAX_BASH_FILES = 20;
+
+// The .sdoc files a shell command names, as absolute paths: each token ending
+// in .sdoc, globs and ~ left out, resolved from cwd, or from the directory a
+// leading `cd dir &&` moves to.
+export function sdocPathsIn(command, cwd) {
+  let base = cwd;
+  const cd = /^\s*cd\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))\s*(?:&&|;)/.exec(command);
+  if (cd) base = kb.joinPath(cwd, cd[1] || cd[2] || cd[3]);
+  const paths = new Set();
+  for (const [token] of String(command).matchAll(/[^\s'"`;|&<>(){}=,]+\.sdoc(?![\w-]|\.\w)/gi)) {
+    if (/[*?[\]]/.test(token) || token.startsWith("~")) continue;
+    paths.add(kb.joinPath(base, token));
+    if (paths.size === MAX_BASH_FILES) break;
+  }
+  return [...paths];
+}
+
+// Before a command: the text of each .sdoc file it names, null for one that
+// does not exist yet. An empty map when it names none.
+export async function beforeBash(io, { command, cwd }) {
+  const snapshot = new Map();
+  for (const filePath of sdocPathsIn(command, cwd)) snapshot.set(filePath, await readText(io, filePath));
+  return snapshot;
+}
+
+// After a command: for each named file it changed, the editing guide if this
+// agent has not been shown it, and the findings the change added; null when
+// it changed none, or added nothing worth saying.
+export async function afterBash(io, state, { snapshot, agentId, cwd }) {
+  const parts = [];
+  let changed = 0;
+  for (const [filePath, before] of snapshot) {
+    const after = await readText(io, filePath);
+    if (after === null || after === before) continue;
+    changed++;
+    const shown = kb.shownPath(filePath, cwd);
+    const key = seenKey(agentId, filePath);
+    const added = [];
+    if (!state.editAcked.has(key)) {
+      state.editAcked.add(key);
+      const guide = await editingGuideOf(io, filePath, before === null ? after : before, cwd);
+      if (guide) {
+        parts.push(`This command changed ${shown}, which has an editing guide that was not shown before the change. ` +
+          `Check the change against it, and correct what does not follow it.\n\n${guide.text}`);
+        added.push(guide.what + ", after the change");
+      }
+    }
+    const found = await addedFindings(io, filePath, after, before === null ? [] : await findingsOf(io, filePath, before));
+    if (found.length) parts.push(findingsReport(filePath, found, cwd, "The command"));
+    added.push(found.length ? `reported ${plural(found.length, "new finding")}` : "no new findings");
+    note(io, `Bash changed ${shown}${agentId ? ` (agent ${agentId})` : ""}: ${added.join("; ")}`);
+  }
+  if (snapshot.size && !changed) {
+    note(io, `Bash named ${plural(snapshot.size, ".sdoc file")} and changed none`, { quiet: true });
+  }
+  return parts.length ? parts.join("\n\n") : null;
 }
 
 // --- Tools ---
@@ -277,7 +444,7 @@ export const TOOLS = [
   },
   {
     name: "read",
-    description: "Read sections of an .sdoc file by id: the @id, or for a heading without one the slug outline shows in parentheses. Returns each section's source with line numbers, as Read does, so it can be edited from; text: true returns plain text instead.",
+    description: "Read sections of an .sdoc file by id: the @id, or for a heading without one the slug outline shows in parentheses; the file's own id reads it whole (a large file answers with its outline instead). Returns each section's source with line numbers; text: true returns plain text instead. To change a section, Read its lines first (offset and limit from its range): Edit refuses a file that Read has not opened.",
     inputSchema: {
       type: "object",
       properties: {
@@ -333,10 +500,13 @@ export async function runTool(io, name, input, { cwd, state, agentId }) {
   const outcome = await toolOutcome(io, name, input, { cwd, state, agentId });
   const args = toolPaths(name, input, cwd).map((p) => kb.shownPath(p, cwd)).concat(input.query ? [`"${input.query}"`] : []).join(" ");
   const who = agentId ? ` (agent ${agentId})` : "";
+  // The session shows the call and its answer already: the note is worth a
+  // line there only for what it does not show.
   note(io, outcome.error
     ? `tool ${name}${args ? " " + args : ""}${who}: error: ${outcome.error}`
     : `tool ${name}${args ? " " + args : ""}${who}: answered ${plural(outcome.text.length, "char")}` +
-      (outcome.withSignposts ? `, with ${outcome.withSignposts}` : ""));
+      (outcome.withSignposts ? `, with ${outcome.withSignposts}` : ""),
+  { quiet: !outcome.error && !outcome.withSignposts });
   return { text: outcome.text, error: outcome.error };
 }
 
@@ -376,11 +546,22 @@ async function toolOutcome(io, name, input, { cwd, state, agentId }) {
         const text = await fileText(input.file);
         const ids = asList(input.ids);
         if (!ids.length) throw new Error("Missing ids: mcp__sdoc-lexica__outline lists them.");
+        const lines = text.split("\n").length;
+        let outline = null;
+        const outlineOnce = () => outline || (outline = kb.outlineText(text, resolve(input.file)));
         const parts = ids.map((id) => {
           const section = kb.readSectionText(text, id, { text: Boolean(input.text) });
-          return section
-            ? kb.formatSection(resolve(input.file), section, { base })
-            : `No section "${id}" in ${input.file}: mcp__sdoc-lexica__outline lists the ids.`;
+          if (!section) {
+            const o = outlineOnce();
+            const known = (o.id ? ["@" + o.id + " (the whole file)"] : [])
+              .concat(o.sections.map((s) => s.id ? "@" + s.id : s.derivedId));
+            return `No section "${id}" in ${input.file}. Its ids: ${known.join(", ")}.`;
+          }
+          if (section.whole && lines > LARGE_FILE_LINES) {
+            return `${input.file} has ${lines} lines, so here is its outline rather than the whole file. ` +
+              `Read the sections you need by id.\n\n${kb.formatOutline(outlineOnce(), { base })}`;
+          }
+          return kb.formatSection(resolve(input.file), section, { base });
         });
         return withSignposts(input.file, text, parts.join("\n\n"));
       }

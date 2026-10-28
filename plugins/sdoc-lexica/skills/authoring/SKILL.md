@@ -94,13 +94,13 @@ Optional reserved scopes describing the document itself, written as direct child
 | `@reading-guide` | Where do I start, what can I skip? | Prose, then one table `Sections \| Note` of `@id`s |
 | `@editing-guide` | What are the rules for changing this file? | Paragraphs and lists |
 
-Pointers to other documents go in `@related-resources`, never in `@about` or `@not-about`. When a file has an `@editing-guide`, the first edit to it is refused once with the guide: make the edit again following it.
+Pointers to other documents go in `@related-resources`, never in `@about` or `@not-about`. When a file has an `@editing-guide`, the first edit to it is refused once with the guide and the sections it links to: make the edit again following it. A change made through Bash (`sed -i`, a script) gets the guide after the change instead: check the change against it.
 
 ## When editing
 
 - Keep every `@id` stable: references and links from other files point at them.
 - Keep braces balanced and match the surrounding indentation (cosmetic, but readable).
-- After each edit the plugin reports any finding the edit added (parse error, broken reference, signpost shape). Fix errors before going on. `mcp__sdoc-lexica__check` checks a file on demand.
+- After each edit, by Edit or Write or by a Bash command that names the file, the plugin reports any finding the edit added (parse error, broken reference, signpost shape). Fix errors before going on. `mcp__sdoc-lexica__check` checks a file on demand.
 - Add `sdoc-version: 0.2` and `type: doc` or `type: skill` in `@meta` when creating a file.
 
 ## The full guide

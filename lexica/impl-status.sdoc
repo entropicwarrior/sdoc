@@ -201,8 +201,10 @@
                 {
                     - the \`lexica/\` index with the first prompt;
                     - a file's reading guide and related resources on its first Read, and its outline when a large file is read whole;
-                    - the first edit of a file with an \`\@editing-guide\` refused once, carrying the guide;
-                    - after each edit, the findings it added and only those.
+                    - the first edit of a file with an \`\@editing-guide\` refused once, carrying the guide and the sections it links to;
+                    - after each edit, the findings it added and only those;
+                    - the same for an \`.sdoc\` file a Bash command names and changes (\`sed -i\`, a script), the guide coming after the change;
+                    - all of it again after a compaction or a clear, seen at the next prompt by the conversation's opening message changing.
                 }
             }
 
@@ -215,6 +217,8 @@
             }
 
             **Verified live on Claude Code 2.1.311** (\`claude -p --plugin-dir\`): the index arrives, the reading guide arrives after a Read, the guided edit is refused and then applied, a broken reference added by an edit is reported, a tool runs with no prompt inside the project and is refused outside it (a symbolic link pointing out included), and with \`verbose\` on each action shows as a line in the session.
+
+            **First use in a real project (2.1.312) drove a second round.** Both \`.sdoc\` edits went through Bash, so the edit hooks never saw them, and an editing guide that was only a link went unread; Claude Code's built-in security plugin passes over a user plugin's \`session.compact\` and compaction \`session.append\` hooks, so nothing was shown again after a compaction; and \`read\` refused a file's own id. Each is fixed, and the Bash change, the linked section and the index after \`/compact\` were checked live.
 
             **The plugin has no version, on purpose.** Claude Code then versions it by commit, so a fix merged to \`main\` reaches coworkers without an SDOC release. A fix for a Claude Code update that broke the mod goes through \`hotfix/plugin-*\` off \`main\`. The first build tied the version to \`package.json\`; with that, a plugin fix needed a full npm and Marketplace release to reach anyone.
 

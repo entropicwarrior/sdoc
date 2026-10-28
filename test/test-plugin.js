@@ -205,9 +205,12 @@ async function main() {
   // ============================================================
   console.log("\n--- Discovery ---");
 
+  // lines: every note; quiet: those the session shows already, kept out of
+  // it with the verbose option.
   function withLog(io) {
     const lines = [];
-    return { io: { ...io, log: (text) => lines.push(text) }, lines };
+    const quiet = [];
+    return { io: { ...io, log: (text, opts = {}) => { lines.push(text); if (opts.quiet) quiet.push(text); } }, lines, quiet };
   }
 
   const tree = memoryIo({
@@ -284,6 +287,22 @@ async function main() {
     const section = kb.readSectionText(GUIDED, "intro", { text: true });
     assertEqual(section.content, "Hello there.");
     assert(!("source" in section));
+  });
+
+  await test("the document's own id, or its title slug, reads the whole file", () => {
+    const whole = kb.readSectionText(GUIDED, "guided");
+    assert(whole.whole && whole.lineStart === 1, JSON.stringify(whole));
+    assert(whole.source.startsWith("# Guided @guided") && whole.source.includes("Nested text."), whole.source);
+    assertEqual(kb.readSectionText(GUIDED, "#Guided").lineEnd, whole.lineEnd, "the title slug ignores case");
+    const text = kb.readSectionText(GUIDED, "guided", { text: true }).content;
+    assert(text.startsWith("Intro\nHello there.") && text.includes("Details\n"), text);
+    assertEqual(kb.readSectionText(GUIDED, "intro").whole, false);
+  });
+
+  await test("the outline names the document's id", () => {
+    const o = kb.outlineText(GUIDED, "/p/a.sdoc");
+    assertEqual(o.id, "guided");
+    assert(kb.formatOutline(o, { base: "/p" }).startsWith("a.sdoc @guided — Guided ("), kb.formatOutline(o));
   });
 
   await test("searchTexts needs every word, reports the deepest section, and ranks titles first", () => {
@@ -464,6 +483,50 @@ async function main() {
     assert(!report.includes("@nowhere"), "the finding that was there before is not reported");
   });
 
+  // A file whose editing guide links to a section of another file, and to
+  // one of its own.
+  function linking(guide) {
+    return doc({
+      id: "spec",
+      signposts: `    @editing-guide {\n        ${guide}\n    }`,
+      body: "    # Body @body\n    {\n        Words.\n    }\n\n    # Local @local\n    {\n        Keep it local.\n    }"
+    });
+  }
+  const RULES = doc({ id: "rules", body: "    # Spec Rules @spec-rules\n    {\n        Purpose holds the role only.\n    }\n\n    # Long @long\n    {\n" +
+    "        " + "Very long rule text. ".repeat(400) + "\n    }" });
+
+  await test("a first edit is refused with the sections the editing guide links to, whole", async () => {
+    const io = memoryIo({
+      "/p/lexica/specs/x.sdoc": linking("Follow [the rules](../skills/rules.sdoc#spec-rules) and [local](#local), not [web](https://example.com/a.sdoc#b)."),
+      "/p/lexica/skills/rules.sdoc": RULES
+    });
+    const { deny } = await handlers.beforeEdit(io, handlers.createState(), { filePath: "/p/lexica/specs/x.sdoc", cwd: "/p" });
+    assert(deny.includes("Editing guide:\nFollow [the rules]"), deny);
+    assert(deny.includes("The sections the guide links to:"), deny);
+    assert(deny.includes("lexica/skills/rules.sdoc L") && deny.includes("Purpose holds the role only."), deny);
+    assert(deny.includes("Keep it local."), "a section of the file itself");
+    assert(!deny.includes("example.com/a.sdoc L"), "a web link is not followed");
+  });
+
+  await test("a linked section too long to include is named with its range, never cut", async () => {
+    const io = memoryIo({ "/p/x.sdoc": linking("See [long](rules.sdoc#long)."), "/p/rules.sdoc": RULES });
+    const { text, count } = await handlers.linkedSections(io, "/p/x.sdoc", "See [long](rules.sdoc#long).", "/p");
+    assertEqual(count, 1);
+    assert(/rules\.sdoc @long \(L\d+-\d+\): too long to include; read it with mcp__sdoc-lexica__read/.test(text), text);
+    assert(!text.includes("Very long rule text."), "nothing of it, rather than a part");
+    assert(text.length < 400, "length " + text.length);
+  });
+
+  await test("a guide's link out of the project, through a path or a link, is not followed", async () => {
+    const io = memoryIo({ "/p/x.sdoc": PLAIN, "/p/lexica/link.sdoc": RULES, "/elsewhere/rules.sdoc": RULES });
+    const out = await handlers.linkedSections(io, "/p/x.sdoc", "[a](../elsewhere/rules.sdoc#spec-rules)", "/p");
+    assertEqual(out, { text: "", count: 0 });
+    const linked = { ...io, realPath: async (p) => p === "/p/lexica/link.sdoc" ? "/elsewhere/rules.sdoc" : p };
+    assertEqual((await handlers.linkedSections(linked, "/p/x.sdoc", "[a](lexica/link.sdoc#spec-rules)", "/p")).count, 0);
+    assertEqual((await handlers.linkedSections(io, "/p/x.sdoc", "[a](lexica/link.sdoc#spec-rules) [b](lexica/link.sdoc#nowhere)", "/p")).count, 1,
+      "the same file without the link is followed; a missing section is passed over");
+  });
+
   await test("an edit that leaves the file clean reports nothing", async () => {
     const io = memoryIo({ "/p/x.sdoc": PLAIN });
     const { snapshot } = await handlers.beforeEdit(io, handlers.createState(), { filePath: "/p/x.sdoc", cwd: "/p" });
@@ -476,6 +539,102 @@ async function main() {
     io.write("/p/x.sdoc", doc({ body: "    # A @a\n    {\n        [ok](a%20b.sdoc) [gone](gone.sdoc)\n    }" }));
     const report = await handlers.afterEdit(io, { filePath: "/p/x.sdoc", snapshot: [], cwd: "/p" });
     assert(report.includes("gone.sdoc") && !report.includes("a%20b"), report);
+  });
+
+  // ============================================================
+  console.log("\n--- The mod: Bash ---");
+
+  await test("a command's .sdoc paths: as written, after a cd, in a script; no globs, no lookalikes", () => {
+    assertEqual(handlers.sdocPathsIn("sed -i '' 's/a/b/' lexica/a.sdoc", "/p"), ["/p/lexica/a.sdoc"]);
+    assertEqual(handlers.sdocPathsIn("cd lexica && sed -i 's/a/b/' sub/b.sdoc ../c.sdoc", "/p"), ["/p/lexica/sub/b.sdoc", "/p/c.sdoc"]);
+    assertEqual(handlers.sdocPathsIn("cd \"/q/my dir\"; perl -pi -e 's/a/b/' x.sdoc", "/p"), ["/q/my dir/x.sdoc"]);
+    assertEqual(handlers.sdocPathsIn("python - <<'EOF'\nimport pathlib\np = pathlib.Path(\"lexica/specs/asr.sdoc\")\np.write_text(p.read_text())\nEOF", "/p"),
+      ["/p/lexica/specs/asr.sdoc"]);
+    assertEqual(handlers.sdocPathsIn("grep -n x lexica/*.sdoc ~/a.sdoc a.sdoc.bak a.sdocs", "/p"), []);
+    assertEqual(handlers.sdocPathsIn("echo see a.sdoc#intro --file=/abs/b.sdoc a.sdoc", "/p"), ["/p/a.sdoc", "/abs/b.sdoc"]);
+    const many = Array.from({ length: 30 }, (_, i) => `f${i}.sdoc`).join(" ");
+    assertEqual(handlers.sdocPathsIn("cat " + many, "/p").length, handlers.MAX_BASH_FILES);
+  });
+
+  await test("a command that changes a guided file gets the guide after the change, once, and the findings it added", async () => {
+    const io = memoryIo({ "/p/lexica/a.sdoc": GUIDED });
+    const state = handlers.createState();
+    let snapshot = await handlers.beforeBash(io, { command: "sed -i '' 's/Hello/Hi/' lexica/a.sdoc", cwd: "/p" });
+    io.write("/p/lexica/a.sdoc", GUIDED.replace("Hello there.", "Hi @nowhere."));
+    const first = await handlers.afterBash(io, state, { snapshot, cwd: "/p" });
+    assert(first.includes("This command changed lexica/a.sdoc, which has an editing guide") && first.includes("Keep sections short."), first);
+    assert(first.includes("The command added 1 finding to lexica/a.sdoc.") && first.includes("@nowhere"), first);
+    assert(!first.includes("other.sdoc"), "the broken link that was there before is not reported");
+    snapshot = await handlers.beforeBash(io, { command: "sed -i '' 's/Hi/Hey/' lexica/a.sdoc", cwd: "/p" });
+    io.write("/p/lexica/a.sdoc", GUIDED.replace("Hello there.", "Hey @nowhere."));
+    assertEqual(await handlers.afterBash(io, state, { snapshot, cwd: "/p" }), null, "the guide once; no new finding");
+  });
+
+  await test("a command that changes nothing, or only reads, adds nothing", async () => {
+    const { io, lines, quiet } = withLog(memoryIo({ "/p/lexica/a.sdoc": GUIDED }));
+    const state = handlers.createState();
+    const snapshot = await handlers.beforeBash(io, { command: "grep -n Hello lexica/a.sdoc lexica/none.sdoc", cwd: "/p" });
+    assertEqual(snapshot.size, 2);
+    assertEqual(await handlers.afterBash(io, state, { snapshot, cwd: "/p" }), null);
+    assertEqual(lines, ["Bash named 2 .sdoc files and changed none"]);
+    assertEqual(quiet, lines, "kept out of the session: nothing happened");
+    assert(!state.editAcked.size, "reading is not editing: the guide still comes with the first edit");
+  });
+
+  await test("a file a command creates has all its findings reported, as new", async () => {
+    const io = memoryIo({});
+    const snapshot = await handlers.beforeBash(io, { command: "cat > lexica/n.sdoc <<'EOF'", cwd: "/p" });
+    io.write("/p/lexica/n.sdoc", doc({ body: "    # A @a\n    {\n        See @nowhere.\n    }" }));
+    const report = await handlers.afterBash(io, handlers.createState(), { snapshot, cwd: "/p" });
+    assert(report && report.includes("@nowhere") && !report.includes("editing guide"), report);
+  });
+
+  await test("Edit and Bash share one guide per agent and file", async () => {
+    const io = memoryIo({ "/p/lexica/a.sdoc": GUIDED });
+    const state = handlers.createState();
+    assert((await handlers.beforeEdit(io, state, { filePath: "/p/lexica/a.sdoc", cwd: "/p" })).deny);
+    let snapshot = await handlers.beforeBash(io, { command: "sed -i 's/Hello/Hi/' lexica/a.sdoc", cwd: "/p" });
+    io.write("/p/lexica/a.sdoc", GUIDED.replace("Hello", "Hi"));
+    assertEqual(await handlers.afterBash(io, state, { snapshot, cwd: "/p" }), null, "shown by the refused Edit");
+    snapshot = await handlers.beforeBash(io, { command: "sed -i 's/Hi/Hey/' lexica/a.sdoc", cwd: "/p" });
+    io.write("/p/lexica/a.sdoc", GUIDED.replace("Hello", "Hey"));
+    assert((await handlers.afterBash(io, state, { snapshot, agentId: "sub-1", cwd: "/p" })).includes("Keep sections short."), "a subagent gets its own");
+    assert(!(await handlers.beforeEdit(io, state, { filePath: "/p/lexica/a.sdoc", agentId: "sub-1", cwd: "/p" })).deny, "and is then not refused");
+  });
+
+  await test("the hooks module watches Bash, and none of the events a user plugin is passed over on", () => {
+    const source = fs.readFileSync(path.join(PLUGIN, "hooks", "register.mjs"), "utf8");
+    assert(/on\("tool\.call", \{ tool: "Bash", command: NAMES_SDOC \}/.test(source), "Bash");
+    for (const event of ["prompt.context", "session.compact", "session.append"]) {
+      assert(!source.includes(`on("${event}"`), event);
+    }
+  });
+
+  // ============================================================
+  console.log("\n--- The mod: compaction ---");
+
+  const user = (text) => ({ role: "user", content: [{ type: "text", text }] });
+  const reply = { role: "assistant", content: [{ type: "text", text: "OK" }] };
+
+  await test("a conversation that keeps its opening message keeps what it was shown", () => {
+    const state = handlers.createState();
+    assertEqual(handlers.lostOpening(state, handlers.openingOf([])), false, "the first prompt: nothing yet");
+    assertEqual(handlers.lostOpening(state, handlers.openingOf([user("hi")])), false);
+    assertEqual(handlers.lostOpening(state, handlers.openingOf([user("hi"), reply, user("more")])), false);
+  });
+
+  await test("a compaction (a summary in its place) or a /clear (no message) loses the opening, once", () => {
+    const state = handlers.createState();
+    handlers.lostOpening(state, handlers.openingOf([user("hi"), reply]));
+    assertEqual(handlers.lostOpening(state, handlers.openingOf([user("This session is being continued…"), reply])), true);
+    assertEqual(handlers.lostOpening(state, handlers.openingOf([user("This session is being continued…"), reply, user("next")])), false);
+    assertEqual(handlers.lostOpening(state, handlers.openingOf([])), true, "cleared");
+    assertEqual(handlers.lostOpening(state, handlers.openingOf([user("new start")])), false);
+  });
+
+  await test("the opening is told by its whole content, not its first words", () => {
+    const head = "<claude-md> the same project instructions </claude-md> ".repeat(50);
+    assert(handlers.openingOf([user(head + "first prompt")]) !== handlers.openingOf([user(head + "summary")]));
   });
 
   // ============================================================
@@ -494,6 +653,24 @@ async function main() {
     const { text } = await run("read", { file: "lexica/a.sdoc", ids: ["intro", "nope"] });
     assert(/^\s+34\t\s+Hello there\./m.test(text), text);
     assert(text.includes('No section "nope"'), text);
+  });
+
+  await test("read of an unknown id answers the ids the file has", async () => {
+    const { text } = await run("read", { file: "lexica/a.sdoc", ids: ["nope"] });
+    assertEqual(text, 'No section "nope" in lexica/a.sdoc. Its ids: @guided (the whole file), @intro, @details, deeper.');
+  });
+
+  await test("read of the file's own id answers the whole file, or a large file's outline", async () => {
+    const { text } = await run("read", { file: "lexica/a.sdoc", ids: ["guided"] });
+    assert(/^lexica\/a\.sdoc L1-\d+ — Guided\n\s+1\t# Guided @guided/.test(text) && text.includes("Nested text."), text);
+    const big = await handlers.runTool(memoryIo({ "/p/big.sdoc": bigDoc(40) }), "read", { file: "big.sdoc", ids: ["big"] }, { cwd: "/p" });
+    assert(big.text.startsWith("big.sdoc has ") && big.text.includes("so here is its outline") && big.text.includes("@part-39"), big.text);
+    assert(!big.text.includes("Line of text.\n"), "an outline, one line per section, not the source");
+  });
+
+  await test("read says how to edit what it shows: Read those lines first", () => {
+    const read = handlers.TOOLS.find((t) => t.name === "read");
+    assert(read.description.includes("Read its lines first") && !read.description.includes("edited from"), read.description);
   });
 
   await test("read takes ids as a comma-separated string too", async () => {
@@ -613,6 +790,24 @@ async function main() {
     assert(/^tool outline lexica\/a\.sdoc: answered \d+ chars$/.test(lines[0]), lines[0]);
     assert(/^tool search "brace": answered \d+ chars$/.test(lines[1]), lines[1]);
     assertEqual(lines[2], "tool outline nope.sdoc: error: No such file: nope.sdoc");
+  });
+
+  await test("a tool's plain answer is noted quietly; its error, or signposts it adds, are not", async () => {
+    const { io, lines, quiet } = withLog(tree);
+    const ctx = { cwd: "/p", state: handlers.createState() };
+    await handlers.runTool(io, "outline", { file: "lexica/a.sdoc" }, ctx);
+    await handlers.runTool(io, "outline", { file: "lexica/a.sdoc" }, ctx);
+    await handlers.runTool(io, "outline", { file: "nope.sdoc" }, ctx);
+    assert(lines[0].endsWith("with its reading guide and related resources"), lines[0]);
+    assertEqual(quiet, [lines[1]]);
+  });
+
+  await test("a command's change notes what it was given", async () => {
+    const { io, lines } = withLog(memoryIo({ "/p/a.sdoc": GUIDED }));
+    const snapshot = await handlers.beforeBash(io, { command: "sed -i s/Hello/Hi/ a.sdoc", cwd: "/p" });
+    io.write("/p/a.sdoc", GUIDED.replace("Hello", "Hi"));
+    await handlers.afterBash(io, handlers.createState(), { snapshot, agentId: "sub-1", cwd: "/p" });
+    assertEqual(lines, ["Bash changed a.sdoc (agent sub-1): its editing guide, after the change; no new findings"]);
   });
 
   await test("a log that throws never breaks a hook", async () => {

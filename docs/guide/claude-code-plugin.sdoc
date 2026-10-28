@@ -44,7 +44,7 @@
                 Tool | Answers
                 `mcp__sdoc-lexica__list` | Every `.sdoc` file under the `lexica/` directories, or the directories given, each with its type, size and about summary
                 `mcp__sdoc-lexica__outline` | A file's sections: id, title, line range and first words, plus the signposts it has
-                `mcp__sdoc-lexica__read` | Sections by id, as source with line numbers, ready to edit from
+                `mcp__sdoc-lexica__read` | Sections by id, as source with line numbers. The file's own id reads it whole, or answers a large file's outline; an unknown id answers the ids the file has. To change what it shows, Claude Reads those lines first: Edit refuses a file Read has not opened
                 `mcp__sdoc-lexica__search` | The sections that hold every word of a query
                 `mcp__sdoc-lexica__guides` | A file's about, reading guide, related resources and editing guide
                 `mcp__sdoc-lexica__check` | Parse errors and signpost, reference and citation findings, as `build-doc --check` reports them
@@ -55,14 +55,19 @@
         {
             {[table]
                 When | What Claude is given
-                The first prompt of a conversation, in a project with `lexica/` | An index of the knowledge files with their about summaries, and how to load them by section, within the `indexSize` setting. A summary is never cut short: when they do not all fit, every file is listed by its title instead, and only if even that does not fit are files left out, with a count. Sent again after compaction or a clear.
+                The first prompt of a conversation, in a project with `lexica/` | An index of the knowledge files with their about summaries, and how to load them by section, within the `indexSize` setting. A summary is never cut short: when they do not all fit, every file is listed by its title instead, and only if even that does not fit are files left out, with a count. Sent again with the first prompt after a compaction or a clear.
                 The first time Claude opens an `.sdoc` file, by Read or by the outline, read or guides tool | The file's reading guide and related resources, when it has them
                 A Read of a file over 300 lines, whole | The file's outline, to read by section next time
-                The first edit of a file with an editing guide | The edit is refused once, with the guide; made again, it goes through
+                The first edit of a file with an editing guide | The edit is refused once, with the guide and the sections it links to; made again, it goes through
                 Every edit of an `.sdoc` file | The findings the edit added (a parse error, a broken reference, a signpost of the wrong shape), and nothing about what was already there
+                A Bash command that names an `.sdoc` file and changes it (`sed -i`, a script) | What an edit gets, after the change: the editing guide and its linked sections on the first change, and the findings the change added
             }
 
-            Each happens once per conversation and file, and once per agent: a subagent gets its own. In a project with no `.sdoc` files the plugin adds nothing.
+            Each happens once per conversation and file, and once per agent: a subagent gets its own. A compaction starts it over from the next prompt, since what was shown went with it. In a project with no `.sdoc` files the plugin adds nothing.
+
+            A section the editing guide links to, in another file or its own, comes whole, up to 6,000 characters in all; one that does not fit is named with its line range instead. Only `.sdoc` files inside the project are followed.
+
+            A Bash command is watched for the files it names. One it changes without naming it, through a glob or a `find`, goes unseen.
         }
     }
 
@@ -82,7 +87,7 @@
         What the plugin hands Claude, such as the index, a reading guide or an edit's findings, is never shown in the session. Two ways to see it work:
 
         {[.]
-            - **The verbose option.** Each thing the plugin does is shown as one dim line in the session, which Claude is not sent: the index it attached, what it added after a Read and why it added nothing, an edit it refused, the findings it reported, each tool call. Turn it on with `/plugin configure sdoc-lexica@sdoc` in a session, or from a shell, then start a new session:
+            - **The verbose option.** Each thing the plugin does is shown as one dim line in the session, which Claude is not sent: the index it attached, what it added after a Read and why it added nothing, an edit it refused, the findings it reported, a Bash change it checked, a compaction, and a tool call that added a file's signposts or failed. A tool's plain answer has no line: the session shows the call already. Turn it on with `/plugin configure sdoc-lexica@sdoc` in a session, or from a shell, then start a new session:
             {
                 ```
 echo '{"verbose":"true"}' | claude plugin configure sdoc-lexica@sdoc --values-stdin
@@ -178,7 +183,7 @@ claude plugin install sdoc-lexica@sdoc
                 - **Nothing the hooks module loads may use Node.** No `require`, `fs`, `path` or `process`: Claude Code runs the module without them. Files are reached through `$.fs`, in `register.mjs` only.
                 - **Edit the sources, never `plugins/sdoc-lexica/lib/`.** Run `npm run build:plugin` after changing `src/sdoc.js`, `src/knowledge-base.js` or the authoring guide, and commit what it writes; a marketplace install runs no build step. The tests fail while a generated file is stale.
                 - **Never give the plugin a version.** Not in `plugin.json`, and not in the marketplace entry. Once a version is set, Claude Code updates the plugin only when that number changes, so a fix shipped without a bump reaches nobody, and nothing says so. Without one, every commit is a version. `claude plugin validate` warns that no version is set; that warning is expected.
-                - **The index goes with the first prompt, not in the first message's context.** Claude Code's built-in security plugin passes over a user plugin's hook on that event.
+                - **Two events never reach the plugin.** Claude Code's built-in security plugin passes over a user plugin's hooks on `prompt.context` and `session.compact`. `session.append` is passed over for a compaction's rows as well. The index goes with the first prompt instead, and a compaction or a clear is seen at the next prompt: the conversation's opening message has changed, since the summary took its place.
                 - **A tool call the plugin answers skips Claude Code's permission check.** That check runs beneath the step the plugin's hook does not take. The hook keeps its own guard: every path, and where it leads through links, inside the project or the plugin. Keep any new tool behind it.
                 - **A skill is named after its folder.** `skills/lexica/` is `/sdoc-lexica:lexica`; a `name:` in the frontmatter does not change it, so the two must agree.
             }
@@ -224,6 +229,8 @@ claude --plugin-dir plugins/sdoc-lexica
                 - Read a file with a reading guide;
                 - edit a file with an editing guide (refused once, then applied);
                 - break a reference in an edit and look for the finding;
+                - change a file with an editing guide through Bash (`sed -i`), and look for the guide after the change;
+                - run `/compact`, and ask again what knowledge index Claude was given;
                 - call a tool on a file in the project (answered, with no prompt) and on one outside it (refused).
                 - with `verbose` on, watch a line appear for each of these.
             }

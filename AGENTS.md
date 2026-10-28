@@ -221,8 +221,16 @@ should be evaluated against.
   leads through links, inside the project or the plugin. Keep new tools behind it.
 - A skill is named after its folder (`skills/lexica/` is `/sdoc-lexica:lexica`); the
   frontmatter `name` does not change that.
+- `prompt.context`, `session.compact` and a compaction's `session.append` never
+  reach a user plugin: Claude Code's built-in security plugin passes over its hooks
+  there (the debug log says "bypassed by cc-plugin-sec-default"). The index goes with
+  `prompt.submit`, which also sees a compaction or a /clear: the conversation's
+  opening message has changed.
+- Edits go through Bash as often as through Edit (`sed -i`, a Python script), so the
+  `tool.call` Bash hook watches the `.sdoc` files a command names. Anything an edit
+  gets, a Bash change must get too.
 - Every action is noted through `io.log`: in the debug log always, in the session
-  with the plugin's `verbose` option.
+  with the plugin's `verbose` option unless it is `quiet` (the session shows it).
 - The plugin has no version, in plugin.json or the marketplace entry, on purpose:
   Claude Code then versions it by commit, so a fix merged to `main` reaches everyone.
   With a number, a fix without a bump would reach no one. validate's "No version
@@ -238,14 +246,14 @@ should be evaluated against.
 
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
-- Run the fast suites — no browser, a few seconds, 840 tests:
+- Run the fast suites — no browser, a few seconds, 859 tests:
   `npm test`
 - Run the browser-gated ones too (under a minute, needs Chrome; each suite runs its
   browser tests one at a time, since starting them together froze the machine):
   `npm run test:browser`   — or `npm run test:all` for both
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
-  (840 fast + 360 browser = 1200, with the plugin's suite)
+  (859 fast + 360 browser = 1219, with the plugin's suite)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

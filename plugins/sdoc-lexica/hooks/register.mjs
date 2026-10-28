@@ -8,7 +8,12 @@
 //   tool.call Read   adds the file's reading guide and related resources
 //   tool.call Edit   refuses the first edit once with the editing guide, then
 //                    reports the findings an edit adds
+//   tool.call Bash   the same for an .sdoc file a command names and changes,
+//                    the guide coming after the change
 //   tool.call own    answers the plugin's tools, inside the project only
+//
+// A compaction or a /clear is seen at the next prompt, by the conversation's
+// opening message changing: what was shown is then shown again.
 //
 // Every action is noted in one line: in the debug log always (claude
 // --debug-file), and in the session too with the verbose option
@@ -17,11 +22,15 @@
 import {
   createState,
   resetState,
+  openingOf,
+  lostOpening,
   knowledgeDirs,
   indexForPrompt,
   afterRead,
   beforeEdit,
   afterEdit,
+  beforeBash,
+  afterBash,
   TOOLS,
   indexBudget,
   runTool,
@@ -31,6 +40,7 @@ import {
 import { isInside } from "../lib/knowledge-base.mjs";
 
 const SDOC_FILE = /\.sdoc$/i;
+const NAMES_SDOC = /\.sdoc/i;
 const FILE_EDIT = /^(Edit|Write|MultiEdit)$/;
 const OWN_TOOL = new RegExp(`__(${TOOLS.map((t) => t.name).join("|")})$`);
 
@@ -40,11 +50,12 @@ let verbose = false;
 let indexChars = indexBudget();
 
 // A note goes to the debug log; with verbose, to the transcript too, as a dim
-// line the model is not sent. Both lead it with the plugin's name already.
+// line the model is not sent, unless it is quiet: the session shows that
+// already. Both lead it with the plugin's name already.
 function logger($) {
-  return (text) => {
+  return (text, { quiet = false } = {}) => {
     try {
-      if (verbose) $.ui.log(text);
+      if (verbose && !quiet) $.ui.log(text);
       else $.ui.log(text, { to: "debug" });
     } catch { /* a log line must never break a hook */ }
   };
@@ -54,19 +65,20 @@ function note($, text) {
   logger($)(text);
 }
 
+// Where a path leads through any link; the path itself when it leads nowhere.
+async function realPathOf($, path) {
+  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
+  return stat && stat.realPath ? stat.realPath : path;
+}
+
 function ioOf($) {
   return {
     read: (path) => $.fs.read(path),
     list: (dir) => $.fs.list(dir),
     exists: (path) => $.fs.exists(path),
+    realPath: (path) => realPathOf($, path),
     log: logger($)
   };
-}
-
-// Where a path leads through any link; the path itself when it leads nowhere.
-async function realPathOf($, path) {
-  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
-  return stat && stat.realPath ? stat.realPath : path;
 }
 
 // True when every path a tool call names lies inside the project or the
@@ -100,6 +112,8 @@ export const register = (on, options = {}) => {
 
   on("session.start", async ($, e, next) => {
     const started = await next(e);
+    // A new conversation (a /clear starts one) has been shown nothing.
+    resetState(state);
     // The tools sit in the model's list where the project has lexica/, and
     // behind ToolSearch elsewhere, where they cost nothing until wanted.
     const hasKnowledge = (await knowledgeDirs(ioOf($), e.cwd)).length > 0;
@@ -115,7 +129,14 @@ export const register = (on, options = {}) => {
 
   // Not prompt.context: the built-in security plugin passes over a user
   // plugin's hook there. Context attached to a prompt reaches the model.
+  // Nor session.compact or session.append for a compaction, passed over too:
+  // the conversation's opening message tells instead.
   on("prompt.submit", async ($, e, next) => {
+    const messages = await $.session.messages({ as: "api" }).catch(() => undefined);
+    if (messages && lostOpening(state, openingOf(messages))) {
+      resetState(state);
+      note($, "conversation compacted or cleared: the index and the guides will be shown again");
+    }
     const index = await indexForPrompt(ioOf($), state, await $.session.cwd(), { maxChars: indexChars });
     return next(index ? { ...e, context: [...(e.context || []), index] } : e);
   }).catch(($, e, next) => next(e));
@@ -140,6 +161,17 @@ export const register = (on, options = {}) => {
     return withContext(result, await afterEdit(files, { filePath: e.file_path, snapshot: before.snapshot, cwd }));
   }).catch(($, e, next) => next(e));
 
+  // A command that fails may still have changed a file (sed ran, the next
+  // step failed), so only a refused one is passed over.
+  on("tool.call", { tool: "Bash", command: NAMES_SDOC }, async ($, e, next) => {
+    const files = ioOf($);
+    const cwd = await $.session.cwd();
+    const snapshot = await beforeBash(files, { command: e.command, cwd });
+    const result = await next(e);
+    if (result.deny !== undefined || !snapshot.size) return result;
+    return withContext(result, await afterBash(files, state, { snapshot, agentId: e.agentId, cwd }));
+  }).catch(($, e, next) => next(e));
+
   // Answering a call here skips the engine's permission check, which runs
   // beneath next(e): the guard is this hook's own. The tools read inside the
   // project (and the plugin's bundled guide) and nowhere else, as Read goes
@@ -155,13 +187,6 @@ export const register = (on, options = {}) => {
     const { text, error } = await runTool(ioOf($), name, e, { cwd, state, agentId: e.agentId });
     return error ? { deny: error } : { result: text };
   }).catch(($, e, next) => next.called ? next(e) : { deny: `${e.tool} failed.` });
-
-  on("session.compact", async ($, e, next) => {
-    const compacted = await next(e);
-    resetState(state);
-    note($, "conversation compacted: the index and the guides will be shown again");
-    return compacted;
-  }).catch(($, e, next) => next(e));
 
   on("session.end", async ($, e, next) => {
     resetState(state);
