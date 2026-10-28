@@ -59,7 +59,8 @@
     "build:plugin": "node tools/build-plugin.js",
     "test": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-plugin.js",
     "test:browser": "node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js",
-    "test:all": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-plugin.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js"
+    "test:all": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-plugin.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js",
+    "eval:plugin": "claude plugin eval . --eval-dir test/plugin-evals/evals --trust-plugin --scaffold --no-publish --threshold 0 --judge-model sonnet --allow-tools Edit Write 'mcp__sdoc-lexica__*'"
   },
   "main": "./src/extension.js",
   "contributes": {

@@ -3,14 +3,34 @@
 // `$`. This file only binds the engine's events to handlers.mjs, which holds
 // the behaviour and is tested under Node.
 //
-//   session.start    registers the tools (mcp__sdoc-lexica__list, outline, read, ...)
+//   session.start    registers the tools (mcp__sdoc-lexica__list, outline,
+//                    read, search, guides, check, backlinks) and, where the
+//                    project has lexica/, the research agent
+//                    (sdoc-lexica:research: answers from the knowledge, with
+//                    citations, read-only)
+//   agent.spawn      appends a short index to a new subagent's prompt; not to
+//                    a fork, a resumed agent or a workflow agent
+//   tool.call any    dormant: should the engine pass over the spawn hook, a
+//                    subagent's first answered call carries the index instead
 //   prompt.submit    attaches the lexica/ index to the conversation's first prompt
 //   tool.call Read   adds the file's reading guide and related resources
 //   tool.call Edit   refuses the first edit once with the editing guide, then
 //                    reports the findings an edit adds
 //   tool.call Bash   the same for an .sdoc file a command names and changes,
 //                    the guide coming after the change
-//   tool.call own    answers the plugin's tools, inside the project only
+//   tool.call own    answers the plugin's tools, behind a permission guard, as
+//                    the engine's own check does not run for them: a deny
+//                    rule on the tool's name refuses it; then each path the
+//                    call names is put to the check a Read (a Glob, for a
+//                    directory) of it would get, as written and through
+//                    links. A deny refuses, inside the project too; an ask
+//                    goes through inside the project and the plugin, and
+//                    elsewhere asks the person (once, or for the session)
+//   prompt.mention   @file.sdoc#id attaches the section the id names, and a
+//                    mentioned file's reading guide, as a Read does
+//   prompt.autocomplete
+//                    offers a file's section ids after @file.sdoc#
+//   session.end      forgets what was shown and the directories allowed
 //
 // A compaction or a /clear is seen at the next prompt, by the conversation's
 // opening message changing: what was shown is then shown again.
@@ -34,10 +54,16 @@ import {
   TOOLS,
   indexBudget,
   runTool,
-  toolPaths,
-  isWithin
+  shouldBrief,
+  subagentBriefing,
+  researchAgentSpec,
+  insideProject,
+  mentionRead,
+  mentionSuggestions,
+  toolRequests,
+  ownToolRequest,
+  consent
 } from "./handlers.mjs";
-import { isInside } from "../lib/knowledge-base.mjs";
 
 const SDOC_FILE = /\.sdoc$/i;
 const NAMES_SDOC = /\.sdoc/i;
@@ -71,27 +97,55 @@ async function realPathOf($, path) {
   return stat && stat.realPath ? stat.realPath : path;
 }
 
+async function nowOf($) {
+  try { return await $.clock.now(); } catch { return Date.now(); }
+}
+
+// A command's answer, kept a minute by command and directory: the index and a
+// subagent's brief ask git log the same thing moments apart. A failure is kept
+// too, so a git that timed out is not waited on again within the minute.
+const RUN_KEPT_MS = 60 * 1000;
+const runs = new Map();
+
+async function runKept($, argv, init = {}) {
+  const now = await nowOf($);
+  for (const [key, held] of runs) {
+    if (now - held.at >= RUN_KEPT_MS) runs.delete(key);
+  }
+  const key = JSON.stringify([init.cwd || "", ...argv]);
+  if (!runs.has(key)) runs.set(key, { at: now, answer: Promise.resolve().then(() => $.process.run(argv, init)) });
+  return runs.get(key).answer;
+}
+
+// $.fs.list gives each entry's size and mtimeMs too, which key the cache of
+// file descriptions kept in $.store. Each $ call is spelled out where it is
+// made: the engine accepts no other form (claude plugin validate says so).
 function ioOf($) {
   return {
     read: (path) => $.fs.read(path),
     list: (dir) => $.fs.list(dir),
     exists: (path) => $.fs.exists(path),
     realPath: (path) => realPathOf($, path),
+    run: (argv, init) => runKept($, argv, init),
+    now: () => nowOf($),
+    storage: {
+      get: (key) => $.store.get(key),
+      set: (key, value) => $.store.set(key, value),
+      delete: (key) => $.store.delete(key),
+      keys: () => $.store.keys()
+    },
     log: logger($)
   };
 }
 
-// True when every path a tool call names lies inside the project or the
-// plugin, both as written and where it leads, so a link cannot reach out.
-async function staysInside($, name, input, cwd) {
+// Where the plugin's tools read without asking, as Read does in the project:
+// the project and the plugin (its bundled guide), as written and where they
+// lead. A path is judged as written and where it leads too (consent), so a
+// link cannot reach out unasked.
+async function rootsOf($, cwd) {
   const roots = [cwd, $.plugin.root];
   roots.push(...await Promise.all(roots.map((root) => realPathOf($, root))));
-  if (!isWithin(name, input, cwd, roots)) return false;
-  for (const path of toolPaths(name, input, cwd)) {
-    const real = await realPathOf($, path);
-    if (!roots.some((root) => isInside(root, real))) return false;
-  }
-  return true;
+  return roots.filter((root, i) => root && roots.indexOf(root) === i);
 }
 
 function withContext(result, text) {
@@ -124,8 +178,60 @@ export const register = (on, options = {}) => {
     note($, `${tools.size} tools registered, ${hasKnowledge
       ? "listed for the model (this project has lexica/)"
       : "behind tool search (no lexica/ here)"}`);
+    subagents.hasKnowledge = hasKnowledge;
+    // The research agent answers from lexica/, so only a project with one
+    // has it. Its tools are the plugin's, as registered, and readers.
+    if (hasKnowledge) {
+      try {
+        const { agent } = await $.agent.register(researchAgentSpec([...tools.keys()]));
+        note($, `research agent registered as ${agent}`);
+      } catch (err) {
+        note($, `research agent not registered: ${(err && err.message) || err}`);
+      }
+    }
     return started;
   });
+
+  // --- Subagents ---
+  //
+  // hasKnowledge is set at session.start, above; spawnHookRan by the spawn
+  // hook; briefed holds the agents the fallback has dealt with.
+  const subagents = { hasKnowledge: false, spawnHookRan: false, briefed: new Set() };
+
+  // A subagent starts without the conversation, so without the index its
+  // first prompt carried: its prompt gets a brief. A failure never blocks a
+  // spawn: the catch lets it start as it was asked.
+  on("agent.spawn", async ($, e, next) => {
+    subagents.spawnHookRan = true;
+    if (!subagents.hasKnowledge) return next(e);
+    const who = `subagent ${e.subagentType || "(no type)"}`;
+    if (!shouldBrief(e)) {
+      note($, `${who}: not briefed (${e.fork ? "a fork, it has the conversation" : e.resume ? "resumed, it has its own" : "a workflow agent"})`);
+      return next(e);
+    }
+    const brief = await subagentBriefing(ioOf($), await $.session.cwd(), { who });
+    return next(brief ? { ...e, prompt: e.prompt + "\n\n" + brief } : e);
+  }).catch(($, e, next) => next(e));
+
+  // Should the engine pass over the spawn hook for a user plugin, as it does
+  // a few others (see prompt.submit), a subagent's first answered tool call
+  // carries the brief instead. Only until the spawn hook is seen to run; only
+  // for an agent $.agent.list() names, and not a fork; a refused call leaves
+  // it to the next one.
+  on("tool.call", async ($, e, next) => {
+    if (subagents.spawnHookRan || !subagents.hasKnowledge || !e.agentId ||
+        subagents.briefed.has(e.agentId) || e.tool === "AskUserQuestion") return next(e);
+    const result = await next(e);
+    if (!ran(result) || subagents.spawnHookRan || subagents.briefed.has(e.agentId)) return result;
+    subagents.briefed.add(e.agentId);
+    const agent = (await $.agent.list()).find((a) => a.id === e.agentId);
+    if (!agent || agent.type === "fork") {
+      note($, `agent ${e.agentId}: not briefed (${agent ? "a fork, it has the conversation" : "not a listed subagent"})`);
+      return result;
+    }
+    const who = `subagent ${agent.type} (agent ${e.agentId}, at its first tool call: the spawn hook did not run)`;
+    return withContext(result, await subagentBriefing(ioOf($), await $.session.cwd(), { who }));
+  }).catch(($, e, next) => next(e));
 
   // Not prompt.context: the built-in security plugin passes over a user
   // plugin's hook there. Context attached to a prompt reaches the model.
@@ -154,7 +260,7 @@ export const register = (on, options = {}) => {
   on("tool.call", { tool: FILE_EDIT, file_path: SDOC_FILE }, async ($, e, next) => {
     const files = ioOf($);
     const cwd = await $.session.cwd();
-    const before = await beforeEdit(files, state, { filePath: e.file_path, agentId: e.agentId, cwd });
+    const before = await beforeEdit(files, state, { filePath: e.file_path, agentId: e.agentId, cwd, edit: e });
     if (before.deny) return { deny: before.deny };
     const result = await next(e);
     if (!ran(result)) return result;
@@ -172,25 +278,92 @@ export const register = (on, options = {}) => {
     return withContext(result, await afterBash(files, state, { snapshot, agentId: e.agentId, cwd }));
   }).catch(($, e, next) => next(e));
 
+  // The directories the person let the tools read for this session, and the
+  // questions still open, so calls racing for the same paths ask once.
+  const allowed = new Set();
+  const asked = new Map();
+
   // Answering a call here skips the engine's permission check, which runs
-  // beneath next(e): the guard is this hook's own. The tools read inside the
-  // project (and the plugin's bundled guide) and nowhere else, as Read goes
-  // without a prompt there; a path elsewhere is refused, not asked about.
+  // beneath next(e): the guard is this hook's own. Each path the call names
+  // is put to the check a Read of it would get (a Glob, for a directory), as
+  // written and where it leads. A deny refuses the call, inside the project
+  // too. An ask goes through in the project and the plugin (its bundled
+  // guide), as Read goes without a prompt there; elsewhere the person is
+  // asked, and may allow the directory for the session. With no one to ask
+  // (claude -p, or the question dismissed), the call is refused.
   on("tool.call", { tool: OWN_TOOL }, async ($, e, next) => {
     const name = tools.get(e.tool);
     if (!name) return next(e);
     const cwd = await $.session.cwd();
-    if (!await staysInside($, name, e, cwd)) {
-      note($, `tool ${name}: refused, it names a path outside the project`);
-      return { deny: `${e.tool} reads only inside the project (${cwd}). Use Read for a file elsewhere.` };
+    const io = ioOf($);
+    // A settings rule denying the tool by name holds first. Only a rule: the
+    // mode's own verdict on a tool it cannot see is read-only is not ours.
+    const own = await $.tool.check(ownToolRequest(name, e, e.tool)).catch(() => undefined);
+    if (own && own.decision === "deny" && own.rule) {
+      note($, `tool ${name}: refused, the permission settings deny the tool (${own.rule})`);
+      return { deny: own.reason || `${e.tool} is denied by ${own.rule}.` };
     }
-    const { text, error } = await runTool(ioOf($), name, e, { cwd, state, agentId: e.agentId });
+    const verdict = await consent(toolRequests(name, e, cwd), {
+      check: (request) => $.tool.check(request),
+      ask: (question, options) => $.ui.ask(question, options),
+      allowed,
+      pending: asked,
+      roots: await rootsOf($, cwd),
+      io,
+      tool: e.tool,
+      name,
+      cwd
+    });
+    if (verdict.deny !== undefined) return { deny: verdict.deny };
+    const { text, error } = await runTool(io, name, e, { cwd, state, agentId: e.agentId });
     return error ? { deny: error } : { result: text };
   }).catch(($, e, next) => next.called ? next(e) : { deny: `${e.tool} failed.` });
+
+  // @file.sdoc#id in a prompt: the lines of the section the id names are read
+  // in place of the whole file (an unknown id reads it whole and says which
+  // ids it has); #L10-20 is the engine's. A mentioned file inside the project
+  // brings its reading guide, and a large one read whole its outline, as a
+  // Read does: the engine raises no tool.call for a mention.
+  const MENTIONED = /^(.*\.sdoc)#([^/]*)$/i;
+  const LINES = /^L\d+(-\d+)?$/i;
+  on("prompt.mention", { path: /\.sdoc(#[^/]*)?$/i }, async ($, e, next) => {
+    const cwd = await $.session.cwd();
+    const io = ioOf($);
+    const named = MENTIONED.exec(e.mention || "");
+    const fragment = named ? named[2] : "";
+    const path = fragment && e.path.endsWith("#" + fragment) ? e.path.slice(0, -fragment.length - 1) : e.path;
+    let request = path === e.path ? e : { ...e, path };
+    if (!await insideProject(io, path, cwd)) return next(request);
+    let missing = null;
+    if (fragment && !LINES.test(fragment)) {
+      const plan = await mentionRead(io, { filePath: path, fragment, cwd });
+      if (plan) {
+        const { offset, limit, ...whole } = request;
+        request = plan.offset ? { ...whole, offset: plan.offset, limit: plan.limit } : whole;
+        missing = plan.missing || null;
+      }
+    }
+    const result = await next(request);
+    if (result.deny !== undefined) return result;
+    const guide = await afterRead(io, state, { filePath: path, offset: request.offset, limit: request.limit, agentId: e.agentId, cwd });
+    return withContext(withContext(result, missing), guide);
+  }).catch(($, e, next) => next(e));
+
+  // Typing @file.sdoc# offers the file's section ids, beneath the engine's
+  // own rows. The last file's outline is kept, so a keystroke parses nothing.
+  const outlines = {};
+  on("prompt.autocomplete", { token: /^@[^\s#]+\.sdoc#[\w-]*$/i }, async ($, e, next) => {
+    const given = await next(e);
+    const mine = await mentionSuggestions(ioOf($), { token: e.token, cwd: await $.session.cwd(), cache: outlines });
+    return mine.length ? { ...given, suggestions: [...given.suggestions, ...mine] } : given;
+  }).catch(($, e, next) => next(e));
 
   on("session.end", async ($, e, next) => {
     resetState(state);
     note($, `conversation ended (${e.reason}): the index and the guides will be shown again`);
+    if (allowed.size) note($, `the directories allowed for the session are forgotten: ${[...allowed].join(", ")}`);
+    allowed.clear();
+    asked.clear();
     return next(e);
   });
 };

@@ -3,13 +3,16 @@
 Teaches Claude Code to read, write and navigate [SDOC](https://github.com/entropicwarrior/sdoc) files and Lexica knowledge trees (`lexica/` directories), a section at a time.
 
 - **Skills:** `/sdoc-lexica:authoring` covers the format, and `/sdoc-lexica:lexica` covers finding and maintaining project knowledge.
-- **Tools:** `mcp__sdoc-lexica__list`, `outline`, `read`, `search`, `guides` and `check`. They are read-only and read only inside the project, where they run without a prompt.
+- **Tools:** `mcp__sdoc-lexica__list`, `outline`, `read`, `search`, `guides`, `check` and `backlinks` (what links to a file or a section, before you rename or move it). They are read-only. Each path they name gets the permission check a Read of it would: inside the project they run without a prompt, a deny rule holds, and a path elsewhere is asked about.
 - **Hooks:**
-  - A knowledge index on the first prompt.
+  - A knowledge index on the first prompt, with how long ago git saw each file change.
+  - The same index, shorter, in the task of each subagent Claude starts.
+  - `@lexica/file.sdoc#id` in a prompt attaches only that section; typing the `#` offers the file's ids.
   - A file's reading guide on its first Read.
   - Its editing guide, with the sections the guide links to, before its first edit; after it, when the edit is a Bash command.
   - The findings each edit adds, by Edit, Write or a Bash command that names the file.
   - All of it again after a compaction.
+- **Research agent:** `sdoc-lexica:research`, in a project with `lexica/`. It answers a question from the knowledge in at most 200 words, citing the file, section and lines of each claim, and changes nothing.
 
 It runs inside Claude Code as a mod, so no Node.js or other runtime is needed.
 

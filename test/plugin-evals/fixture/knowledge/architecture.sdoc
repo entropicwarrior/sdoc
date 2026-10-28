@@ -1,0 +1,523 @@
+# Tidewater Architecture @tidewater-architecture
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How tidewater, the embedded key-value storage library, is built: the storage engine, the write-ahead log, compaction, replication, and the failures each part is designed to survive. Read it before changing anything under `src/`, or to find the design behind a requirement.
+    }
+
+    @reading-guide {
+        The document follows a single write from the API through the engine and out to the replicas. Each part stands on its own, so read only the one your change touches.
+
+        {[table]
+            Sections | Note
+            @overview | First, for the shape of the whole
+            @write-ahead-log, @failure-modes | Before touching durability or recovery
+            @compaction | Before tuning write amplification or latency
+            @replication | For anything that involves more than one node
+            @configuration | For the settings and their defaults
+        }
+    }
+
+    # Overview @overview
+    {
+        Tidewater is a log-structured merge (LSM) key-value store written in Go and embedded as a library. An application opens a database directory, writes and reads byte-string keys and values, and closes it. There is no server process: every goroutine tidewater starts belongs to the open database and stops when it closes.
+
+        A write takes this path:
+
+        {[#]
+            - The write is encoded as a record and appended to the write-ahead log.
+            - The record is applied to the active memtable, an in-memory sorted structure.
+            - When the memtable is full it is frozen and flushed to disk as an SSTable on level 0.
+            - Compaction merges SSTables down the levels, discarding overwritten values and expired tombstones.
+            - On a replicated database, the leader ships the same log records to its followers.
+        }
+
+        Reads consult the memtables first, newest to oldest, then the SSTables level by level, using bloom filters to skip tables that cannot hold the key and the block cache to avoid repeated disk reads.
+
+        The design favours predictable tail latency over peak throughput. Where a choice trades one for the other, this document says which way it went and why.
+
+        # Goals and Non-Goals @goals
+        {
+            Goals:
+
+            - Durable, ordered key-value storage for a single process.
+            - Bounded recovery time after a crash, whatever the write rate before it.
+            - Optional leader-follower replication for read scaling and failover.
+            - No cgo and no external services.
+
+            Non-goals:
+
+            - Multi-key transactions across shards. Tidewater offers atomic batches within one database only.
+            - A query language. Iteration over a key range is the only access path besides point reads.
+            - Encryption at rest. Applications that need it use an encrypted filesystem.
+        }
+    }
+
+    # Storage Engine @storage-engine
+    {
+        The storage engine owns the on-disk layout of one database directory. It holds the memtables, the SSTables, the manifest that lists which SSTables are live, and the block cache shared by all reads.
+
+        ```
+        db/
+          MANIFEST-000042      live SSTables, by level
+          CURRENT              name of the live manifest
+          wal/000317.log       write-ahead log segments
+          sst/000951.sst       sorted string tables
+          LOCK                 held while the database is open
+        ```
+
+        Every file name carries a monotonically increasing file number. Numbers are never reused, so a crash between creating a file and recording it in the manifest leaves an orphan that the next open deletes.
+
+        # Memtable @memtable
+        {
+            The memtable is a skiplist keyed by user key and sequence number, so several versions of one key coexist until a flush. Its arena grows to the configured size, 64 MiB by default, and is then frozen.
+
+            A frozen memtable stays readable while a background goroutine flushes it. At most two frozen memtables may wait for a flush; a third write that would freeze another one stalls until a flush completes. The stall is the engine's back-pressure, and it is reported by the `tidewater_write_stalls_total` counter.
+
+            Sequence numbers are assigned when a record enters the write-ahead log, not when it reaches the memtable, so the order in the log is the order of visibility.
+        }
+
+        # SSTables @sstables
+        {
+            An SSTable is an immutable file of sorted key-value entries in 16 KiB blocks, followed by an index block, a bloom filter block and a footer. Blocks are compressed with Snappy unless the block would not shrink by at least an eighth.
+
+            SSTables are written to a temporary name, fsynced, and renamed into place. Only then is the new file recorded in the manifest, and the manifest itself is fsynced on every version edit. A reader therefore never sees a partially written table.
+
+            Each block ends with a CRC32C checksum of its contents. A read that finds a mismatch returns `ErrCorrupt` for that key range and increments `tidewater_block_checksum_failures_total`; it never returns the damaged data.
+        }
+
+        # Block Cache @block-cache
+        {
+            Decompressed data blocks are cached in a sharded block cache, 512 MiB by default, shared by every reader of the database. The cache uses 2Q eviction: a block enters a probationary queue and moves to the protected queue on its second hit, so a single large scan cannot flush the working set. The choice is recorded in [D-0005](decisions.sdoc#d-0005).
+
+            The cache has 64 shards, each with its own lock. Index and filter blocks are pinned for the life of their table and do not count against the cache size.
+        }
+
+        # Bloom Filters @bloom-filters
+        {
+            Every SSTable carries a bloom filter over its user keys at 10 bits per key, giving a false-positive rate near 1 percent. A point read checks the filter before it reads any data block of the table, which on a cold cache saves most of the disk reads for keys that are absent.
+
+            Range iteration ignores the filters, since a range can match keys the filter was never asked about.
+        }
+
+        # Manifest @manifest
+        {
+            The manifest is an append-only log of version edits. Each edit adds or removes SSTables at given levels, advances the next file number, or records a checkpoint. Replaying the edits from the start of the manifest yields the current version: the set of live tables at each level.
+
+            The manifest is fsynced after every edit, and an edit is applied in memory only after its fsync returns. A crash can therefore lose an edit that was being written, but never apply one that is not on disk.
+
+            When the manifest grows past 4 MiB, the engine writes a new one holding a single edit that describes the whole current version, fsyncs it, and points `CURRENT` at it by writing a temporary file and renaming it. The old manifest is deleted once `CURRENT` is durable.
+
+            Readers hold a reference to the version they started on. Tables a compaction removes are deleted only when no version that lists them is still referenced, so an iterator never loses a file underneath it.
+        }
+
+        # Iterators @iterators
+        {
+            An iterator merges the memtables and every table that may hold keys in its range into one sorted stream, using a heap keyed by user key and then by descending sequence number. Of several versions of a key it yields only the newest visible one, and it skips keys whose newest version is a tombstone.
+
+            An iterator reads at the sequence number current when it was created. Writes made after that are invisible to it, even if they land in a memtable it is reading.
+
+            Iterators prefetch the next data block of each table once a scan has read two consecutive blocks of it, which doubles the throughput of long scans on network block storage. Short scans do not prefetch, so point-like range reads stay cheap.
+
+            An iterator pins its version and its memtables until it is closed. Long-lived iterators therefore hold disk space and memory; the `tidewater_open_iterators` gauge exists to find them.
+        }
+    }
+
+    # Batches and Snapshots @batches
+    {
+        A batch groups puts and deletes on one database into a single atomic write. Its records share one sequence number range, travel as one logical record through @write-ahead-log, and become visible together: a reader sees either none of a batch or all of it.
+
+        Batches are bounded at 64 MiB, the size of a memtable, so that one batch never spans a freeze. A larger batch fails with `ErrBatchTooLarge` before anything is written.
+
+        A snapshot is a sequence number that the application holds open. Reads through a snapshot see the database as it was at that number, and compaction keeps every version a live snapshot may still need. Snapshots are cheap to take and expensive to keep: a snapshot held for hours prevents compaction from dropping anything written since, and the space shows in `tidewater_compaction_bytes_total` as data rewritten without shrinking.
+    }
+
+    # Time to Live @time-to-live
+    {
+        A put may carry an expiry time. An expired key reads as absent from the moment its expiry passes, measured on the wall clock of the node serving the read.
+
+        Expired values are not removed at expiry. Compaction drops them when it rewrites the table that holds them, the same way it drops overwritten values, and a level with many expired keys is compacted early by the tombstone trigger in @compaction-triggers, which counts expired entries as tombstones.
+
+        Because expiry uses wall-clock time, replicas may disagree about a key for as long as their clocks differ, as @clock-skew explains.
+    }
+
+    # Write-Ahead Log @write-ahead-log
+    {
+        Every write is appended to the write-ahead log before it is applied to the memtable, so a write that the log holds survives a crash even if the memtable does not.
+
+        The log is fsynced every 64 KiB or 20 ms, whichever comes first. A write made with `Sync: true` does not wait for either threshold: it forces an fsync of everything appended before it and returns only after that fsync completes. Writes without it are acknowledged once they are in the operating system's page cache, and may be lost to a power failure within the window above, though never to a process crash.
+
+        Writes from concurrent goroutines are grouped: the first writer to reach the log becomes the leader of a group, appends the records of every writer queued behind it in one system call, and wakes them when the append, and if any of them asked for it the fsync, is done.
+
+        The log is a sequence of segment files under `wal/`. A segment is closed and a new one opened when it reaches 64 MiB or when its memtable is frozen, whichever comes first, so every segment maps to at most one memtable. A segment is deleted once the memtable it belongs to has been flushed and the flush recorded in the manifest.
+
+        # Record Format @wal-format
+        {
+            A segment is a sequence of records. Each record is self-describing, so a reader can start at any segment boundary.
+
+            ```
+            +---------+---------+----------+---------+-----------------+
+            | crc32c  | length  | type     | seqno   | payload         |
+            | 4 bytes | 4 bytes | 1 byte   | 8 bytes | length bytes    |
+            +---------+---------+----------+---------+-----------------+
+            ```
+
+            The checksum covers the type, the sequence number and the payload. The type is one of `full`, `first`, `middle` or `last`: a batch larger than the remainder of the current 32 KiB block is split across blocks, and the fragments are reassembled on read.
+
+            A batch is written as one logical record, so a batch is either wholly in the log or wholly absent after recovery. Partial batches are never applied.
+        }
+
+        # Checkpoints @wal-checkpoints
+        {
+            A checkpoint records the highest sequence number whose effects are durable in SSTables. The engine writes one every 256 MiB of log, by forcing a flush of the active memtable, and on every clean close.
+
+            The checkpoint is what bounds recovery. Whatever the write rate, at most 256 MiB of log plus the two frozen memtables still waiting for a flush has to be replayed, which on the reference host is well inside the recovery budget of [R4](requirements.sdoc#r4).
+        }
+
+        # Recovery @wal-recovery
+        {
+            On open, the engine reads the manifest, finds the last checkpoint, and replays every log record after it into a fresh memtable. Replay runs at about 900 MiB/s on the reference NVMe host, the m6id.2xlarge instance described in @observability, and at about 180 MiB/s on network block storage.
+
+            Replay stops at the first record that fails its checksum or is cut short. Everything after it in that segment is treated as never written: the segment is truncated at the end of the last good record, the number of bytes discarded is logged, and `tidewater_wal_truncations_total` is incremented. Records in later segments are not replayed, because the order of visibility would no longer hold.
+
+            Recovery then flushes the replayed memtable before the database accepts writes, so that a second crash during startup does not lengthen the next recovery.
+        }
+    }
+
+    # Compaction @compaction
+    {
+        Compaction merges SSTables to keep reads fast and space bounded. Without it, every flush would add a table on level 0 and every point read would have to consult all of them.
+
+        Tidewater uses leveled compaction by default, as decided in [D-0007](decisions.sdoc#d-0007). Level 0 holds whole flushed memtables, whose key ranges overlap. Every level from 1 down is a single sorted run split into tables of 64 MiB, and each level is ten times the size of the one above it.
+
+        A compaction picks one table from a level, finds the tables of the next level whose key ranges overlap it, merges them, and writes the result to the next level. Overwritten values are dropped, and a tombstone is dropped once no older version of its key can exist below it.
+
+        # Triggers @compaction-triggers
+        {
+            A compaction is scheduled when any of these holds:
+
+            {[.]
+                - Level 0 holds 4 or more tables. Reads must consult every level 0 table, so their number is the first thing to bound.
+                - A level from 1 down exceeds its target size, 256 MiB for level 1 and ten times more for each level below.
+                - A table has been read through without a hit more than 4,096 times. Such seek-heavy tables are compacted early because their keys are probably dead.
+                - The share of tombstones in a table passes 30 percent, which would make range scans over it slow.
+            }
+
+            When several triggers hold, level 0 goes first, then the level furthest over its target, measured as a ratio of its size to its target.
+
+            Level 0 reaching 12 tables is not a trigger but a stall: writes wait until a compaction brings it back under 8. The stall shows in `tidewater_write_stalls_total` with the label `reason="l0"`.
+        }
+
+        # Strategy @compaction-strategy
+        {
+            Leveled compaction trades write amplification for read and space amplification. A key is rewritten about once per level on its way down, so writes are amplified by roughly ten to twelve times, while a point read touches at most one table per level and the space overhead stays near 10 percent.
+
+            The size-tiered strategy is still available as `CompactionStyle: Tiered` for write-heavy workloads that rarely read. It merges tables of similar size instead of levels, which lowers write amplification to about four times at the price of up to twice the space and more tables per read.
+
+            Both strategies run in the same scheduler and obey the same throttle.
+        }
+
+        # Throttling @compaction-throttling
+        {
+            Compaction competes with foreground writes for disk bandwidth. Tidewater limits it with a token bucket shared by every compaction goroutine, sized by `CompactionRate`, 64 MiB/s by default.
+
+            The rate adapts. When the p99 latency of foreground writes over the last ten seconds rises above 3 ms, the bucket is refilled at half the rate; when it falls under 1 ms, at the full rate again. The rate never falls under 8 MiB/s, so that level 0 cannot grow without bound.
+
+            At most `MaxCompactions` compactions run at once, 2 by default. A level 0 compaction may always start, even when the limit is reached, because it is the one that lifts a stall.
+        }
+
+        # Manual Compaction @manual-compaction
+        {
+            `db.Compact(lower, upper)` compacts every table overlapping a key range down to the last level. It is meant for maintenance after a bulk delete, when the space of the deleted keys should come back at once rather than as compaction reaches them.
+
+            A manual compaction runs under the same throttle as the automatic ones and counts against `MaxCompactions`. It holds no lock that blocks writes, but it can take hours on a large range, and it reports its progress through the `tidewater_compaction_bytes_total` counter with the label `manual="true"`.
+        }
+    }
+
+    # Replication @replication
+    {
+        A replicated database has one leader, which accepts writes, and any number of followers, which apply the leader's log and serve reads. Replication is optional and off by default; a database opened without `Replication` set behaves exactly as described above.
+
+        Replication ships the log, not the SSTables. Each follower holds its own SSTables, built by its own flushes and compactions from the records it receives, so leader and follower files differ even when their contents agree.
+
+        # Leader Election @leader-election
+        {
+            Nodes elect a leader with Raft, as decided in [D-0006](decisions.sdoc#d-0006). The Raft log carries only membership changes and leadership terms; data records travel on the shipping stream described next, which keeps the election traffic small and independent of the write rate.
+
+            A leader holds a lease of 9 seconds, renewed every 3 seconds. A node that has not heard from the leader for the length of the lease starts an election. Clock rates must agree to within the margin in @clock-skew.
+        }
+
+        # Log Shipping @log-shipping
+        {
+            The leader streams each record to every follower as soon as it is appended to its own log, without waiting for the fsync. Records travel in batches of up to 256 KiB, compressed with Snappy, over one long-lived connection per follower.
+
+            A follower acknowledges the highest sequence number it has appended and fsynced. A write with `Sync: true` and `Quorum: true` returns only when a majority of nodes, the leader included, have acknowledged it.
+
+            A follower that falls behind by more than the leader keeps in its log is sent a snapshot: the leader's live SSTables, streamed file by file, followed by the log from the snapshot's sequence number.
+        }
+
+        # Read Replicas @read-replicas
+        {
+            Followers serve reads with bounded staleness, as decided in [D-0008](decisions.sdoc#d-0008). A read names the most staleness it accepts, 2 seconds by default; a follower further behind than that redirects the read to the leader with `ErrTooStale`.
+
+            Reads on the leader are always current. Reads that must observe the reader's own earlier writes pass the sequence number those writes returned, and a follower waits until it has applied that sequence number, or up to 50 ms before it redirects.
+        }
+
+        # Membership Changes @membership-changes
+        {
+            Nodes join and leave one at a time, through a Raft configuration change committed by the current leader. A joining node first receives a snapshot and catches up on the log as a non-voting learner; it becomes a voter only once its lag has stayed under one second for ten seconds.
+
+            Removing a node takes effect when the change commits. A removed node that is still running stops serving reads as soon as it learns of the change, and refuses writes from then on with `ErrNotLeader`.
+
+            Changing more than one voter at a time is refused, which keeps every pair of consecutive configurations overlapping in a majority.
+        }
+    }
+
+    # Failure Modes @failure-modes
+    {
+        This section lists the failures tidewater is designed to survive, how each is detected, and what the application sees. A failure not listed here is one the design does not claim to survive.
+
+        # Process Crash @process-crash
+        {
+            A crash of the process loses nothing the log had accepted: records are in the operating system's page cache, which survives the process. Recovery replays them as described in @wal-recovery.
+
+            Detection is implicit. The `LOCK` file is held by the open database, and a stale lock found on open means the last close was not clean, which is logged at warning level.
+        }
+
+        # Power Loss and Torn Writes @torn-writes
+        {
+            A power loss can lose up to 64 KiB or 20 ms of acknowledged writes made without `Sync: true`, by the policy in @write-ahead-log, and it can leave the block being written at the tail of a log segment only partly on disk: a torn write.
+
+            A torn write is found by its checksum. Every log record carries a CRC32C over its contents, and recovery stops at the first record whose checksum fails or whose length runs past the end of the file. The segment is truncated there, as @wal-recovery describes, and the database opens with every record before the tear.
+
+            SSTables cannot be torn in a way that matters: a table is renamed into place only after its fsync, so a table interrupted by the power loss is an orphan under a temporary name and is deleted on the next open.
+        }
+
+        # Disk Full @disk-full
+        {
+            When a write to the log fails for lack of space, the write returns `ErrNoSpace` and the database switches to read-only mode. Nothing already acknowledged is lost, and reads continue.
+
+            Flushes and compactions check the free space before they start and refuse to begin when less than twice their expected output is free, so a compaction never fails halfway for lack of space. A database in read-only mode leaves it on its own once free space is back above 10 percent of the volume for 30 seconds.
+
+            The `tidewater_read_only` gauge is 1 while the database is in read-only mode.
+        }
+
+        # Slow Disk @slow-disk
+        {
+            A disk whose fsync latency degrades shows first as a longer write path, since every grouped write waits for the fsync of its group. When the p99 fsync latency stays above 100 ms for a minute, tidewater logs a warning and, on a replicated database, the leader steps down if a follower reports a better latency.
+
+            Tidewater never skips an fsync to keep latency down. A disk that cannot keep up is reported, not hidden.
+        }
+
+        # Network Partition @network-partition
+        {
+            A leader cut off from the majority keeps its lease until it expires, then stops accepting writes with `ErrNotLeader`. Writes with `Quorum: true` already fail at once, since they cannot gather a majority.
+
+            The majority side elects a new leader after the lease has run out, so two leaders never accept quorum writes at the same time. Writes made on the old leader without `Quorum: true` during the lease may be lost when it rejoins: its log is truncated back to the new leader's, and the discarded records are logged.
+        }
+
+        # Clock Skew @clock-skew
+        {
+            Leases depend on clock rates, not on wall-clock time: each node measures the lease with its monotonic clock. The design assumes the rates of any two nodes differ by less than 1 percent, which bounds the drift over a 9 second lease to under 90 ms.
+
+            Wall-clock time appears only in log messages and in the expiry of keys written with a time to live. Skew between nodes can make a key expire on one node slightly before another, and reads may disagree for that long.
+        }
+
+        # Silent Corruption @corruption
+        {
+            A disk can return data that differs from what was written without reporting an error. Every SSTable block and every log record carries a CRC32C, so such corruption is found on the first read of the damaged data, never served.
+
+            A corrupt SSTable block makes reads of its key range fail with `ErrCorrupt`, and the table is marked suspect in the manifest. On a replicated database, the node then fetches the table's key range from the leader, or from a follower when it is the leader, and rewrites it. On a single node there is nothing to fetch it from, and the range stays unreadable until the application restores it from a backup.
+
+            A background scrubber reads every table once a week at a low rate, 4 MiB/s by default, so that corruption in cold data is found before a read needs it.
+        }
+
+        # Memory Pressure @memory-pressure
+        {
+            Tidewater's memory is bounded by its configuration: the memtables, at most three of `MemtableSize`; the block cache; the pinned index and filter blocks, about 1 percent of the data on disk; and the buffers of running compactions, 4 MiB each.
+
+            It does not watch the system's free memory. An application that runs short is expected to lower `BlockCacheSize`, which can be changed on an open database and shrinks the cache at once.
+        }
+    }
+
+    # On-Disk Format @on-disk-format
+    {
+        The on-disk format has a version number, written in the footer of every SSTable and in the first edit of every manifest. The engine reads every format version back to the oldest one still listed below, and writes only the newest.
+
+        {[table]
+            Version | Introduced in | Change
+            3 | 1.0 | First stable format
+            4 | 1.6 | Snappy compression of data blocks
+            5 | 2.1 | Seek counts and tombstone share in the table properties
+            6 | 2.3 | Expiry times on values
+        }
+
+        A database is upgraded lazily. Opening it with a newer release changes nothing on disk; tables are rewritten in the new format as compaction reaches them. A database that holds tables of a version the release cannot read refuses to open, with an error naming the oldest release that can.
+
+        Downgrades are supported to the previous minor release only, and only while no table of the newer format exists. `tidewater-admin downgrade` rewrites any such tables in the older format first.
+
+        The version is a constant in `src/format.go`, and changes to it follow the release procedure.
+    }
+
+    # Backup and Restore @backup-and-restore
+    {
+        A backup is a copy of the database directory taken while the database is consistent. There are two ways to get one.
+
+        {[.]
+            - Close the database and copy the directory. `Close` leaves a checkpoint, so the copy opens without replaying any log.
+            - Call `db.Checkpoint(dir)` on an open database. It flushes the memtable, then hard-links every live SSTable and the manifest into `dir` and copies the log segments written since the flush. The copy is consistent at the sequence number of the flush and takes seconds whatever the size of the database, as long as `dir` is on the same filesystem.
+        }
+
+        Restoring is opening the copy. A restored copy of a replicated database's node opens as a single node; it joins a cluster only through @membership-changes, and receives a snapshot like any other new node.
+
+        Backups are not incremental. Hard links make a local checkpoint cheap, but copying it elsewhere copies every table.
+    }
+
+    # Testing @testing
+    {
+        Every part of the engine is tested at three levels.
+
+        {[table]
+            Level | What it covers | When it runs
+            Unit tests | Each package against its own contract | On every commit
+            Crash tests | Recovery after the process is killed at random points of the write path | On every commit, for ten minutes
+            Fault injection | Torn writes, failed fsyncs and full disks through a fake filesystem | On every commit
+            Long-running tests | Throughput, latency and recovery time on the reference host | Before every release
+            Fuzzing | The record and block decoders against arbitrary input | Continuously
+        }
+
+        Crash tests compare the database after recovery with a model of every write that was acknowledged, and fail if an acknowledged write with `Sync: true` is missing, if any batch is partly applied, or if recovery took longer than the budget of [R4](requirements.sdoc#r4) for the amount of log replayed.
+
+        The fault-injection filesystem can tear a write at any byte, return an error from any fsync, and report the disk full at any write. Each failure mode in @failure-modes has at least one test that reproduces it this way.
+    }
+
+    # Performance Budget @performance-budget
+    {
+        The figures below are what the design is sized to deliver on the reference host described in @observability. Each is checked by the long-running tests before a release.
+
+        {[table]
+            Measure | Budget | Source
+            Point read, warm cache, p99 | 1 ms | [R2](requirements.sdoc#r2)
+            Sustained writes, 1 KiB values | 200,000 per second | [R3](requirements.sdoc#r3)
+            Recovery per GiB of log | 3 s | [R4](requirements.sdoc#r4)
+            Write latency during compaction, p99 | 5 ms | [R5](requirements.sdoc#r5)
+            Follower lag, nominal load | 2 s | [R6](requirements.sdoc#r6)
+        }
+
+        A change that moves any of these by more than 10 percent on the reference host needs a decision recorded in the decisions log, even when the budget still holds.
+    }
+
+    # Observability @observability
+    {
+        Tidewater exports Prometheus metrics through a handler the application mounts, and structured logs through the `slog` logger it is given. It starts no listener of its own.
+
+        {[table]
+            Metric | Kind | Meaning
+            `tidewater_write_stalls_total` | counter | Writes that waited for a flush or a compaction, by reason
+            `tidewater_wal_fsync_seconds` | histogram | Latency of each log fsync
+            `tidewater_wal_truncations_total` | counter | Log segments truncated during recovery
+            `tidewater_block_checksum_failures_total` | counter | SSTable blocks that failed their checksum
+            `tidewater_compaction_bytes_total` | counter | Bytes read and written by compaction, by level
+            `tidewater_read_only` | gauge | 1 while the database refuses writes
+            `tidewater_replication_lag_seconds` | gauge | How far each follower is behind the leader
+        }
+
+        The reference host for every figure in this document is an m6id.2xlarge instance with its local NVMe disk, 8 vCPUs and 32 GiB of memory, running Linux 6.1 with ext4.
+    }
+
+    # Configuration @configuration
+    {
+        Options are fields of the `Options` struct passed to `Open`. Every option has a default chosen for the reference host, and most applications set none of them.
+
+        {[table]
+            Option | Default | Effect
+            `MemtableSize` | 64 MiB | Size at which the active memtable is frozen
+            `BlockCacheSize` | 512 MiB | Capacity of the shared block cache
+            `BloomBitsPerKey` | 10 | Bits per key in each SSTable's bloom filter
+            `CompactionStyle` | Leveled | Leveled or Tiered
+            `CompactionRate` | 64 MiB/s | Disk bandwidth compaction may use, before adaptation
+            `MaxCompactions` | 2 | Compactions that may run at once
+            `WALSegmentSize` | 64 MiB | Size at which a log segment is closed
+            `CheckpointInterval` | 256 MiB | Log written between two checkpoints
+            `Replication` | none | Peers and role, when the database is replicated
+            `MaxStaleness` | 2 s | Default staleness accepted by follower reads
+        }
+
+        The fsync thresholds of the log are not options. They were tuned with the checkpoint interval to meet the recovery budget, and changing one without the others would break it.
+    }
+
+    # API Surface @api-surface
+    {
+        The public API is deliberately small:
+
+        ```go
+        db, err := tidewater.Open(dir, &tidewater.Options{})
+        err = db.Put(key, value, tidewater.WriteOptions{Sync: true})
+        value, err := db.Get(key, tidewater.ReadOptions{})
+        err = db.Delete(key, tidewater.WriteOptions{})
+        err = db.Write(batch, tidewater.WriteOptions{})
+        it := db.NewIterator(lower, upper, tidewater.ReadOptions{})
+        err = db.Close()
+        ```
+
+        `Close` waits for running flushes and compactions to finish their current table, writes a checkpoint, and returns once every goroutine the database started has exited. After it returns, the directory can be copied as a consistent backup.
+
+        Errors are values of the package's own types, so callers can test for them with `errors.Is`: `ErrNoSpace`, `ErrCorrupt`, `ErrNotLeader`, `ErrTooStale` and `ErrClosed`.
+
+        # Concurrency Model @concurrency-model
+        {
+            Every method of `DB` is safe to call from any number of goroutines. Iterators and batches are not: each belongs to the goroutine that uses it.
+
+            An open database runs a fixed set of goroutines of its own:
+
+            {[table]
+                Goroutine | Count | Job
+                Log writer | 1 | Appends grouped writes and runs the fsync policy
+                Flusher | 1 | Turns frozen memtables into level 0 tables
+                Compactor | up to `MaxCompactions` | Runs compactions under the throttle
+                Scrubber | 1 | Verifies cold tables, as in @corruption
+                Shipper | 1 per follower | Streams the log, on a replicated leader only
+                Applier | 1 | Applies shipped records, on a follower only
+            }
+
+            None of them is started lazily, and none outlives `Close`. A test that leaks one fails, which is how the no-goroutines-after-close requirement is kept.
+        }
+
+        # Stability Promise @stability
+        {
+            The API follows semantic versioning from 1.0 on. Within a major version, an exported name is never removed or changed in meaning, an option's default may change only in a minor release and only when the release notes say so, and every on-disk format written by an earlier minor release stays readable.
+
+            Metrics and log messages are not part of the promise. Their names are kept stable where possible, and a rename is listed in the release notes.
+        }
+    }
+
+    # Rejected Designs @rejected-designs
+    {
+        Some designs come up again and again. They were considered and rejected for the reasons below; a proposal to revisit one should answer the reason first.
+
+        # One Log per Column Family @rejected-per-family-log
+        {
+            Separate logs would let families flush independently, but a batch across families would then need a two-phase commit between logs, and recovery would have to reconcile them. One log keeps batches atomic for free. The choice is recorded in [D-0003](decisions.sdoc#d-0003).
+        }
+
+        # Memory-Mapped Tables @rejected-mmap
+        {
+            Reading SSTables through `mmap` saves a copy, but a disk error then arrives as a signal rather than an error value, and the page faults it causes are invisible to the block cache's accounting. Explicit reads keep both errors and memory under control.
+        }
+
+        # Direct I/O for the Log @rejected-direct-io
+        {
+            Bypassing the operating system's cache for log writes would make the cost of each fsync predictable, but it requires aligned buffers and, on most filesystems, gives no gain unless writes are large. The grouped writes of @write-ahead-log already amortise the fsync. Asynchronous submission on Linux is a separate question, still open in [D-0009](decisions.sdoc#d-0009).
+        }
+
+        # Per-Key Locks @rejected-key-locks
+        {
+            Locking keys would allow read-modify-write without a batch, but it puts a lock table on the write path of every caller to serve the few that need it. Applications that need it build it above the API, where the lock's scope is known.
+        }
+    }
+}

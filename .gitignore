@@ -20,3 +20,6 @@ build/
 examples/*.html
 examples/*.pdf
 examples/*.pptx
+
+# Plugin eval runs: reports, result JSON (npm run eval:plugin)
+test/plugin-evals/evals/results/

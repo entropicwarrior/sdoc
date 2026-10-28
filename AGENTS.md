@@ -115,6 +115,11 @@ test/               Test files
   artifact-golden/    The checked-in Claude Slides export of the two example decks
   pptx-golden/        Structural digests of the PPTX export: what the harvest found
                       per slide against what reached the file
+  plugin-evals/       Evals of the Claude Code plugin: whether it helps, not what it
+                      does (npm run eval:plugin; costs model calls, so not in
+                      npm test). Cases under evals/, run from the repo root,
+                      and a fixture whose knowledge is stored as
+                      fixture/knowledge/, never lexica/
   test-slide-layouts.js  Structured layouts, theme loading, geometry, PPTX and
                          connectors (node test/test-slide-layouts.js; the
                          geometry, PPTX and connector tests skip themselves when
@@ -128,7 +133,8 @@ test/               Test files
 .claude-plugin/     marketplace.json: the repo is a Claude Code plugin marketplace
 
 plugins/            Claude Code plugins
-  sdoc-lexica/        SDOC + Lexica: skills, read-only tools (mcp__sdoc-lexica__*), hooks.
+  sdoc-lexica/        SDOC + Lexica: skills, read-only tools (mcp__sdoc-lexica__*), hooks,
+                      and a read-only research agent (sdoc-lexica:research).
                       Runs as a mod: Claude Code executes hooks/register.mjs in its
                       own runtime, so no Node is needed on the user's machine.
                       hooks/handlers.mjs holds the behaviour against an io adapter.
@@ -217,8 +223,13 @@ should be evaluated against.
 - The mod API is early access: `claude plugin validate plugins/sdoc-lexica` after a Claude
   Code update shows what it no longer accepts.
 - A tool call the mod answers itself skips Claude Code's permission check, which
-  runs beneath `next(e)`. The `tool.call` hook is the guard: every path, and where it
-  leads through links, inside the project or the plugin. Keep new tools behind it.
+  runs beneath `next(e)`. `consent()` in handlers.mjs is the guard: it puts every
+  path a call names, as written and where it leads through links, to `$.tool.check`
+  as a Read (a file) or a Glob (a directory). A deny refuses, inside the project
+  too; an ask goes through in the project and the plugin and asks the person
+  elsewhere. Keep new tools behind it: list a new tool's paths in `toolPaths`, and
+  give a directory parameter the kind `dir` in `toolRequests`, or it is checked as
+  a file.
 - A skill is named after its folder (`skills/lexica/` is `/sdoc-lexica:lexica`); the
   frontmatter `name` does not change that.
 - `prompt.context`, `session.compact` and a compaction's `session.append` never
@@ -226,6 +237,19 @@ should be evaluated against.
   there (the debug log says "bypassed by cc-plugin-sec-default"). The index goes with
   `prompt.submit`, which also sees a compaction or a /clear: the conversation's
   opening message has changed.
+- `agent.spawn` does reach a user plugin (2.1.312: the debug log says
+  "agent.spawn general-purpose: prompt rewritten by a hook", and no "bypassed").
+  The subagent brief goes there. A `tool.call` fallback in register.mjs briefs at an
+  agent's first tool call only if the spawn hook never runs; check the log after a
+  Claude Code update.
+- Call each `$` noun where it is written: `$.store.get(key)`, never `$.store` passed
+  as a value, which `claude plugin validate` refuses. `ioOf` in register.mjs spells
+  out every call for that reason.
+- Evals live in `test/plugin-evals/evals`, run with the repo root as the target
+  (`npm run eval:plugin`): a case may load only plugins under the target. A
+  fixture is never a directory named `lexica/`: this repo's own plugin would take
+  it for the repo's knowledge. Each case's scaffold copies `fixture/knowledge/` to
+  `lexica/`.
 - Edits go through Bash as often as through Edit (`sed -i`, a Python script), so the
   `tool.call` Bash hook watches the `.sdoc` files a command names. Anything an edit
   gets, a Bash change must get too.
@@ -246,14 +270,14 @@ should be evaluated against.
 
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
-- Run the fast suites — no browser, a few seconds, 859 tests:
+- Run the fast suites — no browser, a few seconds, 928 tests:
   `npm test`
 - Run the browser-gated ones too (under a minute, needs Chrome; each suite runs its
   browser tests one at a time, since starting them together froze the machine):
   `npm run test:browser`   — or `npm run test:all` for both
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
-  (859 fast + 360 browser = 1219, with the plugin's suite)
+  (928 fast + 360 browser = 1288, with the plugin's suite)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

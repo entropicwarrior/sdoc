@@ -1,0 +1,52 @@
+# Releasing Tidewater @release
+{
+    @meta {
+        type: skill
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How to cut a tidewater release, from the freeze to the announcement, and what must hold before the tag. Use it whenever you prepare, tag or publish a release, including a patch release.
+    }
+
+    # Before You Start @before
+    {
+        A release needs a clean `main`, a green build on it, and a free reference host for the long-running tests. Book the host, `soak-3`, a day ahead in the team calendar: the tests occupy it for six hours.
+    }
+
+    # Steps @steps
+    {
+        {[#]
+            - Freeze and branch
+            {
+                Announce the freeze in the team channel, then create `release/vX.Y.Z` from `main`. From here on only fixes for the release land on the branch, each also merged to `main`.
+            }
+            - Run the soak test
+            {
+                On `soak-3`, run `make soak VERSION=vX.Y.Z` from the release branch. It runs the long-running tests for six hours and fails if any figure misses its budget by more than 10 percent, or if any log truncation happens during the run. A failed soak test stops the release until it passes on a rerun after the fix.
+            }
+            - Bump the format version if the on-disk format changed
+            {
+                If any change since the last release alters what is written to disk, increase `TIDEWATER_FORMAT_VERSION` in `src/format.go` by one, add the new version to the on-disk format table in the architecture, and add a test that opens a database written by the previous release. If the format did not change, leave the constant alone.
+            }
+            - Write the changelog
+            {
+                Add a section for the release to `CHANGELOG.md`, listing every changed default, renamed metric and new error under its own heading, since applications depend on all three.
+            }
+            - Tag
+            {
+                Tag the release commit with a signed tag, `git tag -s vX.Y.Z`, using the release key. An unsigned tag is rejected by the module proxy mirror the project publishes to.
+            }
+            - Publish and announce
+            {
+                Run `make publish VERSION=vX.Y.Z`, which pushes the tag and warms the module proxy, then post the changelog section in the team channel.
+            }
+        }
+    }
+
+    # Patch Releases @patch-releases
+    {
+        A patch release follows the same steps from an existing `release/vX.Y` branch, with two exceptions: the soak test may be shortened to two hours with `SOAK_HOURS=2` when the fix does not touch the write path, and the format version never changes in a patch release.
+    }
+}

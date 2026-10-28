@@ -1,0 +1,143 @@
+# Tidewater Decisions @tidewater-decisions
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        The decisions log of tidewater: every design decision since the project started, why it was taken, and whether it still holds. Read it to learn why the design is the way it is, before reopening a settled question, or to see what is still undecided.
+    }
+
+    @reading-guide {
+        Decisions are listed oldest first and are never removed, so many of them no longer hold. Check the status of a decision before relying on it.
+
+        {[table]
+            Sections | Note
+            @status-values | What each status means, before reading any decision
+            @decision-log | The decisions themselves
+        }
+    }
+
+    @editing-guide {
+        {[.]
+            - Each decision is a section titled `D-NNNN: Title` with the id `@d-nnnn`, numbered one after the highest existing number. Add a new decision at the end of @decision-log.
+            - Each decision holds four paragraphs, in this order: `**Status:**` (Proposed, Accepted, or Superseded by the decision that replaced it), `**Date:**` (the day it was proposed or decided, as YYYY-MM-DD), `**Context:**` (the forces at play), and `**Decision:**` (what was decided).
+            - Never delete a decision, and never rewrite one that was accepted. When a new decision replaces an old one, change only the old one's status, to `Superseded by @d-nnnn`, and say in the new one's context which decision it supersedes.
+            - Link the architecture section a decision changes, with a link such as `[Block Cache](architecture.sdoc#block-cache)`.
+        }
+    }
+
+    # Status Values @status-values
+    {
+        {[table]
+            Status | Meaning
+            Proposed | Under discussion. Nothing is built on it yet.
+            Accepted | In force. The code and the architecture follow it.
+            Superseded | Replaced by the decision named in the status. Kept for its history.
+        }
+    }
+
+    # Decision Log @decision-log
+    {
+        # D-0001: Go Without Cgo @d-0001
+        {
+            **Status:** Accepted
+
+            **Date:** 2024-02-12
+
+            **Context:** Tidewater is embedded in Go services that are cross-compiled for several platforms. A C storage engine behind cgo would need a C toolchain for every target, and every call would pay the cgo transition.
+
+            **Decision:** Tidewater is written in pure Go and builds with `CGO_ENABLED=0`. A dependency that needs cgo is not accepted.
+        }
+
+        # D-0002: Size-Tiered Compaction by Default @d-0002
+        {
+            **Status:** Superseded by @d-0007
+
+            **Date:** 2024-03-04
+
+            **Context:** The first users wrote logs and metrics, read them rarely, and cared about write throughput above all.
+
+            **Decision:** The default compaction strategy is size-tiered, which has the lowest write amplification.
+        }
+
+        # D-0003: One Log per Database @d-0003
+        {
+            **Status:** Accepted
+
+            **Date:** 2024-04-18
+
+            **Context:** Column families were added, and each could have kept its own log. A batch spanning families would then need to commit to several logs atomically.
+
+            **Decision:** A database has a single write-ahead log shared by all its column families, so every batch is one record in one log. See [Write-Ahead Log](architecture.sdoc#write-ahead-log).
+        }
+
+        # D-0004: CRC32C on Every Record and Block @d-0004
+        {
+            **Status:** Accepted
+
+            **Date:** 2024-05-02
+
+            **Context:** A torn write at the tail of the log was found during crash testing to replay as garbage. Some disks also return wrong data without an error.
+
+            **Decision:** Every log record and every SSTable block carries a CRC32C checksum, verified on every read. See [Power Loss and Torn Writes](architecture.sdoc#torn-writes).
+        }
+
+        # D-0005: 2Q Eviction for the Block Cache @d-0005
+        {
+            **Status:** Accepted
+
+            **Date:** 2024-06-20
+
+            **Context:** With plain LRU, one long range scan evicted the whole working set of point reads, and read latency took minutes to recover.
+
+            **Decision:** The block cache uses 2Q eviction: blocks enter a probationary queue and are promoted to the protected queue on a second hit. See [Block Cache](architecture.sdoc#block-cache).
+        }
+
+        # D-0006: Raft for Leader Election @d-0006
+        {
+            **Status:** Accepted
+
+            **Date:** 2024-09-09
+
+            **Context:** Replication needed a single leader per database, and a home-grown election protocol failed two of its first five partition tests.
+
+            **Decision:** Leaders are elected with Raft. The Raft log carries only membership and terms; data travels on a separate stream. See [Leader Election](architecture.sdoc#leader-election).
+        }
+
+        # D-0007: Leveled Compaction by Default @d-0007
+        {
+            **Status:** Accepted
+
+            **Date:** 2025-01-15
+
+            **Context:** Most applications now read far more than they write, and with size-tiered compaction their point reads touched up to 30 tables and their space use doubled during large merges. This supersedes @d-0002.
+
+            **Decision:** The default compaction strategy is leveled, with ten times growth per level. Size-tiered stays available as an option. See [Compaction](architecture.sdoc#compaction).
+        }
+
+        # D-0008: Bounded-Staleness Follower Reads @d-0008
+        {
+            **Status:** Accepted
+
+            **Date:** 2025-06-03
+
+            **Context:** Applications wanted to scale reads across followers, but some reads must not return data older than a few seconds.
+
+            **Decision:** A follower serves a read only when it is within the staleness the read accepts, 2 seconds by default, and redirects it to the leader otherwise. See [Read Replicas](architecture.sdoc#read-replicas).
+        }
+
+        # D-0009: io_uring for Log Writes on Linux @d-0009
+        {
+            **Status:** Proposed
+
+            **Date:** 2026-10-26
+
+            **Context:** On fast disks the log writer spends most of its time waiting for fsync, and the next group of writes cannot be submitted until the previous fsync returns. With io_uring the writer could submit the next group's write while the previous fsync is in flight. Open questions: the oldest kernel to support, the fallback on other systems, and container seccomp profiles that block io_uring.
+
+            **Decision:** Not yet taken. The proposal is to submit log writes and fsyncs through io_uring on Linux 5.10 and later, and to keep the current path everywhere else. See [Write-Ahead Log](architecture.sdoc#write-ahead-log).
+        }
+    }
+}

@@ -192,15 +192,18 @@
         {
             Unreleased, on \`feat/claude-plugin\`. A Claude Code plugin, \`plugins/sdoc-lexica\`, listed by the repo's own marketplace (\`.claude-plugin/marketplace.json\`), so a team installs it with one line or through managed settings. The user guide is \`docs/guide/claude-code-plugin.sdoc\`.
 
-            It has three parts:
+            It has four parts:
 
             {[.]
                 - **Skills:** \`/sdoc-lexica:authoring\` (the format, distilled, with the full authoring guide bundled to read by section) and \`/sdoc-lexica:lexica\` (finding and maintaining project knowledge; company-agnostic).
-                - **Read-only tools:** \`mcp__sdoc-lexica__list\`, \`outline\`, \`read\`, \`search\`, \`guides\` and \`check\`. They read only inside the project and the plugin, with no prompt; any other path is refused.
+                - **Read-only tools:** \`mcp__sdoc-lexica__list\`, \`outline\`, \`read\`, \`search\`, \`guides\`, \`check\` and \`backlinks\`. Each path a call names gets the permission check a Read of it would: no prompt inside the project and the plugin, a deny rule holding there too, and a question for a path elsewhere.
+                - **A research agent,** \`sdoc-lexica:research\`, registered where the project has \`lexica/\`.
                 - **Hooks:**
                 {
-                    - the \`lexica/\` index with the first prompt;
+                    - the \`lexica/\` index with the first prompt, each file with how long ago git saw it change;
+                    - a shorter index in the task of each subagent Claude starts;
                     - a file's reading guide and related resources on its first Read, and its outline when a large file is read whole;
+                    - \`\@file.sdoc#id\` in a prompt attaching only that section, and \`#\` offering the file's ids;
                     - the first edit of a file with an \`\@editing-guide\` refused once, carrying the guide and the sections it links to;
                     - after each edit, the findings it added and only those;
                     - the same for an \`.sdoc\` file a Bash command names and changes (\`sed -i\`, a script), the guide coming after the change;
@@ -231,6 +234,29 @@
                 - **The plugin's own tools are the path it encourages, so they must carry what Read carries.** A first test in another repo answered from two sections through \`read\` and never saw a reading guide. Now the first meeting with a file through Read, outline, read or guides gives its signposts, once per agent.
                 - **A summary is never cut short in the index.** A clipped one misleads more than none. The index lists every file with its whole \`\@about\` when that fits within the \`indexSize\` setting (\`6k\`, \`12k\` by default, or \`24k\` characters). Otherwise it lists every file by title, and only past that leaves files out, with a count.
                 - **A skill is named after its folder,** whatever the frontmatter \`name\` says. \`skills/lexica-workflow/\` was exposed as \`:lexica-workflow\`. The folder is \`lexica/\` now, and \`findKnowledgeDirs\` passes over a \`lexica/\` holding no \`.sdoc\` file.
+            }
+
+            **A third round followed Anthropic's guidance on tools, skills and context engineering:** fewer calls that each answer more, answers that say what they left out, and knowledge loaded when it is wanted rather than up front.
+
+            {[.]
+                - **search ranks** (BM25: rare words, title words and short sections count more, a file's \`\@about\` half as much again). When no section holds every word, it lists those that hold the most, each marked with the words it lacks, then, when fewer than three do, those one word short; before, it answered nothing. It says when the list was cut, and \`read: true\` returns the best sections whole, up to 5 within 6,000 characters, naming one that does not fit rather than cutting it.
+                - **outline** takes \`files\` (up to 20), \`depth\` and \`previews: false\`; **list** takes \`detail: "titles"\`.
+                - **backlinks** (new) finds what links to a file or a section (or a section inside it), by its id or its slug, so a section can be renamed or moved without leaving links broken.
+                - **Ages:** the index and \`list\` say how long ago each file changed. Staleness is what a reader of knowledge most needs and cannot see. One \`git log\` per build, 3 s at most, kept a minute; never the modification time, which a checkout resets.
+                - **A description cache** in the plugin's store (\`describe:v1:\` and the project's path), so an index does not parse every file each session. When the store is full, the entry written longest ago goes.
+                - **Subagents get a brief.** A subagent starts without the conversation, so without the index; \`agent.spawn\` adds one to its task, 3,000 characters at most. Forks, resumed agents and workflow agents get none. Checked on 2.1.312: the hook is not passed over by \`cc-plugin-sec-default\`.
+                - **The research agent** answers from \`lexica/\` in at most 200 words, citing \`path \@id (Lx-y)\`, with the plugin's tools and Read, Grep and Glob only, so the reading stays out of the main conversation.
+                - **Mentions:** \`\@lexica/x.sdoc#id\` attaches the section the id names (an unknown id attaches the file whole and lists its ids), and typing the \`#\` offers the ids.
+                - **Permissions:** the guard (\`consent()\`) puts each path to Claude Code's own check (\`\$.tool.check\`), as a Read or a Glob, as written and where it leads. A deny rule now holds inside the project: a \`Read(./secrets/\*\*)\` deny was not seen by the tools before. A path outside the project asks (allow once, for the session, or deny) instead of being refused; under \`claude -p\` it is still refused.
+                - **Evals** under \`test/plugin-evals\` run ten tasks with the plugin and without it, so a change can be judged by whether it helps, not only by what it does.
+            }
+
+            Known limits:
+
+            {[.]
+                - Mentions, autocomplete and the permission question were checked by hand only. The tests drive the handlers, not the engine raising them.
+                - The brief's \`tool.call\` fallback, for an engine that passes over \`agent.spawn\`, has run only in the tests: on 2.1.312 the spawn hook runs, and the fallback stays dormant.
+                - Ages come from commits. An edit not committed yet shows the last commit's age, an untracked file none, and in a shallow clone a file older than the history fetched shows the oldest fetched commit's age. Outside a repository, without git, when git takes over 3 s, or for a directory outside the project, no file has an age.
             }
 
             Not verified:
