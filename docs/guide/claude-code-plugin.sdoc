@@ -126,7 +126,7 @@
 
     # Settings @plugin-settings
     {
-        Set them with `/plugin configure sdoc-lexica@sdoc` in a session, or from a shell by piping JSON to `claude plugin configure sdoc-lexica@sdoc --values-stdin`. A change applies to sessions started after it.
+        Set them with `/plugin configure sdoc-lexica@sdoc` in a session, or from a shell by piping JSON to `claude plugin configure sdoc-lexica@sdoc --values-stdin`. A change made in a session applies at once: `verbose` from the plugin's next line, `indexSize` from the next index it sends (the next conversation, or after a `/clear` or a compaction), since the index already in the conversation stays. A change made from a shell applies to sessions started after it.
 
         {[table]
             Setting | Values | What it does
@@ -160,7 +160,7 @@
         What the plugin hands Claude, such as the index, a reading guide or an edit's findings, is never shown in the session. Two ways to see it work:
 
         {[.]
-            - **The verbose option.** Each thing the plugin does is shown as one dim line in the session, which Claude is not sent: what it attached (the index, a brief, guides, an outline, findings), what it refused, narrowed or allowed, and where file descriptions came from. A tool's plain answer has no line, since the session shows the call. Turn it on with `/plugin configure sdoc-lexica@sdoc` in a session, or from a shell, then start a new session:
+            - **The verbose option.** Each thing the plugin does is shown as one dim line in the session, which Claude is not sent: what it attached (the index, a brief, guides, an outline, findings), what it refused, narrowed or allowed, and where file descriptions came from. A tool's plain answer has no line, since the session shows the call. Turn it on with `/plugin configure sdoc-lexica@sdoc` in a session, where it applies at once, or from a shell, where it applies to the sessions started after it:
             {
                 ```
 echo '{"verbose":"true"}' | claude plugin configure sdoc-lexica@sdoc --values-stdin
