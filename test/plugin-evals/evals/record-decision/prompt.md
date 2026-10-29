@@ -1,5 +1,5 @@
 ---
-description: "Add D-0010 the way decisions.sdoc's editing guide says, superseding D-0005 without deleting it."
+description: "Add D-0013, after D-0012, the way decisions.sdoc's editing guide says, superseding D-0005 without deleting it."
 tags: [edit]
 plugins: ["../../../../plugins/sdoc-lexica"]
 max_turns: 12

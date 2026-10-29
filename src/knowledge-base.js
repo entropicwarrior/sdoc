@@ -28,7 +28,8 @@ const {
   validateSignposts,
   validateRefs,
   validateCitations,
-  collectInlineRefs
+  collectInlineRefs,
+  hasUrlScheme
 } = require("./sdoc");
 
 // The directory name every Lexica knowledge tree uses.
@@ -246,27 +247,23 @@ function outlineText(text, filePath) {
   };
 }
 
-// The section an id names: an explicit @id first, then a title slug, ignoring
-// case — the order extractSection uses. A leading @ or # is ignored.
-function findSectionNode(nodes, id) {
-  const walked = sectionNodes(nodes);
-  const listed = listSections(nodes);
+// The scope an id names, the document's own heading scope or a section: an
+// explicit @id first, the document's or a section's, then a title slug,
+// ignoring case — the order extractSection uses. So a section whose @id is
+// the document's title slug is that section. A leading @ or # is ignored.
+// Null when nothing has the id.
+function scopeNamed(nodes, id) {
   const wanted = String(id || "").trim().replace(/^[@#]/, "");
+  const doc = getDocumentScope(nodes);
+  const own = doc && doc.hasHeading ? doc : null;
+  if (own && own.id === wanted) return own;
+  const walked = sectionNodes(nodes);
   const exact = walked.find(({ node }) => node.id === wanted);
   if (exact) return exact.node;
   const lower = wanted.toLowerCase();
-  const index = listed.findIndex((s) => s.derivedId.toLowerCase() === lower);
+  if (own && own.title && slugify(own.title).toLowerCase() === lower) return own;
+  const index = listSections(nodes).findIndex((s) => s.derivedId.toLowerCase() === lower);
   return index >= 0 && walked[index] ? walked[index].node : null;
-}
-
-// The document's own heading scope when id names it, by its @id or its title
-// slug, else null.
-function documentScopeNamed(nodes, id) {
-  const doc = getDocumentScope(nodes);
-  if (!doc || !doc.hasHeading) return null;
-  const wanted = String(id || "").trim().replace(/^[@#]/, "");
-  if (doc.id === wanted) return doc;
-  return doc.title && slugify(doc.title).toLowerCase() === wanted.toLowerCase() ? doc : null;
 }
 
 // One section as written: { title, id, lineStart, lineEnd, whole, source },
@@ -276,9 +273,9 @@ function documentScopeNamed(nodes, id) {
 // section has that id.
 function readSectionText(text, id, { text: asText = false } = {}) {
   const { nodes } = parseSdoc(text);
-  const doc = documentScopeNamed(nodes, id);
-  const node = doc || findSectionNode(nodes, id);
+  const node = scopeNamed(nodes, id);
   if (!node) return null;
+  const doc = node === getDocumentScope(nodes) ? node : null;
   const result = { title: node.title, id: node.id || null, lineStart: node.lineStart, lineEnd: node.lineEnd, whole: Boolean(doc) };
   if (asText && doc) {
     // extractSection finds no document scope: its sections one by one.
@@ -312,6 +309,16 @@ function guidesText(text) {
     relatedResources: resources && resources.length ? resources : null,
     editingGuide: extractSignpost(nodes, "editing-guide")
   };
+}
+
+// The lines a signpost (or @meta) of the document spans, { lineStart,
+// lineEnd }, or null when it has none: a reader shown those lines has read it.
+function signpostRange(text, id) {
+  let nodes;
+  try { nodes = parseSdoc(text).nodes; } catch { return null; }
+  const wanted = String(id || "").replace(/^@/, "").toLowerCase();
+  const scope = reservedScopes(nodes).find((n) => n.id.toLowerCase() === wanted);
+  return scope ? { lineStart: scope.lineStart, lineEnd: scope.lineEnd } : null;
 }
 
 // Every finding for a document: the signposts checked on the full tree (so a
@@ -404,59 +411,45 @@ function snippetOf(text, term, width = 140) {
   return (at > 0 ? "…" : "") + clean.slice(at, at + width) + "…";
 }
 
-// Sections whose own text holds every word of the query, ignoring case, best
-// first: [{ path, id, derivedId, title, line, snippet, score }]. A file's
-// @about is searched too, as a section with the id "about".
-function searchTexts(docs, query, { limit = 20 } = {}) {
-  const terms = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return [];
-  const hits = [];
-  function consider(filePath, unit) {
-    const haystack = (unit.title + "\n" + unit.lines.map((l) => l.text).join("\n")).toLowerCase();
-    if (!terms.every((t) => haystack.includes(t))) return;
-    const score = terms.reduce((sum, t) => sum + haystack.split(t).length - 1, 0) +
-      terms.filter((t) => unit.title.toLowerCase().includes(t)).length * 5;
-    // Prefer a body line to the heading line, which repeats the title.
-    const matching = unit.lines.filter((l) => l.text.toLowerCase().includes(terms[0]));
-    const hit = matching.find((l) => !/^\s*#/.test(l.text)) || matching[0] || unit.lines[0] || { n: unit.line, text: unit.title };
-    hits.push({ path: filePath, id: unit.id, derivedId: unit.derivedId, title: unit.title, line: hit.n, snippet: snippetOf(hit.text, terms[0]), score });
-  }
-  for (const { path: filePath, text } of docs) {
-    let nodes;
-    try { nodes = parseSdoc(text).nodes; } catch { continue; }
-    const lines = text.split("\n");
-    const about = extractAbout(nodes);
-    if (about) consider(filePath, { id: "about", derivedId: "about", title: "About", line: 1, lines: [{ n: 1, text: about }] });
-    const listed = listSections(nodes);
-    sectionNodes(nodes).forEach(({ node }, i) => {
-      consider(filePath, {
-        id: node.id || null,
-        derivedId: listed[i] ? listed[i].derivedId : null,
-        title: node.title,
-        line: node.lineStart,
-        lines: ownLines(lines, node)
-      });
-    });
-  }
-  return hits.sort((a, b) => b.score - a.score).slice(0, limit);
-}
-
-async function searchFiles(query, dirs, io, options) {
-  return searchTexts(await readDocs(dirs, io), query, options);
-}
-
-// Every .sdoc file under dirs as { path, text }, each once.
-async function readDocs(dirs, io) {
+// Every .sdoc file under dirs as { path, text, nodes }, each once, nodes
+// being its parse (null when it does not parse; whoever uses the doc skips
+// it). cache, when given, is a Map kept between calls, by path: a file whose
+// path, size and modification time (describeKey) it holds is neither read
+// nor parsed again. A file the listing gives no size or time for is read
+// every time. Whoever uses the nodes must not change them.
+async function readDocs(dirs, io, { cache } = {}) {
   const docs = [];
   const seen = new Set();
   for (const dir of dirs) {
-    for (const file of await findSdocFiles(dir, io.list)) {
+    for (const entry of await findSdocEntries(dir, io.list)) {
+      const file = entry.path;
       if (seen.has(file)) continue;
       seen.add(file);
-      try { docs.push({ path: file, text: await io.read(file) }); } catch { /* skipped */ }
+      const key = cache ? describeKey(entry) : null;
+      const held = key ? cache.get(file) : null;
+      if (held && held.key === key) {
+        docs.push({ path: file, text: held.text, nodes: held.nodes });
+        continue;
+      }
+      let text;
+      try { text = await io.read(file); } catch { continue; }
+      const nodes = parsedNodes(text);
+      if (key) cache.set(file, { key, text, nodes });
+      docs.push({ path: file, text, nodes });
     }
   }
   return docs;
+}
+
+// A text's parse, or null when it does not parse.
+function parsedNodes(text) {
+  try { return parseSdoc(text).nodes; } catch { return null; }
+}
+
+// A doc's nodes: those readDocs parsed, else parsed now; null when it does
+// not parse.
+function nodesOf(doc) {
+  return doc.nodes !== undefined ? doc.nodes : parsedNodes(doc.text);
 }
 
 // @meta and the signposts of a document: the scopes with a reserved id at the
@@ -469,11 +462,12 @@ function reservedScopes(nodes) {
 
 // --- Ranked search ---
 //
-// BM25 over the units searchTexts looks at: a word counts for more the fewer
-// units hold it, its count saturates (k1), and a long section's counts are
-// discounted against the average length (b). A word in a section's title adds
-// twice its weight again; a file's @about, the summary written to be found,
-// weighs half as much again as a section.
+// BM25 over each file's @about, its headed sections and the text it holds
+// outside them: a word counts for more the fewer units hold it, its count
+// saturates (k1), and a long section's counts are discounted against the
+// average length (b). A word in a section's title adds twice its weight
+// again; a file's @about, the summary written to be found, weighs half as
+// much again as a section.
 
 const RANK_K1 = 1.2;
 const RANK_B = 0.75;
@@ -484,10 +478,16 @@ const RANK_ABOUT = 1.5;
 // long as that is still half the words or more.
 const RANK_FALLBACK_MIN = 3;
 
-// The query's words, lowercased, each once. A one-letter word matches inside
-// almost anything, so it is dropped, unless the query is nothing else.
+// The quotes, brackets and sentence punctuation around a word of a query:
+// "fsync", (fsync) and fsync? are all fsync.
+const QUERY_EDGES = /^["'`‘’“”«»()[\]{}<>,;:!?.]+|["'`‘’“”«»()[\]{}<>,;:!?.]+$/g;
+
+// The query's words, lowercased, each once, without the punctuation around
+// them. A one-letter word matches inside almost anything, so it is dropped,
+// unless the query is nothing else.
 function queryTerms(query) {
-  const all = [...new Set(String(query || "").toLowerCase().split(/\s+/).filter(Boolean))];
+  const words = String(query || "").toLowerCase().split(/\s+/).map((w) => w.replace(QUERY_EDGES, ""));
+  const all = [...new Set(words.filter(Boolean))];
   const kept = all.filter((t) => t.length > 1);
   return kept.length ? kept : all;
 }
@@ -497,13 +497,40 @@ function wordCount(text) {
   return text.split(/\s+/).filter((w) => /[^{}#|>*\-[\]()]/.test(w)).length;
 }
 
+// The text a file holds outside its headed sections and its signposts (a
+// preamble, or the whole body of a file with no sections), as a unit, or null
+// when it holds none. With a headed root, the unit is the root, named by its
+// id or title slug, its heading line not counted as text; without one, the
+// file, which no id names, titled (top level).
+function rootUnit(filePath, nodes, lines) {
+  const doc = getDocumentScope(nodes);
+  const headed = doc && doc.hasHeading ? doc : null;
+  const scope = doc || { lineStart: 1, lineEnd: lines.length, children: nodes };
+  const reserved = reservedScopes(nodes);
+  const own = ownLines(lines, scope).filter(({ n }) =>
+    !(headed && n === headed.lineStart) && !reserved.some((r) => n >= r.lineStart && n <= r.lineEnd));
+  if (!wordCount(own.map((l) => l.text).join("\n"))) return null;
+  return {
+    path: filePath,
+    id: headed && headed.id ? headed.id : null,
+    derivedId: headed && headed.title ? slugify(headed.title) : null,
+    title: headed && headed.title ? headed.title : "(top level)",
+    untitled: !(headed && headed.title),
+    lineStart: scope.lineStart,
+    lineEnd: scope.lineEnd,
+    lines: own
+  };
+}
+
 // The units a ranked search weighs, in document order: each file's @about,
-// then each headed section with the lines it holds itself.
+// the text it holds outside any section, then each headed section with the
+// lines it holds itself.
 function searchUnits(docs) {
   const units = [];
-  for (const { path: filePath, text } of docs) {
-    let nodes;
-    try { nodes = parseSdoc(text).nodes; } catch { continue; }
+  for (const doc of docs) {
+    const { path: filePath, text } = doc;
+    const nodes = nodesOf(doc);
+    if (!nodes) continue;
     const lines = text.split("\n");
     const about = extractAbout(nodes);
     if (about) {
@@ -516,6 +543,8 @@ function searchUnits(docs) {
         lines: [{ n: first ? first.lineStart : scope ? scope.lineStart : 1, text: about }]
       });
     }
+    const root = rootUnit(filePath, nodes, lines);
+    if (root) units.push(root);
     const listed = listSections(nodes);
     sectionNodes(nodes).forEach(({ node }, i) => {
       units.push({
@@ -556,7 +585,7 @@ function rankSections(docs, query, { limit = 20 } = {}) {
   const fewest = matched < terms.length && (matched - 1) * 2 >= terms.length &&
     units.filter((u) => u.held === matched).length < RANK_FALLBACK_MIN ? matched - 1 : matched;
   const ranked = units.filter((u) => u.held >= fewest).map((u) => {
-    const title = u.about ? "" : String(u.title || "").toLowerCase();
+    const title = u.about || u.untitled ? "" : String(u.title || "").toLowerCase();
     let score = 0;
     terms.forEach((t, i) => {
       const count = u.counts[i];
@@ -580,28 +609,41 @@ function rankSections(docs, query, { limit = 20 } = {}) {
   return { hits: ranked.slice(0, limit), total: ranked.length, matched, least: fewest, terms };
 }
 
-async function rankFiles(query, dirs, io, options) {
-  return rankSections(await readDocs(dirs, io), query, options);
+// rankSections over every .sdoc file under dirs; cache as readDocs takes it.
+async function rankFiles(query, dirs, io, { cache, ...options } = {}) {
+  return rankSections(await readDocs(dirs, io, { cache }), query, options);
 }
 
 // --- Backlinks ---
 
+// The absolute paths a link's file part may name, from dir: as written, then
+// percent-decoded when that differs, as src/href-path.js tries them for
+// build-doc --check. A literal % in a name leaves the first alone.
+function hrefPaths(dir, file) {
+  const paths = [joinPath(dir, file)];
+  try {
+    const decoded = decodeURIComponent(file);
+    if (decoded !== file) paths.push(joinPath(dir, decoded));
+  } catch { /* a literal %: as written only */ }
+  return paths;
+}
+
 // The file and fragment a link's href names, as candidate absolute paths
-// (as written, then percent-decoded), or null for a web or mail link. An
+// (hrefPaths), or null for a web or mail link: one with a URL scheme, as the
+// broken-link check tells it (hasUrlScheme), so C:/x.sdoc is a path. An
 // empty file part names the file the link is in.
 function linkTargets(href, fromPath) {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null;
+  if (hasUrlScheme(href)) return null;
   const cut = href.indexOf("#");
   const file = (cut < 0 ? href : href.slice(0, cut)).split("?")[0];
   let fragment = cut < 0 ? "" : href.slice(cut + 1);
   try { fragment = decodeURIComponent(fragment); } catch { /* a literal %: as written */ }
   if (!file) return { paths: [normalizePath(fromPath)], fragment };
-  const paths = [joinPath(dirName(fromPath), file)];
-  try {
-    const decoded = decodeURIComponent(file);
-    if (decoded !== file) paths.push(joinPath(dirName(fromPath), decoded));
-  } catch { /* a literal %: as written only */ }
-  return { paths, fragment };
+  return { paths: hrefPaths(dirName(fromPath), file), fragment };
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // Where a line of a document sits, as a function of the line: its deepest
@@ -624,56 +666,70 @@ function placesIn(nodes) {
 
 // What links to a file, or to one section of it: { path, section, hits },
 // section being the one id names ({ id, derivedId, title, lineStart,
-// lineEnd, whole }) or null; null when id names no section of the file (or
-// the file is not among docs). Without id, the links from other files to the
-// file, whatever their fragment. With id, the links whose fragment names
-// that section or one inside it, by @id or title slug alike, and the @id
-// references to them in the file itself (an @ref names a section of its own
-// file only); a hit to a section inside it is marked inside. Each hit is
-// { path, line, href or ref, section or signpost }: where the link sits, by
-// its deepest section, or the signpost that holds it, or neither when it
-// sits outside any section.
+// lineEnd, whole, inside }) or null; null when id names no section of the
+// file (or the file is not among docs). Without id, the links from other
+// files to the file, whatever their fragment. With id, the links whose
+// fragment names that section or one inside it, by @id or title slug alike,
+// and the @id references to them in the file itself (an @ref names a section
+// of its own file only). section.inside lists the sections inside it ({ id,
+// derivedId, title, lineStart, lineEnd }), all searched with it; a hit to one
+// of them is marked inside, with to naming which. Each hit is { path, line,
+// href or ref, section or signpost }: where the link sits, by its deepest
+// section, or the signpost that holds it, or neither when it sits outside any
+// section.
 function backlinksTexts(docs, targetPath, { id } = {}) {
   const target = normalizePath(targetPath);
   const targetDoc = docs.find((d) => normalizePath(d.path) === target);
   if (!targetDoc) return null;
-  let targetNodes;
-  try { targetNodes = parseSdoc(targetDoc.text).nodes; } catch { return null; }
-  const wanted = id ? documentScopeNamed(targetNodes, id) || findSectionNode(targetNodes, id) : null;
+  const targetNodes = nodesOf(targetDoc);
+  if (!targetNodes) return null;
+  const wanted = id ? scopeNamed(targetNodes, id) : null;
   if (id && !wanted) return null;
   const whole = wanted && wanted === getDocumentScope(targetNodes);
-  // "self" for the section wanted, "inside" for one within it, else false.
+  const walked = sectionNodes(targetNodes);
+  const listed = listSections(targetNodes);
+  const described = (node) => {
+    const i = walked.findIndex((w) => w.node === node);
+    return { id: node.id || null, derivedId: listed[i] ? listed[i].derivedId : slugify(node.title || ""), title: node.title, lineStart: node.lineStart, lineEnd: node.lineEnd };
+  };
+  const isInside = (node) => !whole && node !== wanted && node.lineStart >= wanted.lineStart && node.lineEnd <= wanted.lineEnd;
+  const subsections = wanted && !whole ? walked.filter(({ node }) => isInside(node)).map(({ node }) => described(node)) : [];
+  // What a fragment names: { kind, node }, kind "self" for the section
+  // wanted, "inside" for one within it, else false.
   const named = new Map();
   const names = (fragment) => {
     if (!named.has(fragment)) {
-      const node = documentScopeNamed(targetNodes, fragment) || findSectionNode(targetNodes, fragment);
-      named.set(fragment, !node || !wanted ? false : node === wanted ? "self"
-        : !whole && node.lineStart >= wanted.lineStart && node.lineEnd <= wanted.lineEnd ? "inside" : false);
+      const node = scopeNamed(targetNodes, fragment);
+      named.set(fragment, { node, kind: !node || !wanted ? false : node === wanted ? "self" : isInside(node) ? "inside" : false });
     }
     return named.get(fragment);
   };
+  const insideMark = (kind, node) => (kind === "inside" ? { inside: true, to: described(node) } : {});
   // A reference from within the section to a section inside it moves with
   // it, so it is not counted.
   const within = (line) => wanted && line >= wanted.lineStart && line <= wanted.lineEnd;
   const hits = [];
   const seen = new Set();
-  for (const { path: filePath, text } of docs) {
+  for (const doc of docs) {
+    const { path: filePath, text } = doc;
     const from = normalizePath(filePath);
     const own = from === target;
     if (own && !wanted) continue;
-    let nodes;
-    try { nodes = parseSdoc(text).nodes; } catch { continue; }
+    const nodes = nodesOf(doc);
+    if (!nodes) continue;
     const { refs, links } = collectInlineRefs(nodes);
     // The line of a paragraph that holds the mark, not the paragraph's first;
-    // the second time the same mark is asked for there, the next one.
+    // the second time the same mark is asked for there, the next one. A mark
+    // is matched whole, as the parser reads it: @intro not inside
+    // @intro-old, a link's (href) not inside a longer href.
     const lines = text.split("\n");
     const asked = new Map();
     const lineOf = (at, mark) => {
-      const key = at.lineStart + "\n" + mark;
+      const key = at.lineStart + "\n" + mark.source;
       let skip = asked.get(key) || 0;
       asked.set(key, skip + 1);
       for (let n = at.lineStart; n <= (at.lineEnd || at.lineStart); n++) {
-        const count = (lines[n - 1] || "").split(mark).length - 1;
+        const count = ((lines[n - 1] || "").match(mark) || []).length;
         if (skip < count) return n;
         skip -= count;
       }
@@ -683,19 +739,19 @@ function backlinksTexts(docs, targetPath, { id } = {}) {
     for (const link of links) {
       const to = linkTargets(link.href, from);
       if (!to || !to.paths.includes(target)) continue;
-      const kind = wanted ? (to.fragment ? names(to.fragment) : whole && "self") : "self";
+      const { kind, node } = wanted ? (to.fragment ? names(to.fragment) : { kind: whole && "self" }) : { kind: "self" };
       if (!kind) continue;
-      const line = lineOf(link, "(" + link.href);
+      const line = lineOf(link, new RegExp(`\\(\\s*${escapeRegExp(link.href)}\\s*\\)`, "g"));
       if (kind === "inside" && own && within(line)) continue;
-      found.push({ line, href: link.href, ...(kind === "inside" ? { inside: true } : {}) });
+      found.push({ line, href: link.href, ...insideMark(kind, node) });
     }
     if (own) {
       for (const ref of refs) {
-        const kind = names(ref.id);
+        const { kind, node } = names(ref.id);
         if (!kind) continue;
-        const line = lineOf(ref, "@" + ref.id);
+        const line = lineOf(ref, new RegExp(`(?<![A-Za-z0-9._+-])@${escapeRegExp(ref.id)}(?![A-Za-z0-9_-])`, "g"));
         if (kind === "inside" && within(line)) continue;
-        found.push({ line, ref: ref.id, ...(kind === "inside" ? { inside: true } : {}) });
+        found.push({ line, ref: ref.id, ...insideMark(kind, node) });
       }
     }
     const placeOf = found.length ? placesIn(nodes) : null;
@@ -708,15 +764,16 @@ function backlinksTexts(docs, targetPath, { id } = {}) {
   }
   hits.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
   const section = wanted
-    ? { id: wanted.id || null, derivedId: slugify(wanted.title || ""), title: wanted.title, lineStart: wanted.lineStart, lineEnd: wanted.lineEnd, whole: Boolean(whole) }
+    ? { id: wanted.id || null, derivedId: slugify(wanted.title || ""), title: wanted.title, lineStart: wanted.lineStart, lineEnd: wanted.lineEnd, whole: Boolean(whole), inside: subsections }
     : null;
   return { path: target, section, hits };
 }
 
 // backlinksTexts over every .sdoc file under dirs, and over the target
-// itself wherever it is, so its own references are found.
-async function backlinksFiles(targetPath, dirs, io, options) {
-  const docs = await readDocs(dirs, io);
+// itself wherever it is, so its own references are found; cache as readDocs
+// takes it.
+async function backlinksFiles(targetPath, dirs, io, { cache, ...options } = {}) {
+  const docs = await readDocs(dirs, io, { cache });
   const target = normalizePath(targetPath);
   if (!docs.some((d) => normalizePath(d.path) === target)) {
     try { docs.push({ path: target, text: await io.read(target) }); } catch { return null; }
@@ -734,8 +791,10 @@ function clip(text, max) {
   return clean.length <= max ? clean : clean.slice(0, max - 1).trimEnd() + "…";
 }
 
+// @id, else (title-slug); nothing for the text of a file with no headed root,
+// which no id names.
 function sectionLabel(s) {
-  return s.id ? "@" + s.id : "(" + s.derivedId + ")";
+  return s.id ? "@" + s.id : s.derivedId ? "(" + s.derivedId + ")" : "";
 }
 
 // One line per file: path [type] (N lines) — about, or with titles the
@@ -798,7 +857,8 @@ function formatSection(filePath, section, { base, numbers = true } = {}) {
 function formatSearch(hits, { base, total, matched, least = matched, terms } = {}) {
   const lines = hits.map((h) => {
     const missing = h.missing && h.missing.length ? ` [no ${h.missing.map((t) => `"${t}"`).join(", ")}]` : "";
-    return `${shownPath(h.path, base)}:${h.line} ${h.id ? "@" + h.id : "(" + h.derivedId + ")"} ${h.title}${missing} — ${h.snippet}`;
+    const label = sectionLabel(h);
+    return `${shownPath(h.path, base)}:${h.line} ${label ? label + " " : ""}${h.title}${missing} — ${h.snippet}`;
   });
   if (terms && matched < terms.length) {
     const held = least < matched ? `${matched} or ${least}` : matched;
@@ -808,18 +868,37 @@ function formatSearch(hits, { base, total, matched, least = matched, terms } = {
   return lines.join("\n");
 }
 
+// The most sections inside the one asked about that formatBacklinks names.
+const BACKLINKS_MAX_NAMED = 20;
+
 // What backlinksTexts found, one line per link: file:line, where it sits
 // (@id Title, a signpost, or outside any section), then the href or @id it
-// links by. where names the directories searched, for the line that says
+// links by, and for a link to a section inside the one asked about, which.
+// When that section has sections inside it, a last line says they were
+// covered and which of them nothing links to, so none is asked about again
+// on its own. where names the directories searched, for the line that says
 // nothing links there.
 function formatBacklinks(found, { base, where = "lexica/" } = {}) {
   const s = found.section;
   const target = shownPath(found.path, base) + (s ? " " + (s.id ? "@" + s.id : "(" + s.derivedId + ")") : "");
-  if (!found.hits.length) return `Nothing in ${where} links to ${target}.`;
+  const subsections = (s && s.inside) || [];
+  const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const listed = (list) => list.slice(0, BACKLINKS_MAX_NAMED).map(sectionLabel).join(", ") +
+    (list.length > BACKLINKS_MAX_NAMED ? `, and ${list.length - BACKLINKS_MAX_NAMED} more` : "");
+  if (!found.hits.length) {
+    const also = subsections.length ? ` or the ${count(subsections.length, "section")} inside it (${listed(subsections)})` : "";
+    return `Nothing in ${where} links to ${target}${also}.`;
+  }
   const lines = found.hits.map((h) => {
     const place = h.section ? `${sectionLabel(h.section)} ${h.section.title}` : h.signpost ? "@" + h.signpost : "(outside any section)";
-    return `${shownPath(h.path, base)}:${h.line} ${place} — ${h.ref ? "@" + h.ref : h.href}`;
+    return `${shownPath(h.path, base)}:${h.line} ${place} — ${h.ref ? "@" + h.ref : h.href}${h.to ? ` (to ${sectionLabel(h.to)})` : ""}`;
   });
+  if (subsections.length) {
+    const linked = new Set(found.hits.filter((h) => h.to).map((h) => h.to.lineStart));
+    const unlinked = subsections.filter((x) => !linked.has(x.lineStart));
+    lines.push(`Covers the ${count(subsections.length, "section")} inside it: ` +
+      (unlinked.length ? `nothing links to ${listed(unlinked)}.` : "each is linked above."));
+  }
   const inside = found.hits.some((h) => h.inside) ? " or a section inside it" : "";
   return `${found.hits.length} link${found.hits.length === 1 ? "" : "s"} to ${target}${inside}:\n${lines.join("\n")}`;
 }
@@ -870,15 +949,16 @@ module.exports = {
   outlineText,
   readSectionText,
   guidesText,
+  signpostRange,
   checkText,
   checkTextAsync,
   listFiles,
   findSdocEntries,
-  searchTexts,
-  searchFiles,
   readDocs,
   rankSections,
   rankFiles,
+  hrefPaths,
+  linkTargets,
   backlinksTexts,
   backlinksFiles,
   formatFileList,

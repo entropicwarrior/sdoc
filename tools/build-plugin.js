@@ -9,8 +9,9 @@
 // The plugin runs as a mod: Claude Code loads its hooks module as an ES module
 // with no Node, so there is no `require` and no `module`. Both sources are
 // runtime-neutral already; this rewrites their CommonJS import and export
-// lines, nothing else. The generated files are committed, because a
-// marketplace install runs no build step.
+// lines, and adds BUILD to the knowledge-base module (buildId), nothing else.
+// The generated files are committed, because a marketplace install runs no
+// build step.
 //
 // The plugin carries no version on purpose: Claude Code then versions it by
 // commit, so whatever is merged to the branch coworkers track reaches them,
@@ -20,6 +21,7 @@
 // --check writes nothing, lists every generated file that differs from what
 // a build would write, and exits 1 if any does. test/test-plugin.js runs it.
 
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -41,7 +43,17 @@ function replaceOnce(text, pattern, replacement, what) {
   return text.replace(pattern, replacement);
 }
 
-function toEsm(source, { imports = [] } = {}) {
+// A short hash of the sources the plugin's lib is built from. The hooks keep
+// file descriptions between sessions, and the plugin updates by commit with
+// no version to key them by: a description made by an older parser is
+// discarded when this differs, rather than kept until the file changes.
+function buildId() {
+  const hash = crypto.createHash("sha256");
+  for (const source of ["src/sdoc.js", "src/knowledge-base.js"]) hash.update(fs.readFileSync(path.join(ROOT, source), "utf8"));
+  return hash.digest("hex").slice(0, 12);
+}
+
+function toEsm(source, { imports = [], append = "" } = {}) {
   let text = fs.readFileSync(path.join(ROOT, source), "utf8");
   for (const { from, to } of imports) {
     text = replaceOnce(text,
@@ -49,7 +61,7 @@ function toEsm(source, { imports = [] } = {}) {
       `import $1 from "${to}";`, source);
   }
   text = replaceOnce(text, /^module\.exports = \{$/m, "export {", source);
-  return generatedHeader(source) + text;
+  return generatedHeader(source) + text + append;
 }
 
 // Every generated file: { path (from the repo root), content }.
@@ -58,7 +70,10 @@ function outputs() {
     { path: "plugins/sdoc-lexica/lib/sdoc.mjs", content: toEsm("src/sdoc.js") },
     {
       path: "plugins/sdoc-lexica/lib/knowledge-base.mjs",
-      content: toEsm("src/knowledge-base.js", { imports: [{ from: "./sdoc", to: "./sdoc.mjs" }] })
+      content: toEsm("src/knowledge-base.js", {
+        imports: [{ from: "./sdoc", to: "./sdoc.mjs" }],
+        append: `\n// The sources this lib was built from, hashed (tools/build-plugin.js).\nexport const BUILD = "${buildId()}";\n`
+      })
     },
     {
       path: "plugins/sdoc-lexica/skills/authoring/reference/sdoc-authoring.sdoc",

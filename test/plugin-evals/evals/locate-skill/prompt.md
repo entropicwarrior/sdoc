@@ -1,5 +1,5 @@
 ---
-description: "The release procedure lives in a skill file under lexica/skills/."
+description: "The 2.x release procedure, beside a deprecated 1.x one, both skill files under lexica/skills/."
 tags: [read]
 plugins: ["../../../../plugins/sdoc-lexica"]
 max_turns: 12

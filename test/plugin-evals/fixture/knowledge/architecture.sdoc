@@ -414,7 +414,7 @@
 
     # Observability @observability
     {
-        Tidewater exports Prometheus metrics through a handler the application mounts, and structured logs through the `slog` logger it is given. It starts no listener of its own.
+        Tidewater reports its metrics through the OpenTelemetry metrics API, as decided in [D-0010](decisions.sdoc#d-0010), so an application exports them with the exporter it already runs; the Prometheus handler it used to provide is deprecated and goes in the next minor release. Structured logs go through the `slog` logger it is given. It starts no listener of its own.
 
         {[table]
             Metric | Kind | Meaning

@@ -11,8 +11,10 @@
 # The workspace becomes a git repository with backdated commits, so that a
 # file's age is the age of the last commit touching it:
 #   lexica/glossary.sdoc, README.md                       400 days
-#   architecture, requirements, skills/release, src/      75 days
+#   every other knowledge file, src/                      75 days
 #   lexica/decisions.sdoc                                 2 days
+# The glossary is the one knowledge file no later commit touches: the freshness
+# case asks for it.
 # Every file is in the first commit, and the commit subjects say nothing about
 # which file changed: Claude Code shows recent subjects in its system prompt,
 # so a telling subject would answer the freshness case without the dates.
@@ -26,7 +28,10 @@ cp -R "$fixture/src" ./src
 cp "$fixture/README.md" ./README.md
 if [ "$mode" = full ]; then
   cp -R "$fixture/knowledge" ./lexica
-  later=(lexica/architecture.sdoc lexica/requirements.sdoc lexica/skills/release.sdoc src/wal.go)
+  later=()
+  while IFS= read -r f; do later+=("$f"); done < <(
+    find lexica -name '*.sdoc' ! -path lexica/glossary.sdoc ! -path lexica/decisions.sdoc | sort)
+  later+=(src/wal.go)
   latest=(lexica/decisions.sdoc)
 else
   later=(src/wal.go)

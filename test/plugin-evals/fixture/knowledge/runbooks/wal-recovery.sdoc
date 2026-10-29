@@ -1,0 +1,142 @@
+# Runbook: Slow or Failed WAL Recovery @wal-recovery-runbook
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        What to do when a tidewater database takes too long to open after a crash, or fails to open at all: the symptoms, the log lines and metrics that show where recovery stands, how to inspect the log and the manifest with `tidewater-admin` without changing them, the remedies, and when to escalate. Use it when `Open` is slow, returns an error or reports a truncation after a process crash, a power loss or a host restart.
+    }
+
+    # How Recovery Works @recovery-recap
+    {
+        On open after a crash, the engine reads the manifest, finds the last checkpoint, replays the log written since then into a fresh memtable, and flushes that memtable before accepting writes. The log's design is in [Write-Ahead Log](../architecture.sdoc#write-ahead-log) and the replay in [Recovery](../architecture.sdoc#wal-recovery). The record layout that `tidewater-admin wal verify` checks is specified in [Write-Ahead Log Format](../spec/format.sdoc#write-ahead-log-format).
+
+        The time recovery may take is bounded by the checkpoint interval. The bound, and the replay rates it assumes on each kind of disk, are in [Checkpoints](../architecture.sdoc#wal-checkpoints) and [R4](../requirements.sdoc#r4). A recovery within that bound is not an incident, however long it feels.
+    }
+
+    # Symptoms @symptoms
+    {
+        {[table]
+            Symptom | Go to
+            `Open` takes longer than the bound in R4 | @slow-recovery
+            `Open` returns an error | @failed-recovery
+            `Open` succeeds and logs a truncation | @truncation
+        }
+    }
+
+    # Confirm @confirm
+    {
+        Metrics are reported only once `Open` has returned, so while recovery runs the log is the only signal. A recovery logs its start and its end, and both lines carry the amount of log to replay, which is what the time depends on:
+
+        ```
+        level=WARN msg="stale lock found: last close was not clean" dir=/var/lib/app/db
+        level=INFO msg="wal replay start" checkpoint_seqno=88731220 segments=4 bytes=241172480
+        level=WARN msg="wal segment truncated" segment=wal/000415.log offset=7351813 discarded_bytes=4127
+        level=INFO msg="wal replay done" records=1873345 bytes=241168353 duration=0.27s
+        level=INFO msg="recovery flush done" table=sst/000962.sst duration=0.61s
+        ```
+
+        Once the database is open, `tidewater_recovery_seconds` holds the duration of the last recovery and `tidewater_wal_truncations_total` counts the truncated segments. Between crashes, `tidewater_wal_bytes_since_checkpoint` shows how much log the next recovery would replay.
+    }
+
+    # Slow Recovery @slow-recovery
+    {
+        {[#]
+            - Let it run
+            {
+                Recovery can be repeated safely, but killing it throws away the replay done so far and the next attempt starts over. Unless it has run several times longer than the bound, wait.
+            }
+            - Measure the log to replay
+            {
+                From another shell, `tidewater-admin wal ls DIR` lists the segments after the last checkpoint. It takes no lock and only reads, so it is safe while recovery runs.
+
+                ```
+                $ tidewater-admin wal ls /var/lib/app/db
+                checkpoint_seqno=88731220
+                segment          first_seqno   last_seqno    size
+                wal/000412.log   88731221      89012664      38.2 MiB
+                wal/000413.log   89012665      89470118      61.5 MiB
+                wal/000414.log   89470119      89551207      12.9 MiB
+                ```
+            }
+            - Compare with the expected rate
+            {
+                Divide the size of the log by the replay rate for the disk given in [Recovery](../architecture.sdoc#wal-recovery). If the result matches the time spent, replay is working and the amount of log is the problem: go to the next step. If replay is much slower than that, the disk is: check `iostat -x 1` for the device's latency and utilisation.
+            }
+            - Find why so much log was left
+            {
+                More log than the checkpoint bound allows means checkpoints were not being taken before the crash. A checkpoint forces a flush, so this happens when flushes could not run: the disk was full, or flushes fell behind the write rate. Look in the log from before the crash for `flush deferred` lines and for write stalls with `reason="memtable"`. A `CheckpointInterval` or `MemtableSize` raised above its default also lengthens recovery, as [Checkpoints](../architecture.sdoc#wal-checkpoints) explains.
+            }
+        }
+    }
+
+    # Failed Recovery @failed-recovery
+    {
+        {[table]
+            Error from `Open` | Cause | Remedy
+            `tidewater: database is locked by another process` | Another process holds `LOCK`, often the previous instance still shutting down | Stop that process. Never delete `LOCK` while a process holds it
+            `ErrNoSpace` | The recovery flush found no room for its table | Free space, as in [Disk Full](disk-full.sdoc)
+            An error naming a manifest and an offset | A corrupt manifest edit before its tail | Escalate. See [Replay and Torn Edits](../components/manifest.sdoc#manifest-replay)
+            An error naming the oldest release that can open the database | Tables of a newer format version, written by a newer release | Open with that release or a later one
+            `ErrCorrupt` naming a table | A table the manifest lists fails its footer or checksum check | Escalate. On a replicated database, replace the node
+        }
+    }
+
+    # Truncation @truncation
+    {
+        A `wal segment truncated` line after a power loss or a host crash is expected. The block being written was torn, as [Power Loss and Torn Writes](../architecture.sdoc#torn-writes) describes, and the database opened with every record before the tear. No acknowledged write made with `Sync: true` is ever in the discarded bytes, and nothing needs doing.
+
+        It needs a closer look when:
+
+        {[.]
+            - The truncated segment is not the last one. Replay stops at the first bad record, so the later segments were not replayed. That is not a torn write but corruption inside the log, and acknowledged writes may be missing.
+            - The truncation follows a process crash with no power loss or host restart. A process crash leaves the log whole in the page cache, as [Process Crash](../architecture.sdoc#process-crash) explains, so there should have been nothing to truncate.
+        }
+
+        To see the damage, first copy the directory, then run `tidewater-admin wal verify DIR` on the copy. It reads every segment after the checkpoint, checks each record against its layout and checksum, and reports the first bad record of each segment without truncating anything:
+
+        ```
+        $ tidewater-admin wal verify /backup/db-copy
+        wal/000520.log   ok    1290331 records
+        wal/000521.log   bad record at offset 7351813: checksum mismatch (stored 0x5e1c09a2, computed 0x0b37d4f1)
+        wal/000522.log   ok    88213 records, not replayed: follows a bad record
+        ```
+    }
+
+    # Remedies @remedies
+    {
+        {[.]
+            - Copy before you retry
+            {
+                Before a second attempt at opening a database that failed, or that truncated a segment other than the last, copy the whole directory: `cp -a /var/lib/app/db /backup/db-copy`. Recovery truncates segments, and only the copy keeps the evidence.
+            }
+            - Never edit or delete log segments by hand
+            {
+                Removing a bad segment to get past an error loses every write in it and in every segment after it.
+            }
+            - On a replicated database, replace the node rather than repair it
+            {
+                A follower that cannot recover can be removed from the cluster and added back with an empty directory, and it receives a snapshot from the leader, as [Membership Changes](../architecture.sdoc#membership-changes) describes. A leader that cannot recover loses the lead once its lease runs out, and the cluster carries on without it.
+            }
+            - On a single node, restore
+            {
+                A database that cannot open is restored from its last backup, as [Backup and Restore](../architecture.sdoc#backup-and-restore) describes.
+            }
+        }
+    }
+
+    # Escalation @escalation
+    {
+        Escalate to the tidewater maintainers in the team channel when any of these holds, attaching the recovery log lines and the output of `tidewater-admin wal ls`, `tidewater-admin wal verify` and `tidewater-admin manifest verify`, all run on a copy of the directory:
+
+        {[.]
+            - A bad record in a segment that is not the last.
+            - An error from `Open` naming a manifest or a table.
+            - A recovery slower than the bound in R4 for the amount of log it replayed. The long-running tests check that bound before every release, so a miss is a regression.
+            - A truncation after a process crash alone.
+        }
+    }
+}

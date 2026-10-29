@@ -4841,6 +4841,7 @@ export {
   validateRefs,
   validateCitations,
   validateSignposts,
+  hasUrlScheme,
   fixSignpostOrder,
   RESERVED_ORDER,
   // Low-level helpers for custom renderers (e.g. slide-renderer)

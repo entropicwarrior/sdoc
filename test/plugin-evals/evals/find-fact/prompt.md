@@ -1,5 +1,5 @@
 ---
-description: "A fact in one section of a 523-line file, found without reading the file whole."
+description: "The current fsync thresholds, with older ones in a superseded spec and historical notes."
 tags: [read]
 plugins: ["../../../../plugins/sdoc-lexica"]
 max_turns: 12

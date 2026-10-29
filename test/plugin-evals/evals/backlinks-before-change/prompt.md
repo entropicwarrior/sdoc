@@ -1,5 +1,5 @@
 ---
-description: "Everything that links to architecture.sdoc#compaction, before changing it."
+description: "Everything that links to architecture.sdoc#compaction, in a corpus where other files only mention compaction or link its subsections."
 tags: [read, backlinks]
 plugins: ["../../../../plugins/sdoc-lexica"]
 max_turns: 12

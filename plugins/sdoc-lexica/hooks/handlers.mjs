@@ -11,6 +11,8 @@
 //                     whoever is checking that it works (the verbose option);
 //                     quiet when the session already shows it (a tool's answer)
 //   io.realPath(p)  → optional: where p leads through links
+//   io.denied(p)    → optional: true when the permission settings deny a Read
+//                     of p (register.mjs asks $.tool.check); see readDenied
 //   io.run(argv, { cwd, timeoutMs })
 //                   → optional: { exitCode, stdout, stderr } of a command run
 //                     with no shell; only git log, for when files last changed
@@ -49,9 +51,16 @@ export function indexBudget(size) {
 // What the conversation has been shown: the knowledge index, once; per agent
 // and file, the reading signposts and the large-file pointer on a first Read
 // and the editing guide on a first edit. Reset when the conversation is
-// compacted or cleared, since what was shown is then gone from it.
+// compacted or cleared, since what was shown is then gone from it. With it,
+// what saves work: the lexica/ directories found (dirs, by cwd), found again
+// after a reset; and each knowledge file's parse (parsed, by path, for
+// kb.readDocs), which a reset leaves, as it is keyed by the file's size and
+// modification time.
 export function createState() {
-  return { indexSent: false, readSeen: new Set(), nudged: new Set(), editAcked: new Set(), opening: null };
+  return {
+    indexSent: false, readSeen: new Set(), nudged: new Set(), editAcked: new Set(), opening: null, usage: null,
+    dirs: new Map(), parsed: new Map()
+  };
 }
 
 export function resetState(state) {
@@ -59,6 +68,7 @@ export function resetState(state) {
   state.readSeen.clear();
   state.nudged.clear();
   state.editAcked.clear();
+  state.dirs.clear();
 }
 
 // A short fingerprint of the conversation's opening message (FNV-1a over its
@@ -73,6 +83,40 @@ export function openingOf(messages) {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return `${text.length}:${hash.toString(16)}`;
+}
+
+// The most messages $.session.messages returns: the newest, opening on a user
+// message. A transcript that fills it has lost its opening to the window, not
+// to a compaction, at every prompt, so its first message tells nothing.
+export const MESSAGES_WINDOW = 4096;
+
+// Whether messages show the conversation's opening, rather than where the
+// window cut it: fewer than the window holds, with room for the messages it
+// drops to open on a user one.
+export function openingKnown(messages) {
+  return Array.isArray(messages) && messages.length < MESSAGES_WINDOW - 8;
+}
+
+// Why the transcript is worth fetching at this prompt, to see whether the
+// conversation lost its opening, or null when it is not, from
+// $.session.usage() (free, where the transcript costs its whole size): a
+// /clear starts the session over (startedAt), and a compaction leaves the
+// context smaller than the last prompt saw it (context.tokens), which only
+// grows otherwise. Fetched too while no opening is recorded (the first
+// prompt's transcript is empty, so it is the next one's to record), and
+// whenever either figure is missing. Records the figures; the second element
+// says what they were, for the note.
+export function openingMayHaveChanged(state, usage) {
+  const startedAt = usage && Number.isFinite(usage.startedAt) ? usage.startedAt : undefined;
+  const tokens = usage && usage.context && Number.isFinite(usage.context.tokens) ? usage.context.tokens : undefined;
+  const last = state.usage;
+  state.usage = { startedAt, tokens };
+  const figures = `context tokens ${last && last.tokens !== undefined ? last.tokens : "?"} → ${tokens !== undefined ? tokens : "?"}`;
+  if (state.opening === null) return ["no opening recorded yet", figures];
+  if (!last || [startedAt, tokens, last.startedAt, last.tokens].includes(undefined)) return ["usage unknown", figures];
+  if (startedAt !== last.startedAt) return ["the session started over (a /clear)", figures];
+  if (tokens < last.tokens) return ["fewer context tokens (a compaction)", figures];
+  return [null, figures];
 }
 
 // Whether the conversation lost its opening since the last prompt, recording
@@ -107,10 +151,89 @@ async function readText(io, filePath) {
   }
 }
 
+// --- Files the permission settings deny ---
+//
+// consent() puts the paths a call names to the permission check. The files
+// the plugin reads without their being named (every file of a directory it
+// walks, the index's, the sections an editing guide links to, a file an Edit
+// or a command touches) are put to it here, one by one, as a Read, as written
+// and where they lead. Only a deny counts: an ask is consent's to settle, for
+// the call. A check that fails denies nothing, as consent takes it for an ask.
+
+// Whether the permission settings deny reading path. False without io.denied.
+export async function readDenied(io, path) {
+  if (!io.denied) return false;
+  const real = await realPath(io, path);
+  for (const p of real === path ? [path] : [path, real]) {
+    try {
+      if (await io.denied(p)) return true;
+    } catch { /* not a deny */ }
+  }
+  return false;
+}
+
+// io with every .sdoc file the permission settings deny left out of its
+// listings, so no walk over them reads one, nor takes its cached description:
+// { io, left }, left holding the paths left out.
+export function withoutDenied(io) {
+  const left = new Set();
+  if (!io.denied) return { io, left };
+  const list = async (dir) => {
+    const entries = (await io.list(dir)) || [];
+    const denied = await Promise.all(entries.map((e) =>
+      e.kind === "file" && kb.isSdocFile(e.name) ? readDenied(io, kb.joinPath(dir, e.name)) : false));
+    entries.forEach((e, i) => { if (denied[i]) left.add(kb.joinPath(dir, e.name)); });
+    return entries.filter((_, i) => !denied[i]);
+  };
+  return { io: { ...io, list }, left };
+}
+
+// The line that says how many files a walk left out, or "".
+function leftOutLine(left) {
+  const n = left.size;
+  return n ? `(${plural(n, ".sdoc file")} left out: the permission settings deny reading ${n === 1 ? "it" : "them"}.)` : "";
+}
+
+// --- The project ---
+
+// The project a call works in: root, the session's project, unless the shell
+// is in a git worktree, a helper agent's own copy of the repository (Claude
+// Code reports the main checkout as the root inside it, seen on 2.1.312):
+// then that worktree, whose files are the ones the helper reads and edits. A
+// worktree is the nearest directory from the shell's up whose .git is a file
+// pointing into a repository's worktrees/. A submodule's .git file points
+// elsewhere and is passed over, so a cd into one leaves the project as it is;
+// so does a cd anywhere else.
+export async function projectFor(io, { root, shell }) {
+  if (!root) return shell;
+  if (!shell) return root;
+  const top = kb.normalizePath(root);
+  let dir = kb.normalizePath(shell);
+  for (;;) {
+    if (dir === top) return root;
+    const git = await readText(io, kb.joinPath(dir, ".git"));
+    if (git !== null && /^gitdir:.*[\\/]worktrees[\\/][^\\/\n]+\s*$/m.test(git)) return dir;
+    const parent = kb.dirName(dir);
+    if (parent === dir) return root;
+    dir = parent;
+  }
+}
+
 // --- The knowledge index ---
 
-export async function knowledgeDirs(io, cwd) {
-  return kb.findKnowledgeDirs(cwd, io.list);
+// The project's lexica/ directories. With the conversation's state, found
+// once per conversation (again after a compaction or a /clear), so the index,
+// each brief and each tool call do not walk the project again: a lexica/
+// directory made later is seen in the next conversation. Only an answer that
+// found one is kept, so in a project with none yet, the first one made is
+// seen at once. The walk sees names only, so it is not narrowed by the
+// permission settings: the files under the directories are.
+export async function knowledgeDirs(io, cwd, state) {
+  const kept = state ? state.dirs.get(cwd) : undefined;
+  if (kept) return kept;
+  const found = await kb.findKnowledgeDirs(cwd, io.list);
+  if (state && found.length) state.dirs.set(cwd, found);
+  return found;
 }
 
 // The files of dirs, described, as { files, now }: each file's type, title,
@@ -149,11 +272,13 @@ function indexLines(files, cwd, titlesOnly, now) {
 // characters; null when the project has no lexica/ directory. Every file with
 // its whole summary when they fit; else every file with its title instead;
 // and only when even that does not fit, as many files as do, and a count of
-// the rest.
-export async function knowledgeIndex(io, cwd, { maxChars = indexBudget(), dirs } = {}) {
-  dirs = dirs || await knowledgeDirs(io, cwd);
+// the rest. state, when given, keeps the directories found (knowledgeDirs).
+export async function knowledgeIndex(io, cwd, { maxChars = indexBudget(), dirs, state } = {}) {
+  const walk = withoutDenied(io);
+  dirs = dirs || await knowledgeDirs(io, cwd, state);
   if (!dirs.length) return null;
-  const { files, now } = await describedFiles(io, cwd, dirs);
+  const { files, now } = await describedFiles(walk.io, cwd, dirs);
+  const denied = leftOutLine(walk.left);
   const head = [
     "This project keeps its knowledge in SDOC files under lexica/ (type doc: what something is; type skill: how to do something), indexed below. The plugin's tools load it by section rather than whole:",
     "- mcp__sdoc-lexica__search finds sections by words; mcp__sdoc-lexica__outline gives a file's section ids and line ranges; mcp__sdoc-lexica__read reads sections by id; mcp__sdoc-lexica__list lists the files with their summaries.",
@@ -161,8 +286,9 @@ export async function knowledgeIndex(io, cwd, { maxChars = indexBudget(), dirs }
     "The files whose summary or title matches a task hold what the project knows about it.",
     ""
   ].join("\n");
-  // Room for the closing line that says what was left out.
-  const room = maxChars - head.length - 120;
+  // Room for the closing line that says what was left out, and the one that
+  // says what the permission settings left out.
+  const room = maxChars - head.length - 120 - (denied ? denied.length + 1 : 0);
   const size = (lines) => lines.reduce((n, line) => n + line.length + 1, 0);
   let titlesOnly = false;
   let lines = indexLines(files, cwd, false, now);
@@ -181,8 +307,10 @@ export async function knowledgeIndex(io, cwd, { maxChars = indexBudget(), dirs }
   if (left) kept.push(`… and ${left} more files. mcp__sdoc-lexica__list shows them all, with their summaries.`);
   else if (titlesOnly) kept.push("(Titles only: the summaries did not fit. mcp__sdoc-lexica__list shows them.)");
   if (!files.length) kept.push("(no .sdoc files yet)");
+  if (denied) kept.push(denied);
   const index = head + kept.join("\n");
-  const detail = left ? `; titles only, and ${left} left out` : titlesOnly ? "; titles only" : "";
+  const detail = (left ? `; titles only, and ${left} left out` : titlesOnly ? "; titles only" : "") +
+    (walk.left.size ? `; ${plural(walk.left.size, "file")} the permission settings deny left out` : "");
   note(io, `index attached to the prompt: ${plural(files.length, "knowledge file")} from ` +
     `${dirs.map((d) => kb.shownPath(d, cwd)).join(", ")} (${index.length} of ${maxChars} chars${detail})`);
   return index;
@@ -193,7 +321,7 @@ export async function knowledgeIndex(io, cwd, { maxChars = indexBudget(), dirs }
 export async function indexForPrompt(io, state, cwd, { maxChars } = {}) {
   if (state.indexSent) return null;
   state.indexSent = true;
-  const index = await knowledgeIndex(io, cwd, { maxChars });
+  const index = await knowledgeIndex(io, cwd, { maxChars, state });
   if (!index) note(io, "no index: no lexica/ directory with .sdoc files in this project");
   return index;
 }
@@ -291,11 +419,12 @@ async function nowMs(io) {
 //
 // Describing a file reads and parses it whole, every file at every index.
 // With io.storage (register.mjs binds it to $.store), a build keeps what it
-// described under describe:v1:<cwd> as { at, files: { path: { k, desc } } },
-// k being path|mtimeMs|size from the listing, so a file whose k has not
-// changed is not read again. The entry is rewritten with only the files the
-// build saw, which drops a deleted one, and left alone when nothing changed
-// and it was written within a day. The store holds 4 MiB in all: when a
+// described under describe:v1:<cwd> as { at, build, files: { path: { k, desc
+// } } }, k being path|mtimeMs|size from the listing, so a file whose k has not
+// changed is not read again. build is the plugin's (kb.BUILD): an entry an
+// older parser wrote is passed over whole, and replaced. The entry is
+// rewritten with only the files the build saw, which drops a deleted one, and
+// left alone when nothing changed and it was written within a day. The store holds 4 MiB in all: when a
 // write is refused, the describe: entry written longest ago (another
 // project's, most often) goes, and the write is tried once more. A failure
 // anywhere leaves the files to be read, as with no store.
@@ -314,7 +443,8 @@ async function openDescriptions(io, cwd) {
   let held;
   try { held = await io.storage.get(key); } catch { return null; }
   const known = new Map();
-  const files = held && typeof held === "object" && held.files && typeof held.files === "object" ? held.files : {};
+  const current = held && typeof held === "object" && held.build === kb.BUILD;
+  const files = current && held.files && typeof held.files === "object" ? held.files : {};
   for (const [path, entry] of Object.entries(files)) {
     if (entry && typeof entry.k === "string" && entry.desc && typeof entry.desc.lines === "number") {
       known.set(entry.k, { path, desc: entry.desc });
@@ -339,9 +469,9 @@ async function openDescriptions(io, cwd) {
     get hits() { return hits; },
     async save() {
       const now = await nowMs(io);
-      const recent = held && Number.isFinite(held.at) && now - held.at < DAY_MS;
+      const recent = current && Number.isFinite(held.at) && now - held.at < DAY_MS;
       if (!added && recent && Object.keys(seen).length === known.size) return "";
-      const value = { at: now, files: seen };
+      const value = { at: now, build: kb.BUILD, files: seen };
       try {
         await io.storage.set(key, value);
         return "";
@@ -379,6 +509,23 @@ async function dropOldestDescriptions(store) {
 
 // --- Reading ---
 
+// The lines Claude Code's Read returns when it is given no limit.
+export const READ_DEFAULT_LINES = 2000;
+
+// Marks a file's editing guide as shown to this agent when lines first to
+// last of its text hold the @editing-guide scope whole: an agent that has
+// read the guide, through Read or the plugin's tools, is not given it again
+// with its first edit's result. True when this marked it.
+function guideShownIn(state, { filePath, text, agentId, first, last }) {
+  if (!state) return false;
+  const key = seenKey(agentId, filePath);
+  if (state.editAcked.has(key)) return false;
+  const range = kb.signpostRange(text, "editing-guide");
+  if (!range || first > range.lineStart || last < range.lineEnd) return false;
+  state.editAcked.add(key);
+  return true;
+}
+
 // The reading guide and related resources of a file this agent has not met
 // yet in the conversation, as { text, what }, or null when it has, or the
 // file has neither. The file counts as met from now on, however it was
@@ -396,7 +543,8 @@ function firstMeeting(state, { filePath, text, agentId, cwd }) {
 
 // What to add after a Read of an .sdoc file, or null: on the first Read of
 // the file by this agent, its reading guide and related resources; and, when
-// a large file was read whole, its outline, once.
+// a large file was read whole, its outline, once. Lines that held the
+// editing guide count as showing it (guideShownIn).
 export async function afterRead(io, state, { filePath, offset, limit, agentId, cwd }) {
   const shown = kb.shownPath(filePath, cwd);
   const text = await readText(io, filePath);
@@ -422,10 +570,14 @@ export async function afterRead(io, state, { filePath, offset, limit, agentId, c
       `mcp__sdoc-lexica__read reads sections by id, and Read with offset/limit a range of lines, for a fraction of the whole.\n\n${outline}`);
     added.push(`its outline (${lineCount} lines read whole)`);
   }
+  const first = Math.max(1, Number(offset) || 1);
+  const last = limit === undefined ? first + READ_DEFAULT_LINES - 1 : first + Number(limit) - 1;
+  const guideRead = guideShownIn(state, { filePath, text, agentId, first, last })
+    ? "; its editing guide was in the lines read, so its first edit is not given it again" : "";
   const who = agentId ? ` (agent ${agentId})` : "";
-  note(io, added.length
+  note(io, (added.length
     ? `Read ${shown}${who}: added ${added.join(" and ")}`
-    : `Read ${shown}${who}: nothing added (${firstRead ? "no reading guide or related resources" : "already shown in this conversation"})`);
+    : `Read ${shown}${who}: nothing added (${firstRead ? "no reading guide or related resources" : "already shown in this conversation"})`) + guideRead);
   return parts.length ? parts.join("\n\n") : null;
 }
 
@@ -513,7 +665,7 @@ export async function mentionSuggestions(io, { token, cwd, cache }) {
   const m = /^(@[^\s#]+\.sdoc)#([\w-]*)$/i.exec(String(token));
   if (!m) return [];
   const filePath = kb.joinPath(cwd, m[1].slice(1));
-  if (!await insideProject(io, filePath, cwd)) return [];
+  if (!await insideProject(io, filePath, cwd) || await readDenied(io, filePath)) return [];
   const text = await readText(io, filePath);
   if (text === null) return [];
   let outline;
@@ -530,30 +682,36 @@ export async function mentionSuggestions(io, { token, cwd, cache }) {
 // --- Editing ---
 
 // Whether a linked file exists, trying the href as written and percent-decoded,
-// as src/href-path.js does for build-doc --check.
-async function hrefExists(io, docDir, href) {
-  const candidates = [href];
-  try {
-    const decoded = decodeURIComponent(href);
-    if (decoded !== href) candidates.push(decoded);
-  } catch { /* a literal % in a name: as written only */ }
-  for (const candidate of candidates) {
+// as src/href-path.js does for build-doc --check. Only a path inside the
+// project (one of roots) is looked at: the plugin reads nothing outside it
+// unasked, not even whether a file is there, so a link that leaves the project
+// is taken as it stands and never reported broken, as a web link is not.
+async function hrefExists(io, docDir, href, roots) {
+  const candidates = kb.hrefPaths(docDir, href);
+  const inside = roots ? candidates.filter((p) => roots.some((root) => kb.isInside(root, p))) : candidates;
+  if (!inside.length) return true;
+  for (const candidate of inside) {
     try {
-      if (await io.exists(kb.joinPath(docDir, candidate))) return true;
+      if (await io.exists(candidate)) return true;
     } catch { /* unreachable: not there */ }
   }
   return false;
 }
 
-async function findingsOf(io, filePath, text) {
+// The findings for a file's text; cwd is the project, which bounds the links
+// looked at (hrefExists). Without one, every link is.
+async function findingsOf(io, filePath, text, cwd) {
   const docDir = kb.dirName(filePath);
-  return kb.checkTextAsync(text, { resolveFilePath: (href) => hrefExists(io, docDir, href) });
+  const roots = cwd ? [cwd, await realPath(io, cwd)] : null;
+  return kb.checkTextAsync(text, { resolveFilePath: (href) => hrefExists(io, docDir, href, roots) });
 }
 
 // What identifies a finding across an edit. Line numbers move when lines are
-// added above, so they are left out, in the message too.
+// added above, so they are left out, in the message too ("opened at line
+// 12"); any other number is part of what the finding is about (@req-1 is not
+// @req-2).
 function fingerprint(finding) {
-  return finding.type + "\n" + String(finding.message).replace(/\d+/g, "#");
+  return finding.type + "\n" + String(finding.message).replace(/\blines? \d+(-\d+)?/gi, "line #").replace(/\bL\d+(-\d+)?\b/g, "L#");
 }
 
 // The most an editing guide's linked sections add to it, in characters.
@@ -569,7 +727,8 @@ async function realPath(io, path) {
 // the same file), whole: a guide that only points elsewhere is followed less
 // often than one that is read. At most LINKED_GUIDE_CHARS in all; a section
 // that does not fit is named with its range instead, never cut. Only .sdoc
-// files inside the project are followed, as written and through links.
+// files inside the project are followed, as written and through links, and
+// none the permission settings deny reading.
 // { text, count }, text "" when the guide links to no section.
 export async function linkedSections(io, filePath, guide, cwd) {
   const parts = [];
@@ -577,19 +736,27 @@ export async function linkedSections(io, filePath, guide, cwd) {
   const seen = new Set();
   let room = LINKED_GUIDE_CHARS;
   const roots = [cwd, await realPath(io, cwd)];
+  // The first of a link's candidate paths (as written, then decoded) that is
+  // an .sdoc file inside the project, through links too, and can be read.
+  async function readable(paths) {
+    for (const target of paths) {
+      if (!kb.isSdocFile(target) || !kb.isInside(cwd, target)) continue;
+      const real = await realPath(io, target);
+      if (!roots.some((root) => kb.isInside(root, real)) || await readDenied(io, target)) continue;
+      const text = await readText(io, target);
+      if (text !== null) return { target, text };
+    }
+    return null;
+  }
   for (const [, href] of String(guide).matchAll(/\]\(([^)\s]+)\)/g)) {
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) continue;
-    const [file, fragment] = href.split("#");
-    if (!fragment) continue;
-    let decoded = file;
-    try { decoded = decodeURIComponent(file); } catch { /* a literal %: as written */ }
-    const target = file ? kb.joinPath(kb.dirName(filePath), decoded) : kb.normalizePath(filePath);
-    if (!kb.isSdocFile(target) || !kb.isInside(cwd, target) || seen.has(target + "#" + fragment)) continue;
+    const to = kb.linkTargets(href, filePath);
+    if (!to || !to.fragment) continue;
+    const fragment = to.fragment;
+    const found = await readable(to.paths);
+    if (!found || seen.has(found.target + "#" + fragment)) continue;
+    const { target, text } = found;
     seen.add(target + "#" + fragment);
-    const real = await realPath(io, target);
-    if (!roots.some((root) => kb.isInside(root, real))) continue;
-    const text = await readText(io, target);
-    const section = text === null ? null : kb.readSectionText(text, fragment, { text: true });
+    const section = kb.readSectionText(text, fragment, { text: true });
     if (!section) continue;
     const shown = kb.formatSection(target, section, { base: cwd });
     if (shown.length <= room) {
@@ -617,49 +784,30 @@ async function editingGuideOf(io, filePath, fileText, cwd) {
   };
 }
 
-// Which edit a refusal is about, from the tool's input, so that among
-// several sent at once the one refused is known: an Edit by the first line of
-// what it replaces.
-export function editNamed(input = {}) {
-  if (typeof input.old_string === "string") {
-    const line = input.old_string.split("\n").map((l) => l.trim()).find(Boolean) || "";
-    return line ? `the edit replacing "${line.length > 80 ? line.slice(0, 79) + "…" : line}"` : "the edit";
+// Before an edit of an .sdoc file: { snapshot, guide }. snapshot is the
+// file's findings now, so afterEdit reports only what the edit added; null
+// for a file the permission settings deny reading, which is left alone. guide
+// is its editing guide (editingGuideOf) when this agent has not been shown it
+// yet, for afterEdit to attach to the edit's result, else null. The edit is
+// never refused: the guide comes after it, as after a change through Bash.
+export async function beforeEdit(io, state, { filePath, agentId, cwd }) {
+  if (await readDenied(io, filePath)) {
+    note(io, `Edit ${kb.shownPath(filePath, cwd)}: not read, the permission settings deny reading it`);
+    return { snapshot: null, guide: null };
   }
-  if (Array.isArray(input.edits)) return plural(input.edits.length, "edit");
-  return "the write";
-}
-
-// Before an edit of an .sdoc file: { deny } when the file has an
-// @editing-guide this agent has not been shown yet (the edit is refused once,
-// with the guide; the retry goes through), else { snapshot }, the file's
-// findings now, so afterEdit reports only what the edit added. edit is the
-// tool's input, for naming the refused edit.
-export async function beforeEdit(io, state, { filePath, agentId, cwd, edit }) {
   const exists = await (async () => io.exists(filePath))().catch(() => false);
   const text = exists ? await readText(io, filePath) : null;
-  if (text === null) return { snapshot: [] };
-  const key = seenKey(agentId, filePath);
-  if (!state.editAcked.has(key)) {
-    state.editAcked.add(key);
-    const guide = await editingGuideOf(io, filePath, text, cwd);
-    if (guide) {
-      note(io, `Edit ${kb.shownPath(filePath, cwd)}${agentId ? ` (agent ${agentId})` : ""}: refused once, with ${guide.what}`);
-      return {
-        deny: `Not applied: ${editNamed(edit)} in ${kb.shownPath(filePath, cwd)}. The file is unchanged, ` +
-          `and that change is still to be made. The file has an editing guide, below, and this was the first ` +
-          `edit to it: the same edit, made again in line with the guide, goes through.\n\n${guide.text}`
-      };
-    }
-  }
-  return { snapshot: await findingsOf(io, filePath, text) };
+  if (text === null) return { snapshot: [], guide: null };
+  const guide = state.editAcked.has(seenKey(agentId, filePath)) ? null : await editingGuideOf(io, filePath, text, cwd);
+  return { snapshot: await findingsOf(io, filePath, text, cwd), guide };
 }
 
 // The findings in text that snapshot did not have, a finding counted as
 // often as it occurs.
-async function addedFindings(io, filePath, text, snapshot) {
+async function addedFindings(io, filePath, text, snapshot, cwd) {
   const before = new Map();
   for (const f of snapshot || []) before.set(fingerprint(f), (before.get(fingerprint(f)) || 0) + 1);
-  return (await findingsOf(io, filePath, text)).filter((f) => {
+  return (await findingsOf(io, filePath, text, cwd)).filter((f) => {
     const left = before.get(fingerprint(f)) || 0;
     if (left) before.set(fingerprint(f), left - 1);
     return !left;
@@ -675,28 +823,38 @@ function findingsReport(filePath, added, cwd, by) {
     kb.formatFindings(filePath, added, { base: cwd });
 }
 
-// After an edit: the findings the edit added (parse errors, signposts,
-// references, citations), or null when it added none.
-export async function afterEdit(io, { filePath, snapshot, cwd }) {
+// After an edit that ran: the editing guide beforeEdit found, when this
+// agent has still not been shown it (two edits sent at once attach it once;
+// it then counts as shown), and the findings the edit added (parse errors,
+// signposts, references, citations); null when there is neither.
+export async function afterEdit(io, { filePath, snapshot, cwd, guide = null, state, agentId }) {
+  if (snapshot === null) return null;
   const text = await readText(io, filePath);
   if (text === null) return null;
-  const added = await addedFindings(io, filePath, text, snapshot);
   const shown = kb.shownPath(filePath, cwd);
-  if (!added.length) {
-    note(io, `Edit ${shown}: checked, no new findings`);
-    return null;
+  const parts = [];
+  const key = seenKey(agentId, filePath);
+  const withGuide = Boolean(guide && state && !state.editAcked.has(key));
+  if (withGuide) {
+    state.editAcked.add(key);
+    parts.push(`This edit changed ${shown}, which has an editing guide that was not shown before the change: ` +
+      `the change has not been checked against it.\n\n${guide.text}`);
   }
-  note(io, `Edit ${shown}: checked, reported ${plural(added.length, "new finding")}`);
-  return findingsReport(filePath, added, cwd, "The edit");
+  const added = await addedFindings(io, filePath, text, snapshot, cwd);
+  if (added.length) parts.push(findingsReport(filePath, added, cwd, "The edit"));
+  note(io, `Edit ${shown}${agentId ? ` (agent ${agentId})` : ""}: checked, ` +
+    (added.length ? `reported ${plural(added.length, "new finding")}` : "no new findings") +
+    (withGuide ? `; added ${guide.what}, after the edit` : ""));
+  return parts.length ? parts.join("\n\n") : null;
 }
 
 // --- Changes made through Bash ---
 //
 // sed -i, a script or a redirect changes a file without Edit, so without the
-// hooks above. A command that names .sdoc files has them read before it runs
-// and again after; a file it changed gets what an edit would: the editing
-// guide, after the fact here, and the findings the change added. A file the
-// command changes without naming it goes unseen.
+// hooks above. A command that names .sdoc files has them read and checked
+// before it runs, and read again after; a file it changed gets what an edit
+// would: the editing guide, after the fact here, and the findings the change
+// added. A file the command changes without naming it goes unseen.
 
 // The most files one command is watched for.
 export const MAX_BASH_FILES = 20;
@@ -717,11 +875,20 @@ export function sdocPathsIn(command, cwd) {
   return [...paths];
 }
 
-// Before a command: the text of each .sdoc file it names, null for one that
-// does not exist yet. An empty map when it names none.
-export async function beforeBash(io, { command, cwd }) {
+// Before a command: each .sdoc file it names, resolved from shellCwd (the
+// shell's directory, which a cd moves) or else cwd, as { text, findings }, text
+// null (and no findings) for one that does not exist yet. The findings are
+// taken now, as an edit's are, since the command may change what they depend
+// on: an rm makes a link to the file it removes broken before as after. A
+// file the permission settings deny reading is not watched. An empty map
+// when it names none.
+export async function beforeBash(io, { command, cwd, shellCwd }) {
   const snapshot = new Map();
-  for (const filePath of sdocPathsIn(command, cwd)) snapshot.set(filePath, await readText(io, filePath));
+  for (const filePath of sdocPathsIn(command, shellCwd || cwd)) {
+    if (await readDenied(io, filePath)) continue;
+    const text = await readText(io, filePath);
+    snapshot.set(filePath, { text, findings: text === null ? [] : await findingsOf(io, filePath, text, cwd) });
+  }
   return snapshot;
 }
 
@@ -731,7 +898,7 @@ export async function beforeBash(io, { command, cwd }) {
 export async function afterBash(io, state, { snapshot, agentId, cwd }) {
   const parts = [];
   let changed = 0;
-  for (const [filePath, before] of snapshot) {
+  for (const [filePath, { text: before, findings }] of snapshot) {
     const after = await readText(io, filePath);
     if (after === null || after === before) continue;
     changed++;
@@ -747,7 +914,7 @@ export async function afterBash(io, state, { snapshot, agentId, cwd }) {
         added.push(guide.what + ", after the change");
       }
     }
-    const found = await addedFindings(io, filePath, after, before === null ? [] : await findingsOf(io, filePath, before));
+    const found = await addedFindings(io, filePath, after, findings, cwd);
     if (found.length) parts.push(findingsReport(filePath, found, cwd, "The command"));
     added.push(found.length ? `reported ${plural(found.length, "new finding")}` : "no new findings");
     note(io, `Bash changed ${shown}${agentId ? ` (agent ${agentId})` : ""}: ${added.join("; ")}`);
@@ -778,11 +945,12 @@ export function shouldBrief(e) {
 
 // The brief for a subagent: the lead line and the knowledge index, in at most
 // SUBAGENT_BRIEF_CHARS (titles only when the summaries do not fit); null when
-// the project has no lexica/ directory. who names the agent in the note.
-export async function subagentBriefing(io, cwd, { who = "subagent" } = {}) {
+// the project has no lexica/ directory. who names the agent in the note;
+// state, the conversation's, keeps the directories found.
+export async function subagentBriefing(io, cwd, { who = "subagent", state } = {}) {
   const said = [];
   const quiet = { ...io, log: (text) => said.push(text) };
-  const index = await knowledgeIndex(quiet, cwd, { maxChars: SUBAGENT_BRIEF_CHARS - SUBAGENT_LEAD.length - 1 });
+  const index = await knowledgeIndex(quiet, cwd, { maxChars: SUBAGENT_BRIEF_CHARS - SUBAGENT_LEAD.length - 1, state });
   if (!index) {
     note(io, `${who}: not briefed, no lexica/ directory in this project`);
     return null;
@@ -814,7 +982,7 @@ export function researchAgentSpec(toolNames) {
   ].join("\n");
   return {
     name: "research",
-    description: "Answers questions from the project's lexica/ knowledge (SDOC specifications, requirements, decisions and how-to skills) in at most 200 words, citing the file, section id and lines of each claim. Use for finding what the project's knowledge says about a feature, convention or design decision without reading whole files into the conversation. Read-only.",
+    description: "Answers questions from the project's lexica/ knowledge (SDOC specifications, requirements, decisions and how-to skills) in at most 200 words, citing the file, section id and lines of each claim. Use for a question whose answer may be spread over several files, or whose place you do not know, so that what it reads stays out of the conversation. Not for a question you already know where to look for (from the index, a search or the conversation) and expect to find in one place: reading that section yourself is faster and cheaper than an agent that starts with none of your context. Read-only.",
     prompt,
     tools: [...names, "Read", "Grep", "Glob"]
   };
@@ -888,7 +1056,7 @@ export const TOOLS = [
   },
   {
     name: "check",
-    description: "Check .sdoc files for parse errors and signpost, reference and citation problems, with line numbers: the findings build-doc --check reports.",
+    description: "Check .sdoc files for parse errors and signpost, reference and citation problems, with line numbers: the findings build-doc --check reports, except that a link leaving the project is not checked.",
     inputSchema: { type: "object", properties: { files: { type: "array", items: FILE } }, required: ["files"] }
   },
   {
@@ -946,8 +1114,9 @@ function unknownIdMessage(id, file, ids) {
 // most SEARCH_READ_SECTIONS of them in SEARCH_READ_CHARS. One that does not
 // fit is named with its range instead, never cut; a hit inside a section
 // already shown is passed over; an @about hit shows the summary. "" when
-// there is nothing to show.
-async function searchReads(io, hits, cwd) {
+// there is nothing to show. A section shown that holds a file's editing
+// guide counts as showing it (guideShownIn).
+async function searchReads(io, hits, cwd, { state, agentId } = {}) {
   const parts = [];
   const pointers = [];
   const shown = [];
@@ -970,9 +1139,14 @@ async function searchReads(io, hits, cwd) {
       parts.push(block);
       room -= block.length;
       shown.push(hit);
+      if (section.source !== undefined) {
+        guideShownIn(state, { filePath: hit.path, text: texts.get(hit.path), agentId, first: hit.lineStart, last: hit.lineEnd });
+      }
     } else {
-      pointers.push(`- ${kb.shownPath(hit.path, cwd)} ${hit.id ? "@" + hit.id : "(" + hit.derivedId + ")"} (L${hit.lineStart}-${hit.lineEnd}): ` +
-        `not included, ${block.length} chars with ${room} of ${SEARCH_READ_CHARS} left; mcp__sdoc-lexica__read reads it.`);
+      const named = hit.id ? "@" + hit.id : hit.derivedId ? "(" + hit.derivedId + ")" : "";
+      pointers.push(`- ${kb.shownPath(hit.path, cwd)} ${named ? named + " " : ""}(L${hit.lineStart}-${hit.lineEnd}): ` +
+        `not included, ${block.length} chars with ${room} of ${SEARCH_READ_CHARS} left; ` +
+        `${named ? "mcp__sdoc-lexica__read reads it" : "Read with offset and limit reads those lines"}.`);
     }
   }
   return parts.concat(pointers.length ? [pointers.join("\n")] : []).join("\n\n");
@@ -997,6 +1171,10 @@ export async function runTool(io, name, input, { cwd, state, agentId }) {
 
 async function toolOutcome(io, name, input, { cwd, state, agentId }) {
   const base = cwd;
+  // The directories a call walks, with the files the permission settings
+  // deny left out; the answer says how many.
+  const walk = withoutDenied(io);
+  const withLeftOut = (text) => (walk.left.size ? text + "\n" + leftOutLine(walk.left) : text);
   const resolve = (p) => kb.joinPath(cwd, String(p));
   async function fileText(file) {
     if (!file) throw new Error("Missing file.");
@@ -1007,7 +1185,7 @@ async function toolOutcome(io, name, input, { cwd, state, agentId }) {
   async function dirsOf(given) {
     const dirs = asList(given).map(resolve);
     if (dirs.length) return dirs;
-    const found = await knowledgeDirs(io, cwd);
+    const found = await knowledgeDirs(io, cwd, state);
     if (!found.length) throw new Error(`No lexica/ directory under ${cwd}. Pass dirs to look elsewhere.`);
     return found;
   }
@@ -1022,9 +1200,9 @@ async function toolOutcome(io, name, input, { cwd, state, agentId }) {
       case "list": {
         const dirs = await dirsOf(input.dirs);
         // The cache holds the lexica/ directories' files: other dirs pass it by.
-        const { files, now } = await describedFiles(io, cwd, dirs, { cached: !asList(input.dirs).length });
+        const { files, now } = await describedFiles(walk.io, cwd, dirs, { cached: !asList(input.dirs).length });
         const titles = input.detail === "titles";
-        return { text: files.length ? kb.formatFileList(files, { base, titles, now }) : "No .sdoc files there." };
+        return { text: withLeftOut(files.length ? kb.formatFileList(files, { base, titles, now }) : "No .sdoc files there.") };
       }
       case "outline": {
         const files = [...new Set((input.file ? [String(input.file)] : []).concat(asList(input.files)))];
@@ -1063,25 +1241,33 @@ async function toolOutcome(io, name, input, { cwd, state, agentId }) {
             return `${input.file} has ${lines} lines, so here is its outline rather than the whole file. ` +
               `Read the sections you need by id.\n\n${kb.formatOutline(outlineOnce(), { base })}`;
           }
+          if (section.source !== undefined) {
+            guideShownIn(state, { filePath: resolve(input.file), text, agentId, first: section.lineStart, last: section.lineEnd });
+          }
           return kb.formatSection(resolve(input.file), section, { base });
         });
         return withSignposts(input.file, text, parts.join("\n\n"));
       }
       case "search": {
         if (!input.query) throw new Error("Missing query.");
-        const found = await kb.rankFiles(String(input.query), await dirsOf(input.dirs), io);
-        if (!found.hits.length) return { text: `Nothing matches "${input.query}".` };
+        const found = await kb.rankFiles(String(input.query), await dirsOf(input.dirs), walk.io, { cache: state && state.parsed });
+        if (!found.hits.length) return { text: withLeftOut(`Nothing matches "${input.query}".`) };
         const list = kb.formatSearch(found.hits, { base, total: found.total, matched: found.matched, least: found.least, terms: found.terms });
         // The sections are not counted as met: the reading guide still comes
-        // with the file's first Read, outline or read.
-        const sections = input.read === true || input.read === "true" ? await searchReads(io, found.hits, cwd) : "";
-        return { text: sections ? list + "\n\n" + sections : list };
+        // with the file's first Read, outline or read. One that holds the
+        // editing guide counts as showing that.
+        const sections = input.read === true || input.read === "true" ? await searchReads(io, found.hits, cwd, { state, agentId }) : "";
+        return { text: withLeftOut(list) + (sections ? "\n\n" + sections : "") };
       }
       case "guides": {
         const file = resolve(input.file);
         const g = kb.guidesText(await fileText(input.file));
-        // Asked for outright, so no later first meeting repeats them.
-        if (state) state.readSeen.add(seenKey(agentId, file));
+        // Asked for outright, so no later first meeting repeats them, and no
+        // first edit's result repeats the editing guide shown here.
+        if (state) {
+          state.readSeen.add(seenKey(agentId, file));
+          if (g.editingGuide) state.editAcked.add(seenKey(agentId, file));
+        }
         const parts = [];
         if (g.about) parts.push("About:\n" + g.about);
         const reading = kb.formatReadingGuides(file, g, { base });
@@ -1094,7 +1280,7 @@ async function toolOutcome(io, name, input, { cwd, state, agentId }) {
         if (!files.length) throw new Error("Missing files.");
         const parts = [];
         for (const file of files) {
-          const findings = await findingsOf(io, resolve(file), await fileText(file));
+          const findings = await findingsOf(io, resolve(file), await fileText(file), cwd);
           parts.push(findings.length ? kb.formatFindings(resolve(file), findings, { base }) : `${kb.shownPath(resolve(file), base)}: no findings`);
         }
         return { text: parts.join("\n") };
@@ -1104,10 +1290,10 @@ async function toolOutcome(io, name, input, { cwd, state, agentId }) {
         const id = input.id ? String(input.id) : fragment;
         const text = await fileText(file);
         const dirs = await dirsOf(input.dirs);
-        const found = await kb.backlinksFiles(resolve(file), dirs, io, { id });
+        const found = await kb.backlinksFiles(resolve(file), dirs, walk.io, { id, cache: state && state.parsed });
         if (!found) throw new Error(id ? unknownIdMessage(id, file, sectionIdsOf(kb.outlineText(text, resolve(file)))) : `No such file: ${file}`);
         const where = asList(input.dirs).length ? dirs.map((d) => kb.shownPath(d, cwd).replace(/[\\/]?$/, "/")).join(", ") : "lexica/";
-        return { text: kb.formatBacklinks(found, { base, where }) };
+        return { text: withLeftOut(kb.formatBacklinks(found, { base, where })) };
       }
       default:
         return { error: `Unknown tool: ${name}` };
@@ -1124,8 +1310,8 @@ async function toolOutcome(io, name, input, { cwd, state, agentId }) {
 // leads: a Read of a file, a Glob of the .sdoc files under a directory. A
 // deny stands, inside the project too. An ask inside the project or the
 // plugin goes through, as reading there always has; elsewhere the person is
-// asked, once for the paths of one call, and may allow a directory for the
-// rest of the session. With no one to ask, the call is refused.
+// asked, once for the paths of one call, and may allow what it was asked
+// about for the rest of the session. With no one to ask, the call is refused.
 
 // The answers offered; anything typed under Other refuses.
 export const CONSENT_OPTIONS = ["Allow once", "Allow for this session", "Deny"];
@@ -1159,8 +1345,9 @@ export function ownToolRequest(name, input, tool) {
 //   ask(question, options)
 //                   → the label chosen or the text typed under Other, as
 //                     $.ui.ask; rejects when no one can be asked
-//   allowed         the directories allowed for the session (a Set), each
-//                   covering its subtree; "Allow for this session" adds to it
+//   allowed         the paths allowed for the session (a Set): a file, or a
+//                   directory with its subtree; "Allow for this session" adds
+//                   the paths the question named, and nothing around them
 //   pending         the questions still open (a Map), so calls racing for the
 //                   same paths ask once
 //   roots           where an ask goes through unasked: the project, the plugin
@@ -1218,9 +1405,8 @@ export async function consent(paths, { check, ask, allowed = new Set(), pending 
     return { allow: true };
   }
   if (answer === CONSENT_OPTIONS[1]) {
-    const dirs = [...new Set(asking.map((a) => a.kind === "dir" ? a.path : kb.dirName(a.path)))];
-    for (const dir of dirs) allowed.add(dir);
-    note(io, `tool ${name}: ${dirs.map(shown).join(", ")} allowed for this session`);
+    for (const a of asking) allowed.add(a.path);
+    note(io, `tool ${name}: ${what(asking)} allowed for this session`);
     return { allow: true };
   }
   const said = answer && answer !== CONSENT_OPTIONS[2] ? ` They said: ${answer}` : "";

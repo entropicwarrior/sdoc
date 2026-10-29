@@ -1,5 +1,5 @@
 ---
-description: "Rename a section id and fix every reference and link to it, in four files."
+description: "Rename a section id and fix every link to it, in nine files, leaving a look-alike id (write-ahead-log-format) alone."
 tags: [edit]
 plugins: ["../../../../plugins/sdoc-lexica"]
 max_turns: 12

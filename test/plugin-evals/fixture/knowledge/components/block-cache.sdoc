@@ -1,0 +1,113 @@
+# Block Cache @block-cache-component
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How tidewater's block cache works inside: what it holds, its shards and 2Q queues, how a lookup, an insert and an eviction proceed, how it is sized and resized, the metrics it reports and its known limits. Read it before changing `src/cache.go`, when tuning `BlockCacheSize`, or when point-read latency points at cache misses.
+    }
+
+    # What the Cache Holds @cache-contents
+    {
+        The block cache holds decompressed SSTable data blocks, keyed by the table's file number and the block's offset in the file. It is created by `Open`, shared by every reader of that database, and dropped by `Close`. Two databases opened in one process have two caches; there is no process-wide cache.
+
+        Index and filter blocks are handled apart. They are loaded when a table is opened and pinned until the table is deleted, as [Block Cache](../architecture.sdoc#block-cache) describes: they sit outside the 2Q queues, are never evicted, and do not count against the capacity, which is spent on data blocks only. Their memory is accounted separately, under [Memory Pressure](../architecture.sdoc#memory-pressure).
+
+        The default capacity and the number of shards are set in the architecture's block cache section. The eviction policy is 2Q, as decided in [D-0005](../decisions.sdoc#d-0005), which replaced plain LRU after a single long range scan was seen to evict the whole working set of point reads.
+    }
+
+    # Data Structures @cache-structures
+    {
+        The cache is an array of shards. A block's shard is chosen by the low bits of a hash of its key, so the blocks of one table spread over every shard and a scan of one table does not concentrate on one lock. Each shard holds an equal share of the capacity and its own lock.
+
+        {[table]
+            Part | Per | Content
+            Shard lock | shard | A `sync.Mutex` taken for every lookup, insert and eviction in the shard
+            Index | shard | A Go map from block key to entry
+            Probationary queue | shard | A FIFO list of entries hit once, at most a quarter of the shard's capacity
+            Protected queue | shard | An LRU list of entries hit at least twice, the rest of the capacity
+            Entry | block | Key, decompressed bytes, charge, reference count, queue membership
+        }
+
+        An entry's charge is the length of its decompressed block plus a fixed overhead for the entry and its map slot, about 120 bytes. Capacity is measured in charges, so a shard full of small blocks holds fewer bytes of data than its capacity says.
+
+        Tidewater uses the simplified form of 2Q: it keeps no record of blocks evicted from the probationary queue, the ghost queue of the full algorithm. A block evicted while on probation and read again later starts on probation again. The ghost queue would promote such blocks sooner, but it costs a map entry per evicted block, and the read budget was met without it.
+    }
+
+    # Lookup, Insert and Eviction @cache-operations
+    {
+        {[#]
+            - Lookup
+            {
+                The reader hashes the block key, takes the shard's lock, and looks the key up in the index. On a hit in the probationary queue the entry moves to the head of the protected queue; on a hit in the protected queue it moves to that queue's head. Either way its reference count rises, and the lock is released before the reader touches the bytes.
+            }
+            - Miss
+            {
+                On a miss the reader releases the lock and reads the block from the table file. The block's checksum, a CRC32C as [D-0004](../decisions.sdoc#d-0004) requires, is verified before anything else: a block that fails it is never inserted, and the read returns `ErrCorrupt`. A valid block is decompressed and inserted. Readers that miss on the same block at the same time wait for the first one's read instead of issuing their own.
+            }
+            - Insert
+            {
+                A new entry goes to the head of the probationary queue. If the shard is then over capacity, entries are evicted until it is not.
+            }
+            - Eviction
+            {
+                Eviction takes the tail of the probationary queue while that queue holds more than its quarter, and the tail of the protected queue otherwise. An entry still referenced by a reader is unlinked from its queue and from the index, but its memory is freed only when the last reference is released.
+            }
+        }
+
+        Compaction does not go through the cache: it reads its input tables directly and inserts nothing, so a large compaction leaves the working set in place. The blocks of the tables it writes are cold until a read asks for them.
+
+        Blocks that an iterator prefetches during a long scan, as [Iterators](../architecture.sdoc#iterators) describes, are inserted on probation like any other block. A scan therefore cycles through the probationary queue and leaves the protected queue alone, which is the property that motivated the change to 2Q.
+    }
+
+    # Invariants @cache-invariants
+    {
+        {[.]
+            - A cached block has passed its checksum. Verification happens before insertion, never after.
+            - A cached block is never stale. Tables are immutable and file numbers are never reused, so a key naming a deleted table can only miss; its entries are not purged when the table is deleted but age out of the queues.
+            - After an insert returns, the charges in a shard do not exceed the shard's capacity, not counting entries already unlinked and still referenced by a reader.
+            - Index and filter blocks never enter the 2Q queues and never count against the capacity.
+            - The cache never delays a writer: no path of `Put`, `Delete` or `Write` takes a shard lock.
+        }
+    }
+
+    # Sizing and Resizing @cache-sizing
+    {
+        The capacity is the `BlockCacheSize` option, divided evenly between the shards. Its default is listed in [Configuration](../architecture.sdoc#configuration).
+
+        A cache that holds the working set of point reads keeps the read path off the disk, which is how [R2](../requirements.sdoc#r2) is met. To estimate the working set, raise the size step by step on a staging host and watch the hit ratio: it stops improving once the cache holds the working set, and capacity beyond that is wasted memory. Capacity for whole-database scans is never worth buying, since 2Q keeps scanned blocks on probation anyway.
+
+        `BlockCacheSize` can be changed on an open database. Lowering it shrinks each shard in turn, evicting under that shard's lock until it fits, so the memory is released before the call returns rather than as blocks age out. Raising it takes effect at once and fills as reads miss. This is the lever an application short of memory is expected to use, as [Memory Pressure](../architecture.sdoc#memory-pressure) explains.
+
+        The cache's memory is its capacity plus the Go runtime's overhead on top, which depends on the garbage collector setting. Budget for the capacity plus a few percent; [Capacity Planning](../operations/capacity.sdoc#memory-sizing) adds up the rest of the process.
+    }
+
+    # Metrics @cache-metrics
+    {
+        These metrics are reported alongside the core set listed in [Observability](../architecture.sdoc#observability).
+
+        {[table]
+            Metric | Kind | Meaning
+            `tidewater_block_cache_hits_total` | counter | Lookups that found the block, by `queue` (`probation` or `protected`)
+            `tidewater_block_cache_misses_total` | counter | Lookups that went to disk
+            `tidewater_block_cache_bytes` | gauge | Charges held, by `queue`
+            `tidewater_block_cache_evictions_total` | counter | Entries evicted, by `queue`
+        }
+
+        The hit ratio is hits divided by hits plus misses. On a point-read workload whose working set fits, most hits come from the protected queue. More probationary hits with a falling hit ratio usually means a new scan-heavy caller rather than a cache that is too small. Steady evictions from the protected queue under unchanged load are the sign that the working set has outgrown the capacity.
+    }
+
+    # Known Limits @cache-limits
+    {
+        {[.]
+            - Every hit takes its shard's lock to move the entry in its queue. On hosts with many cores and a skewed key distribution, the shards holding the hottest blocks become the limit of the read path before the disk does. Sharding spreads distinct blocks over many locks, but one hot block always maps to one shard.
+            - The cache is not persisted. After `Open`, every read misses until the working set has been read once, and point-read latency stays above budget until then. There is no warm-up call.
+            - A block that holds one large value is as large as that value. It is admitted like any other block and can evict many small ones from probation.
+            - Compaction does not warm the cache with the tables it writes, so read latency on a key range rises briefly after the range is compacted.
+            - The cache cannot be shared between databases, so an application that opens many small databases pays for one cache per database.
+        }
+    }
+}

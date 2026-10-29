@@ -9,7 +9,7 @@ Teaches Claude Code to read, write and navigate [SDOC](https://github.com/entrop
   - The same index, shorter, in the task of each subagent Claude starts.
   - `@lexica/file.sdoc#id` in a prompt attaches only that section; typing the `#` offers the file's ids.
   - A file's reading guide on its first Read.
-  - Its editing guide, with the sections the guide links to, before its first edit; after it, when the edit is a Bash command.
+  - Its editing guide, with the sections the guide links to, with the result of its first edit (an Edit or a Bash command), unless Claude has read the guide already.
   - The findings each edit adds, by Edit, Write or a Bash command that names the file.
   - All of it again after a compaction.
 - **Research agent:** `sdoc-lexica:research`, in a project with `lexica/`. It answers a question from the knowledge in at most 200 words, citing the file, section and lines of each claim, and changes nothing.

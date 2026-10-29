@@ -1,7 +1,7 @@
 ---
 name: authoring
 description: "Reads, writes and edits SDOC (.sdoc) files correctly: the syntax, the mistakes that break parsing, the signposts (@about, reading and editing guides), and reading a large file by section with the plugin's tools rather than whole."
-when_to_use: "Use when creating, changing or reviewing a .sdoc file, reading a large one without loading it whole, fixing a parse error or broken reference reported after an edit, when an edit is refused once with an editing guide, or before renaming or moving a section other files link to. Examples: 'create a new .sdoc file', 'add a section to the spec', 'fix this sdoc parse error', 'how do I write a table in SDOC'."
+when_to_use: "Use when creating, changing or reviewing a .sdoc file, reading a large one without loading it whole, fixing a parse error or broken reference reported after an edit, when an edit comes back with the file's editing guide, or before renaming or moving a section other files link to. Examples: 'create a new .sdoc file', 'add a section to the spec', 'fix this sdoc parse error', 'how do I write a table in SDOC'."
 paths: ["**/*.sdoc"]
 ---
 
@@ -96,7 +96,7 @@ Optional reserved scopes describing the document itself, written as direct child
 | `@reading-guide` | Where do I start, what can I skip? | Prose, then one table `Sections \| Note` of `@id`s |
 | `@editing-guide` | What are the rules for changing this file? | Paragraphs and lists |
 
-Pointers to other documents go in `@related-resources`, never in `@about` or `@not-about`. When a file has an `@editing-guide`, the first edit to it is refused once with the guide and the sections it links to: make the edit again following it. A change made through Bash (`sed -i`, a script) gets the guide after the change instead: check the change against it.
+Pointers to other documents go in `@related-resources`, never in `@about` or `@not-about`. When a file has an `@editing-guide`, the first edit to it comes back with the guide and the sections it links to, unless the guide was already read (a Read of its lines, or the `guides` tool), and so does a change made through Bash (`sed -i`, a script). The edit is applied either way: check it against the guide and fix what it does not follow. Reading the guide before the first edit saves that second pass.
 
 ## When editing
 

@@ -10,12 +10,13 @@
 //                    citations, read-only)
 //   agent.spawn      appends a short index to a new subagent's prompt; not to
 //                    a fork, a resumed agent or a workflow agent
-//   tool.call any    dormant: should the engine pass over the spawn hook, a
-//                    subagent's first answered call carries the index instead
+//   tool.call any    for a subagent the spawn hook did not see (the engine
+//                    passed over it, or that kind of spawn raises none), its
+//                    first answered call carries the index instead
 //   prompt.submit    attaches the lexica/ index to the conversation's first prompt
 //   tool.call Read   adds the file's reading guide and related resources
-//   tool.call Edit   refuses the first edit once with the editing guide, then
-//                    reports the findings an edit adds
+//   tool.call Edit   adds the editing guide to the first edit's result, and
+//                    the findings an edit adds
 //   tool.call Bash   the same for an .sdoc file a command names and changes,
 //                    the guide coming after the change
 //   tool.call own    answers the plugin's tools, behind a permission guard, as
@@ -25,15 +26,21 @@
 //                    directory) of it would get, as written and through
 //                    links. A deny refuses, inside the project too; an ask
 //                    goes through inside the project and the plugin, and
-//                    elsewhere asks the person (once, or for the session)
+//                    elsewhere asks the person (once, or for the session).
+//                    A file read unnamed (a walked directory's) is checked
+//                    too, through io.denied, and left out on a deny
 //   prompt.mention   @file.sdoc#id attaches the section the id names, and a
 //                    mentioned file's reading guide, as a Read does
 //   prompt.autocomplete
 //                    offers a file's section ids after @file.sdoc#
-//   session.end      forgets what was shown and the directories allowed
+//   session.end      forgets what was shown and the paths allowed
 //
 // A compaction or a /clear is seen at the next prompt, by the conversation's
-// opening message changing: what was shown is then shown again.
+// opening message changing: what was shown is then shown again. The
+// transcript is fetched for it only when the session's usage, which costs
+// nothing, says one may have happened. Claude Code's own signals for a
+// compaction (session.compact, the classic SessionStart with source
+// "compact") are passed over for a user plugin.
 //
 // Every action is noted in one line: in the debug log always (claude
 // --debug-file), and in the session too with the verbose option
@@ -44,6 +51,8 @@ import {
   resetState,
   openingOf,
   lostOpening,
+  openingKnown,
+  openingMayHaveChanged,
   knowledgeDirs,
   indexForPrompt,
   afterRead,
@@ -58,6 +67,7 @@ import {
   subagentBriefing,
   researchAgentSpec,
   insideProject,
+  projectFor,
   mentionRead,
   mentionSuggestions,
   toolRequests,
@@ -97,6 +107,19 @@ async function realPathOf($, path) {
   return stat && stat.realPath ? stat.realPath : path;
 }
 
+// The project: where the session started, or where /cd or a worktree move
+// took it, $.session.root(). Not $.session.cwd(), which follows a shell cd
+// (seen on 2.1.312: after `cd lexica`, cwd() was lexica/), so a cd into a
+// subdirectory would make it the project: no lexica/ found, the rest of the
+// project outside. Except in a helper's own worktree, which root() does not
+// report (projectFor). cwd() is otherwise the shell's directory, for the paths
+// a command names.
+async function projectOf($) {
+  let root;
+  try { root = await $.session.root(); } catch { /* an engine without root() */ }
+  return projectFor(ioOf($), { root, shell: await $.session.cwd() });
+}
+
 async function nowOf($) {
   try { return await $.clock.now(); } catch { return Date.now(); }
 }
@@ -126,6 +149,10 @@ function ioOf($) {
     list: (dir) => $.fs.list(dir),
     exists: (path) => $.fs.exists(path),
     realPath: (path) => realPathOf($, path),
+    denied: async (path) => {
+      const verdict = await $.tool.check({ tool: "Read", input: { file_path: path } });
+      return Boolean(verdict && verdict.decision === "deny");
+    },
     run: (argv, init) => runKept($, argv, init),
     now: () => nowOf($),
     storage: {
@@ -158,7 +185,8 @@ function ran(result) {
 }
 
 export const register = (on, options = {}) => {
-  verbose = options.verbose === true;
+  // A boolean option may come as the text a shell gave it: {"verbose":"true"}.
+  verbose = options.verbose === true || options.verbose === "true";
   indexChars = indexBudget(options.indexSize);
   const state = createState();
   // Full tool name (mcp__<plugin>__<name>) → short name, as registered.
@@ -170,7 +198,7 @@ export const register = (on, options = {}) => {
     resetState(state);
     // The tools sit in the model's list where the project has lexica/, and
     // behind ToolSearch elsewhere, where they cost nothing until wanted.
-    const hasKnowledge = (await knowledgeDirs(ioOf($), e.cwd)).length > 0;
+    const hasKnowledge = (await knowledgeDirs(ioOf($), await projectOf($), state)).length > 0;
     for (const spec of TOOLS) {
       const { tool } = await $.tool.register({ ...spec, isDeferred: !hasKnowledge });
       tools.set(tool, spec.name);
@@ -194,63 +222,77 @@ export const register = (on, options = {}) => {
 
   // --- Subagents ---
   //
-  // hasKnowledge is set at session.start, above; spawnHookRan by the spawn
-  // hook; briefed holds the agents the fallback has dealt with.
-  const subagents = { hasKnowledge: false, spawnHookRan: false, briefed: new Set() };
+  // hasKnowledge is set at session.start, above; briefed holds the agents
+  // dealt with, by the spawn hook (briefed or not) or by the fallback.
+  const subagents = { hasKnowledge: false, briefed: new Set() };
 
   // A subagent starts without the conversation, so without the index its
-  // first prompt carried: its prompt gets a brief. A failure never blocks a
+  // first prompt carried: its prompt gets a brief. The started agent's id is
+  // kept, so the fallback below leaves it alone. A failure never blocks a
   // spawn: the catch lets it start as it was asked.
   on("agent.spawn", async ($, e, next) => {
-    subagents.spawnHookRan = true;
-    if (!subagents.hasKnowledge) return next(e);
+    const seen = (started) => {
+      if (started && started.agentId) subagents.briefed.add(started.agentId);
+      return started;
+    };
+    if (!subagents.hasKnowledge) return seen(await next(e));
     const who = `subagent ${e.subagentType || "(no type)"}`;
     if (!shouldBrief(e)) {
       note($, `${who}: not briefed (${e.fork ? "a fork, it has the conversation" : e.resume ? "resumed, it has its own" : "a workflow agent"})`);
-      return next(e);
+      return seen(await next(e));
     }
-    const brief = await subagentBriefing(ioOf($), await $.session.cwd(), { who });
-    return next(brief ? { ...e, prompt: e.prompt + "\n\n" + brief } : e);
+    const brief = await subagentBriefing(ioOf($), await projectOf($), { who, state });
+    return seen(await next(brief ? { ...e, prompt: e.prompt + "\n\n" + brief } : e));
   }).catch(($, e, next) => next(e));
 
-  // Should the engine pass over the spawn hook for a user plugin, as it does
-  // a few others (see prompt.submit), a subagent's first answered tool call
-  // carries the brief instead. Only until the spawn hook is seen to run; only
-  // for an agent $.agent.list() names, and not a fork; a refused call leaves
-  // it to the next one.
+  // A subagent the spawn hook did not see (the engine passed over the hook
+  // for a user plugin, as it does a few others, see prompt.submit; or that
+  // kind of spawn raises none) gets the brief with its first answered tool
+  // call instead. Only for an agent $.agent.list() names, and not a fork; a
+  // refused call leaves it to the next one.
   on("tool.call", async ($, e, next) => {
-    if (subagents.spawnHookRan || !subagents.hasKnowledge || !e.agentId ||
+    if (!subagents.hasKnowledge || !e.agentId ||
         subagents.briefed.has(e.agentId) || e.tool === "AskUserQuestion") return next(e);
     const result = await next(e);
-    if (!ran(result) || subagents.spawnHookRan || subagents.briefed.has(e.agentId)) return result;
+    if (!ran(result) || subagents.briefed.has(e.agentId)) return result;
     subagents.briefed.add(e.agentId);
     const agent = (await $.agent.list()).find((a) => a.id === e.agentId);
     if (!agent || agent.type === "fork") {
       note($, `agent ${e.agentId}: not briefed (${agent ? "a fork, it has the conversation" : "not a listed subagent"})`);
       return result;
     }
-    const who = `subagent ${agent.type} (agent ${e.agentId}, at its first tool call: the spawn hook did not run)`;
-    return withContext(result, await subagentBriefing(ioOf($), await $.session.cwd(), { who }));
+    const who = `subagent ${agent.type} (agent ${e.agentId}, at its first tool call: the spawn hook did not see it)`;
+    return withContext(result, await subagentBriefing(ioOf($), await projectOf($), { who, state }));
   }).catch(($, e, next) => next(e));
 
   // Not prompt.context: the built-in security plugin passes over a user
   // plugin's hook there. Context attached to a prompt reaches the model.
   // Nor session.compact or session.append for a compaction, passed over too:
   // the conversation's opening message tells instead.
+  // Each $ call through a promise, so one that throws rather than rejects is
+  // caught too and the index still goes.
   on("prompt.submit", async ($, e, next) => {
-    const messages = await $.session.messages({ as: "api" }).catch(() => undefined);
-    if (messages && lostOpening(state, openingOf(messages))) {
-      resetState(state);
-      note($, "conversation compacted or cleared: the index and the guides will be shown again");
+    const usage = await Promise.resolve().then(() => $.session.usage()).catch(() => undefined);
+    const [why, figures] = openingMayHaveChanged(state, usage);
+    if (why) {
+      const messages = await Promise.resolve().then(() => $.session.messages({ as: "api" })).catch(() => undefined);
+      const lost = openingKnown(messages) && lostOpening(state, openingOf(messages));
+      logger($)(`prompt: transcript fetched, ${why}; ${figures}: ${lost ? "the opening changed" : "the opening is the same"}`, { quiet: !lost });
+      if (lost) {
+        resetState(state);
+        note($, "conversation compacted or cleared: the index and the guides will be shown again");
+      }
+    } else {
+      logger($)(`prompt: transcript not fetched; ${figures}`, { quiet: true });
     }
-    const index = await indexForPrompt(ioOf($), state, await $.session.cwd(), { maxChars: indexChars });
+    const index = await indexForPrompt(ioOf($), state, await projectOf($), { maxChars: indexChars });
     return next(index ? { ...e, context: [...(e.context || []), index] } : e);
   }).catch(($, e, next) => next(e));
 
   on("tool.call", { tool: "Read", file_path: SDOC_FILE }, async ($, e, next) => {
     const result = await next(e);
     if (!ran(result)) return result;
-    const cwd = await $.session.cwd();
+    const cwd = await projectOf($);
     return withContext(result, await afterRead(ioOf($), state, {
       filePath: e.file_path, offset: e.offset, limit: e.limit, agentId: e.agentId, cwd
     }));
@@ -259,26 +301,27 @@ export const register = (on, options = {}) => {
   // A failure here never blocks an edit: the catch lets it run.
   on("tool.call", { tool: FILE_EDIT, file_path: SDOC_FILE }, async ($, e, next) => {
     const files = ioOf($);
-    const cwd = await $.session.cwd();
-    const before = await beforeEdit(files, state, { filePath: e.file_path, agentId: e.agentId, cwd, edit: e });
-    if (before.deny) return { deny: before.deny };
+    const cwd = await projectOf($);
+    const before = await beforeEdit(files, state, { filePath: e.file_path, agentId: e.agentId, cwd });
     const result = await next(e);
     if (!ran(result)) return result;
-    return withContext(result, await afterEdit(files, { filePath: e.file_path, snapshot: before.snapshot, cwd }));
+    return withContext(result, await afterEdit(files, {
+      filePath: e.file_path, snapshot: before.snapshot, cwd, guide: before.guide, state, agentId: e.agentId
+    }));
   }).catch(($, e, next) => next(e));
 
   // A command that fails may still have changed a file (sed ran, the next
   // step failed), so only a refused one is passed over.
   on("tool.call", { tool: "Bash", command: NAMES_SDOC }, async ($, e, next) => {
     const files = ioOf($);
-    const cwd = await $.session.cwd();
-    const snapshot = await beforeBash(files, { command: e.command, cwd });
+    const cwd = await projectOf($);
+    const snapshot = await beforeBash(files, { command: e.command, cwd, shellCwd: await $.session.cwd() });
     const result = await next(e);
     if (result.deny !== undefined || !snapshot.size) return result;
     return withContext(result, await afterBash(files, state, { snapshot, agentId: e.agentId, cwd }));
   }).catch(($, e, next) => next(e));
 
-  // The directories the person let the tools read for this session, and the
+  // The paths the person let the tools read for this session, and the
   // questions still open, so calls racing for the same paths ask once.
   const allowed = new Set();
   const asked = new Map();
@@ -289,13 +332,14 @@ export const register = (on, options = {}) => {
   // written and where it leads. A deny refuses the call, inside the project
   // too. An ask goes through in the project and the plugin (its bundled
   // guide), as Read goes without a prompt there; elsewhere the person is
-  // asked, and may allow the directory for the session. With no one to ask
+  // asked, and may allow what was asked about for the session. With no one to ask
   // (claude -p, or the question dismissed), the call is refused.
   on("tool.call", { tool: OWN_TOOL }, async ($, e, next) => {
     const name = tools.get(e.tool);
     if (!name) return next(e);
-    const cwd = await $.session.cwd();
+    const cwd = await projectOf($);
     const io = ioOf($);
+    io.log(`tool ${name}${e.agentId ? ` (agent ${e.agentId})` : ""}: project ${cwd}, shell ${await $.session.cwd()}`, { quiet: true });
     // A settings rule denying the tool by name holds first. Only a rule: the
     // mode's own verdict on a tool it cannot see is read-only is not ours.
     const own = await $.tool.check(ownToolRequest(name, e, e.tool)).catch(() => undefined);
@@ -321,21 +365,28 @@ export const register = (on, options = {}) => {
 
   // @file.sdoc#id in a prompt: the lines of the section the id names are read
   // in place of the whole file (an unknown id reads it whole and says which
-  // ids it has); #L10-20 is the engine's. A mentioned file inside the project
-  // brings its reading guide, and a large one read whole its outline, as a
-  // Read does: the engine raises no tool.call for a mention.
+  // ids it has). #L10-20 is the engine's, which sets offset and limit; a range
+  // left on the path is taken from there as the fragment comes off it. A
+  // mentioned file inside the project brings its reading guide, and a large
+  // one read whole its outline, as a Read does: the engine raises no
+  // tool.call for a mention.
   const MENTIONED = /^(.*\.sdoc)#([^/]*)$/i;
-  const LINES = /^L\d+(-\d+)?$/i;
+  const LINES = /^L(\d+)(?:-(\d+))?$/i;
   on("prompt.mention", { path: /\.sdoc(#[^/]*)?$/i }, async ($, e, next) => {
-    const cwd = await $.session.cwd();
+    const cwd = await projectOf($);
     const io = ioOf($);
     const named = MENTIONED.exec(e.mention || "");
     const fragment = named ? named[2] : "";
     const path = fragment && e.path.endsWith("#" + fragment) ? e.path.slice(0, -fragment.length - 1) : e.path;
     let request = path === e.path ? e : { ...e, path };
+    const lines = LINES.exec(fragment);
+    if (lines && path !== e.path && request.offset === undefined) {
+      const first = Number(lines[1]);
+      request = { ...request, offset: first, ...(lines[2] ? { limit: Math.max(1, Number(lines[2]) - first + 1) } : {}) };
+    }
     if (!await insideProject(io, path, cwd)) return next(request);
     let missing = null;
-    if (fragment && !LINES.test(fragment)) {
+    if (fragment && !lines) {
       const plan = await mentionRead(io, { filePath: path, fragment, cwd });
       if (plan) {
         const { offset, limit, ...whole } = request;
@@ -354,14 +405,14 @@ export const register = (on, options = {}) => {
   const outlines = {};
   on("prompt.autocomplete", { token: /^@[^\s#]+\.sdoc#[\w-]*$/i }, async ($, e, next) => {
     const given = await next(e);
-    const mine = await mentionSuggestions(ioOf($), { token: e.token, cwd: await $.session.cwd(), cache: outlines });
+    const mine = await mentionSuggestions(ioOf($), { token: e.token, cwd: await projectOf($), cache: outlines });
     return mine.length ? { ...given, suggestions: [...given.suggestions, ...mine] } : given;
   }).catch(($, e, next) => next(e));
 
   on("session.end", async ($, e, next) => {
     resetState(state);
     note($, `conversation ended (${e.reason}): the index and the guides will be shown again`);
-    if (allowed.size) note($, `the directories allowed for the session are forgotten: ${[...allowed].join(", ")}`);
+    if (allowed.size) note($, `the paths allowed for the session are forgotten: ${[...allowed].join(", ")}`);
     allowed.clear();
     asked.clear();
     return next(e);

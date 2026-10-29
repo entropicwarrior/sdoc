@@ -1,7 +1,7 @@
 ---
 name: lexica
 description: "Finds, reads and maintains a project's knowledge in lexica/ directories (SDOC files of specs, requirements, architecture, implementation status and how-to skills), loading it by section through the plugin's tools or the sdoc-lexica:research agent rather than reading files whole."
-when_to_use: "Use when starting a task in a project that has a lexica/ directory, when looking up its conventions, requirements or design decisions, and when finishing a task the project's knowledge should record (implementation status, a changed spec or decision). Examples: 'what does the spec say about X', 'check the requirements before changing Y', 'update the impl status', 'record this decision'."
+when_to_use: "Use when the conversation carries the plugin's index of the project's lexica/ files, which comes with the first prompt in every project that has a lexica/ directory (so with no index there is none to look for): to look up the project's conventions, requirements or design decisions, and when finishing a task its knowledge should record (implementation status, a changed spec or decision). Examples: 'what does the spec say about X', 'check the requirements before changing Y', 'update the impl status', 'record this decision'."
 ---
 
 # Working with a Lexica knowledge tree
@@ -22,7 +22,7 @@ When the project has `lexica/`, the conversation starts with an index: every fil
 3. **Read only the sections you need** with `mcp__sdoc-lexica__read`. When a file has a reading guide, follow it; it is shown the first time you Read the file.
 4. **Prefer the nearest knowledge.** A `lexica/` directory next to the code you are changing is more specific than the one at the project root. Read both when they bear on the task.
 
-For a question such as "what does the knowledge say about X", when the answer matters more than the text, delegate to the `sdoc-lexica:research` agent: it searches and reads read-only, and returns at most 200 words citing file, section and lines, so the sections it read stay out of the conversation.
+For a question such as "what does the knowledge say about X", when the answer matters more than the text and may be spread over several files, or you do not know where it is, delegate to the `sdoc-lexica:research` agent: it searches and reads read-only, and returns at most 200 words citing file, section and lines, so the sections it read stay out of the conversation. When you already know where to look and expect the answer in one place, read that section yourself: the agent starts with none of your context, so it is slower and costs more.
 
 Read the implementation status of the area before starting work. It is usually `impl-status.sdoc`, or `<domain>-impl-status.sdoc`, and holds what is done, in progress and next. When a knowledge server (an MCP server with tools such as `list_knowledge`, `get_sections` and `get_section`) is connected, use it the same way for knowledge shared across projects.
 

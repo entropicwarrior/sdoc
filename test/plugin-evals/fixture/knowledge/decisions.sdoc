@@ -23,7 +23,7 @@
     @editing-guide {
         {[.]
             - Each decision is a section titled `D-NNNN: Title` with the id `@d-nnnn`, numbered one after the highest existing number. Add a new decision at the end of @decision-log.
-            - Each decision holds four paragraphs, in this order: `**Status:**` (Proposed, Accepted, or Superseded by the decision that replaced it), `**Date:**` (the day it was proposed or decided, as YYYY-MM-DD), `**Context:**` (the forces at play), and `**Decision:**` (what was decided).
+            - Each decision holds four paragraphs, in this order: `**Status:**` (Proposed, Accepted, Rejected, or Superseded by the decision that replaced it), `**Date:**` (the day it was proposed or decided, as YYYY-MM-DD), `**Context:**` (the forces at play), and `**Decision:**` (what was decided).
             - Never delete a decision, and never rewrite one that was accepted. When a new decision replaces an old one, change only the old one's status, to `Superseded by @d-nnnn`, and say in the new one's context which decision it supersedes.
             - Link the architecture section a decision changes, with a link such as `[Block Cache](architecture.sdoc#block-cache)`.
         }
@@ -36,6 +36,7 @@
             Proposed | Under discussion. Nothing is built on it yet.
             Accepted | In force. The code and the architecture follow it.
             Superseded | Replaced by the decision named in the status. Kept for its history.
+            Rejected | Considered and turned down. Kept so that it is not proposed again without new reasons.
         }
     }
 
@@ -138,6 +139,39 @@
             **Context:** On fast disks the log writer spends most of its time waiting for fsync, and the next group of writes cannot be submitted until the previous fsync returns. With io_uring the writer could submit the next group's write while the previous fsync is in flight. Open questions: the oldest kernel to support, the fallback on other systems, and container seccomp profiles that block io_uring.
 
             **Decision:** Not yet taken. The proposal is to submit log writes and fsyncs through io_uring on Linux 5.10 and later, and to keep the current path everywhere else. See [Write-Ahead Log](architecture.sdoc#write-ahead-log).
+        }
+
+        # D-0010: OpenTelemetry for Metrics @d-0010
+        {
+            **Status:** Accepted
+
+            **Date:** 2026-10-26
+
+            **Context:** Tidewater exposed its metrics through a Prometheus registry of its own, which applications using another metrics system had to bridge by hand, and the names drifted between the bridge and the dashboards.
+
+            **Decision:** Metrics are reported through the OpenTelemetry metrics API, with the existing metric names kept, so an application exports them with whatever exporter it already runs. The Prometheus registry is removed in the next minor release. See [Observability](architecture.sdoc#observability).
+        }
+
+        # D-0011: Tiered Storage for Cold Tables @d-0011
+        {
+            **Status:** Proposed
+
+            **Date:** 2026-10-27
+
+            **Context:** In large databases most tables on the last two levels are read a few times a day, yet they occupy the same local NVMe as the hot ones. Moving them to object storage would cut disk cost, at the price of slow first reads and a dependency on the object store's availability.
+
+            **Decision:** Not yet taken. The proposal is to move tables on the last level that have not been read for a configurable time to an object store, keep their index and filter blocks local, and fetch data blocks on demand through the block cache. See [SSTables](architecture.sdoc#sstables).
+        }
+
+        # D-0012: Per-Block Bloom Filters @d-0012
+        {
+            **Status:** Rejected
+
+            **Date:** 2026-10-27
+
+            **Context:** A table's single bloom filter has to be read in full before any lookup in that table, which costs a large read on a cold cache for big tables. Filters per data block would be read only for the block a key falls in.
+
+            **Decision:** Rejected. Per-block filters made every point read consult the index first and doubled the filter memory for the same false-positive rate, and the cold-cache cost they address is already bounded, since a table's filter block is pinned in memory for the life of the table. Filters stay one per table. See [Bloom Filters](architecture.sdoc#bloom-filters).
         }
     }
 }

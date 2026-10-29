@@ -1,0 +1,109 @@
+# Memtable @memtable-component
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How the memtable holds recent writes in memory: its skiplist and arena, the life of a memtable from active to released, how reads search it, the memory it takes, the stalls it causes, and its metrics and known limits. Read it before changing `src/memtable.go` or `MemtableSize`, or when writes stall with the reason `memtable`.
+    }
+
+    # Role @memtable-role
+    {
+        Every write lands in the active memtable once the log has accepted it, and stays there until the memtable is flushed to a level 0 table. The path from a call to `Put` to the memtable, with group commit and the fsync policy, is in [Write-Ahead Log](../architecture.sdoc#write-ahead-log); this document starts where that path ends.
+
+        The memtable is what makes a write cheap: an insert into a sorted structure in memory, with durability already provided by the log. Its summary is in [Memtable](../architecture.sdoc#memtable).
+    }
+
+    # Skiplist @memtable-skiplist
+    {
+        The memtable is a skiplist of entries ordered by internal key, the same internal key the tables use.
+
+        {[table]
+            Part of the internal key | Order
+            User key | Ascending, bytewise
+            Sequence number | Descending, so that the newest version of a key comes first
+            Kind | Not part of the order: `put`, `delete`, or `put` with an expiry time
+        }
+
+        A node holds its internal key, its value, and a tower of next pointers of random height, at most 12, each further level kept with a probability of one in four. Nodes are allocated from the memtable's arena, not from the Go heap, so the garbage collector never scans them.
+
+        The sequence number is the one the log assigned when the record was appended, so the order of the log is the order of visibility. Inserts are serialised: the leader of a write group applies the group's records in sequence order once the group's append has returned. Readers take no lock. A node is linked level by level from the bottom with atomic stores, so a reader sees it either fully linked at a level or not at all.
+    }
+
+    # Arena @memtable-arena
+    {
+        The arena is a list of 1 MiB chunks. Nodes are carved from the current chunk and never freed one by one; the whole arena is released at once when the memtable is dropped. A node larger than a chunk, which a large value makes, gets a chunk of its own size.
+
+        The memtable's size is the arena's allocated bytes. When an insert would take it past `MemtableSize`, the memtable is frozen first and the insert goes to a new active memtable. The default size is listed in [Configuration](../architecture.sdoc#configuration).
+
+        A batch is never split between two memtables. Batches are bounded so that one always fits in an empty memtable, as [Batches and Snapshots](../architecture.sdoc#batches) explains, and a batch that does not fit in what remains of the active memtable freezes it first.
+    }
+
+    # Life of a Memtable @memtable-lifecycle
+    {
+        {[table]
+            State | Readable | Accepts writes | Leaves the state when
+            Active | Yes | Yes | It is full, a checkpoint is due, or the database is closing
+            Frozen | Yes | No | The flusher picks it up, oldest first
+            Flushing | Yes | No | Its level 0 table is recorded in the manifest
+            Released | Only by iterators that pinned it | No | The last iterator holding it is closed
+        }
+
+        Freezing a memtable also closes the current log segment and opens a new one for the next active memtable, so a segment never holds the records of two memtables. A checkpoint is due after each interval of log given in [Checkpoints](../architecture.sdoc#wal-checkpoints), and freezes the active memtable to force its flush.
+
+        A single flusher goroutine turns frozen memtables into level 0 tables, one at a time. A flush writes the table under a temporary name, fsyncs and renames it, then records it with a manifest edit, as [Writing an Edit](manifest.sdoc#edit-write) describes. Only then can the memtable's log segment be deleted.
+
+        At most two memtables may be frozen at once. A write that would freeze a third waits until a flush completes: this is the memtable stall, counted by `tidewater_write_stalls_total` with `reason="memtable"`. It means the flusher cannot keep up with the write rate, usually because the disk is slow, or because flushes are refused for lack of free space as [Disk Full](../architecture.sdoc#disk-full) describes.
+    }
+
+    # Reads @memtable-reads
+    {
+        A point read searches the active memtable, then the frozen ones from newest to oldest, before it goes to the tables. In each, it seeks to the user key at the read's sequence number and takes the first entry at or below it. A `put` answers the read; a `delete` answers it as absent, and so does a `put` whose expiry has passed on the wall clock of the node serving the read. Only when no memtable holds a version of the key does the read go on to level 0.
+
+        An iterator merges the memtables with the tables, as [Iterators](../architecture.sdoc#iterators) describes, and pins every memtable it started with, including those flushed while it runs.
+    }
+
+    # Invariants @memtable-invariants
+    {
+        {[.]
+            - Every entry in a memtable was appended to the log first, with the sequence number the log assigned.
+            - All records of one batch are in the same memtable.
+            - Every sequence number in an older memtable is lower than every one in a newer memtable.
+            - A memtable is never modified after it is frozen.
+            - The records of one log segment belong to a single memtable.
+        }
+    }
+
+    # Memory @memtable-memory
+    {
+        The engine holds at most three memtables, the active one and two frozen, so their memory is bounded by three times `MemtableSize`, as [Memory Pressure](../architecture.sdoc#memory-pressure) counts it. That bound leaves out memtables already flushed and still pinned by iterators: an application that keeps an iterator open through several flushes holds one more arena per flush. The `tidewater_open_iterators` gauge finds them.
+
+        A larger `MemtableSize` gives fewer and larger level 0 tables and fewer flushes, at the cost of memory and of recovery time, since the frozen memtables still waiting for a flush are replayed on top of the log written since the last checkpoint. Raising it without checking the recovery budget of [R4](../requirements.sdoc#r4) is the usual way to break that budget.
+    }
+
+    # Metrics @memtable-metrics
+    {
+        {[table]
+            Metric | Kind | Meaning
+            `tidewater_memtable_bytes` | gauge | Arena bytes of the active memtable
+            `tidewater_frozen_memtables` | gauge | Frozen memtables waiting for or under a flush, from 0 to 2
+            `tidewater_flush_seconds` | histogram | Duration of each flush, from pick-up to manifest edit
+            `tidewater_write_stalls_total` | counter | With `reason="memtable"`, writes that waited for a flush
+        }
+
+        `tidewater_frozen_memtables` holding at 2 means the next freeze will stall. If `tidewater_flush_seconds` has grown at the same time, the disk is the cause; if no flush has completed at all, check whether flushes are being refused for lack of space.
+    }
+
+    # Known Limits @memtable-limits
+    {
+        {[.]
+            - There is one flusher. A disk that could absorb two flushes at once still gets one at a time, which caps the sustained write rate at the rate of a single flush.
+            - Inserts are serialised behind the leader of each write group, so one database's insert rate is bounded by one core, whatever the number of writers.
+            - Deleting keys fills the memtable with tombstones as fast as writing them would. A bulk delete costs as much as a bulk write until compaction drops the tombstones.
+            - `MemtableSize` cannot be changed on an open database; a new value takes effect at the next `Open`.
+        }
+    }
+}

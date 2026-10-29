@@ -229,22 +229,41 @@ should be evaluated against.
   too; an ask goes through in the project and the plugin and asks the person
   elsewhere. Keep new tools behind it: list a new tool's paths in `toolPaths`, and
   give a directory parameter the kind `dir` in `toolRequests`, or it is checked as
-  a file.
+  a file. A file read without being named (a walk, a guide's linked sections, a
+  file an edit touches) goes through `readDenied`, or `withoutDenied` for a walk,
+  and is left out on a deny.
 - A skill is named after its folder (`skills/lexica/` is `/sdoc-lexica:lexica`); the
   frontmatter `name` does not change that.
-- `prompt.context`, `session.compact` and a compaction's `session.append` never
-  reach a user plugin: Claude Code's built-in security plugin passes over its hooks
-  there (the debug log says "bypassed by cc-plugin-sec-default"). The index goes with
+- `prompt.context`, `session.compact`, a compaction's `session.append` and
+  `classic.SessionStart` (2.1.312, at startup and after a compaction) never reach a
+  user plugin: Claude Code's built-in security plugin passes over its hooks there
+  (the debug log says "bypassed by cc-plugin-sec-default", and the session shows
+  that the hook was skipped). So the usual way to see a compaction, a SessionStart
+  hook matching `source: "compact"`, is closed to this plugin. The index goes with
   `prompt.submit`, which also sees a compaction or a /clear: the conversation's
-  opening message has changed.
+  opening message has changed. It fetches the transcript for that only when
+  `$.session.usage()` (free) shows a new `startedAt`, or a context token count that
+  is missing (as it is from a compaction to the next response) or lower.
 - `agent.spawn` does reach a user plugin (2.1.312: the debug log says
   "agent.spawn general-purpose: prompt rewritten by a hook", and no "bypassed").
-  The subagent brief goes there. A `tool.call` fallback in register.mjs briefs at an
-  agent's first tool call only if the spawn hook never runs; check the log after a
-  Claude Code update.
+  The subagent brief goes there. A `tool.call` fallback in register.mjs briefs, at
+  its first tool call, any agent the spawn hook did not see (a skill run in a fork
+  raises no `agent.spawn`); check the log after a Claude Code update.
+- The project is `$.session.root()` (`projectOf` in register.mjs), never
+  `$.session.cwd()`: cwd() follows a shell `cd` (2.1.312, checked live: after
+  `cd lexica` it was `lexica/`, and the tools found no knowledge), root() does not.
+  cwd() is only the directory a Bash command's relative paths start from, and the
+  way to a helper agent's own worktree: inside one, root() is still the main
+  checkout, so `projectFor` takes the nearest worktree above cwd() (a `.git` file
+  pointing into `worktrees/`) as the project.
 - Call each `$` noun where it is written: `$.store.get(key)`, never `$.store` passed
   as a value, which `claude plugin validate` refuses. `ioOf` in register.mjs spells
   out every call for that reason.
+- The plugin's goals are accuracy (fewer errors, invented facts, stale
+  references), speed and tokens; the evals measure those, with and without the
+  plugin, and nothing else. A grader checks an outcome the same way in both arms;
+  how many files a run opened or tools it called is a clue, never a grader. Never
+  pick a case or a threshold because the plugin wins it.
 - Evals live in `test/plugin-evals/evals`, run with the repo root as the target
   (`npm run eval:plugin`): a case may load only plugins under the target. A
   fixture is never a directory named `lexica/`: this repo's own plugin would take

@@ -1,0 +1,96 @@
+# Benchmarking Tidewater @benchmarking
+{
+    @meta {
+        type: skill
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How to run tidewater's benchmarks, compare a change against its base with `benchstat`, record the result in the pull request, and decide whether a regression blocks the merge. Use it for any change to the read path, the write path, the log, compaction or the block cache, and whenever a reviewer asks for numbers.
+    }
+
+    # When to Benchmark @when-to-benchmark
+    {
+        Benchmark a change before asking for review when it touches code under `src/` that a read or a write passes through: the memtable, the log writer, SSTable reading and writing, the block cache, bloom filters, iterators or compaction. A change to tests, tooling or documentation needs no numbers.
+
+        The benchmarks catch a regression at merge time. They do not replace the long-running tests, which check every figure against its budget on the reference host before a release, as part of [Releasing Tidewater](release.sdoc).
+    }
+
+    # Running the Benchmarks @running-benchmarks
+    {
+        {[#]
+            - Check out the base
+            {
+                Check out the commit your branch starts from, usually the tip of `main` when you branched, and run `make bench > old.txt`. `make bench` runs `go test -run '^$' -bench . -benchmem -count 10` over every package and prints the host, kernel and Go version as its first lines.
+            }
+            - Check out the change
+            {
+                Check out your branch on the same host, with nothing else running, and run `make bench > new.txt`.
+            }
+            - Compare
+            {
+                Run `benchstat old.txt new.txt`. To run only part of the suite, pass a pattern, as in `make bench BENCH=BenchmarkGet`, and use the same pattern on both sides.
+            }
+        }
+
+        Run both sides on one host, one after the other. Numbers from two hosts, or from a host that was busy with something else, are not comparable whatever `benchstat` says.
+    }
+
+    # The Reference Host @bench-reference-host
+    {
+        Only numbers from the reference host decide anything. It is the instance described in [Observability](../architecture.sdoc#observability), the same machine type the long-running tests of [Testing](../architecture.sdoc#testing) use; the team's copy is `soak-3`, booked in the team calendar. A laptop is fine for exploring a change, but its numbers do not go in the pull request as evidence.
+    }
+
+    # Benchmarks and Budgets @bench-budgets
+    {
+        Each benchmark below measures one row of the budget table. The budgets themselves, and the margin beyond which a change needs a recorded decision even while it stays within budget, are in [Performance Budget](../architecture.sdoc#performance-budget); look them up there rather than copying them into the pull request.
+
+        {[table]
+            Benchmark | Budget row it tracks
+            `BenchmarkGetWarm` | Point read, warm cache
+            `BenchmarkPut1KiB` | Sustained writes, 1 KiB values
+            `BenchmarkRecoveryReplay` | Recovery per GiB of log
+            `BenchmarkPutDuringCompaction` | Write latency during compaction
+        }
+
+        Follower lag has no benchmark: it needs a cluster, and only the long-running tests measure it.
+    }
+
+    # Reading benchstat @reading-benchstat
+    {
+        ```
+        name                  old time/op    new time/op    delta
+        GetWarm-8               612ns ± 2%     598ns ± 1%   -2.29%  (p=0.000 n=10+10)
+        Put1KiB-8              4.71µs ± 3%    5.02µs ± 2%   +6.58%  (p=0.000 n=10+10)
+        RecoveryReplay-8        1.13s ± 1%     1.14s ± 2%     ~     (p=0.218 n=10+10)
+        ```
+
+        A `~` in the delta column means the difference is within noise at `benchstat`'s default significance level, and counts as no change. A delta with a p-value is a real change in that direction. If a line shows a spread above 5 percent on either side, the host was not quiet: rerun both sides rather than reading the delta.
+    }
+
+    # What to Record @what-to-record
+    {
+        Paste into the pull request description:
+
+        {[.]
+            - The base commit and the change commit, as full hashes.
+            - The header lines `make bench` printed: host, kernel and Go version.
+            - The complete `benchstat old.txt new.txt` output, not a summary of it.
+            - For a write-path change, the values of `tidewater_write_stalls_total` and the p99 of `tidewater_wal_fsync_seconds` that `BenchmarkPut1KiB` prints at the end of each run, for both sides.
+            - One sentence explaining every change marked significant, including the improvements.
+        }
+    }
+
+    # When a Regression Blocks a Merge @blocking-regressions
+    {
+        {[table]
+            Result on the reference host | Effect on the merge
+            A tracked benchmark misses its budget | Blocks. Fix the change or withdraw it.
+            A tracked benchmark moves by more than the margin in Performance Budget | Blocks until a decision accepting the change is recorded in [the decisions log](../decisions.sdoc).
+            More write stalls in `BenchmarkPut1KiB` or `BenchmarkPutDuringCompaction` | Blocks until explained in the pull request and accepted by a reviewer.
+            A significant slowdown in any other benchmark | Does not block. Explain it in the description.
+            A slowdown seen only on a laptop | Does not block. Reproduce it on the reference host first.
+        }
+    }
+}

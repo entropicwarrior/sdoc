@@ -1,0 +1,110 @@
+# Bloom Filters @bloom-filters-component
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How the bloom filter of each SSTable is built, stored and consulted, how much memory the filters take, why there is one filter per table rather than one per block, and the metrics and limits that come with them. Read it before changing `src/bloom.go` or `BloomBitsPerKey`, or when point reads of absent keys are slower than expected.
+    }
+
+    # Role @filter-role
+    {
+        A point read must look for its key in every table whose key range covers it: every overlapping table on level 0, and one table on each level below. Most of those tables do not hold the key. The filter answers "certainly not here" for most of them from memory, so the read skips their index and data blocks entirely, as [Bloom Filters](../architecture.sdoc#bloom-filters) describes.
+
+        A filter never answers "certainly here". A positive answer means only that the table may hold the key, and the read goes on to the index and the data block.
+
+        The filter's density is set by the `BloomBitsPerKey` option. Its default, and the false-positive rate that default gives, are in the architecture's bloom filter section.
+    }
+
+    # Construction @filter-construction
+    {
+        The filter is built while its table is written, by a flush or a compaction, in `src/bloom.go`.
+
+        {[#]
+            - Each user key added to the table is hashed once, to 32 bits. Internal keys that differ only in sequence number are one user key: entries arrive sorted, so a key equal to the previous one is skipped.
+            - When the table is finished, the filter's size in bits is the number of distinct keys times `BloomBitsPerKey`, rounded up to a whole number of bytes.
+            - The number of probes is `BloomBitsPerKey` times ln 2, rounded to the nearest integer and kept between 1 and 30.
+            - Each key sets one bit per probe. The probe positions come from the one hash by double hashing: the hash plus i times a step derived from it, for i from 0 to the number of probes minus one, modulo the filter's size in bits. The hash function and the step are part of the on-disk format.
+        }
+
+        The hashes are kept in memory until the table is finished, 4 bytes per distinct key. That is the main cost of building a filter, and it is bounded by the size of one output table.
+    }
+
+    # Storage in the Table @filter-storage
+    {
+        The filter is written as the filter block of its table, and the table's footer records its offset and length. The block holds the filter's bits followed by one byte giving the number of probes, and ends with a CRC32C like every other block of the table. Filter blocks are never compressed: a well-filled bloom filter is close to random and would not shrink.
+
+        Because the number of probes is stored with each filter, tables built with different `BloomBitsPerKey` settings coexist. Changing the option affects only tables written afterwards; older tables keep their filters until compaction rewrites them.
+
+        The filter block has not changed since format version 3, the oldest version the engine reads (see [On-Disk Format](../architecture.sdoc#on-disk-format)).
+    }
+
+    # Lookup @filter-lookup
+    {
+        When a table is opened, its filter block is read, verified and pinned in memory for as long as the table is live, together with its index block. A lookup therefore never reads the disk for a filter.
+
+        {[#]
+            - Hash the user key once per read, not once per table. Every filter uses the same hash, so one hash serves the whole read.
+            - For each candidate table, test the probe bits. If any bit is clear, skip the table.
+            - If every bit is set, search the pinned index for the data block that may hold the key, and read that block through the block cache.
+        }
+
+        A tombstone's key is in the filter like any other key, so a read of a deleted key still reaches the block that holds the tombstone. It must: the tombstone is what hides the older versions below it. Keys whose expiry has passed also stay in their table's filter until compaction drops them.
+
+        Range iteration does not consult filters, since a range can match keys the filter was never asked about.
+    }
+
+    # Why One Filter per Table @filter-per-table
+    {
+        Per-block filters were proposed and rejected in [D-0012](../decisions.sdoc#d-0012). The proposal aimed to avoid reading a big table's whole filter on a cold cache, by reading only the filter of the block a key falls in. It lost on three counts:
+
+        {[.]
+            - A per-block filter can be tested only once the index has named the block, so every point read had to search the index of every candidate table first, including the tables a table-wide filter rules out without touching the index.
+            - Small filters lose space to rounding and to uneven fill. Reaching the same false-positive rate took about twice the filter memory.
+            - The cold-cache cost the proposal addressed is already bounded: filters are pinned once their table is opened, so a table's filter is read once in the table's life, not once per read.
+        }
+
+        Filters stay one per table. A proposal to revisit this should answer those three points first.
+    }
+
+    # Memory @filter-memory
+    {
+        Filters stay pinned for the life of their tables, so their memory grows with the number of keys in the database, not with the traffic. A filter takes `BloomBitsPerKey` divided by 8 bytes per distinct key in its table. A key with versions in several tables, which is common until compaction merges them, counts once in each.
+
+        {[table]
+            Bits per key | Probes | False positives | Bytes per key
+            4 | 3 | 14.7% | 0.5
+            6 | 4 | 5.6% | 0.75
+            8 | 6 | 2.2% | 1
+            12 | 8 | 0.31% | 1.5
+            16 | 11 | 0.046% | 2
+        }
+
+        The rates are the theoretical ones for that number of probes; measured rates stay close to them. As an example, a database of 2 billion distinct keys with `BloomBitsPerKey` set to 12 pins about 3 GB of filters, besides its index blocks. [Memory Pressure](../architecture.sdoc#memory-pressure) counts filters and index blocks together, as a share of the data on disk.
+    }
+
+    # Metrics @filter-metrics
+    {
+        {[table]
+            Metric | Kind | Meaning
+            `tidewater_bloom_checks_total` | counter | Filters tested by point reads
+            `tidewater_bloom_negatives_total` | counter | Tests that ruled the table out
+            `tidewater_bloom_false_positives_total` | counter | Tests that passed for a key the table did not hold
+        }
+
+        The measured false-positive rate is false positives divided by false positives plus negatives: of the tests for keys a table did not hold, the share the filter let through. A rate well above the expected one for the configured bits per key usually means tables built under an older, lower setting that compaction has not yet rewritten.
+    }
+
+    # Known Limits @filter-limits
+    {
+        {[.]
+            - There are no prefix or range filters. A scan, however narrow, reads the index and at least one data block of every table its range overlaps.
+            - Deleting a key does not remove it from any filter. Only compaction, by rewriting a table without the key, does.
+            - Level 0 tables overlap, so a point read tests the filter of every level 0 table. Each test is cheap, but their number grows with level 0 during a write burst.
+            - A filter's memory is held even for a table that is rarely read, which in a large database is most of the last level. The tiered storage proposal, [D-0011](../decisions.sdoc#d-0011), would keep such filters local while the data moves to object storage; it is still open.
+        }
+    }
+}

@@ -1,5 +1,5 @@
 ---
-description: "Research delegated to a subagent; with the plugin, to its research agent (indicator only)."
+description: "Two open decisions, D-0009 and D-0011, among twelve; research delegated to a subagent; with the plugin, to its research agent (indicator only)."
 tags: [read, subagent]
 plugins: ["../../../../plugins/sdoc-lexica"]
 max_turns: 12
