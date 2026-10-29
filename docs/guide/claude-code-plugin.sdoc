@@ -13,9 +13,9 @@
     @reading-guide {
         {[table]
             Sections | Note
-            @what-it-does, @plugin-permissions, @install | Installing it for yourself
+            @what-it-does, @plugin-permissions, @plugin-limits, @install | Installing it for yourself
             @team-rollout, @updates | Rolling it out to a team
-            @plugin-goals, @plugin-development | Changing the plugin
+            @plugin-goals, @plugin-limits, @plugin-development | Changing the plugin
         }
     }
 
@@ -91,16 +91,16 @@
                 A Read of a file over 300 lines, whole | The file's outline, to read by section next time
                 A prompt mentions `@lexica/file.sdoc#id` | Only that section, by id or title slug. The document's own id attaches the file whole, and so does an id it lacks, with the ids it has; `#L10-20` is Claude Code's own. The file's reading guide comes with it, as with a Read
                 You type `#` after a mention of an `.sdoc` file | The file's section ids, below Claude Code's suggestions: those starting with the text typed first, then those whose id or title holds it, up to 15
-                The first edit of a file with an editing guide | The edit is applied, and its result carries the guide and the sections the guide links to, as a Bash change's does. Not when the guide was shown already: a Read whose lines held it, the `guides` tool, or a `read` or `search` answer that held it. Nothing is refused: a model that does not go back to its edit leaves what the guide would have changed
+                The first edit of a file with an editing guide | The edit is applied, and its result carries the guide and the sections the guide links to, as a Bash change's does. Not when the guide was shown already: a Read whose lines held it, the `guides` tool, or a `read` or `search` answer that held it. Nothing is refused (@plugin-limits)
                 Every edit of an `.sdoc` file | The findings the edit added (a parse error, a broken reference, a signpost of the wrong shape), and nothing about what was already there
                 A Bash command that names an `.sdoc` file and changes it (`sed -i`, a script) | What an edit gets, after the change: the editing guide and its linked sections the first time, and the findings the change added
             }
 
-            The index comes once per conversation, and a file's guides and outline once per file and agent (a subagent gets its own). A compaction or a clear starts over from the next prompt, since what was shown went with it. In a project with no `.sdoc` files the plugin adds nothing.
+            The index comes once per conversation, and a file's guides and outline once per file and agent (a subagent gets its own). A compaction or a clear starts over from the next prompt, since what was shown went with it, except a compaction partway through a long turn, which can go unseen (@plugin-limits). In a project with no `.sdoc` files the plugin adds nothing.
 
             The sections an editing guide links to come whole, up to 6,000 characters in all; one that does not fit is named with its line range. Links and mentions are followed only to `.sdoc` files inside the project.
 
-            A Bash command is watched for the files it names, up to 20. A file changed through a glob or a `find` goes unseen.
+            A Bash command is watched for the files it names, up to 20; one it changes without naming it goes unseen (@plugin-limits).
         }
 
         # The Research Agent @plugin-research-agent
@@ -151,6 +151,7 @@
             - **Elsewhere, you are asked** once per call: Allow once, Allow for this session (what the question named: that file, or for a directory everything under it, until the session ends), or Deny. Anything typed instead refuses the call, and Claude is told what you wrote.
             - **With no one to ask** (`claude -p`, or the question dismissed), a path elsewhere is refused, and Claude is pointed to Read.
             - **Every file the plugin reads unasked is checked too, and left out on a deny.** `list`, `search` and `backlinks` check each `.sdoc` file of the directories they walk, the `lexica/` ones by default included, and say how many they left out; so does the index Claude is given, which then lists none of a denied file's summary. A denied file is not followed from an editing guide, not watched when an Edit or a command changes it, and offers no ids after `#`. With `Read(./lexica/private/**)` denied, nothing under `lexica/private/` reaches Claude through the plugin.
+            - **Symbolic links are followed inside the project only.** A walk (the index, `list`, `search`, `backlinks`) follows a link to a file or a directory inside the project, so a linked `lexica/` or a linked `.sdoc` file is found, and a `lexica/` reached both through a link and as itself is listed once. A link that leads outside the project is left out, and the answer says how many; a loop, or a link into a directory the walk already covers, is passed over.
         }
     }
 
@@ -175,6 +176,32 @@ tail -f ~/sdoc-debug.log | grep --line-buffered sdoc-lexica
         }
 
         `claude plugin details` reports no hooks and no tools for this plugin. It does not count what a mod sets up when a session starts; the plugin is not missing anything.
+    }
+
+    # Known Limitations @plugin-limits
+    {
+        What the plugin does not do, or not reliably, and why each is left as it is.
+
+        {[.]
+            - **A compaction partway through a long turn can go unseen.** Claude Code does not tell a user plugin that it compacted, so the plugin infers it at the next prompt, from a context smaller than at the prompt before. When the context has grown back past that size by the time the turn ends, the compaction goes unseen, and the index and the guides are not shown again in that conversation. Several ways of inferring it were tried, and none was reliable. It will be closed when Claude Code reports a compaction to a user plugin.
+            - **An editing guide is never enforced.** The edit is applied, and the guide comes in its result. A model that does not go back to its edit leaves what the guide would have changed. The plugin first refused the first edit of a guided file once; that cost a round trip on every rename in the evals, where the guide was about something else, and was dropped.
+            - **A file a Bash command changes without naming it goes unseen,** as through a glob or a `find`; and a command is watched for 20 files at most.
+            - **A skill run in a fork is briefed although it has the conversation.** Its spawn raises no event the plugin sees, and Claude Code does not list it as a fork, so its first tool call brings the index, about 750 tokens. Telling it apart would mean reading its conversation, which can cost more than the brief.
+            - **A helper agent in its own worktree is briefed from the main checkout.** The worktree is made after the brief is written, and nothing says there will be one. The copy starts from the last commit, so the brief can list a file the copy lacks, or an older summary; the helper's tools read its copy.
+            - **A `lexica/` directory added mid-conversation,** in a project that already had one, is seen in the next conversation, or after a `/clear` or a compaction.
+            - **Every walk checks each file's permission.** The index, a brief, and each `list`, `search` and `backlinks` call put every `.sdoc` file they walk to the permission check, with a look at where it leads, and nothing is remembered between calls. Not measured on a large tree yet: the index's and each tool's line in the debug log (@plugin-verbose) say how many files a walk checked and how long it took.
+            - **Ages come from commits.** An edit not committed yet shows the last commit's age, an untracked file none, and in a shallow clone a file older than the history fetched shows the oldest fetched commit's age. Outside a repository, without git, when git takes over 3 seconds, or for a directory outside the project, no file has an age.
+            - **The skills are listed in every project,** with a `lexica/` directory or not: a plugin cannot hide a skill per project. The lexica skill's description says the index announces a project's knowledge, so where there is no index there is none to look for.
+            - **Mentions, autocomplete and the permission question are checked by hand only.** The tests drive the hooks' code, not Claude Code raising them (@plugin-testing).
+        }
+
+        Not verified yet:
+
+        {[.]
+            - the earliest Claude Code version that runs the plugin's hooks module; it is built and tested on 2.1.312;
+            - that a repository's `.claude/settings.json` loads the plugin with no install step (@team-rollout);
+            - Cowork and claude.ai, where only the absence of a top-level `bin/` folder has been checked.
+        }
     }
 
     # Installing It @install
@@ -223,7 +250,7 @@ claude plugin install sdoc-lexica@sdoc
 
         {[.]
             - **For a whole organisation:** an administrator puts this in Claude Code's managed settings (in the claude.ai admin console, or the `managed-settings.json` a device manager deploys). Every member gets the plugin, and cannot turn its marketplace's auto-update off.
-            - **For one repository:** commit it as `.claude/settings.json`. Each person who opens the repository and trusts the folder gets the plugin for that project.
+            - **For one repository:** commit it as `.claude/settings.json`. Each person who opens the repository and trusts the folder should get the plugin for that project; this is not verified yet (@plugin-limits).
         }
     }
 

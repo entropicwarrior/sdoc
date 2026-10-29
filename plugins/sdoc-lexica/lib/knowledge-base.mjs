@@ -19,7 +19,7 @@ import {
   extractMeta,
   inferType,
   extractAbout,
-  extractSection,
+  collectPlainText,
   listSections,
   getDocumentScope,
   slugify,
@@ -272,8 +272,9 @@ function scopeNamed(nodes, id) {
 // One section as written: { title, id, lineStart, lineEnd, whole, source },
 // source being the raw lines from the heading to the closing brace. The
 // document's own id names the whole file (whole: true). With { text: true },
-// content is the section flattened to plain text instead. Null when no
-// section has that id.
+// content is the section flattened to plain text instead, as extractSection
+// flattens it, from the node itself: two sections may share a title slug. Null
+// when no section has that id.
 function readSectionText(text, id, { text: asText = false } = {}) {
   const { nodes } = parseSdoc(text);
   const node = scopeNamed(nodes, id);
@@ -281,18 +282,15 @@ function readSectionText(text, id, { text: asText = false } = {}) {
   const doc = node === getDocumentScope(nodes) ? node : null;
   const result = { title: node.title, id: node.id || null, lineStart: node.lineStart, lineEnd: node.lineEnd, whole: Boolean(doc) };
   if (asText && doc) {
-    // extractSection finds no document scope: its sections one by one.
-    const listed = listSections(nodes);
+    // The document's signposts and @meta left out: its sections one by one.
     result.content = sectionNodes(nodes)
-      .map(({ node: n, depth }, i) => ({ n, depth, derivedId: listed[i] ? listed[i].derivedId : null }))
       .filter(({ depth }) => depth === 0)
-      .map(({ n, derivedId }) => {
-        const extracted = extractSection(nodes, n.id || derivedId);
-        return extracted && extracted.content ? `${n.title}\n${extracted.content}` : n.title;
+      .map(({ node: n }) => {
+        const content = collectPlainText(n.children || []);
+        return content ? `${n.title}\n${content}` : n.title;
       }).join("\n\n");
   } else if (asText) {
-    const extracted = extractSection(nodes, node.id || String(id).replace(/^[@#]/, ""));
-    result.content = extracted ? extracted.content : "";
+    result.content = collectPlainText(node.children || []);
   } else {
     result.source = text.split("\n").slice(node.lineStart - 1, node.lineEnd).join("\n");
   }
@@ -329,28 +327,38 @@ function signpostRange(text, id) {
 // is { type, severity, message, lineStart }. resolveFilePath(href) says
 // whether a linked file exists; without it, file links are not checked.
 function checkText(text, { resolveFilePath } = {}) {
+  const { parsed, body } = checked(text);
+  return findingsIn(parsed, body, validateRefs(body, resolveFilePath ? { resolveFilePath } : {}));
+}
+
+// A document parsed for checking, and its body without @meta.
+function checked(text) {
   const parsed = parseSdoc(text);
-  const body = extractMeta(parsed.nodes).nodes;
+  return { parsed, body: extractMeta(parsed.nodes).nodes };
+}
+
+function findingsIn(parsed, body, refs) {
   return [
     ...parsed.errors.map((e) => ({ type: "parse-error", severity: "error", message: e.message, lineStart: e.line })),
     ...validateSignposts(parsed.nodes),
-    ...validateRefs(body, resolveFilePath ? { resolveFilePath } : {}),
+    ...refs,
     ...validateCitations(body)
   ];
 }
 
 // checkText with an asynchronous resolveFilePath, for a runtime whose file
-// system is asynchronous. validateRefs asks synchronously, so this runs it
-// twice: once to learn which hrefs it asks about, then with the answers.
+// system is asynchronous. validateRefs asks synchronously, so it runs twice
+// over the one parse: once to learn which hrefs it asks about, all looked up
+// at once, then with the answers.
 async function checkTextAsync(text, { resolveFilePath } = {}) {
   if (!resolveFilePath) return checkText(text);
+  const { parsed, body } = checked(text);
   const asked = new Set();
-  checkText(text, { resolveFilePath: (href) => { asked.add(href); return true; } });
-  const found = new Set();
-  for (const href of asked) {
-    if (await resolveFilePath(href)) found.add(href);
-  }
-  return checkText(text, { resolveFilePath: (href) => found.has(href) });
+  validateRefs(body, { resolveFilePath: (href) => { asked.add(href); return true; } });
+  const hrefs = [...asked];
+  const answers = await Promise.all(hrefs.map((href) => resolveFilePath(href)));
+  const found = new Set(hrefs.filter((_, i) => answers[i]));
+  return findingsIn(parsed, body, validateRefs(body, { resolveFilePath: (href) => found.has(href) }));
 }
 
 // --- Many documents ---
@@ -975,4 +983,4 @@ export {
 };
 
 // The sources this lib was built from, hashed (tools/build-plugin.js).
-export const BUILD = "05a200021b8c";
+export const BUILD = "e7a0ef2345d1";

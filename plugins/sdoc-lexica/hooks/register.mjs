@@ -35,12 +35,18 @@
 //                    offers a file's section ids after @file.sdoc#
 //   session.end      forgets what was shown and the paths allowed
 //
+// What the conversation has been shown, the subagents briefed and the paths
+// allowed are kept in $.state, the session's: a reload of this module (an
+// option changed, the plugin updated) runs register and session.start again
+// and starts the module's variables over, and $.state outlives it.
+//
 // A compaction or a /clear is seen at the next prompt, by the conversation's
 // opening message changing: what was shown is then shown again. The
 // transcript is fetched for it only when the session's usage, which costs
 // nothing, says one may have happened. Claude Code's own signals for a
 // compaction (session.compact, the classic SessionStart with source
-// "compact") are passed over for a user plugin.
+// "compact") are passed over for a user plugin, which leaves one known
+// limitation (openingMayHaveChanged in handlers.mjs).
 //
 // Every action is noted in one line: in the debug log always (claude
 // --debug-file), and in the session too with the verbose option
@@ -49,8 +55,9 @@
 import {
   createState,
   resetState,
-  openingOf,
-  lostOpening,
+  savedState,
+  restoreState,
+  lostOpeningIn,
   openingKnown,
   openingMayHaveChanged,
   knowledgeDirs,
@@ -74,6 +81,9 @@ import {
   ownToolRequest,
   consent
 } from "./handlers.mjs";
+
+// Where $.state keeps the conversation's state; declared in types/index.d.ts.
+const CONVERSATION = { plugin: "sdoc-lexica", key: "conversation" };
 
 const SDOC_FILE = /\.sdoc$/i;
 const NAMES_SDOC = /\.sdoc/i;
@@ -149,6 +159,7 @@ function ioOf($) {
     list: (dir) => $.fs.list(dir),
     exists: (path) => $.fs.exists(path),
     realPath: (path) => realPathOf($, path),
+    stat: (path) => $.fs.stat(path, { resolve: true }),
     denied: async (path) => {
       const verdict = await $.tool.check({ tool: "Read", input: { file_path: path } });
       return Boolean(verdict && verdict.decision === "deny");
@@ -175,6 +186,40 @@ async function rootsOf($, cwd) {
   return roots.filter((root, i) => root && roots.indexOf(root) === i);
 }
 
+// The conversation's state as $.state kept it, read back into held once per
+// load of the module, before a hook first uses it. held is register's: { state,
+// subagents, allowed }, and what these two note. A failure leaves held as it is.
+function restored($, held) {
+  if (!held.restoring) held.restoring = readBack($, held);
+  return held.restoring;
+}
+
+async function readBack($, held) {
+  try {
+    const { value } = await $.state.get(CONVERSATION);
+    if (!value || typeof value !== "object") return;
+    restoreState(held.state, value);
+    for (const id of Array.isArray(value.briefed) ? value.briefed : []) held.subagents.briefed.add(id);
+    for (const path of Array.isArray(value.allowed) ? value.allowed : []) held.allowed.add(path);
+    held.written = JSON.stringify(value);
+    note($, "what the conversation was shown, read back after a reload");
+  } catch { /* nothing kept */ }
+}
+
+// Writes held's state to $.state after a hook that may have changed it, when
+// it did.
+async function keep($, held) {
+  const value = { ...savedState(held.state), briefed: [...held.subagents.briefed], allowed: [...held.allowed] };
+  const text = JSON.stringify(value);
+  if (text === held.written) return;
+  held.written = text;
+  try {
+    await $.state.set(CONVERSATION, value);
+  } catch {
+    held.written = "";
+  }
+}
+
 function withContext(result, text) {
   return text ? { ...result, context: [...(result.context || []), text] } : result;
 }
@@ -191,11 +236,22 @@ export const register = (on, options = {}) => {
   const state = createState();
   // Full tool name (mcp__<plugin>__<name>) → short name, as registered.
   const tools = new Map();
+  // hasKnowledge is set at session.start, below; briefed holds the agents
+  // dealt with, by the spawn hook (briefed or not) or by the fallback.
+  const subagents = { hasKnowledge: false, briefed: new Set() };
+  // The paths the person let the tools read for this session, and the
+  // questions still open, so calls racing for the same paths ask once.
+  const allowed = new Set();
+  const asked = new Map();
 
+  // What restored and keep, above, work on.
+  const held = { state, subagents, allowed, restoring: null, written: "" };
+
+  // At the session's start, and at a reload of the module, never at a /clear
+  // (prompt.submit sees that): a reload finds what $.state kept.
   on("session.start", async ($, e, next) => {
     const started = await next(e);
-    // A new conversation (a /clear starts one) has been shown nothing.
-    resetState(state);
+    await restored($, held);
     // The tools sit in the model's list where the project has lexica/, and
     // behind ToolSearch elsewhere, where they cost nothing until wanted.
     const hasKnowledge = (await knowledgeDirs(ioOf($), await projectOf($), state)).length > 0;
@@ -221,18 +277,18 @@ export const register = (on, options = {}) => {
   });
 
   // --- Subagents ---
-  //
-  // hasKnowledge is set at session.start, above; briefed holds the agents
-  // dealt with, by the spawn hook (briefed or not) or by the fallback.
-  const subagents = { hasKnowledge: false, briefed: new Set() };
 
   // A subagent starts without the conversation, so without the index its
   // first prompt carried: its prompt gets a brief. The started agent's id is
   // kept, so the fallback below leaves it alone. A failure never blocks a
   // spawn: the catch lets it start as it was asked.
   on("agent.spawn", async ($, e, next) => {
-    const seen = (started) => {
-      if (started && started.agentId) subagents.briefed.add(started.agentId);
+    await restored($, held);
+    const seen = async (started) => {
+      if (started && started.agentId) {
+        subagents.briefed.add(started.agentId);
+        await keep($, held);
+      }
       return started;
     };
     if (!subagents.hasKnowledge) return seen(await next(e));
@@ -250,12 +306,19 @@ export const register = (on, options = {}) => {
   // kind of spawn raises none) gets the brief with its first answered tool
   // call instead. Only for an agent $.agent.list() names, and not a fork; a
   // refused call leaves it to the next one.
+  //
+  // Known limitation (docs/guide/claude-code-plugin.sdoc @plugin-limits): a
+  // skill run in a fork raises no agent.spawn and is not listed as a fork,
+  // so it is briefed (about 750 tokens) though it has the conversation.
+  // Telling it apart would mean reading its conversation, which can cost more.
   on("tool.call", async ($, e, next) => {
     if (!subagents.hasKnowledge || !e.agentId ||
         subagents.briefed.has(e.agentId) || e.tool === "AskUserQuestion") return next(e);
+    await restored($, held);
     const result = await next(e);
     if (!ran(result) || subagents.briefed.has(e.agentId)) return result;
     subagents.briefed.add(e.agentId);
+    await keep($, held);
     const agent = (await $.agent.list()).find((a) => a.id === e.agentId);
     if (!agent || agent.type === "fork") {
       note($, `agent ${e.agentId}: not briefed (${agent ? "a fork, it has the conversation" : "not a listed subagent"})`);
@@ -272,12 +335,15 @@ export const register = (on, options = {}) => {
   // Each $ call through a promise, so one that throws rather than rejects is
   // caught too and the index still goes.
   on("prompt.submit", async ($, e, next) => {
+    await restored($, held);
     const usage = await Promise.resolve().then(() => $.session.usage()).catch(() => undefined);
     const [why, figures] = openingMayHaveChanged(state, usage);
     if (why) {
       const messages = await Promise.resolve().then(() => $.session.messages({ as: "api" })).catch(() => undefined);
-      const lost = openingKnown(messages) && lostOpening(state, openingOf(messages));
-      logger($)(`prompt: transcript fetched, ${why}; ${figures}: ${lost ? "the opening changed" : "the opening is the same"}`, { quiet: !lost });
+      const lost = lostOpeningIn(state, messages);
+      const said = lost ? "the opening changed"
+        : Array.isArray(messages) && !openingKnown(messages) ? "the window cut the opening" : "the opening is the same";
+      logger($)(`prompt: transcript fetched, ${why}; ${figures}: ${said}`, { quiet: !lost });
       if (lost) {
         resetState(state);
         note($, "conversation compacted or cleared: the index and the guides will be shown again");
@@ -286,28 +352,38 @@ export const register = (on, options = {}) => {
       logger($)(`prompt: transcript not fetched; ${figures}`, { quiet: true });
     }
     const index = await indexForPrompt(ioOf($), state, await projectOf($), { maxChars: indexChars });
+    // Given up on while it was built (its time ran out): the prompt goes
+    // without it, so the next one carries it.
+    if (index && next.signal && next.signal.aborted) state.indexSent = false;
+    await keep($, held);
     return next(index ? { ...e, context: [...(e.context || []), index] } : e);
   }).catch(($, e, next) => next(e));
 
   on("tool.call", { tool: "Read", file_path: SDOC_FILE }, async ($, e, next) => {
     const result = await next(e);
     if (!ran(result)) return result;
+    await restored($, held);
     const cwd = await projectOf($);
-    return withContext(result, await afterRead(ioOf($), state, {
+    const added = await afterRead(ioOf($), state, {
       filePath: e.file_path, offset: e.offset, limit: e.limit, agentId: e.agentId, cwd
-    }));
+    });
+    await keep($, held);
+    return withContext(result, added);
   }).catch(($, e, next) => next(e));
 
   // A failure here never blocks an edit: the catch lets it run.
   on("tool.call", { tool: FILE_EDIT, file_path: SDOC_FILE }, async ($, e, next) => {
+    await restored($, held);
     const files = ioOf($);
     const cwd = await projectOf($);
     const before = await beforeEdit(files, state, { filePath: e.file_path, agentId: e.agentId, cwd });
     const result = await next(e);
     if (!ran(result)) return result;
-    return withContext(result, await afterEdit(files, {
+    const added = await afterEdit(files, {
       filePath: e.file_path, snapshot: before.snapshot, cwd, guide: before.guide, state, agentId: e.agentId
-    }));
+    });
+    await keep($, held);
+    return withContext(result, added);
   }).catch(($, e, next) => next(e));
 
   // A command that fails may still have changed a file (sed ran, the next
@@ -318,13 +394,11 @@ export const register = (on, options = {}) => {
     const snapshot = await beforeBash(files, { command: e.command, cwd, shellCwd: await $.session.cwd() });
     const result = await next(e);
     if (result.deny !== undefined || !snapshot.size) return result;
-    return withContext(result, await afterBash(files, state, { snapshot, agentId: e.agentId, cwd }));
+    await restored($, held);
+    const added = await afterBash(files, state, { snapshot, agentId: e.agentId, cwd });
+    await keep($, held);
+    return withContext(result, added);
   }).catch(($, e, next) => next(e));
-
-  // The paths the person let the tools read for this session, and the
-  // questions still open, so calls racing for the same paths ask once.
-  const allowed = new Set();
-  const asked = new Map();
 
   // Answering a call here skips the engine's permission check, which runs
   // beneath next(e): the guard is this hook's own. Each path the call names
@@ -337,6 +411,7 @@ export const register = (on, options = {}) => {
   on("tool.call", { tool: OWN_TOOL }, async ($, e, next) => {
     const name = tools.get(e.tool);
     if (!name) return next(e);
+    await restored($, held);
     const cwd = await projectOf($);
     const io = ioOf($);
     io.log(`tool ${name}${e.agentId ? ` (agent ${e.agentId})` : ""}: project ${cwd}, shell ${await $.session.cwd()}`, { quiet: true });
@@ -360,6 +435,7 @@ export const register = (on, options = {}) => {
     });
     if (verdict.deny !== undefined) return { deny: verdict.deny };
     const { text, error } = await runTool(io, name, e, { cwd, state, agentId: e.agentId });
+    await keep($, held);
     return error ? { deny: error } : { result: text };
   }).catch(($, e, next) => next.called ? next(e) : { deny: `${e.tool} failed.` });
 
@@ -370,6 +446,10 @@ export const register = (on, options = {}) => {
   // mentioned file inside the project brings its reading guide, and a large
   // one read whole its outline, as a Read does: the engine raises no
   // tool.call for a mention.
+  //
+  // Known limitation (docs/guide/claude-code-plugin.sdoc @plugin-limits): this
+  // hook, the autocomplete one and consent's question are checked by hand
+  // only; the tests drive handlers.mjs, not the engine raising them.
   const MENTIONED = /^(.*\.sdoc)#([^/]*)$/i;
   const LINES = /^L(\d+)(?:-(\d+))?$/i;
   on("prompt.mention", { path: /\.sdoc(#[^/]*)?$/i }, async ($, e, next) => {
@@ -396,7 +476,9 @@ export const register = (on, options = {}) => {
     }
     const result = await next(request);
     if (result.deny !== undefined) return result;
+    await restored($, held);
     const guide = await afterRead(io, state, { filePath: path, offset: request.offset, limit: request.limit, agentId: e.agentId, cwd });
+    await keep($, held);
     return withContext(withContext(result, missing), guide);
   }).catch(($, e, next) => next(e));
 
@@ -410,11 +492,13 @@ export const register = (on, options = {}) => {
   }).catch(($, e, next) => next(e));
 
   on("session.end", async ($, e, next) => {
+    await restored($, held);
     resetState(state);
     note($, `conversation ended (${e.reason}): the index and the guides will be shown again`);
     if (allowed.size) note($, `the paths allowed for the session are forgotten: ${[...allowed].join(", ")}`);
     allowed.clear();
     asked.clear();
+    await keep($, held);
     return next(e);
   });
 };

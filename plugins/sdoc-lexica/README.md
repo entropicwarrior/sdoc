@@ -11,7 +11,7 @@ Teaches Claude Code to read, write and navigate [SDOC](https://github.com/entrop
   - A file's reading guide on its first Read.
   - Its editing guide, with the sections the guide links to, with the result of its first edit (an Edit or a Bash command), unless Claude has read the guide already.
   - The findings each edit adds, by Edit, Write or a Bash command that names the file.
-  - All of it again after a compaction.
+  - All of it again after a compaction, except one Claude Code makes partway through a long turn, which can go unseen: Claude Code does not report a compaction to a user plugin (an accepted gap, [described in the guide](https://github.com/entropicwarrior/sdoc/blob/main/docs/guide/claude-code-plugin.sdoc)).
 - **Research agent:** `sdoc-lexica:research`, in a project with `lexica/`. It answers a question from the knowledge in at most 200 words, citing the file, section and lines of each claim, and changes nothing.
 
 It runs inside Claude Code as a mod, so no Node.js or other runtime is needed.

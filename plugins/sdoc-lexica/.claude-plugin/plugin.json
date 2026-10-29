@@ -15,6 +15,7 @@
     "documentation",
     "knowledge-base"
   ],
+  "types": "./types/index.d.ts",
   "userConfig": {
     "verbose": {
       "type": "boolean",

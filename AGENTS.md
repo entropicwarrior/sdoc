@@ -255,7 +255,13 @@ should be evaluated against.
   cwd() is only the directory a Bash command's relative paths start from, and the
   way to a helper agent's own worktree: inside one, root() is still the main
   checkout, so `projectFor` takes the nearest worktree above cwd() (a `.git` file
-  pointing into `worktrees/`) as the project.
+  pointing into the `worktrees/` of root()'s repository) as the project.
+- What a conversation was shown, the subagents briefed and the paths allowed go
+  in `$.state` (declared in `plugins/sdoc-lexica/types/index.d.ts`), never only in
+  module variables: a reload of the module (an option changed, the plugin
+  updated) runs `register` and `session.start` again and starts those over.
+  `session.start` never fires for a `/clear`. A `$` may only be passed to a
+  function declared at the top of register.mjs.
 - Call each `$` noun where it is written: `$.store.get(key)`, never `$.store` passed
   as a value, which `claude plugin validate` refuses. `ioOf` in register.mjs spells
   out every call for that reason.
