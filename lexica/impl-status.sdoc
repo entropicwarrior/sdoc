@@ -171,7 +171,7 @@
 
     # Current State @current-state
     {
-        SDOC v0.6.1 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.6.2 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
@@ -200,6 +200,7 @@
             - v0.6.1 — the Claude Slides export emits a grid's cells in the order the grid placed them. The subset has \`grid-column\`/\`grid-row\` as \`span N\` only (format.md: "cells fill in source order"), so a cell placed with a line number cannot be told where to go; emitted in source order it took whatever cell was next. Found on a real deck (label, bar, value placed with \`grid-column\`, the value written first, exported as label, value, bar), and our own \`scatter\` had its x axis under the y gutter in every export, recorded as correct in the golden. The harvest measures each cell's row, column and span against the grid's resolved tracks (\`gridCell\`), seeing through \`display: contents\`; the emitter sorts by it, adds \`span N\`, fills an empty place with an empty cell, keeps a cell it would drop as an empty one, and warns (\`grid-overlap\`) when two cells share a track. An empty cell holding a place has not been checked on a live artifact
             - v0.6.1 — \`build-slides.js --no-notes\` (\`includeNotes: false\` on \`renderSlides\`) leaves every slide's \`\@notes\` out of the HTML, so out of every export too: the PowerPoint's speaker notes and the Claude Slides \`<aside>\` and outline descriptions are all read back from the page. Hidden notes were always in the file. And a PDF export that wrote nothing no longer reports success: Chrome neither creates the output folder nor fails when it cannot write, so \`chromePdf\` now makes the folder and checks that this run wrote the file, which covers \`build-doc\` and the VS Code export as well
             - v0.6.1 — the slide HTML build carries no CSS comments: the theme's, the deck's \`style-append:\` and each \`--css\` sheet are stripped as one (\`stripCssComments\`), keeping \`/*!\` licence notices. Found on a deck built with \`--no-optional --no-notes\` to be emailed: 264 comments, 149,000 characters of design reasoning naming people and decisions, all legible in the page's source. Always, not behind a flag, since a flag is what was forgotten. The stripper respects strings and unquoted \`url()\`, and puts a space only where a comment separated two words (\`1px/**/2px\`), since one elsewhere changes a selector (\`a/**/.b\` is \`a.b\`). Every golden held: no example deck renders differently. The Claude Slides export never carried a stylesheet's comments
+            - v0.6.2 — the repo's own documents adopt the signposts, and a topic another resource covers moves from \`\@not-about\` to \`\@related-resources\`. The packaged knowledge files point each link to a repo file at the packaged commit on GitHub instead, since the package does not carry the file: \`tools/pack-links.js\` wraps the packaging commands and restores the relative links after
         }
 
         # GitHub Adoption
@@ -215,7 +216,6 @@
     {
         - [ ] Awaiting feedback on github/markup issue (#2030) and github-linguist issue (#7838)
         - [ ] Growing .sdoc file count on GitHub toward linguist recognition threshold (~200 unique repos)
-        - [x] Unreleased, on \`feat/adopt-signposts\` — the repo's own documents adopt the signposts, and a topic another resource covers moves from \`\@not-about\` to \`\@related-resources\`. The packaged knowledge files point each link to a repo file at the packaged commit on GitHub instead, since the package does not carry the file: \`tools/pack-links.js\` wraps the packaging commands and restores the relative links after
 
         # Slide Layouts and Export @slides-wip
         {
