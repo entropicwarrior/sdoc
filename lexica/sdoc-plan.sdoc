@@ -1,18 +1,29 @@
 # SDOC Plan @sdoc-plan
 {
-    # Meta @meta
-    {
+    @meta {
         type: doc
 
         sdoc-version: 0.2
     }
 
-    # About @about
-    {
+    @about {
         Roadmap for the SDOC format and tooling. Covers parser improvements,
         spec additions, export pipeline, and extension enhancements. Read
-        before proposing new features or picking up work. See impl-status.sdoc
-        for what is already completed.
+        before proposing new features or picking up work.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Implementation Status](impl-status.sdoc) | Covers what is already completed, which this roadmap leaves out
+            [Suggestions](suggestions.sdoc) | Covers the full details and rationale of each spec addition, which this roadmap leaves out
+            [Requirements](requirements.sdoc) | The constraints the parser items cite
+        }
+    }
+
+    @editing-guide {
+        - Each work item opens with `Priority:` (High, Medium or Low). An item that has shipped says so with `{+Completed in vX.Y.+}` in place of a priority.
+        - A spec addition names its suggestion in its heading, such as `(\@s5)`, and keeps the rationale there rather than here.
     }
 
     # Parser Improvements @parser

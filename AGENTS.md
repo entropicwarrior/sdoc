@@ -71,6 +71,8 @@ src/                Source code
   theme.js            Theme loading, theme.json, CSS asset inlining
   zip.js              Minimal ZIP writer (zlib only), for the PPTX package
   extension.js        VS Code extension with preview and document server
+  knowledge-template.js  The skeleton "New Knowledge File" writes; kept out of
+                      extension.js so test-all.js can parse it
   href-path.js        Resolves a link href to a file on disk (raw, then percent-
                       decoded); shared by extension.js and build-doc --check
   site-template/      Shared viewer templates (index.html, viewer.css)
@@ -154,6 +156,12 @@ tools/              CLI tools
                       bar, a mark that loses its colour — reads as 0px.
                       A regression detector, not a verdict
   serve_docs.py       CLI to start a local SDOC document server
+  pack-links.js       Runs a packaging command with the knowledge files' relative
+                      links to committed files pointed at the packaged commit on
+                      GitHub (12-character hash), and restores them after unless
+                      one was edited meanwhile. `npm run package` and both
+                      release workflows go through it; a bare `vsce package`
+                      does not
 ```
 
 ## Before Making Changes
@@ -200,7 +208,7 @@ should be evaluated against.
   `npm run test:browser`   — or `npm run test:all` for both
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
-  (775 fast + 360 browser = 1135 as of v0.6.1)
+  (790 fast + 360 browser = 1150 as of v0.6.2)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
