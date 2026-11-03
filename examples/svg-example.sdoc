@@ -10,6 +10,18 @@
     Demonstrates inline SVG diagram support in SDOC. SVG code blocks render directly as vector graphics, giving full control over shapes, colors, and layout. Script and foreignObject tags are stripped for security.
 }
 
+@related-resources {
+    {[table]
+        Resource | Relation
+        [SDOC Authoring Guide](../docs/reference/sdoc-authoring.sdoc#svg) | Explains the `svg` code block this file demonstrates
+        [Example Document](example.sdoc) | Every construct of the format, in one file
+    }
+}
+
+@editing-guide {
+    - This file is part of the slide conformance corpus, for its drawings. After changing it, regenerate the goldens with `node test/test-artifact-conformance.js --update` and `node test/test-pptx-conformance.js --update`, and read the diff before committing.
+}
+
 # Simple Shapes @shapes {
     Basic SVG primitives — rectangles, circles, and text:
 

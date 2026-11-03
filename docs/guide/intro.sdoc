@@ -4,9 +4,18 @@
         sdoc-version: 0.2
     }
 
-    @about
-    {
-        What SDOC is, why it exists, and the core concepts. Start here if you are new to SDOC. For the full case against Markdown, see `guide/why-sdoc.sdoc`. For hands-on practice, see `tutorials/first-steps.sdoc`.
+    @about {
+        What SDOC is, why it exists, and the core concepts. Start here if you are new to SDOC.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Why SDOC Over Markdown](why-sdoc.sdoc) | The full case against Markdown, which this introduction only outlines
+            [First Steps with SDOC](../tutorials/first-steps.sdoc) | Next step: hands-on practice
+            [SDOC Authoring Guide](../reference/sdoc-authoring.sdoc) | The full authoring guide, covering the syntax this introduction leaves out
+            [Setup](setup.sdoc) | Installing the VS Code extension
+        }
     }
 
     # What is SDOC?
@@ -101,8 +110,6 @@ This is a paragraph.
             ```
 
             Scopes nest to any depth. Inline formatting (`*bold*`, `` `code` ``, `[links](url)`, `@references`, `$math$`) works inside any scope.
-
-            See `reference/sdoc-authoring.sdoc` for the full authoring guide, or follow `tutorials/first-steps.sdoc` to try it hands-on.
         }
     }
 }

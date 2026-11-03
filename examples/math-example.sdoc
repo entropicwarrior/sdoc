@@ -10,6 +10,14 @@
     Demonstrates KaTeX math support in SDOC. Three syntax forms are available: inline \$...\$, display \$\$...\$\$, and \`\`\`math code fences.
 }
 
+@related-resources {
+    {[table]
+        Resource | Relation
+        [SDOC Authoring Guide](../docs/reference/sdoc-authoring.sdoc#math-blocks) | Explains the math syntax this file demonstrates
+        [Example Document](example.sdoc) | Every construct of the format, in one file
+    }
+}
+
 # Inline Math @inline {
     Inline math blends with text. The quadratic formula $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$ solves $ax^2 + bx + c = 0$.
 

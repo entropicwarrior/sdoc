@@ -4,7 +4,18 @@
         sdoc-version: 0.2
     }
 
-    This is a practical reference for writing SDOC files. For the formal specification (edge cases, grammar, parsing rules), see \`lexica/specification.sdoc\`.
+    @about {
+        A practical reference for writing SDOC files: scopes, paragraphs, lists, tables, inline formatting, links and images, references, citations, blockquotes, code blocks, escaping, the implicit root and the meta scope.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Specification](../../lexica/specification.sdoc) | Formal specification, covering the edge cases, grammar and parsing rules this reference leaves out
+            [SDOC Authoring Guide](sdoc-authoring.sdoc) | Covers signposts, which this reference leaves out, and the common mistakes
+            [Example Document](../../examples/example.sdoc) | Every construct in one file, to see them in context
+        }
+    }
 
     # Scopes
     {
@@ -574,7 +585,7 @@ Content of section A.
                 - Key matching is case-insensitive
                 - Requires at least one space after the colon
                 - Well-known keys: `style`, `styleappend`/`style-append`, `header`, `footer`, `sdoc-version`
-                - `sdoc-version` identifies the format version (current: `0.1`); a warning is emitted when missing
+                - `sdoc-version` identifies the format version (current: `0.2`); a warning is emitted when missing
                 - Other keys (e.g., `author`, `date`, `version`) are stored as custom properties
                 - Sub-scope syntax takes precedence over key:value when both exist
             }

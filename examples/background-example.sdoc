@@ -1,7 +1,6 @@
 # Slide Backgrounds @background-example
 {
-    @meta
-    {
+    @meta {
         type: slides
 
         title: Slide Backgrounds
@@ -9,15 +8,36 @@
         company: SDOC
     }
 
-    @about
-    {
+    @about {
         Every form of `background:` — placement, fit, and both fade shapes —
-        against neutral content. Build it:
+        against neutral content. The image is a generated gradient grid, so
+        the white rules make the placement and the falloff legible at a glance.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Slide Authoring Guide](../docs/reference/slide-authoring.sdoc) | Explains each background property this deck shows
+            [Layouts Example](layouts-example.sdoc) | Covers the slide layouts, which this deck uses only in passing
+        }
+    }
+
+    @reading-guide {
+        Build it and step through it, rather than reading the source:
 
         `node tools/build-slides.js examples/background-example.sdoc`
 
-        The image is a generated gradient grid, so the white rules make the
-        placement and the falloff legible at a glance.
+        {[table]
+            Sections | Note
+            @plain | The image with nothing applied, to compare the others against
+            @linear, @linear-angle, @radial | The two fade shapes
+            @placement, @flip-scale, @sized | Placement, fit, flip and scale
+            @any-layout | A background under a structured layout, since it is a common key
+        }
+    }
+
+    @editing-guide {
+        - This deck is part of the conformance corpus. After changing it, regenerate the goldens with `node test/test-artifact-conformance.js --update` and `node test/test-pptx-conformance.js --update`, and read the diff before committing.
     }
 
     # Slide Backgrounds @cover

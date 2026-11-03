@@ -4,6 +4,18 @@
         sdoc-version: 0.2
     }
 
+    @about {
+        How to mirror SDOC files to Notion pages as native blocks: creating an integration, adding the page ID, running the sync by hand and in CI, and what renders and what does not.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [CLI and Tools Reference](../reference/cli.sdoc) | Every option of `sync-notion.js`
+            [Notion Sync Tool](../../tools/sync-notion.js) | The tool this guide sets up
+        }
+    }
+
     SDOC files can be synced to Notion as native blocks -- headings, paragraphs, lists, tables, code, and images all render as real Notion content. The repo is the source of truth; Notion is a read-only mirror that stays up to date automatically via CI.
 
     # How It Works

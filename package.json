@@ -55,7 +55,7 @@
     "onCommand:sdoc.previewFromExplorer"
   ],
   "scripts": {
-    "package": "npx vsce package --out dist/",
+    "package": "node tools/pack-links.js npx vsce package --out dist/",
     "test": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js",
     "test:browser": "node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js",
     "test:all": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js"

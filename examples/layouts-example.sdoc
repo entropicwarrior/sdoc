@@ -1,7 +1,6 @@
 # SDOC Slide Layouts @layouts-example
 {
-    @meta
-    {
+    @meta {
         type: slides
 
         title: SDOC Slide Layouts
@@ -9,21 +8,40 @@
         company: SDOC
     }
 
-    @about
-    {
+    @about {
         Every slide layout, every variant and every slide property, with
         neutral content — a theme can be checked against the whole set at
-        once. Build it:
+        once. Three slides carry `:detail` children for the vertical
+        navigation, and one of those details is optional.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Slide Authoring Guide](../docs/reference/slide-authoring.sdoc) | Explains every layout and property this deck shows
+            [Background Example](background-example.sdoc) | Covers slide backgrounds, which this deck leaves out
+            [Default Theme](../themes/default/theme.css) | The theme the deck builds with unless given another
+        }
+    }
+
+    @reading-guide {
+        Build it and step through it, rather than reading the source:
 
         `node tools/build-slides.js examples/layouts-example.sdoc`
 
         Add `--theme path/to/theme` to check a theme of your own against it,
         and `--check` to confirm nothing has overflowed its slide.
 
-        Three slides carry `:detail` children, so Down and Up exercise the
-        vertical navigation; one of those details is marked `optional: true`,
-        so `--pdf`, `--pptx` and `--no-optional` all drop it while the plain
-        HTML build keeps it.
+        {[table]
+            Sections | Note
+            @stats-slide, @ledger-slide, @two-column-slide | Press Down for their details. The one under the ledger is optional: `--pdf`, `--pptx` and `--no-optional` drop it, and the plain HTML build keeps it
+            @connectors-slide | Lines between named elements, straight and elbowed
+        }
+    }
+
+    @editing-guide {
+        - This deck is part of the conformance corpus: a layout or config key in `src/slide-layouts.js` that no corpus deck exercises fails the conformance tests.
+        - After changing it, regenerate the goldens with `node test/test-artifact-conformance.js --update` and `node test/test-pptx-conformance.js --update`, and read the diff before committing.
     }
 
     # SDOC Slides @cover
