@@ -323,9 +323,11 @@ This project uses **Git Flow**:
 - `release/vX.Y.Z` — cut from `develop` when ready to release, merged to both `main` and `develop`
 - `feat/*`, `fix/*` — short-lived branches off `develop`
 - `hotfix/plugin-*` — off `main`, only for a Claude Code plugin broken by a Claude
-  Code update: PR to `main`, then merge `main` back into `develop`. No GitHub
-  release, so nothing is published to npm or the Marketplace
-  (docs/guide/claude-code-plugin.sdoc, Shipping a Fix)
+  Code update. Raise the plugin's version, run `npm run build:plugin` and
+  `npm test`, and check it by hand (docs/guide/claude-code-plugin.sdoc, Testing).
+  PR to `main`: once merged, everyone tracking `main` gets the fix at their next
+  update. Then merge `main` back into `develop`. No GitHub release, so nothing is
+  published to npm or the Marketplace
 
 Branch from `develop`, open PRs targeting `develop`. No direct pushes to `main` or `develop`.
 
