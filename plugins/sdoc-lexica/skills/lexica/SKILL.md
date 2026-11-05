@@ -17,8 +17,8 @@ Each file declares its kind in `@meta`:
 
 When the project has `lexica/`, the conversation starts with an index: every file with its `@about` summary (its title when the summaries do not fit) and, where git knows it, how long ago it last changed (`changed 3 weeks ago`); an old file may lag the code. A subagent's task carries a shorter index of its own. Work from it progressively, loading only what the task needs.
 
-1. **Choose files** by their summary in the index, or with `mcp__sdoc-lexica__list` (`detail: "titles"` for a shorter list) and `mcp__sdoc-lexica__search`. Search ranks sections best first, and when no section holds every word, shows those holding the most with the words they lack; `read: true` returns the best sections whole, which often answers a question in one call.
-2. **Outline before reading.** `mcp__sdoc-lexica__outline` gives each section's id and line range; `files` outlines several at once, `depth: 1` only the top-level sections.
+1. **Choose files** by their summary in the index, or with `mcp__sdoc-lexica__list` (`detail: "titles"` for a shorter list) and `mcp__sdoc-lexica__search`. Search ranks sections best first, and when no section holds every word, shows those holding the most with the words they lack; `read: true` returns the best sections whole, which often answers a question in one call, and `paths` narrows it to some directories or files.
+2. **Outline before reading.** `mcp__sdoc-lexica__outline` gives each section's id and line range; `file_paths` outlines several at once, `depth: 1` only the top-level sections. To change a file of up to 300 lines (the index gives each file's length), Read it whole instead: Edit needs a Read, and such a file costs little more whole.
 3. **Read only the sections you need** with `mcp__sdoc-lexica__read`. When a file has a reading guide, follow it; it is shown the first time you Read the file.
 4. **Prefer the nearest knowledge.** A `lexica/` directory next to the code you are changing is more specific than the one at the project root. Read both when they bear on the task.
 
@@ -32,7 +32,7 @@ Knowledge that drifts from the code misleads the next reader, human or agent.
 
 - **When you finish a task, update the impl-status of the area you worked in.** Record what was done, what is left, and any decision a later session needs. A session can end at any moment, so the status is its memory.
 - **When a change alters a requirement, spec or convention, change that document in the same piece of work.**
-- **Before renaming or moving a section or a file,** `mcp__sdoc-lexica__backlinks` lists the links and `@id` references to it, so they change with it.
+- **Before renaming or moving a section or a file,** `mcp__sdoc-lexica__backlinks` lists the links and `@id` references to it, so they change with it; `exact: true` gives what a rename changes, with the text of each line.
 - **Organise by domain, not by document type.** Use `lexica/billing/` holding billing's spec, architecture and status, never `lexica/specs/` or `lexica/plans/`. Completed work stays in its domain.
 - **Keep at most one impl-status per directory.** When one area outgrows it, split the directory into subdomains, each with its own status.
 - **Requirements are single, testable *shall* statements with semantic ids,** free of design. Design belongs in architecture and specifications.

@@ -229,7 +229,7 @@ should be evaluated against.
   too; an ask goes through in the project and the plugin and asks the person
   elsewhere. Keep new tools behind it: list a new tool's paths in `toolPaths`, and
   give a directory parameter the kind `dir` in `toolRequests`, or it is checked as
-  a file. A file read without being named (a walk, a guide's linked sections, a
+  a file (`paths`, which takes both, gives each entry the kind of what it names). A file read without being named (a walk, a guide's linked sections, a
   file an edit touches) goes through `readDenied`, or `withoutDenied` for a walk,
   and is left out on a deny.
 - A skill is named after its folder (`skills/lexica/` is `/sdoc-lexica:lexica`); the

@@ -55,13 +55,13 @@
 
             {[table]
                 Tool | Answers
-                `mcp__sdoc-lexica__list` | Every `.sdoc` file under the `lexica/` directories, or the directories given, each with its type, line count, age (@plugin-ages) and about summary. `detail: "titles"` gives titles instead of summaries
-                `mcp__sdoc-lexica__outline` | A file's sections: id, title, line range and first words, plus the signposts it has. `files` outlines up to 20 at once, `depth: 1` shows the top-level sections only, and `previews: false` leaves out the first words
-                `mcp__sdoc-lexica__read` | Sections by id, as source with line numbers. The file's own id reads it whole, or answers a large file's outline; an unknown id answers the ids the file has. To change what it shows, Claude Reads those lines first: Edit refuses a file Read has not opened
-                `mcp__sdoc-lexica__search` | The sections that best match a query, best first (@plugin-search). `read: true` adds the best sections whole
+                `mcp__sdoc-lexica__list` | Every `.sdoc` file under the `lexica/` directories, or under the `paths` given (directories or `.sdoc` files), each with its type, line count, age (@plugin-ages) and about summary. `detail: "titles"` gives titles instead of summaries
+                `mcp__sdoc-lexica__outline` | A file's sections: id, title, line range and first words, plus the signposts it has. `file_paths` outlines up to 20 at once, `depth: 1` shows the top-level sections only, and `previews: false` leaves out the first words
+                `mcp__sdoc-lexica__read` | Sections by id, as source with line numbers. The file's own id reads it whole, or answers a large file's outline; a section over 300 lines with sections inside it answers its opening and their outline, and one without is read whole; an unknown id answers the ids the file has. To change what it shows, Claude Reads those lines first: Edit refuses a file Read has not opened
+                `mcp__sdoc-lexica__search` | The sections that best match a query, best first (@plugin-search), in the `lexica/` directories or the `paths` given. `read: true` adds the best sections whole
                 `mcp__sdoc-lexica__guides` | A file's about, reading guide, related resources and editing guide
                 `mcp__sdoc-lexica__check` | Parse errors and signpost, reference and citation findings, as `build-doc --check` reports them
-                `mcp__sdoc-lexica__backlinks` | What links to a file, or to one of its sections (`file.sdoc#id`, or `id`), each link with its line and the section it sits in. For use before renaming, moving or removing a section or a file
+                `mcp__sdoc-lexica__backlinks` | What links to a file, or to one of its sections (`file.sdoc#id`, or `id`), each link with its line and the section it sits in. For use before renaming, moving or removing a section or a file; `exact: true` gives what a rename changes
             }
 
             # Search @plugin-search
@@ -77,7 +77,9 @@
 
             # Backlinks @plugin-backlinks
             {
-                Without an id, `backlinks` lists the links to a file from other files. With one (`file.sdoc#id`, or `id`), it lists the links to that section or a section inside it, by id or title slug, including the file's own `@id` references and `#id` links; a reference from within the section to a section inside it moves with it, so it is left out. Links in signposts count, web links do not. When the section has sections inside it, each link to one of them says which, and a last line names those nothing links to, so none needs asking about on its own. It looks in the `lexica/` directories or the `dirs` given, and for a section in its own file too.
+                Without an id, `backlinks` lists the links to a file from other files. With one (`file.sdoc#id`, or `id`), it lists the links to that section or a section inside it, by id or title slug, including the file's own `@id` references and `#id` links; a reference from within the section to a section inside it moves with it, so it is left out. Links in signposts count, web links do not. When the section has sections inside it, each link to one of them says which, and a last line names those nothing links to, so none needs asking about on its own. It looks in the `lexica/` directories or the `paths` given, and for a section in its own file too.
+
+                With `exact: true` it answers what a rename of the id changes, in a form an edit can be made from: the line that gives the id, then each reference to it with the text of its line (a long line around the reference), and nothing about the sections inside it, whose ids stay.
             }
         }
 
@@ -92,8 +94,8 @@
                 A prompt mentions `@lexica/file.sdoc#id` | Only that section, by id or title slug. The document's own id attaches the file whole, and so does an id it lacks, with the ids it has; `#L10-20` is Claude Code's own. The file's reading guide comes with it, as with a Read
                 You type `#` after a mention of an `.sdoc` file | The file's section ids, below Claude Code's suggestions: those starting with the text typed first, then those whose id or title holds it, up to 15
                 The first edit of a file with an editing guide | The edit is applied, and its result carries the guide and the sections the guide links to, as a Bash change's does. Not when the guide was shown already: a Read whose lines held it, the `guides` tool, or a `read` or `search` answer that held it. Nothing is refused (@plugin-limits)
-                Every edit of an `.sdoc` file | The findings the edit added (a parse error, a broken reference, a signpost of the wrong shape), and nothing about what was already there
-                A Bash command that names an `.sdoc` file and changes it (`sed -i`, a script) | What an edit gets, after the change: the editing guide and its linked sections the first time, and the findings the change added
+                Every edit of an `.sdoc` file | The findings the edit added (a parse error, a broken reference, a signpost of the wrong shape), and nothing about what was already there. An edit that adds none says the file was checked, what the edit cleared and how many findings are left, so that Claude does not call `check` to find out
+                A Bash command that names an `.sdoc` file and changes it (`sed -i`, a script) | What an edit gets, after the change: the editing guide and its linked sections the first time, and the findings the change added, or that it was checked
             }
 
             The index comes once per conversation, and a file's guides and outline once per file and agent (a subagent gets its own). A compaction or a clear starts over from the next prompt, since what was shown went with it, except a compaction partway through a long turn, which can go unseen (@plugin-limits). In a project with no `.sdoc` files the plugin adds nothing.
@@ -137,7 +139,7 @@
 
     # Permissions @plugin-permissions
     {
-        A call the plugin answers itself never reaches Claude Code's permission check, so the plugin asks that check itself: each path a call names, as written and where it leads through links, is put to it as a Read, or for a directory as a Glob of the `.sdoc` files under it.
+        A call the plugin answers itself never reaches Claude Code's permission check, so the plugin asks that check itself: each path a call names, as written and where it leads through links, is put to it as a Read, or for a directory as a Glob of the `.sdoc` files under it. An `.sdoc` file in `paths` is checked as the file it is.
 
         {[table]
             The check answers | Inside the project or the plugin | Elsewhere
@@ -285,7 +287,7 @@ claude plugin install sdoc-lexica@sdoc
                 - **Never give the plugin a version.** Not in `plugin.json`, and not in the marketplace entry. Once a version is set, Claude Code updates the plugin only when that number changes, so a fix shipped without a bump reaches nobody, and nothing says so. Without one, every commit is a version. `claude plugin validate` warns that no version is set; that warning is expected.
                 - **Four events never reach the plugin.** Claude Code's built-in security plugin passes over a user plugin's hooks on `prompt.context`, `session.compact`, `session.append` for a compaction's rows, and the classic `SessionStart` (so a hook matching `source: "compact"`, the usual way to see a compaction, is closed to it). The index goes with the first prompt instead, and a compaction or a clear is seen at the next prompt: the conversation's opening message has changed, since the summary took its place. The transcript is fetched to see it only when `$.session.usage()`, which costs nothing, says one may have happened: a new `startedAt` (a clear), or a context token count that is missing, as it is from a compaction until the next response, or lower than at the last prompt. A transcript past the 4,096 messages `$.session.messages` returns is not taken for a compaction.
                 - **`agent.spawn` does reach it.** Checked on 2.1.312: the debug log says `agent.spawn general-purpose: prompt rewritten by a hook`, and nothing about it being bypassed. A `tool.call` fallback in `register.mjs` briefs, at its first tool call, any subagent the spawn hook did not see: one a release passes over the hook for, or one whose spawn raises none.
-                - **A tool call the plugin answers skips Claude Code's permission check.** That check runs beneath the step the plugin's hook does not take, so `consent()` in `handlers.mjs` puts the question to it instead: every path the call names, as written and where it leads through links, as a Read or a Glob (@plugin-permissions). A new tool names its paths in `toolPaths`, and a parameter that names a directory needs the kind `dir` in `toolRequests`, or it is checked as a file.
+                - **A tool call the plugin answers skips Claude Code's permission check.** That check runs beneath the step the plugin's hook does not take, so `consent()` in `handlers.mjs` puts the question to it instead: every path the call names, as written and where it leads through links, as a Read or a Glob (@plugin-permissions). A new tool names its paths in `toolPaths`, and a parameter that names a directory needs the kind `dir` in `toolRequests`, or it is checked as a file; `paths` gives each entry the kind of what it names (`dir` unless it is an `.sdoc` file).
                 - **Call each `$` noun where it is written.** The engine accepts no other form: `claude plugin validate` refuses `$.store` passed as a value. That is why `ioOf` in `register.mjs` spells out every call.
                 - **A skill is named after its folder.** `skills/lexica/` is `/sdoc-lexica:lexica`; a `name:` in the frontmatter does not change it, so the two must agree.
             }

@@ -162,8 +162,15 @@ async function findSdocFiles(dir, list) {
 }
 
 // Every .sdoc file under dir as { path, size, mtimeMs }, sorted by path; size
-// and mtimeMs as the listing gives them, undefined when it gives none.
+// and mtimeMs as the listing gives them, undefined when it gives none. dir may
+// name an .sdoc file instead: that file alone, as its directory's listing
+// shows it, so whatever the listing leaves out is left out here too.
 async function findSdocEntries(dir, list) {
+  if (isSdocFile(dir)) {
+    const path = normalizePath(dir);
+    const entry = (await entriesOf(list, dirName(path))).find((e) => e.name === baseName(path) && e.kind === "file");
+    return entry ? [{ path, size: entry.size, mtimeMs: entry.mtimeMs }] : [];
+  }
   const files = [];
   async function walk(current) {
     for (const entry of await entriesOf(list, current)) {
@@ -370,15 +377,18 @@ function describeKey(entry) {
   return known(entry.mtimeMs) && entry.mtimeMs > 0 && known(entry.size) ? `${entry.path}|${entry.mtimeMs}|${entry.size}` : null;
 }
 
-// Every file of dirs, described (describeText). cache, when given, is
+// Every file of dirs, described (describeText), each once. cache, when given, is
 // { get(key), set(key, description) }, either possibly a promise, key being
 // path|mtimeMs|size from the listing: a file whose key it holds is not read.
 // A file the listing gives no size or time for is read and not cached; a
 // cache that fails is passed over.
 async function listFiles(dirs, io, { cache } = {}) {
   const result = [];
+  const seen = new Set();
   for (const dir of dirs) {
     for (const entry of await findSdocEntries(dir, io.list)) {
+      if (seen.has(entry.path)) continue;
+      seen.add(entry.path);
       const key = cache ? describeKey(entry) : null;
       let held = null;
       if (key) {
@@ -617,9 +627,11 @@ function rankSections(docs, query, { limit = 20 } = {}) {
   return { hits: ranked.slice(0, limit), total: ranked.length, matched, least: fewest, terms };
 }
 
-// rankSections over every .sdoc file under dirs; cache as readDocs takes it.
+// rankSections over every .sdoc file under dirs, with files, how many there
+// were; cache as readDocs takes it.
 async function rankFiles(query, dirs, io, { cache, ...options } = {}) {
-  return rankSections(await readDocs(dirs, io, { cache }), query, options);
+  const docs = await readDocs(dirs, io, { cache });
+  return { ...rankSections(docs, query, options), files: docs.length };
 }
 
 // --- Backlinks ---
@@ -685,7 +697,12 @@ function placesIn(nodes) {
 // href or ref, section or signpost }: where the link sits, by its deepest
 // section, or the signpost that holds it, or neither when it sits outside any
 // section.
-function backlinksTexts(docs, targetPath, { id } = {}) {
+//
+// With exact, what a rename of the id would change, for an edit to be made
+// from it: the hits to sections inside it are left out, defines is the line
+// that gives the id ({ line, text }, null without an id), and each hit has
+// text, the text of its line around the mark (lineAround).
+function backlinksTexts(docs, targetPath, { id, exact = false } = {}) {
   const target = normalizePath(targetPath);
   const targetDoc = docs.find((d) => normalizePath(d.path) === target);
   if (!targetDoc) return null;
@@ -744,22 +761,23 @@ function backlinksTexts(docs, targetPath, { id } = {}) {
       return at.lineStart;
     };
     const found = [];
+    const textOf = (line, mark) => (exact ? { text: lineAround(lines[line - 1], mark) } : {});
     for (const link of links) {
       const to = linkTargets(link.href, from);
       if (!to || !to.paths.includes(target)) continue;
       const { kind, node } = wanted ? (to.fragment ? names(to.fragment) : { kind: whole && "self" }) : { kind: "self" };
-      if (!kind) continue;
+      if (!kind || (exact && kind === "inside")) continue;
       const line = lineOf(link, new RegExp(`\\(\\s*${escapeRegExp(link.href)}\\s*\\)`, "g"));
       if (kind === "inside" && own && within(line)) continue;
-      found.push({ line, href: link.href, ...insideMark(kind, node) });
+      found.push({ line, href: link.href, ...insideMark(kind, node), ...textOf(line, link.href) });
     }
     if (own) {
       for (const ref of refs) {
         const { kind, node } = names(ref.id);
-        if (!kind) continue;
+        if (!kind || (exact && kind === "inside")) continue;
         const line = lineOf(ref, new RegExp(`(?<![A-Za-z0-9._+-])@${escapeRegExp(ref.id)}(?![A-Za-z0-9_-])`, "g"));
         if (kind === "inside" && within(line)) continue;
-        found.push({ line, ref: ref.id, ...insideMark(kind, node) });
+        found.push({ line, ref: ref.id, ...insideMark(kind, node), ...textOf(line, "@" + ref.id) });
       }
     }
     const placeOf = found.length ? placesIn(nodes) : null;
@@ -774,7 +792,24 @@ function backlinksTexts(docs, targetPath, { id } = {}) {
   const section = wanted
     ? { id: wanted.id || null, derivedId: slugify(wanted.title || ""), title: wanted.title, lineStart: wanted.lineStart, lineEnd: wanted.lineEnd, whole: Boolean(whole), inside: subsections }
     : null;
-  return { path: target, section, hits };
+  if (!exact) return { path: target, section, hits };
+  const heading = wanted ? targetDoc.text.split("\n")[wanted.lineStart - 1] : "";
+  return { path: target, section, hits, exact: true, defines: wanted ? { line: wanted.lineStart, text: lineAround(heading, "@" + (wanted.id || "")) } : null };
+}
+
+// The most of a line a hit shows with exact.
+const LINE_AROUND_CHARS = 160;
+
+// A line, trimmed, or when longer than LINE_AROUND_CHARS the part of it around
+// mark, cut at each end with an ellipsis: what is shown is the line's own text,
+// so an edit can be made from it.
+function lineAround(line, mark) {
+  const clean = String(line || "").trim();
+  if (clean.length <= LINE_AROUND_CHARS) return clean;
+  const at = Math.max(0, clean.indexOf(mark));
+  const start = Math.max(0, Math.min(at - Math.floor((LINE_AROUND_CHARS - mark.length) / 2), clean.length - LINE_AROUND_CHARS));
+  const end = Math.min(clean.length, start + LINE_AROUND_CHARS);
+  return (start > 0 ? "…" : "") + clean.slice(start, end) + (end < clean.length ? "…" : "");
 }
 
 // backlinksTexts over every .sdoc file under dirs, and over the target
@@ -839,12 +874,16 @@ function formatAge(sec, nowSec) {
 function formatOutline(o, { base, maxDepth = Infinity, previews = true } = {}) {
   const out = [`${shownPath(o.path, base)}${o.id ? " @" + o.id : ""} — ${o.title} (${o.lines} lines)`];
   if (o.signposts.length) out.push("signposts: " + o.signposts.map((id) => "@" + id).join(", "));
-  for (const s of o.sections) {
-    if (s.depth > maxDepth) continue;
+  const lines = formatSectionLines(o.sections.filter((s) => s.depth <= maxDepth), { previews });
+  return out.concat(lines ? [lines] : []).join("\n");
+}
+
+// An outline's section lines alone, indented by depth from fromDepth.
+function formatSectionLines(sections, { fromDepth = 0, previews = true } = {}) {
+  return sections.map((s) => {
     const preview = previews && s.preview ? " — " + clip(s.preview, 90) : "";
-    out.push(`${"  ".repeat(s.depth)}L${s.lineStart}-${s.lineEnd} ${sectionLabel(s)} ${s.title}${preview}`);
-  }
-  return out.join("\n");
+    return `${"  ".repeat(Math.max(0, s.depth - fromDepth))}L${s.lineStart}-${s.lineEnd} ${sectionLabel(s)} ${s.title}${preview}`;
+  }).join("\n");
 }
 
 // A section's source with line numbers, in the shape the Read tool prints, so
@@ -889,6 +928,7 @@ const BACKLINKS_MAX_NAMED = 20;
 function formatBacklinks(found, { base, where = "lexica/" } = {}) {
   const s = found.section;
   const target = shownPath(found.path, base) + (s ? " " + (s.id ? "@" + s.id : "(" + s.derivedId + ")") : "");
+  if (found.exact) return formatExactBacklinks(found, target, { base, where });
   const subsections = (s && s.inside) || [];
   const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const listed = (list) => list.slice(0, BACKLINKS_MAX_NAMED).map(sectionLabel).join(", ") +
@@ -909,6 +949,23 @@ function formatBacklinks(found, { base, where = "lexica/" } = {}) {
   }
   const inside = found.hits.some((h) => h.inside) ? " or a section inside it" : "";
   return `${found.hits.length} link${found.hits.length === 1 ? "" : "s"} to ${target}${inside}:\n${lines.join("\n")}`;
+}
+
+// formatBacklinks with exact: the line that gives the id, then one line per
+// reference, file:line, the @id or href, and the text of its line.
+function formatExactBacklinks(found, target, { base, where }) {
+  const lines = [];
+  if (found.defines) lines.push(`${shownPath(found.path, base)}:${found.defines.line} gives the id: ${found.defines.text}`);
+  if (!found.hits.length) {
+    lines.push(`Nothing in ${where} ${found.section ? "refers" : "links"} to ${target}.`);
+    return lines.join("\n");
+  }
+  const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  lines.push(!found.section ? `${count(found.hits.length, "link")} to ${target}:`
+    : found.section.whole ? `${count(found.hits.length, "reference")} to it:`
+    : `${count(found.hits.length, "reference")} to it, those to sections inside it left out:`);
+  for (const h of found.hits) lines.push(`${shownPath(h.path, base)}:${h.line} ${h.ref ? "@" + h.ref : h.href} — ${h.text}`);
+  return lines.join("\n");
 }
 
 // The reading guide and the related resources, for someone about to read. A
@@ -972,6 +1029,7 @@ module.exports = {
   formatFileList,
   formatAge,
   formatOutline,
+  formatSectionLines,
   formatSection,
   formatSearch,
   formatBacklinks,

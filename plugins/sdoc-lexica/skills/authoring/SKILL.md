@@ -11,9 +11,9 @@ SDOC is plain-text documentation with explicit brace scoping. Structure comes on
 
 ## Reading a file
 
-Read progressively; a knowledge file can run to thousands of lines.
+To edit a file of up to 300 lines, Read it whole: Edit needs a Read, and such a file costs little more whole. Otherwise read progressively; a knowledge file can run to thousands of lines.
 
-1. `mcp__sdoc-lexica__outline` with the file: every section's `@id`, title and line range. `files` outlines several at once; on a large file, `depth: 1` keeps to the top-level sections and `previews: false` drops the first words.
+1. `mcp__sdoc-lexica__outline` with the file: every section's `@id`, title and line range. `file_paths` outlines several at once; on a large file, `depth: 1` keeps to the top-level sections and `previews: false` drops the first words.
 2. `mcp__sdoc-lexica__read` with the ids you need: the source of just those sections, with line numbers.
 3. To edit, Read the file with `offset`/`limit` from those line ranges (Edit needs a prior Read), then Edit.
 
@@ -100,9 +100,9 @@ Pointers to other documents go in `@related-resources`, never in `@about` or `@n
 
 ## When editing
 
-- Keep every `@id` stable: references and links from other files point at them. Before renaming or moving a section or a file, `mcp__sdoc-lexica__backlinks` lists what links to it (other files' links, and `@id` references in the file itself), so those can change with it.
+- Keep every `@id` stable: references and links from other files point at them. Before renaming or moving a section or a file, `mcp__sdoc-lexica__backlinks` lists what links to it (other files' links, and `@id` references in the file itself), so those can change with it; with `exact: true`, what a rename changes: the line that gives the id and each reference with the text of its line.
 - Keep braces balanced and match the surrounding indentation (cosmetic, but readable).
-- After each edit, by Edit or Write or by a Bash command that names the file, the plugin reports any finding the edit added (parse error, broken reference, signpost shape). Fix errors before going on. `mcp__sdoc-lexica__check` checks a file on demand.
+- After each edit, by Edit or Write or by a Bash command that names the file, the plugin checks the file and reports any finding the edit added (parse error, broken reference, signpost shape); an edit that adds none says so, with what it cleared and how many findings are left. Fix errors before going on. No `mcp__sdoc-lexica__check` is needed after an edit: it checks a file on demand.
 - Add `sdoc-version: 0.2` and `type: doc` or `type: skill` in `@meta` when creating a file.
 
 ## The full guide

@@ -32,8 +32,9 @@
 // none and not under with-without), so the two files are compared like for
 // like. A run that ended on an API error has no verdicts and counts as 0.
 //
-// Costs are list-price estimates from the result: the agent's runs plus the
-// judge's calls, summed over both arms.
+// Costs are list-price estimates from the result. A run's costUsd holds its
+// judge's calls too (judgeCostUsd, checked against the traces on 2.1.312), so
+// the price per run takes them out.
 "use strict";
 
 const fs = require("fs");
@@ -139,6 +140,9 @@ function runScore(run, skip) {
 
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
+// What a run itself cost, its judge's calls left out.
+const runCost = (r) => (r.costUsd || 0) - (r.judgeCostUsd || 0);
+
 // A case's figures for one arm's runs: the three goals and the price, then
 // the clues.
 function armStats(runs, skip) {
@@ -155,7 +159,7 @@ function armStats(runs, skip) {
     newTokens: tokens((t) => t.input + t.cacheWrite),
     cachedTokens: tokens((t) => t.cacheRead),
     outTokens: tokens((t) => t.output),
-    costPerRun: mean(runs.map((r) => r.costUsd || 0)),
+    costPerRun: mean(runs.map(runCost)),
     turns: mean(known((r) => r.turns)),
     tools: mean(known((r) => r.toolCallsTotal)),
     pluginTools: mean(known((r) => r.pluginToolCalls))
@@ -168,7 +172,7 @@ function caseStats(c, skip) {
   return {
     with: armStats(runs("with"), skip),
     without: armStats(runs("without"), skip),
-    cost: all.reduce((a, r) => a + (r.costUsd || 0) + (r.judgeCostUsd || 0), 0),
+    cost: all.reduce((a, r) => a + (r.costUsd || 0), 0),
     errors: all.filter((r) => r.error).map((r) => r.error)
   };
 }

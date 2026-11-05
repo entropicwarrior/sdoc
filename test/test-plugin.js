@@ -867,7 +867,7 @@ async function main() {
     assertEqual(files.counts.reads, 2, "nothing read: every description from the cache");
     await handlers.runTool(io, "list", {}, { cwd: "/s" });
     assertEqual(files.counts.reads, 2, "the list tool uses it too");
-    await handlers.runTool(io, "list", { dirs: ["lexica"] }, { cwd: "/s" });
+    await handlers.runTool(io, "list", { paths: ["lexica"] }, { cwd: "/s" });
     assertEqual(files.counts.reads, 4, "but not for dirs it is given");
     files.write("/s/lexica/a.sdoc", GUIDED.replace("A guided file.", "Changed."));
     files.remove("/s/lexica/b.sdoc");
@@ -926,7 +926,7 @@ async function main() {
     const files = statIo({ "/p/lexica/a.sdoc": GUIDED, "/p/lexica/b.sdoc": doc({ id: "b", body: "    See [intro](a.sdoc#intro) on brace scoping." }) });
     const state = handlers.createState();
     const search = (st) => handlers.runTool(files, "search", { query: "brace scoping" }, { cwd: "/p", state: st });
-    const links = (st) => handlers.runTool(files, "backlinks", { file: "lexica/a.sdoc#intro" }, { cwd: "/p", state: st });
+    const links = (st) => handlers.runTool(files, "backlinks", { file_path: "lexica/a.sdoc#intro" }, { cwd: "/p", state: st });
     const first = await search(state);
     const reads = files.counts.reads;
     assertEqual(await search(state), first);
@@ -1019,7 +1019,7 @@ async function main() {
     assertEqual((index.match(/lexica\/v2\/a\.sdoc/g) || []).length, 1, "the file the link leads to, once");
     const { text } = await handlers.runTool(io, "list", {}, { cwd: "/p" });
     assert(text.includes("(1 symbolic link left out: it leads outside the project.)"), text);
-    const sub = (await handlers.runTool(io, "list", { dirs: ["lexica/sub"] }, { cwd: "/p" })).text;
+    const sub = (await handlers.runTool(io, "list", { paths: ["lexica/sub"] }, { cwd: "/p" })).text;
     assert(sub.includes("lexica/sub/b.sdoc") && !sub.includes("up/"), "a link to a directory above the one walked is a loop: " + sub);
   });
 
@@ -1091,7 +1091,8 @@ async function main() {
     const first = await handlers.afterEdit(tree, { filePath: "/p/lexica/a.sdoc", cwd: "/p", snapshot: before.snapshot, guide: before.guide, state });
     assert(first.startsWith("This edit changed lexica/a.sdoc, which has an editing guide that was not shown before the change: " +
       "the change has not been checked against it.") && first.includes("Keep sections short."), first);
-    assertEqual(await edited(tree, state, { filePath: "/p/lexica/a.sdoc", cwd: "/p" }), null, "once");
+    assertEqual(await edited(tree, state, { filePath: "/p/lexica/a.sdoc", cwd: "/p" }), "lexica/a.sdoc checked after the edit: no new findings, 1 finding left.",
+      "the guide once: the next edit says only that it was checked");
   });
 
   await test("a failed edit does not count as showing the guide; two sent at once carry it once", async () => {
@@ -1133,10 +1134,10 @@ async function main() {
   await test("the read tool, or search with read: true, showing the editing guide counts too; a section without it does not", async () => {
     const io = memoryIo({ "/p/lexica/a.sdoc": GUIDED });
     const byId = handlers.createState();
-    await handlers.runTool(io, "read", { file: "lexica/a.sdoc", ids: ["intro"] }, { cwd: "/p", state: byId });
+    await handlers.runTool(io, "read", { file_path: "lexica/a.sdoc", ids: ["intro"] }, { cwd: "/p", state: byId });
     assert((await handlers.beforeEdit(io, byId, { filePath: "/p/lexica/a.sdoc", cwd: "/p" })).guide, "a section: the guide was not shown");
     const whole = handlers.createState();
-    await handlers.runTool(io, "read", { file: "lexica/a.sdoc", ids: ["guided"] }, { cwd: "/p", state: whole });
+    await handlers.runTool(io, "read", { file_path: "lexica/a.sdoc", ids: ["guided"] }, { cwd: "/p", state: whole });
     assert(!(await handlers.beforeEdit(io, whole, { filePath: "/p/lexica/a.sdoc", cwd: "/p" })).guide, "the whole file, by its own id");
     const flat = "# Notes @notes\n{\n    @editing-guide {\n        Keep it short.\n    }\n\n    Loose words on fsync.\n}\n";
     const io2 = memoryIo({ "/p/lexica/n.sdoc": flat });
@@ -1157,7 +1158,8 @@ async function main() {
     const { snapshot } = await handlers.beforeEdit(io, state, { filePath: "/p/x.sdoc", cwd: "/p" });
     assertEqual(snapshot.length, 1, "the file starts with one broken reference");
     io.write("/p/x.sdoc", doc({ body: "\n\n    # A @a\n    {\n        See @nowhere.\n    }" }));
-    assertEqual(await handlers.afterEdit(io, { filePath: "/p/x.sdoc", snapshot, cwd: "/p" }), null, "moving it down adds nothing");
+    assertEqual(await handlers.afterEdit(io, { filePath: "/p/x.sdoc", snapshot, cwd: "/p" }), "x.sdoc checked after the edit: no new findings, 1 finding left.",
+      "moving it down adds nothing");
     io.write("/p/x.sdoc", doc({ body: "    # A @a\n    {\n        See @nowhere and @elsewhere.\n\n    # B {\n        Unclosed.\n    }" }));
     const report = await handlers.afterEdit(io, { filePath: "/p/x.sdoc", snapshot, cwd: "/p" });
     assert(report && report.includes("x.sdoc:") && report.includes("@elsewhere") && report.includes("The errors leave the file failing its check"), report);
@@ -1175,7 +1177,8 @@ async function main() {
     const shifted = memoryIo({ "/p/u.sdoc": unclosed });
     const held = await handlers.beforeEdit(shifted, handlers.createState(), { filePath: "/p/u.sdoc", cwd: "/p" });
     shifted.write("/p/u.sdoc", "\n\n" + unclosed);
-    assertEqual(await handlers.afterEdit(shifted, { filePath: "/p/u.sdoc", snapshot: held.snapshot, cwd: "/p" }), null, "a line number in a message moves, and is the same finding");
+    assertEqual(await handlers.afterEdit(shifted, { filePath: "/p/u.sdoc", snapshot: held.snapshot, cwd: "/p" }), "u.sdoc checked after the edit: no new findings, 2 findings left.",
+      "a line number in a message moves, and is the same finding");
   });
 
   // A file whose editing guide links to a section of another file, and to
@@ -1228,11 +1231,18 @@ async function main() {
     assertEqual((await handlers.linkedSections(io, "/p/x.sdoc", "[c](c%20d.sdoc#spec-rules)", "/p")).count, 1, "a file named with a space");
   });
 
-  await test("an edit that leaves the file clean reports nothing", async () => {
+  await test("an edit that adds no finding says the file was checked, what the edit cleared, and what is left", async () => {
     const io = memoryIo({ "/p/x.sdoc": PLAIN });
-    const { snapshot } = await handlers.beforeEdit(io, handlers.createState(), { filePath: "/p/x.sdoc", cwd: "/p" });
-    io.write("/p/x.sdoc", PLAIN.replace("Text.", "More text."));
-    assertEqual(await handlers.afterEdit(io, { filePath: "/p/x.sdoc", snapshot, cwd: "/p" }), null);
+    const edit = async (text) => {
+      const { snapshot } = await handlers.beforeEdit(io, handlers.createState(), { filePath: "/p/x.sdoc", cwd: "/p" });
+      io.write("/p/x.sdoc", text);
+      return handlers.afterEdit(io, { filePath: "/p/x.sdoc", snapshot, cwd: "/p" });
+    };
+    assertEqual(await edit(PLAIN.replace("Text.", "More text.")), "x.sdoc checked after the edit: no findings, as mcp__sdoc-lexica__check would answer.");
+    assert((await edit(PLAIN.replace("Text.", "See @a and @b."))).startsWith("The edit added 2 findings to x.sdoc."));
+    assertEqual(await edit(PLAIN.replace("Text.", "See @a.")), "x.sdoc checked after the edit, which cleared 1 finding: no new findings, 1 finding left.");
+    assertEqual(await edit(PLAIN.replace("Text.", "See nothing.")), "x.sdoc checked after the edit, which cleared 1 finding: no findings left, as mcp__sdoc-lexica__check would answer.",
+      "an earlier edit's finding mended: no check needed to learn it");
   });
 
   await test("a link that leaves the project is not looked at, nor reported broken; one inside it is", async () => {
@@ -1243,7 +1253,7 @@ async function main() {
     const report = await handlers.afterEdit(watched, { filePath: "/p/x.sdoc", snapshot: [], cwd: "/p" });
     assert(report.includes("gone.sdoc") && !report.includes("elsewhere") && !report.includes("/etc/z.sdoc"), report);
     assert(asked.every((p) => p.startsWith("/p/")), "nothing outside the project was looked at: " + asked.join(", "));
-    const checked = await handlers.runTool(watched, "check", { files: ["x.sdoc"] }, { cwd: "/p" });
+    const checked = await handlers.runTool(watched, "check", { file_paths: ["x.sdoc"] }, { cwd: "/p" });
     assert(checked.text.includes("gone.sdoc") && !checked.text.includes("elsewhere"), checked.text);
   });
 
@@ -1284,12 +1294,14 @@ async function main() {
     let snapshot = await handlers.beforeBash(io, { command: "git mv lexica/a.sdoc lexica/b.sdoc", cwd: "/p" });
     io.write("/p/lexica/b.sdoc", broken);
     delete io.store["/p/lexica/a.sdoc"];
-    assertEqual(await handlers.afterBash(io, handlers.createState(), { snapshot, cwd: "/p" }), null, "a rename adds nothing");
+    assertEqual(await handlers.afterBash(io, handlers.createState(), { snapshot, cwd: "/p" }),
+      "lexica/b.sdoc checked after the command: no new findings, 2 findings left.", "a rename adds nothing: no finding, only that it was checked");
     snapshot = await handlers.beforeBash(io, { command: "cp lexica/b.sdoc docs/c.sdoc", cwd: "/p" });
     io.write("/p/docs/c.sdoc", broken);
     io.write("/p/docs/missing.sdoc", "");
     const report = await handlers.afterBash(io, handlers.createState(), { snapshot, cwd: "/p" });
-    assertEqual(report, null, "a copy adds nothing either, and a link it mends is not a finding");
+    assertEqual(report, "docs/c.sdoc checked after the command, which cleared 1 finding: no new findings, 1 finding left.",
+      "a copy adds nothing either, and a link it mends is cleared");
   });
 
   await test("a command that changes a guided file gets the guide after the change, once, and the findings it added", async () => {
@@ -1303,7 +1315,8 @@ async function main() {
     assert(!first.includes("other.sdoc"), "the broken link that was there before is not reported");
     snapshot = await handlers.beforeBash(io, { command: "sed -i '' 's/Hi/Hey/' lexica/a.sdoc", cwd: "/p" });
     io.write("/p/lexica/a.sdoc", GUIDED.replace("Hello there.", "Hey @nowhere."));
-    assertEqual(await handlers.afterBash(io, state, { snapshot, cwd: "/p" }), null, "the guide once; no new finding");
+    assertEqual(await handlers.afterBash(io, state, { snapshot, cwd: "/p" }), "lexica/a.sdoc checked after the command: no new findings, 2 findings left.",
+      "the guide once; no new finding");
   });
 
   await test("a command that changes nothing, or only reads, adds nothing", async () => {
@@ -1380,7 +1393,7 @@ async function main() {
     assert((await edited(io, state, { filePath: "/p/lexica/a.sdoc", cwd: "/p" })).includes("Keep sections short."));
     let snapshot = await handlers.beforeBash(io, { command: "sed -i 's/Hello/Hi/' lexica/a.sdoc", cwd: "/p" });
     io.write("/p/lexica/a.sdoc", GUIDED.replace("Hello", "Hi"));
-    assertEqual(await handlers.afterBash(io, state, { snapshot, cwd: "/p" }), null, "shown with the Edit");
+    assertEqual(await handlers.afterBash(io, state, { snapshot, cwd: "/p" }), "lexica/a.sdoc checked after the command: no new findings, 1 finding left.", "shown with the Edit");
     snapshot = await handlers.beforeBash(io, { command: "sed -i 's/Hi/Hey/' lexica/a.sdoc", cwd: "/p" });
     io.write("/p/lexica/a.sdoc", GUIDED.replace("Hello", "Hey"));
     assert((await handlers.afterBash(io, state, { snapshot, agentId: "sub-1", cwd: "/p" })).includes("Keep sections short."), "a subagent gets its own");
@@ -1616,22 +1629,22 @@ async function main() {
   });
 
   await test("outline and read work from a path relative to the project", async () => {
-    const { text: outline } = await run("outline", { file: "lexica/a.sdoc" });
+    const { text: outline } = await run("outline", { file_path: "lexica/a.sdoc" });
     assert(outline.includes("@intro Intro") && /L\d+-\d+ @details/.test(outline), outline);
-    const { text } = await run("read", { file: "lexica/a.sdoc", ids: ["intro", "nope"] });
+    const { text } = await run("read", { file_path: "lexica/a.sdoc", ids: ["intro", "nope"] });
     assert(/^\s+34\t\s+Hello there\./m.test(text), text);
     assert(text.includes('No section "nope"'), text);
   });
 
   await test("read of an unknown id answers the ids the file has", async () => {
-    const { text } = await run("read", { file: "lexica/a.sdoc", ids: ["nope"] });
+    const { text } = await run("read", { file_path: "lexica/a.sdoc", ids: ["nope"] });
     assertEqual(text, 'No section "nope" in lexica/a.sdoc. Its ids: @guided (the whole file), @intro, @details, deeper.');
   });
 
   await test("read of the file's own id answers the whole file, or a large file's outline", async () => {
-    const { text } = await run("read", { file: "lexica/a.sdoc", ids: ["guided"] });
+    const { text } = await run("read", { file_path: "lexica/a.sdoc", ids: ["guided"] });
     assert(/^lexica\/a\.sdoc L1-\d+ — Guided\n\s+1\t# Guided @guided/.test(text) && text.includes("Nested text."), text);
-    const big = await handlers.runTool(memoryIo({ "/p/big.sdoc": bigDoc(40) }), "read", { file: "big.sdoc", ids: ["big"] }, { cwd: "/p" });
+    const big = await handlers.runTool(memoryIo({ "/p/big.sdoc": bigDoc(40) }), "read", { file_path: "big.sdoc", ids: ["big"] }, { cwd: "/p" });
     assert(big.text.startsWith("big.sdoc has ") && big.text.includes("so here is its outline") && big.text.includes("@part-39"), big.text);
     assert(!big.text.includes("Line of text.\n"), "an outline, one line per section, not the source");
   });
@@ -1642,20 +1655,20 @@ async function main() {
   });
 
   await test("read takes ids as a comma-separated string too", async () => {
-    const { text } = await run("read", { file: "lexica/a.sdoc", ids: "intro, details" });
+    const { text } = await run("read", { file_path: "lexica/a.sdoc", ids: "intro, details" });
     assert(text.includes("Hello there.") && text.includes("brace scoping"), text);
   });
 
   await test("read's text option takes the string forms too: \"false\" keeps the source", async () => {
-    assert((await run("read", { file: "lexica/a.sdoc", ids: ["intro"], text: "false" })).text.includes("# Intro @intro"));
-    assert(!(await run("read", { file: "lexica/a.sdoc", ids: ["intro"], text: "true" })).text.includes("# Intro @intro"));
+    assert((await run("read", { file_path: "lexica/a.sdoc", ids: ["intro"], text: "false" })).text.includes("# Intro @intro"));
+    assert(!(await run("read", { file_path: "lexica/a.sdoc", ids: ["intro"], text: "true" })).text.includes("# Intro @intro"));
   });
 
   await test("search, guides and check answer in text", async () => {
     assert((await run("search", { query: "brace scoping" })).text.includes("@details"));
-    assert((await run("guides", { file: "lexica/a.sdoc" })).text.includes("Editing guide:\nKeep sections short."));
-    assert((await run("check", { files: ["lexica/a.sdoc"] })).text.includes("lexica/a.sdoc:"), "a.sdoc links to a missing other.sdoc");
-    assert((await run("check", { files: ["lexica/sub/b.sdoc"] })).text.includes("no findings"));
+    assert((await run("guides", { file_path: "lexica/a.sdoc" })).text.includes("Editing guide:\nKeep sections short."));
+    assert((await run("check", { file_paths: ["lexica/a.sdoc"] })).text.includes("lexica/a.sdoc:"), "a.sdoc links to a missing other.sdoc");
+    assert((await run("check", { file_paths: ["lexica/sub/b.sdoc"] })).text.includes("no findings"));
   });
 
   await test("search falls back to the sections holding the most words, each line saying which it lacks", async () => {
@@ -1743,13 +1756,13 @@ async function main() {
       "/p/lexica/many/m.sdoc": doc({ id: "many", body: Array.from({ length: 7 }, (_, i) => part(i)).join("\n\n") }),
       "/p/lexica/long/l.sdoc": doc({ id: "long", body: `    # Target Long @long\n    {\n        ${"Very long words. ".repeat(500)}\n    }\n\n    # Short @short\n    {\n        One target.\n    }` })
     });
-    const many = (await handlers.runTool(io, "search", { query: "target", read: true, dirs: ["lexica/many"] }, { cwd: "/p" })).text;
+    const many = (await handlers.runTool(io, "search", { query: "target", read: true, paths: ["lexica/many"] }, { cwd: "/p" })).text;
     const sections = many.slice(many.indexOf("\n\n") + 2);
     assertEqual((sections.match(/^lexica\/many\/m\.sdoc L\d+-\d+ — Part \d+$/gm) || []).length, 2, "two fit");
     assert(sections.length < handlers.SEARCH_READ_CHARS + 600, "length " + sections.length);
     const pointers = sections.match(/^- lexica\/many\/m\.sdoc @part-\d+ \(L\d+-\d+\): not included, \d+ chars with \d+ of 6000 left; mcp__sdoc-lexica__read reads it\.$/gm) || [];
     assertEqual(pointers.length, 3, "five sections in all");
-    const long = (await handlers.runTool(io, "search", { query: "target", read: true, dirs: ["lexica/long"] }, { cwd: "/p" })).text;
+    const long = (await handlers.runTool(io, "search", { query: "target", read: true, paths: ["lexica/long"] }, { cwd: "/p" })).text;
     assert(/^- lexica\/long\/l\.sdoc @long \(L\d+-\d+\): not included/m.test(long), long);
     assert(shownSection("Short").test(long) && !long.includes("Very long words."), "the next one that fits, and nothing of the one that does not");
   });
@@ -1757,48 +1770,48 @@ async function main() {
   await test("search's read: true does not count a file as met: its first outline still has the reading guide", async () => {
     const ctx = { cwd: "/p", state: handlers.createState() };
     await handlers.runTool(tree, "search", { query: "brace", read: true }, ctx);
-    assert((await handlers.runTool(tree, "outline", { file: "lexica/a.sdoc" }, ctx)).text.includes("Reading guide:"));
+    assert((await handlers.runTool(tree, "outline", { file_path: "lexica/a.sdoc" }, ctx)).text.includes("Reading guide:"));
   });
 
   await test("outline's depth keeps the top levels and counts the rest; previews: false leaves out the first words", async () => {
-    const top = (await run("outline", { file: "lexica/a.sdoc", depth: 1 })).text;
+    const top = (await run("outline", { file_path: "lexica/a.sdoc", depth: 1 })).text;
     assert(top.includes("@details Details") && !top.includes("Deeper"), top);
     assert(top.endsWith("\n(1 deeper section not shown)"), top);
-    const all = (await run("outline", { file: "lexica/a.sdoc", depth: 2 })).text;
+    const all = (await run("outline", { file_path: "lexica/a.sdoc", depth: 2 })).text;
     assert(all.includes("(deeper) Deeper") && !all.includes("not shown"), all);
     assert(all.includes("@intro Intro — Hello there."), all);
-    const bare = (await run("outline", { file: "lexica/a.sdoc", previews: false })).text;
+    const bare = (await run("outline", { file_path: "lexica/a.sdoc", previews: false })).text;
     assert(/ @intro Intro$/m.test(bare) && !bare.includes("Hello there."), bare);
   });
 
   await test("outline takes several files, each with its signposts on a first meeting", async () => {
     const ctx = { cwd: "/p", state: handlers.createState() };
-    const { text } = await handlers.runTool(tree, "outline", { files: ["lexica/a.sdoc", "lexica/sub/b.sdoc"] }, ctx);
+    const { text } = await handlers.runTool(tree, "outline", { file_paths: ["lexica/a.sdoc", "lexica/sub/b.sdoc"] }, ctx);
     assert(text.includes("lexica/a.sdoc @guided — Guided") && text.includes("\n\nlexica/sub/b.sdoc @other — Other"), text);
     assertEqual(text.split("Reading guide:").length - 1, 1);
-    const again = (await handlers.runTool(tree, "outline", { file: "lexica/a.sdoc", files: ["lexica/a.sdoc"] }, ctx)).text;
+    const again = (await handlers.runTool(tree, "outline", { file_path: "lexica/a.sdoc", file_paths: ["lexica/a.sdoc"] }, ctx)).text;
     assert(!again.includes("Reading guide:"), "once per file");
     assertEqual(again.split("lexica/a.sdoc @guided").length - 1, 1, "a file named twice is outlined once");
   });
 
-  await test("outline outlines at most 20 files, says how many it left, and needs file or files", async () => {
+  await test("outline outlines at most 20 files, says how many it left, and needs file_path or file_paths", async () => {
     const io = memoryIo(lexicaOf(22, () => PLAIN));
     const files = Object.keys(io.store).map((p) => p.replace("/p/", ""));
-    const { text } = await handlers.runTool(io, "outline", { files }, { cwd: "/p" });
+    const { text } = await handlers.runTool(io, "outline", { file_paths: files }, { cwd: "/p" });
     assertEqual(text.split("@other — Other").length - 1, handlers.OUTLINE_MAX_FILES);
     assert(text.endsWith("\n\n(2 more files not outlined: at most 20 per call.)"), text.slice(-200));
-    assertEqual((await run("outline", {})).error, "Missing file: pass file or files.");
+    assertEqual((await run("outline", {})).error, "Missing file_path: pass file_path or file_paths.");
   });
 
-  await test("the guard checks outline's files, and backlinks' file and dirs", () => {
+  await test("the guard checks outline's files, and backlinks' file and paths", () => {
     const roots = ["/p"];
-    assertEqual(handlers.toolPaths("outline", { file: "a.sdoc", files: ["b.sdoc"] }, "/p"), ["/p/a.sdoc", "/p/b.sdoc"]);
-    assert(handlers.isWithin("outline", { files: ["lexica/a.sdoc"] }, "/p", roots));
-    assert(!handlers.isWithin("outline", { file: "lexica/a.sdoc", files: ["/etc/x.sdoc"] }, "/p", roots));
-    assertEqual(handlers.toolPaths("backlinks", { file: "lexica/a.sdoc#intro", dirs: ["docs"] }, "/p"), ["/p/lexica/a.sdoc", "/p/docs"]);
-    assert(handlers.isWithin("backlinks", { file: "lexica/a.sdoc#intro" }, "/p", roots));
-    assert(!handlers.isWithin("backlinks", { file: "../x.sdoc#a" }, "/p", roots));
-    assert(!handlers.isWithin("backlinks", { file: "lexica/a.sdoc", dirs: ["/"] }, "/p", roots));
+    assertEqual(handlers.toolPaths("outline", { file_path: "a.sdoc", file_paths: ["b.sdoc"] }, "/p"), ["/p/a.sdoc", "/p/b.sdoc"]);
+    assert(handlers.isWithin("outline", { file_paths: ["lexica/a.sdoc"] }, "/p", roots));
+    assert(!handlers.isWithin("outline", { file_path: "lexica/a.sdoc", file_paths: ["/etc/x.sdoc"] }, "/p", roots));
+    assertEqual(handlers.toolPaths("backlinks", { file_path: "lexica/a.sdoc#intro", paths: ["docs"] }, "/p"), ["/p/lexica/a.sdoc", "/p/docs"]);
+    assert(handlers.isWithin("backlinks", { file_path: "lexica/a.sdoc#intro" }, "/p", roots));
+    assert(!handlers.isWithin("backlinks", { file_path: "../x.sdoc#a" }, "/p", roots));
+    assert(!handlers.isWithin("backlinks", { file_path: "lexica/a.sdoc", paths: ["/"] }, "/p", roots));
   });
 
   const linkedIo = memoryIo({
@@ -1809,7 +1822,7 @@ async function main() {
   const backlinks = (input) => handlers.runTool(linkedIo, "backlinks", input, { cwd: "/p" });
 
   await test("backlinks answers a line per link: file:line, the section it sits in, and the href or @id", async () => {
-    const { text } = await backlinks({ file: "lexica/target.sdoc#intro" });
+    const { text } = await backlinks({ file_path: "lexica/target.sdoc#intro" });
     assertEqual(text, [
       "4 links to lexica/target.sdoc @intro:",
       `lexica/sub/from.sdoc:${lineIn(FROM, "See [the target]")} (outside any section) — ../target.sdoc#intro`,
@@ -1817,63 +1830,124 @@ async function main() {
       `lexica/target.sdoc:${lineIn(TARGET, "Read @intro")} @setup Setup Guide — #intro`,
       `lexica/target.sdoc:${lineIn(TARGET, "Read @intro")} @setup Setup Guide — @intro`
     ].join("\n"));
-    assertEqual((await backlinks({ file: "lexica/target.sdoc", id: "intro" })).text, text, "id as its own argument");
-    assert((await backlinks({ file: "lexica/target.sdoc" })).text.startsWith("4 links to lexica/target.sdoc:\n"));
+    assertEqual((await backlinks({ file_path: "lexica/target.sdoc", id: "intro" })).text, text, "id as its own argument");
+    assert((await backlinks({ file_path: "lexica/target.sdoc" })).text.startsWith("4 links to lexica/target.sdoc:\n"));
   });
 
   await test("backlinks finds the file's own references wherever the file is, and says when nothing links", async () => {
-    assertEqual((await backlinks({ file: "docs/self.sdoc#a" })).text, `1 link to docs/self.sdoc @a:\ndocs/self.sdoc:${lineIn(doc({ id: "self", body: "    # A @a\n    {\n        x\n    }\n\n    # B @b\n    {\n        See @a.\n    }" }), "See @a")} @b B — @a`);
-    assertEqual((await backlinks({ file: "lexica/sub/from.sdoc", id: "uses" })).text,
+    assertEqual((await backlinks({ file_path: "docs/self.sdoc#a" })).text, `1 link to docs/self.sdoc @a:\ndocs/self.sdoc:${lineIn(doc({ id: "self", body: "    # A @a\n    {\n        x\n    }\n\n    # B @b\n    {\n        See @a.\n    }" }), "See @a")} @b B — @a`);
+    assertEqual((await backlinks({ file_path: "lexica/sub/from.sdoc", id: "uses" })).text,
       "Nothing in lexica/ links to lexica/sub/from.sdoc @uses or the 1 section inside it (@intro).");
-    assertEqual((await backlinks({ file: "lexica/target.sdoc#setup", dirs: ["docs"] })).text, "Nothing in docs/ links to lexica/target.sdoc @setup.");
+    assertEqual((await backlinks({ file_path: "lexica/target.sdoc#setup", paths: ["docs"] })).text, "Nothing in docs/ links to lexica/target.sdoc @setup.");
   });
 
   await test("backlinks of an unknown id answers the ids the file has, as read does", async () => {
-    assertEqual((await backlinks({ file: "lexica/target.sdoc", id: "nope" })).error,
+    assertEqual((await backlinks({ file_path: "lexica/target.sdoc", id: "nope" })).error,
       'No section "nope" in lexica/target.sdoc. Its ids: @target (the whole file), @intro, @setup.');
-    assert((await backlinks({ file: "lexica/none.sdoc#x" })).error.includes("No such file: lexica/none.sdoc"));
+    assert((await backlinks({ file_path: "lexica/none.sdoc#x" })).error.includes("No such file: lexica/none.sdoc"));
+  });
+
+  await test("backlinks with exact gives what a rename changes: the line giving the id, then each reference with its line", async () => {
+    const { text } = await backlinks({ file_path: "lexica/target.sdoc#intro", exact: true });
+    const read = `Read @intro first, or [the intro](#intro).`;
+    assertEqual(text, [
+      `lexica/target.sdoc:${lineIn(TARGET, "# Intro @intro")} gives the id: # Intro @intro`,
+      "4 references to it, those to sections inside it left out:",
+      `lexica/sub/from.sdoc:${lineIn(FROM, "See [the target]")} ../target.sdoc#intro — See [the target](../target.sdoc#intro) before anything.`,
+      `lexica/target.sdoc:${lineIn(TARGET, "@intro | Start")} @intro — @intro | Start here`,
+      `lexica/target.sdoc:${lineIn(TARGET, "Read @intro")} #intro — ${read}`,
+      `lexica/target.sdoc:${lineIn(TARGET, "Read @intro")} @intro — ${read}`
+    ].join("\n"));
+    const long = "x".repeat(200);
+    const io = memoryIo({
+      "/p/lexica/n.sdoc": doc({ id: "n", body: "    # Outer @outer\n    {\n        See @inner.\n\n        # Inner @inner\n        {\n            In.\n        }\n    }" }),
+      "/p/lexica/m.sdoc": doc({ id: "m", body: `    [Outer](n.sdoc#outer) and [inner](n.sdoc#inner).\n\n    ${long} [far](n.sdoc#outer) ${long}` })
+    });
+    const exact = (await handlers.runTool(io, "backlinks", { file_path: "lexica/n.sdoc", id: "outer", exact: "true" }, { cwd: "/p" })).text.split("\n");
+    assertEqual(exact.length, 4, "the id, the count, and two links to it: none to @inner");
+    assert(exact.slice(2).every((l) => / n\.sdoc#outer — /.test(l)), exact.join("\n"));
+    assert(exact[3].includes("n.sdoc#outer — …x") && exact[3].includes("[far](n.sdoc#outer)") && exact[3].endsWith("x…"), exact[3]);
+    assert(exact[3].length < 220, "a long line is shown around the link");
+    const all = (await handlers.runTool(io, "backlinks", { file_path: "lexica/n.sdoc", id: "outer" }, { cwd: "/p" })).text;
+    assert(all.includes("(to @inner)"), "without exact, the links to sections inside it count");
+  });
+
+  await test("paths takes .sdoc files beside directories, and says when it names nothing to look in", async () => {
+    const files = memoryIo({ "/p/lexica/a.sdoc": GUIDED, "/p/lexica/sub/b.sdoc": PLAIN, "/p/docs/n.txt": "x", "/p/empty/x.txt": "x" });
+    const io = { ...files, stat: async (p) => (p in files.store ? { kind: "file", realPath: p } : { kind: "dir", realPath: p }) };
+    const run = (name, input) => handlers.runTool(io, name, input, { cwd: "/p" });
+    const one = (await run("search", { query: "text", paths: ["lexica/sub/b.sdoc"] })).text;
+    assert(one.includes("lexica/sub/b.sdoc") && !one.includes("lexica/a.sdoc"), one);
+    const listed = (await run("list", { paths: ["lexica/sub/b.sdoc", "lexica"] })).text;
+    assertEqual(listed.split("\n").filter((l) => l.startsWith("lexica/sub/b.sdoc")).length, 1, "a file named twice is listed once");
+    assertEqual((await run("search", { query: "text", paths: ["lexica/none.sdoc"] })).error, "No such file or directory: lexica/none.sdoc");
+    assertEqual((await run("search", { query: "text", paths: ["docs/n.txt"] })).error, "docs/n.txt is neither a directory nor an .sdoc file.");
+    assertEqual((await run("search", { query: "text", paths: ["empty"] })).text, "No .sdoc files in empty/.");
+    assertEqual((await run("search", { query: "zebra", paths: ["lexica/a.sdoc"] })).text, 'Nothing matches "zebra".');
+  });
+
+  await test("the tools name a file file_path, as Read and Edit do, and the places to look in paths", () => {
+    for (const t of handlers.TOOLS) {
+      const keys = Object.keys(t.inputSchema.properties);
+      assert(!keys.some((k) => ["file", "files", "dirs"].includes(k)), `${t.name}: ${keys.join(", ")}`);
+    }
+  });
+
+  await test("read of a section over 300 lines with sections inside it answers its opening and their outline; one without, whole", async () => {
+    const parts = Array.from({ length: 40 }, (_, i) => `        # Part ${i} @part-${i}\n        {\n${"            Line of text.\n".repeat(8)}        }`).join("\n\n");
+    const flat = "        Flat line.\n\n".repeat(160);
+    const text = doc({ id: "n", body: `    # Outer @outer\n    {\n        Opening words.\n\n${parts}\n    }\n\n    # Flat @flat\n    {\n${flat}    }` });
+    const io = memoryIo({ "/p/lexica/n.sdoc": text });
+    const outer = (await handlers.runTool(io, "read", { file_path: "lexica/n.sdoc", ids: ["outer"] }, { cwd: "/p" })).text;
+    assert(/^@outer has \d+ lines, so here is its opening and the sections inside it rather than the whole\./.test(outer), outer.slice(0, 200));
+    assert(outer.includes("Opening words.") && !/\t\s*Line of text\./.test(outer), "the opening, not the sections inside it");
+    assert(outer.includes(`L${lineIn(text, "# Part 0 @part-0")}-`) && outer.includes("@part-39 Part 39"), "the outline of the sections inside it");
+    const whole = (await handlers.runTool(io, "read", { file_path: "lexica/n.sdoc", ids: ["flat"] }, { cwd: "/p" })).text;
+    assertEqual(whole.split("Flat line.").length - 1, 160, "nothing smaller to point to: read whole");
+    const small = (await handlers.runTool(io, "read", { file_path: "lexica/n.sdoc", ids: ["part-3"] }, { cwd: "/p" })).text;
+    assertEqual(small.split("Line of text.").length - 1, 8);
   });
 
   await test("the first outline or read of a file carries its reading guide, once per agent", async () => {
     const state = handlers.createState();
     const ctx = { cwd: "/p", state };
-    const outline = (await handlers.runTool(tree, "outline", { file: "lexica/a.sdoc" }, ctx)).text;
+    const outline = (await handlers.runTool(tree, "outline", { file_path: "lexica/a.sdoc" }, ctx)).text;
     assert(outline.includes("Reading guide:") && outline.includes("Related resources:"), outline);
-    const read = (await handlers.runTool(tree, "read", { file: "lexica/a.sdoc", ids: ["intro"] }, ctx)).text;
+    const read = (await handlers.runTool(tree, "read", { file_path: "lexica/a.sdoc", ids: ["intro"] }, ctx)).text;
     assert(!read.includes("Reading guide:"), "already shown by the outline");
-    const sub = (await handlers.runTool(tree, "read", { file: "lexica/a.sdoc", ids: ["intro"] }, { ...ctx, agentId: "sub-1" })).text;
+    const sub = (await handlers.runTool(tree, "read", { file_path: "lexica/a.sdoc", ids: ["intro"] }, { ...ctx, agentId: "sub-1" })).text;
     assert(sub.includes("Reading guide:"), "a subagent gets its own");
   });
 
   await test("a file met through a tool is not given its guides again on Read, nor after the guides tool", async () => {
     const state = handlers.createState();
-    await handlers.runTool(tree, "read", { file: "lexica/a.sdoc", ids: ["intro"] }, { cwd: "/p", state });
+    await handlers.runTool(tree, "read", { file_path: "lexica/a.sdoc", ids: ["intro"] }, { cwd: "/p", state });
     assertEqual(await handlers.afterRead(tree, state, { filePath: "/p/lexica/a.sdoc", cwd: "/p" }), null);
     const other = handlers.createState();
-    await handlers.runTool(tree, "guides", { file: "lexica/a.sdoc" }, { cwd: "/p", state: other });
+    await handlers.runTool(tree, "guides", { file_path: "lexica/a.sdoc" }, { cwd: "/p", state: other });
     assert(!(await handlers.beforeEdit(tree, other, { filePath: "/p/lexica/a.sdoc", cwd: "/p" })).guide, "the editing guide was shown: the first edit is not given it again");
-    assert(!(await handlers.runTool(tree, "outline", { file: "lexica/a.sdoc" }, { cwd: "/p", state: other })).text.includes("Reading guide:"));
+    assert(!(await handlers.runTool(tree, "outline", { file_path: "lexica/a.sdoc" }, { cwd: "/p", state: other })).text.includes("Reading guide:"));
   });
 
   await test("without the conversation's state, a tool adds no signposts", async () => {
-    assert(!(await handlers.runTool(tree, "outline", { file: "lexica/a.sdoc" }, { cwd: "/p" })).text.includes("Reading guide:"));
+    assert(!(await handlers.runTool(tree, "outline", { file_path: "lexica/a.sdoc" }, { cwd: "/p" })).text.includes("Reading guide:"));
   });
 
   await test("a tool given a missing file or no lexica/ answers an error", async () => {
-    assert((await run("outline", { file: "nope.sdoc" })).error.includes("No such file"));
+    assert((await run("outline", { file_path: "nope.sdoc" })).error.includes("No such file"));
     const { error } = await handlers.runTool(memoryIo({}), "list", {}, { cwd: "/q" });
     assert(error && error.includes("No lexica/"), error);
   });
 
   await test("a tool call is answered only when every path it names is inside a root", () => {
     const roots = ["/p", "/plugin"];
-    assert(handlers.isWithin("outline", { file: "lexica/a.sdoc" }, "/p", roots));
-    assert(handlers.isWithin("read", { file: "/plugin/skills/authoring/reference/sdoc-authoring.sdoc" }, "/p", roots));
+    assert(handlers.isWithin("outline", { file_path: "lexica/a.sdoc" }, "/p", roots));
+    assert(handlers.isWithin("read", { file_path: "/plugin/skills/authoring/reference/sdoc-authoring.sdoc" }, "/p", roots));
     assert(handlers.isWithin("list", {}, "/p", roots));
-    assert(!handlers.isWithin("outline", { file: "../etc/x.sdoc" }, "/p", roots));
-    assert(!handlers.isWithin("check", { files: ["a.sdoc", "/etc/b.sdoc"] }, "/p", roots));
-    assert(!handlers.isWithin("search", { query: "x", dirs: ["/"] }, "/p", roots));
-    assert(!handlers.isWithin("delete", { file: "a.sdoc" }, "/p", roots));
+    assert(!handlers.isWithin("outline", { file_path: "../etc/x.sdoc" }, "/p", roots));
+    assert(!handlers.isWithin("check", { file_paths: ["a.sdoc", "/etc/b.sdoc"] }, "/p", roots));
+    assert(!handlers.isWithin("search", { query: "x", paths: ["/"] }, "/p", roots));
+    assert(!handlers.isWithin("delete", { file_path: "a.sdoc" }, "/p", roots));
   });
 
   // ============================================================
@@ -1959,11 +2033,13 @@ async function main() {
   });
 
   await test("a tool call's paths are put to the check as Read of a file, Glob of a directory", () => {
-    assertEqual(handlers.toolRequests("list", { dirs: ["docs", "/x"] }, "/p"), [{ path: "/p/docs", kind: "dir" }, { path: "/x", kind: "dir" }]);
+    assertEqual(handlers.toolRequests("list", { paths: ["docs", "/x"] }, "/p"), [{ path: "/p/docs", kind: "dir" }, { path: "/x", kind: "dir" }]);
     assertEqual(handlers.toolRequests("search", { query: "q" }, "/p"), [], "the lexica/ dirs: none named");
-    assertEqual(handlers.toolRequests("check", { files: ["a.sdoc"] }, "/p"), [{ path: "/p/a.sdoc", kind: "file" }]);
-    assertEqual(handlers.toolRequests("backlinks", { file: "x.sdoc#id", dirs: ["x.sdoc"] }, "/p"),
-      [{ path: "/p/x.sdoc", kind: "file" }, { path: "/p/x.sdoc", kind: "dir" }], "named as both, checked as both");
+    assertEqual(handlers.toolRequests("check", { file_paths: ["a.sdoc"] }, "/p"), [{ path: "/p/a.sdoc", kind: "file" }]);
+    assertEqual(handlers.toolRequests("backlinks", { file_path: "x.sdoc#id", paths: ["docs", "lexica/y.sdoc"] }, "/p"),
+      [{ path: "/p/x.sdoc", kind: "file" }, { path: "/p/docs", kind: "dir" }, { path: "/p/lexica/y.sdoc", kind: "file" }],
+      "an .sdoc file among paths is checked as the file it is");
+    assertEqual(handlers.toolRequests("search", { query: "q", paths: ["lexica/a.sdoc"] }, "/p"), [{ path: "/p/lexica/a.sdoc", kind: "file" }]);
     assertEqual(handlers.checkRequest({ path: "/p/a.sdoc", kind: "file" }), { tool: "Read", input: { file_path: "/p/a.sdoc" } });
     assertEqual(handlers.checkRequest({ path: "/x", kind: "dir" }), { tool: "Glob", input: { pattern: "**/*.sdoc", path: "/x" } });
   });
@@ -1987,11 +2063,11 @@ async function main() {
     }), ["/p/lexica/private/s.sdoc"]);
     const list = (await handlers.runTool(io, "list", {}, { cwd: "/p" })).text;
     assert(!list.includes("Secret") && list.endsWith("(1 .sdoc file left out: the permission settings deny reading it.)"), list);
-    assert(!(await handlers.runTool(io, "list", { dirs: ["lexica"] }, { cwd: "/p" })).text.includes("Secret"), "a dir given, too");
+    assert(!(await handlers.runTool(io, "list", { paths: ["lexica"] }, { cwd: "/p" })).text.includes("Secret"), "a dir given, too");
     const search = (await handlers.runTool(io, "search", { query: "fsync", read: true }, { cwd: "/p" })).text;
     assert(!search.includes("Secret") && search.includes("lexica/a.sdoc") && search.includes("1 .sdoc file left out"), search);
     assert((await handlers.runTool(io, "search", { query: "secret" }, { cwd: "/p" })).text.startsWith('Nothing matches "secret".\n(1 .sdoc file left out'));
-    const links = (await handlers.runTool(io, "backlinks", { file: "lexica/a.sdoc#a" }, { cwd: "/p" })).text;
+    const links = (await handlers.runTool(io, "backlinks", { file_path: "lexica/a.sdoc#a" }, { cwd: "/p" })).text;
     assert(links.startsWith("Nothing in lexica/ links to lexica/a.sdoc @a.") && links.includes("1 .sdoc file left out"), links);
     assert(!(await handlers.runTool(memoryIo(io.store), "list", {}, { cwd: "/p" })).text.includes("left out"), "nothing denied, nothing said");
   });
@@ -2043,8 +2119,8 @@ async function main() {
   const deps = (perm, more = {}) => ({ check: perm.check, ask: perm.ask, roots: ["/p", "/plugin"], tool: "mcp__sdoc-lexica__outline", name: "outline", cwd: "/p", ...more });
 
   await test("ownToolRequest: the call under the tool's full name, with only its own arguments", async () => {
-    const request = handlers.ownToolRequest("search", { query: "wal", dirs: ["lexica"], agentId: "a1", tool_use_id: "t" }, "mcp__sdoc-lexica__search");
-    assertEqual(request, { tool: "mcp__sdoc-lexica__search", input: { query: "wal", dirs: ["lexica"] } });
+    const request = handlers.ownToolRequest("search", { query: "wal", paths: ["lexica"], agentId: "a1", tool_use_id: "t" }, "mcp__sdoc-lexica__search");
+    assertEqual(request, { tool: "mcp__sdoc-lexica__search", input: { query: "wal", paths: ["lexica"] } });
     const source = fs.readFileSync(path.join(PLUGIN, "hooks", "register.mjs"), "utf8");
     assert(/own\.decision === "deny" && own\.rule/.test(source), "only a settings rule denies the tool by name");
   });
@@ -2202,9 +2278,9 @@ async function main() {
 
   await test("a tool call notes its arguments and its answer, or its error", async () => {
     const { io, lines } = withLog(tree);
-    await handlers.runTool(io, "outline", { file: "lexica/a.sdoc" }, { cwd: "/p" });
+    await handlers.runTool(io, "outline", { file_path: "lexica/a.sdoc" }, { cwd: "/p" });
     await handlers.runTool(io, "search", { query: "brace" }, { cwd: "/p" });
-    await handlers.runTool(io, "outline", { file: "nope.sdoc" }, { cwd: "/p" });
+    await handlers.runTool(io, "outline", { file_path: "nope.sdoc" }, { cwd: "/p" });
     assert(/^tool outline lexica\/a\.sdoc: answered \d+ chars$/.test(lines[0]), lines[0]);
     assert(/^tool search "brace": answered \d+ chars$/.test(lines[1]), lines[1]);
     assertEqual(lines[2], "tool outline nope.sdoc: error: No such file: nope.sdoc");
@@ -2225,16 +2301,16 @@ async function main() {
     await handlers.runTool(io, "search", { query: "brace" }, { cwd: "/p" });
     assert(/: answered \d+ chars; permission checks: 2 files in \d+ ms$/.test(lines[lines.length - 1]), lines[lines.length - 1]);
     lines.length = 0;
-    await handlers.runTool(io, "outline", { file: "lexica/a.sdoc" }, { cwd: "/p" });
+    await handlers.runTool(io, "outline", { file_path: "lexica/a.sdoc" }, { cwd: "/p" });
     assert(!lines.join("\n").includes("permission checks"), "a call that walks nothing says nothing of it");
   });
 
   await test("a tool's plain answer is noted quietly; its error, or signposts it adds, are not", async () => {
     const { io, lines, quiet } = withLog(tree);
     const ctx = { cwd: "/p", state: handlers.createState() };
-    await handlers.runTool(io, "outline", { file: "lexica/a.sdoc" }, ctx);
-    await handlers.runTool(io, "outline", { file: "lexica/a.sdoc" }, ctx);
-    await handlers.runTool(io, "outline", { file: "nope.sdoc" }, ctx);
+    await handlers.runTool(io, "outline", { file_path: "lexica/a.sdoc" }, ctx);
+    await handlers.runTool(io, "outline", { file_path: "lexica/a.sdoc" }, ctx);
+    await handlers.runTool(io, "outline", { file_path: "nope.sdoc" }, ctx);
     assert(lines[0].endsWith("with its reading guide and related resources"), lines[0]);
     assertEqual(quiet, [lines[1]]);
   });

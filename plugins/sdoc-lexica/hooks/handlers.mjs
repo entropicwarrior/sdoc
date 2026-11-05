@@ -340,9 +340,10 @@ async function onePerPlace(io, cwd, dirs) {
 
 // The io a walk over dirs goes through: links inside the project followed
 // (followLinks), then the .sdoc files the permission settings deny left out
-// (withoutDenied). { io, left, outside }.
+// (withoutDenied). { io, left, outside }. An .sdoc file among dirs is reached
+// through its directory's listing, so it is not one of the places walked.
 export function walkIo(io, cwd, dirs) {
-  const links = followLinks(io, cwd, dirs);
+  const links = followLinks(io, cwd, dirs.filter((d) => !kb.isSdocFile(d)));
   const allowed = withoutDenied(links.io);
   return { io: allowed.io, left: allowed.left, outside: links.outside, cost: allowed.cost };
 }
@@ -485,7 +486,7 @@ export async function knowledgeIndex(io, cwd, { maxChars = indexBudget(), dirs, 
   const head = [
     "This project keeps its knowledge in SDOC files under lexica/ (type doc: what something is; type skill: how to do something), indexed below. The plugin's tools load it by section rather than whole:",
     "- mcp__sdoc-lexica__search finds sections by words; mcp__sdoc-lexica__outline gives a file's section ids and line ranges; mcp__sdoc-lexica__read reads sections by id; mcp__sdoc-lexica__list lists the files with their summaries.",
-    `- A file over ${LARGE_FILE_LINES} lines costs a fraction as much read by section (from its outline, with mcp__sdoc-lexica__read or Read offset/limit) as read whole.`,
+    `- A file over ${LARGE_FILE_LINES} lines costs a fraction as much read by section (from its outline, with mcp__sdoc-lexica__read or Read offset/limit) as read whole. For an edit, a shorter one costs little more read whole with Read, which Edit needs anyway.`,
     "The files whose summary or title matches a task hold what the project knows about it.",
     ""
   ].join("\n");
@@ -1017,23 +1018,26 @@ export async function beforeEdit(io, state, { filePath, agentId, cwd }) {
   return { snapshot: await findingsOf(io, filePath, text, cwd), guide };
 }
 
-// The findings in text that snapshot did not have, a finding counted as
-// often as it occurs.
-async function addedFindings(io, filePath, text, snapshot, cwd) {
+// What a change did to a file's findings: added, those in text that snapshot
+// did not have, a finding counted as often as it occurs; cleared, how many of
+// snapshot's are gone; total, how many text has.
+async function findingsChange(io, filePath, text, snapshot, cwd) {
+  const now = await findingsOf(io, filePath, text, cwd);
   const before = new Map();
   for (const f of snapshot || []) before.set(fingerprint(f), (before.get(fingerprint(f)) || 0) + 1);
-  return (await findingsOf(io, filePath, text, cwd)).filter((f) => {
+  const added = now.filter((f) => {
     const left = before.get(fingerprint(f)) || 0;
     if (left) before.set(fingerprint(f), left - 1);
     return !left;
   });
+  return { added, cleared: (snapshot || []).length - (now.length - added.length), total: now.length };
 }
 
 function findingsReport(filePath, added, cwd, by) {
   const errors = added.filter((f) => f.severity !== "warning").length;
   const advice = !errors ? ""
-    : errors === 1 ? " The error leaves the file failing its check until it is fixed."
-    : " The errors leave the file failing its check until they are fixed.";
+    : errors === 1 ? " The error leaves the file failing its check until it is fixed; the edit that fixes it says so."
+    : " The errors leave the file failing its check until they are fixed; the edit that fixes them says so.";
   return `${by} added ${plural(added.length, "finding")} to ${kb.shownPath(filePath, cwd)}.${advice}\n` +
     kb.formatFindings(filePath, added, { base: cwd });
 }
@@ -1041,7 +1045,8 @@ function findingsReport(filePath, added, cwd, by) {
 // After an edit that ran: the editing guide beforeEdit found, when this
 // agent has still not been shown it (two edits sent at once attach it once;
 // it then counts as shown), and the findings the edit added (parse errors,
-// signposts, references, citations); null when there is neither.
+// signposts, references, citations), or when it added none, that the file was
+// checked (checkedLine). null only when the file could not be read.
 export async function afterEdit(io, { filePath, snapshot, cwd, guide = null, state, agentId }) {
   if (snapshot === null) return null;
   const text = await readText(io, filePath);
@@ -1055,12 +1060,28 @@ export async function afterEdit(io, { filePath, snapshot, cwd, guide = null, sta
     parts.push(`This edit changed ${shown}, which has an editing guide that was not shown before the change: ` +
       `the change has not been checked against it.\n\n${guide.text}`);
   }
-  const added = await addedFindings(io, filePath, text, snapshot, cwd);
-  if (added.length) parts.push(findingsReport(filePath, added, cwd, "The edit"));
-  note(io, `Edit ${shown}${agentId ? ` (agent ${agentId})` : ""}: checked, ` +
-    (added.length ? `reported ${plural(added.length, "new finding")}` : "no new findings") +
+  const change = await findingsChange(io, filePath, text, snapshot, cwd);
+  parts.push(change.added.length ? findingsReport(filePath, change.added, cwd, "The edit") : checkedLine(shown, "edit", change));
+  note(io, `Edit ${shown}${agentId ? ` (agent ${agentId})` : ""}: checked, ` + changeNote(change) +
     (withGuide ? `; added ${guide.what}, after the edit` : ""));
-  return parts.length ? parts.join("\n\n") : null;
+  return parts.join("\n\n");
+}
+
+// The line a change that added no finding gets: that the file was checked,
+// what the change cleared, and whether any finding is left, which is what the
+// check tool would answer. Without it, a model whose earlier edit was reported
+// broken called check to learn whether the next one had mended it; with the
+// line but not the tool named, it still did.
+function checkedLine(shown, by, { cleared, total }) {
+  const fixed = cleared ? `, which cleared ${plural(cleared, "finding")}` : "";
+  const left = total ? `no new findings, ${plural(total, "finding")} left`
+    : `${cleared ? "no findings left" : "no findings"}, as mcp__sdoc-lexica__check would answer`;
+  return `${shown} checked after the ${by}${fixed}: ${left}.`;
+}
+
+function changeNote({ added, cleared }) {
+  return added.length ? `reported ${plural(added.length, "new finding")}`
+    : `no new findings${cleared ? `, cleared ${plural(cleared, "finding")}` : ""}`;
 }
 
 // --- Changes made through Bash ---
@@ -1188,8 +1209,8 @@ export async function beforeBash(io, { command, cwd, shellCwd }) {
 }
 
 // After a command: for each named file it changed, the editing guide if this
-// agent has not been shown it, and the findings the change added; null when
-// it changed none, or added nothing worth saying.
+// agent has not been shown it, and the findings the change added, or that it
+// was checked, as after an edit; null when it changed none.
 export async function afterBash(io, state, { snapshot, agentId, cwd }) {
   const parts = [];
   let changed = 0;
@@ -1212,9 +1233,9 @@ export async function afterBash(io, state, { snapshot, agentId, cwd }) {
     // A file the command made from another it names (mv, cp, git mv) is
     // compared with that one: what the text had already is not the command's.
     const source = before === null ? [...snapshot.values()].find((s) => s.text !== null && s.text === after) : null;
-    const found = await addedFindings(io, filePath, after, source ? source.findings : findings, cwd);
-    if (found.length) parts.push(findingsReport(filePath, found, cwd, "The command"));
-    added.push(found.length ? `reported ${plural(found.length, "new finding")}` : "no new findings");
+    const change = await findingsChange(io, filePath, after, source ? source.findings : findings, cwd);
+    parts.push(change.added.length ? findingsReport(filePath, change.added, cwd, "The command") : checkedLine(shown, "command", change));
+    added.push(changeNote(change));
     note(io, `Bash changed ${shown}${agentId ? ` (agent ${agentId})` : ""}: ${added.join("; ")}`);
   }
   if (snapshot.size && !changed) {
@@ -1293,7 +1314,7 @@ export function researchAgentSpec(toolNames) {
 // --- Tools ---
 
 const FILE = { type: "string", description: "Path of an .sdoc file, absolute or relative to the project." };
-const DIRS = { type: "array", items: { type: "string" }, description: "Directories to look in, absolute or relative to the project. Default: every lexica/ directory." };
+const PATHS = { type: "array", items: { type: "string" }, description: "Directories or .sdoc files to look in, absolute or relative to the project. Default: every lexica/ directory." };
 
 // What search's read: true adds after the list: at most this many sections,
 // in at most this many characters.
@@ -1303,22 +1324,25 @@ export const SEARCH_READ_SECTIONS = 5;
 // The most files one outline call outlines.
 export const OUTLINE_MAX_FILES = 20;
 
-// The tools the model calls, as mcp__sdoc-lexica__<name>. All read-only.
+// The tools the model calls, as mcp__sdoc-lexica__<name>. All read-only. A
+// parameter naming a file is file_path (file_paths for several), as Read's and
+// Edit's is: models carried a parameter named file over to Read and Edit, and
+// each such call failed.
 export const TOOLS = [
   {
     name: "list",
-    description: "List SDOC knowledge files: one line per .sdoc file with its type, size and @about summary. With no dirs, every lexica/ directory of the project. Start here to choose which file to open.",
-    inputSchema: { type: "object", properties: { dirs: DIRS, detail: { type: "string", enum: ["summaries", "titles"], description: "summaries (the default): each file's @about, whole. titles: each file's title instead, for a shorter answer." } } }
+    description: "List SDOC knowledge files: one line per .sdoc file with its type, size and @about summary. With no paths, every lexica/ directory of the project. Start here to choose which file to open.",
+    inputSchema: { type: "object", properties: { paths: PATHS, detail: { type: "string", enum: ["summaries", "titles"], description: "summaries (the default): each file's @about, whole. titles: each file's title instead, for a shorter answer." } } }
   },
   {
     name: "outline",
     description: "Outline an .sdoc file: each section's @id, title, line range and first words, and which signposts the file has. Use it before reading a large file, then read only the sections you need. " +
-      `files outlines several at once (up to ${OUTLINE_MAX_FILES}); depth: 1 shows the top-level sections only, 2 their children too; previews: false leaves out the first words.`,
+      `file_paths outlines several at once (up to ${OUTLINE_MAX_FILES}); depth: 1 shows the top-level sections only, 2 their children too; previews: false leaves out the first words.`,
     inputSchema: {
       type: "object",
       properties: {
-        file: FILE,
-        files: { type: "array", items: FILE, description: `Several files at once, up to ${OUTLINE_MAX_FILES}, in place of file or beside it.` },
+        file_path: FILE,
+        file_paths: { type: "array", items: FILE, description: `Several files at once, up to ${OUTLINE_MAX_FILES}, in place of file_path or beside it.` },
         depth: { type: "integer", minimum: 1, description: "How many levels of sections to show: 1 is the top-level sections only. Default: all." },
         previews: { type: "boolean", description: "false leaves out each section's first words. Default: true." }
       }
@@ -1326,26 +1350,28 @@ export const TOOLS = [
   },
   {
     name: "read",
-    description: "Read sections of an .sdoc file by id: the @id, or for a heading without one the slug outline shows in parentheses; the file's own id reads it whole (a large file answers with its outline instead). Returns each section's source with line numbers; text: true returns plain text instead. To change a section, Read its lines first (offset and limit from its range): Edit refuses a file that Read has not opened.",
+    description: "Read sections of an .sdoc file by id: the @id, or for a heading without one the slug outline shows in parentheses; the file's own id reads it whole. " +
+      `A file over ${LARGE_FILE_LINES} lines answers with its outline instead, and a section over ${LARGE_FILE_LINES} lines with sections inside it with its opening and their outline. ` +
+      "Returns each section's source with line numbers; text: true returns plain text instead. To change a section, Read its lines first (offset and limit from its range): Edit refuses a file that Read has not opened.",
     inputSchema: {
       type: "object",
       properties: {
-        file: FILE,
+        file_path: FILE,
         ids: { type: "array", items: { type: "string" }, description: "Section ids, from outline." },
         text: { type: "boolean", description: "Plain text instead of source." }
       },
-      required: ["file", "ids"]
+      required: ["file_path", "ids"]
     }
   },
   {
     name: "search",
     description: "Search SDOC files for the sections that hold every word of the query, ignoring case; when none holds them all, the sections that hold the most, each line saying which words it lacks. Best matches first (rare words, a word in the title and a short section count for more), each with file:line, section id and a snippet. " +
-      `read: true also returns the best sections whole, up to ${SEARCH_READ_SECTIONS} within ${SEARCH_READ_CHARS} characters, so one call can answer a question. With no dirs, every lexica/ directory of the project.`,
+      `read: true also returns the best sections whole, up to ${SEARCH_READ_SECTIONS} within ${SEARCH_READ_CHARS} characters, so one call can answer a question. With no paths, every lexica/ directory of the project.`,
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string" },
-        dirs: DIRS,
+        paths: PATHS,
         read: { type: "boolean", description: "Also return the best sections' source, with line numbers, after the list." }
       },
       required: ["query"]
@@ -1354,24 +1380,25 @@ export const TOOLS = [
   {
     name: "guides",
     description: "The signposts of an .sdoc file: its @about, reading guide, related resources and editing guide.",
-    inputSchema: { type: "object", properties: { file: FILE }, required: ["file"] }
+    inputSchema: { type: "object", properties: { file_path: FILE }, required: ["file_path"] }
   },
   {
     name: "check",
     description: "Check .sdoc files for parse errors and signpost, reference and citation problems, with line numbers: the findings build-doc --check reports, except that a link leaving the project is not checked.",
-    inputSchema: { type: "object", properties: { files: { type: "array", items: FILE } }, required: ["files"] }
+    inputSchema: { type: "object", properties: { file_paths: { type: "array", items: FILE } }, required: ["file_paths"] }
   },
   {
     name: "backlinks",
-    description: "Find what links to an .sdoc file or to one of its sections: the links in other files ([text](file.sdoc#id)) and, for a section, the @id references and #id links in the file itself, each with file:line and the section it sits in. A link by @id or by title slug counts alike. Use it before renaming, moving or removing a section or a file, to find the links to change. With no dirs, every lexica/ directory of the project; the file itself is always searched.",
+    description: "Find what links to an .sdoc file or to one of its sections: the links in other files ([text](file.sdoc#id)) and, for a section, the @id references and #id links in the file itself, each with file:line and the section it sits in. A link by @id or by title slug counts alike. Use it before renaming, moving or removing a section or a file, to find the links to change; exact: true gives what a rename changes, with the text of each line. With no paths, every lexica/ directory of the project; the file itself is always searched.",
     inputSchema: {
       type: "object",
       properties: {
-        file: { type: "string", description: "Path of an .sdoc file, absolute or relative to the project; file.sdoc#id names a section." },
+        file_path: { type: "string", description: "Path of an .sdoc file, absolute or relative to the project; file.sdoc#id names a section." },
         id: { type: "string", description: "A section's id, as outline shows it. Without one, the links to the file as a whole." },
-        dirs: DIRS
+        exact: { type: "boolean", description: "Only what renaming the id would change: the line that gives it, then each reference to it with the text of its line, those to sections inside it left out. Default: false." },
+        paths: PATHS
       },
-      required: ["file"]
+      required: ["file_path"]
     }
   }
 ];
@@ -1386,11 +1413,11 @@ function asList(value) {
 // The paths a tool call names, resolved against cwd.
 export function toolPaths(name, input, cwd) {
   const resolve = (p) => kb.joinPath(cwd, p);
-  if (name === "list" || name === "search") return asList(input.dirs).map(resolve);
-  if (name === "check") return asList(input.files).map(resolve);
-  if (name === "outline") return (input.file ? [String(input.file)] : []).concat(asList(input.files)).map(resolve);
-  if (name === "backlinks") return (input.file ? [fileAndId(input.file).file] : []).concat(asList(input.dirs)).map(resolve);
-  return input.file ? [resolve(String(input.file))] : [];
+  if (name === "list" || name === "search") return asList(input.paths).map(resolve);
+  if (name === "check") return asList(input.file_paths).map(resolve);
+  if (name === "outline") return (input.file_path ? [String(input.file_path)] : []).concat(asList(input.file_paths)).map(resolve);
+  if (name === "backlinks") return (input.file_path ? [fileAndId(input.file_path).file] : []).concat(asList(input.paths)).map(resolve);
+  return input.file_path ? [resolve(String(input.file_path))] : [];
 }
 
 // True when every path the call names lies under one of roots, as written.
@@ -1454,6 +1481,30 @@ async function searchReads(io, hits, cwd, { state, agentId } = {}) {
   return parts.concat(pointers.length ? [pointers.join("\n")] : []).join("\n\n");
 }
 
+// A section of more than LARGE_FILE_LINES lines with sections inside it is
+// answered as a large file is: { text, opening }, its opening (the lines before
+// the first section inside it) then the outline of those inside it. null for
+// any other section, which is read whole: one with nothing inside it has
+// nothing smaller to point to. o is the file's outline (kb.outlineText).
+function largeSection(filePath, text, section, o, base) {
+  const span = section.lineEnd - section.lineStart + 1;
+  if (span <= LARGE_FILE_LINES) return null;
+  const inside = o.sections.filter((s) => s.lineStart > section.lineStart && s.lineEnd <= section.lineEnd);
+  if (!inside.length) return null;
+  const own = o.sections.find((s) => s.lineStart === section.lineStart);
+  const opening = {
+    title: section.title, lineStart: section.lineStart, lineEnd: inside[0].lineStart - 1,
+    source: text.split("\n").slice(section.lineStart - 1, inside[0].lineStart - 1).join("\n")
+  };
+  const named = section.id ? "@" + section.id : `"${section.title}"`;
+  return {
+    opening,
+    text: `${named} has ${span} lines, so here is its opening and the sections inside it rather than the whole. ` +
+      `Read the ones you need by id.\n\n${kb.formatSection(filePath, opening, { base })}\n\n` +
+      kb.formatSectionLines(inside, { fromDepth: own ? own.depth + 1 : 0 })
+  };
+}
+
 // Runs a tool: { text } or { error }. With the conversation's state, the
 // first outline or read of a file by an agent carries the file's reading
 // guide and related resources, as a first Read does.
@@ -1496,18 +1547,31 @@ async function answerTool(io, name, input, { cwd, state, agentId, walked }) {
   };
   const resolve = (p) => kb.joinPath(cwd, String(p));
   async function fileText(file) {
-    if (!file) throw new Error("Missing file.");
+    if (!file) throw new Error("Missing file_path.");
     const text = await readText(io, resolve(file));
     if (text === null) throw new Error(`No such file: ${file}`);
     return text;
   }
-  async function dirsOf(given) {
-    const dirs = asList(given).map(resolve);
-    if (dirs.length) return dirs;
+  // The directories and .sdoc files given to look in, else the lexica/
+  // directories. One that is not there, or is a file of another kind, is an
+  // error rather than a search over nothing.
+  async function pathsOf(given) {
+    const paths = asList(given).map(resolve);
+    for (const path of paths) {
+      const shown = kb.shownPath(path, cwd);
+      if (!await (async () => io.exists(path))().catch(() => false)) throw new Error(`No such file or directory: ${shown}`);
+      const stat = io.stat && !kb.isSdocFile(path) ? await (async () => io.stat(path))().catch(() => null) : null;
+      if (stat && stat.kind === "file") throw new Error(`${shown} is neither a directory nor an .sdoc file.`);
+    }
+    if (paths.length) return paths;
     const found = await knowledgeDirs(io, cwd, state);
-    if (!found.length) throw new Error(`No lexica/ directory under ${cwd}. Pass dirs to look elsewhere.`);
+    if (!found.length) throw new Error(`No lexica/ directory under ${cwd}. Pass paths to look elsewhere.`);
     return found;
   }
+  // The places looked in, for an answer that found nothing there.
+  const placesOf = (given, paths) => (asList(given).length
+    ? paths.map((p) => kb.shownPath(p, cwd).replace(/[\\/]?$/, kb.isSdocFile(p) ? "" : "/")).join(", ")
+    : "lexica/");
   // The file's signposts appended on this agent's first meeting with it.
   function withSignposts(file, text, answer) {
     const signposts = state ? firstMeeting(state, { filePath: resolve(file), text, agentId, cwd }) : null;
@@ -1517,15 +1581,15 @@ async function answerTool(io, name, input, { cwd, state, agentId, walked }) {
   try {
     switch (name) {
       case "list": {
-        const dirs = await dirsOf(input.dirs);
-        // The cache holds the lexica/ directories' files: other dirs pass it by.
-        const { files, now } = await describedFiles(walking(dirs), cwd, dirs, { cached: !asList(input.dirs).length });
+        const dirs = await pathsOf(input.paths);
+        // The cache holds the lexica/ directories' files: other paths pass it by.
+        const { files, now } = await describedFiles(walking(dirs), cwd, dirs, { cached: !asList(input.paths).length });
         const titles = input.detail === "titles";
         return { text: withLeftOut(files.length ? kb.formatFileList(files, { base, titles, now }) : "No .sdoc files there.") };
       }
       case "outline": {
-        const files = [...new Set((input.file ? [String(input.file)] : []).concat(asList(input.files)))];
-        if (!files.length) throw new Error("Missing file: pass file or files.");
+        const files = [...new Set((input.file_path ? [String(input.file_path)] : []).concat(asList(input.file_paths)))];
+        if (!files.length) throw new Error("Missing file_path: pass file_path or file_paths.");
         // depth counts levels from 1; formatOutline's maxDepth counts from 0.
         const depth = input.depth === undefined || input.depth === null || input.depth === "" ? NaN : Number(input.depth);
         const maxDepth = Number.isFinite(depth) ? Math.max(1, Math.floor(depth)) - 1 : Infinity;
@@ -1547,30 +1611,34 @@ async function answerTool(io, name, input, { cwd, state, agentId, walked }) {
         return { text: parts.join("\n\n"), withSignposts: met.length ? met.join("; ") : undefined };
       }
       case "read": {
-        const text = await fileText(input.file);
+        const file = input.file_path;
+        const text = await fileText(file);
         const ids = asList(input.ids);
         if (!ids.length) throw new Error("Missing ids: mcp__sdoc-lexica__outline lists them.");
         const lines = text.split("\n").length;
         let outline = null;
-        const outlineOnce = () => outline || (outline = kb.outlineText(text, resolve(input.file)));
+        const outlineOnce = () => outline || (outline = kb.outlineText(text, resolve(file)));
         const parts = ids.map((id) => {
           const section = kb.readSectionText(text, id, { text: input.text === true || input.text === "true" });
-          if (!section) return unknownIdMessage(id, input.file, sectionIdsOf(outlineOnce()));
+          if (!section) return unknownIdMessage(id, file, sectionIdsOf(outlineOnce()));
           if (section.whole && lines > LARGE_FILE_LINES) {
-            return `${input.file} has ${lines} lines, so here is its outline rather than the whole file. ` +
+            return `${file} has ${lines} lines, so here is its outline rather than the whole file. ` +
               `Read the sections you need by id.\n\n${kb.formatOutline(outlineOnce(), { base })}`;
           }
-          if (section.source !== undefined) {
-            guideShownIn(state, { filePath: resolve(input.file), text, agentId, first: section.lineStart, last: section.lineEnd });
+          const large = section.whole ? null : largeSection(resolve(file), text, section, outlineOnce(), base);
+          const shown = large ? large.opening : section;
+          if (shown.source !== undefined) {
+            guideShownIn(state, { filePath: resolve(file), text, agentId, first: shown.lineStart, last: shown.lineEnd });
           }
-          return kb.formatSection(resolve(input.file), section, { base });
+          return large ? large.text : kb.formatSection(resolve(file), section, { base });
         });
-        return withSignposts(input.file, text, parts.join("\n\n"));
+        return withSignposts(file, text, parts.join("\n\n"));
       }
       case "search": {
         if (!input.query) throw new Error("Missing query.");
-        const dirs = await dirsOf(input.dirs);
+        const dirs = await pathsOf(input.paths);
         const found = await kb.rankFiles(String(input.query), dirs, walking(dirs), { cache: state && state.parsed });
+        if (!found.files) return { text: withLeftOut(`No .sdoc files in ${placesOf(input.paths, dirs)}.`) };
         if (!found.hits.length) return { text: withLeftOut(`Nothing matches "${input.query}".`) };
         const list = kb.formatSearch(found.hits, { base, total: found.total, matched: found.matched, least: found.least, terms: found.terms });
         // The sections are not counted as met: the reading guide still comes
@@ -1580,8 +1648,8 @@ async function answerTool(io, name, input, { cwd, state, agentId, walked }) {
         return { text: withLeftOut(list) + (sections ? "\n\n" + sections : "") };
       }
       case "guides": {
-        const file = resolve(input.file);
-        const g = kb.guidesText(await fileText(input.file));
+        const file = resolve(input.file_path);
+        const g = kb.guidesText(await fileText(input.file_path));
         // Asked for outright, so no later first meeting repeats them, and no
         // first edit's result repeats the editing guide shown here.
         if (state) {
@@ -1596,8 +1664,8 @@ async function answerTool(io, name, input, { cwd, state, agentId, walked }) {
         return { text: parts.join("\n\n") || "No signposts." };
       }
       case "check": {
-        const files = asList(input.files);
-        if (!files.length) throw new Error("Missing files.");
+        const files = asList(input.file_paths);
+        if (!files.length) throw new Error("Missing file_paths.");
         const parts = [];
         for (const file of files) {
           const findings = await findingsOf(io, resolve(file), await fileText(file), cwd);
@@ -1606,14 +1674,14 @@ async function answerTool(io, name, input, { cwd, state, agentId, walked }) {
         return { text: parts.join("\n") };
       }
       case "backlinks": {
-        const { file, id: fragment } = fileAndId(input.file || "");
+        const { file, id: fragment } = fileAndId(input.file_path || "");
         const id = input.id ? String(input.id) : fragment;
+        const exact = input.exact === true || input.exact === "true";
         const text = await fileText(file);
-        const dirs = await dirsOf(input.dirs);
-        const found = await kb.backlinksFiles(resolve(file), dirs, walking(dirs), { id, cache: state && state.parsed });
+        const dirs = await pathsOf(input.paths);
+        const found = await kb.backlinksFiles(resolve(file), dirs, walking(dirs), { id, exact, cache: state && state.parsed });
         if (!found) throw new Error(id ? unknownIdMessage(id, file, sectionIdsOf(kb.outlineText(text, resolve(file)))) : `No such file: ${file}`);
-        const where = asList(input.dirs).length ? dirs.map((d) => kb.shownPath(d, cwd).replace(/[\\/]?$/, "/")).join(", ") : "lexica/";
-        return { text: withLeftOut(kb.formatBacklinks(found, { base, where })) };
+        return { text: withLeftOut(kb.formatBacklinks(found, { base, where: placesOf(input.paths, dirs) })) };
       }
       default:
         return { error: `Unknown tool: ${name}` };
@@ -1637,14 +1705,16 @@ async function answerTool(io, name, input, { cwd, state, agentId, walked }) {
 export const CONSENT_OPTIONS = ["Allow once", "Allow for this session", "Deny"];
 
 // The paths a tool call names, each { path, kind }: "dir" for a directory
-// list, search or backlinks looks in, "file" for the rest. The kind is the
-// parameter's, so a path given as both a file and a directory is checked as
-// both.
+// list, search or backlinks looks in, "file" for the rest. A path in paths is
+// a file when it names an .sdoc file, which is all that walk reads of it, and a
+// directory otherwise; so a path given as both a file and a directory is
+// checked as both.
 export function toolRequests(name, input, cwd) {
   const looksIn = ["list", "search", "backlinks"].includes(name);
-  const dirs = looksIn ? asList(input.dirs).map((p) => kb.joinPath(cwd, p)) : [];
-  const files = !looksIn ? toolPaths(name, input, cwd) : name === "backlinks" ? toolPaths(name, { file: input.file }, cwd) : [];
-  return files.map((path) => ({ path, kind: "file" })).concat(dirs.map((path) => ({ path, kind: "dir" })));
+  const places = looksIn ? asList(input.paths).map((p) => kb.joinPath(cwd, p)) : [];
+  const files = !looksIn ? toolPaths(name, input, cwd) : name === "backlinks" ? toolPaths(name, { file_path: input.file_path }, cwd) : [];
+  return files.map((path) => ({ path, kind: "file" }))
+    .concat(places.map((path) => ({ path, kind: kb.isSdocFile(path) ? "file" : "dir" })));
 }
 
 // The permission question for one path, as $.tool.check takes it.
