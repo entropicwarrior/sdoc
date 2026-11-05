@@ -153,13 +153,24 @@ async function main() {
     assert(!stale.length, "out of date: " + stale.join(", "));
   });
 
-  // With a version set, Claude Code updates a plugin only when the number
-  // changes, so a fix shipped without a bump never reaches anyone. Without
-  // one, each commit on the branch coworkers track is an update.
-  await test("plugin.json names the plugin and sets no version (it is versioned by commit)", () => {
+  // Claude Code updates a plugin only when its version changes, so a change
+  // shipped under the old number never reaches anyone. tools/plugin-version.json
+  // holds the version and a digest of the plugin's files at that version.
+  await test("plugin.json names the plugin and sets a version", () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8"));
     assertEqual(manifest.name, "sdoc-lexica");
-    assert(!("version" in manifest), "a version here pins coworkers to it until someone bumps it");
+    assert(/^\d+\.\d+\.\d+$/.test(manifest.version), "version: " + manifest.version);
+  });
+
+  await test("the plugin's files are recorded under its version: a change raises it (npm run build:plugin)", () => {
+    const found = buildPlugin.versionCheck();
+    assert(!found, found && found.problem);
+  });
+
+  await test("versions compare by number, part by part", () => {
+    assertEqual(buildPlugin.compareVersions("0.10.0", "0.9.9"), 1);
+    assertEqual(buildPlugin.compareVersions("1.0.0", "1.0.0"), 0);
+    assertEqual(buildPlugin.compareVersions("1.2.3", "1.3.0"), -1);
   });
 
   await test("the marketplace lists the plugin by a path that holds it", () => {
@@ -169,7 +180,7 @@ async function main() {
     const entry = market.plugins.find((p) => p.name === manifest.name);
     assert(entry, "no entry named " + manifest.name);
     assert(fs.existsSync(path.join(ROOT, entry.source, ".claude-plugin", "plugin.json")), "source has no plugin.json");
-    assert(!("version" in entry), "a version here pins coworkers to it until someone bumps it");
+    assert(!("version" in entry), "the version lives in plugin.json only, where the build checks it");
   });
 
   await test("hooks.json names a hooks module that exists, and no command hooks (no Node)", () => {

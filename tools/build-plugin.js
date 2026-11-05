@@ -13,13 +13,18 @@
 // The generated files are committed, because a marketplace install runs no
 // build step.
 //
-// The plugin carries no version on purpose: Claude Code then versions it by
-// commit, so whatever is merged to the branch coworkers track reaches them,
-// a plugin-only fix included, with no number to forget.
+// It also keeps the plugin's version honest. Claude Code updates an installed
+// plugin only when the version in plugin.json changes, so a change shipped
+// under the old number reaches no one, and nothing says so. tools/plugin-version.json
+// records the version and a digest of every file under plugins/sdoc-lexica at
+// that version. A build records a new version; it refuses to record changed
+// files under the old one, and says to raise it. A version that only goes up
+// is checked too, since Claude Code would not take a lower one for an update.
 //
 // Usage: node tools/build-plugin.js [--check]
 // --check writes nothing, lists every generated file that differs from what
-// a build would write, and exits 1 if any does. test/test-plugin.js runs it.
+// a build would write and any version problem, and exits 1 if there is one.
+// test/test-plugin.js runs both checks.
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -44,9 +49,9 @@ function replaceOnce(text, pattern, replacement, what) {
 }
 
 // A short hash of the sources the plugin's lib is built from. The hooks keep
-// file descriptions between sessions, and the plugin updates by commit with
-// no version to key them by: a description made by an older parser is
-// discarded when this differs, rather than kept until the file changes.
+// file descriptions between sessions, keyed by this rather than by the
+// plugin's version: a description made by an older parser is discarded when
+// this differs, and an update that leaves the parser alone keeps them.
 function buildId() {
   const hash = crypto.createHash("sha256");
   for (const source of ["src/sdoc.js", "src/knowledge-base.js"]) hash.update(fs.readFileSync(path.join(ROOT, source), "utf8"));
@@ -82,6 +87,81 @@ function outputs() {
   ];
 }
 
+const MANIFEST = path.join(PLUGIN, ".claude-plugin", "plugin.json");
+const VERSION_RECORD = path.join(ROOT, "tools", "plugin-version.json");
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+
+// Every file the plugin ships, as paths from the plugin's folder, sorted. A
+// dotfile other than .claude-plugin/ is passed over (.DS_Store and the like),
+// since a marketplace install never has it.
+function pluginFiles(dir = PLUGIN, prefix = "") {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith(".") && entry.name !== ".claude-plugin") continue;
+    const rel = prefix + entry.name;
+    if (entry.isDirectory()) files.push(...pluginFiles(path.join(dir, entry.name), rel + "/"));
+    else if (entry.isFile()) files.push(rel);
+  }
+  return files;
+}
+
+// A hash of every file the plugin ships, by path and content. Line endings
+// are made LF first, so a checkout that turns them to CRLF hashes the same.
+function pluginDigest() {
+  const hash = crypto.createHash("sha256");
+  for (const rel of pluginFiles()) {
+    hash.update(rel + "\0");
+    hash.update(fs.readFileSync(path.join(PLUGIN, rel), "utf8").replace(/\r\n/g, "\n") + "\0");
+  }
+  return hash.digest("hex");
+}
+
+function pluginVersion() {
+  return JSON.parse(fs.readFileSync(MANIFEST, "utf8")).version;
+}
+
+function recordedVersion() {
+  return fs.existsSync(VERSION_RECORD) ? JSON.parse(fs.readFileSync(VERSION_RECORD, "utf8")) : null;
+}
+
+// -1, 0 or 1, as version a is below, equal to or above version b.
+function compareVersions(a, b) {
+  const x = SEMVER.exec(a).slice(1).map(Number);
+  const y = SEMVER.exec(b).slice(1).map(Number);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+
+// What is wrong with the plugin's version, or null: { problem, record }, where
+// record is true when a build would fix it by recording the version.
+function versionCheck() {
+  const version = pluginVersion();
+  const where = "plugins/sdoc-lexica/.claude-plugin/plugin.json";
+  if (typeof version !== "string" || !SEMVER.test(version)) {
+    return { problem: `${where} needs a "version" of the form 1.2.3, not ${JSON.stringify(version)}.`, record: false };
+  }
+  const record = recordedVersion();
+  const digest = pluginDigest();
+  if (record && record.digest === digest && record.version === version) return null;
+  if (record && record.version === version) {
+    return {
+      problem: `plugins/sdoc-lexica changed since version ${version} was recorded, and Claude Code updates no one ` +
+        `until the version changes: raise "version" in ${where}, then run \`npm run build:plugin\`.`,
+      record: false
+    };
+  }
+  if (record && compareVersions(version, record.version) < 0) {
+    return { problem: `The version in ${where}, ${version}, is below the recorded ${record.version}: it can only go up.`, record: false };
+  }
+  return { problem: `Version ${version} is not recorded yet: run \`npm run build:plugin\`.`, record: true };
+}
+
+function recordVersion() {
+  const record = { version: pluginVersion(), digest: pluginDigest() };
+  fs.writeFileSync(VERSION_RECORD, JSON.stringify(record, null, 2) + "\n", "utf8");
+  return record;
+}
+
 // The generated files that differ from what a build would write.
 function stale() {
   return outputs().filter((o) => {
@@ -94,8 +174,10 @@ function main() {
   if (process.argv.includes("--check")) {
     const differ = stale();
     for (const p of differ) console.error(`${p} is out of date: run \`npm run build:plugin\``);
-    if (!differ.length) console.log("Plugin: generated files are up to date.");
-    process.exitCode = differ.length ? 1 : 0;
+    const version = differ.length ? null : versionCheck();
+    if (version) console.error(version.problem);
+    if (!differ.length && !version) console.log(`Plugin: generated files are up to date, and version ${pluginVersion()} is recorded.`);
+    process.exitCode = differ.length || version ? 1 : 0;
     return;
   }
   for (const o of outputs()) {
@@ -104,8 +186,16 @@ function main() {
     fs.writeFileSync(full, o.content, "utf8");
     console.log(`Wrote ${o.path}`);
   }
+  const version = versionCheck();
+  if (version && version.record) {
+    recordVersion();
+    console.log(`Recorded version ${pluginVersion()} in tools/plugin-version.json`);
+  } else if (version) {
+    console.error(version.problem);
+    process.exitCode = 1;
+  }
 }
 
 if (require.main === module) main();
 
-module.exports = { outputs, stale };
+module.exports = { outputs, stale, versionCheck, pluginDigest, compareVersions };

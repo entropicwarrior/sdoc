@@ -7,7 +7,7 @@
     }
 
     @about {
-        The SDOC plugin for Claude Code: what it adds, how to install it for yourself or roll it out to a team, and how it is built and tested. Read it before installing the plugin, when deciding how to distribute it, or before changing anything under `plugins/sdoc-lexica/`.
+        The SDOC plugin for Claude Code, `sdoc-lexica`: what it adds, how to install it for yourself or roll it out to a team, and how it is built and tested. It is written for any AI agent working in Claude Code, and so far tested only with Anthropic's Claude models. Read it before installing the plugin, when deciding how to distribute it, or before changing anything under `plugins/sdoc-lexica/`.
     }
 
     @reading-guide {
@@ -16,25 +16,28 @@
             @what-it-does, @plugin-permissions, @plugin-limits, @install | Installing it for yourself
             @team-rollout, @updates | Rolling it out to a team
             @plugin-goals, @plugin-limits, @plugin-development | Changing the plugin
+            @plugin-other-agents | Using SDOC knowledge from an agent other than Claude Code's
         }
     }
 
     # What It Is For @plugin-goals
     {
-        The plugin is there to make Claude better at a project's knowledge, by three measures:
+        The plugin makes the AI agent working in Claude Code (the agent, below) more accurate, faster and cheaper on a project's knowledge, and a change to it is judged by these measures alone:
 
         {[.]
-            - **Accuracy:** fewer errors, invented facts and stale references in what Claude answers and writes.
+            - **Accuracy:** fewer errors, invented facts and stale references in what the agent answers and writes.
             - **Speed:** less time to finish a task.
             - **Tokens:** fewer tokens to finish it.
         }
 
-        A change to the plugin is judged by these, measured by the evals (@plugin-evals) with the plugin and without it. How Claude gets there, such as how many files it opens, is not a goal.
+        The evals (@plugin-evals) measure them with the plugin and without it, and `lexica/impl-status.sdoc` records the latest results.
+
+        Nothing in the plugin names a model: its skills, tool answers and hook text are plain text, written for whichever model Claude Code runs; an agent outside Claude Code cannot load the plugin (@plugin-other-agents). It has been tested and measured only with Anthropic's Claude models (Haiku, Sonnet and Opus), so how well it serves another model is not known yet (@plugin-limits).
     }
 
     # What It Does @what-it-does
     {
-        The plugin teaches Claude Code to read, write and navigate SDOC files and Lexica knowledge trees, the `lexica/` directories a project keeps its knowledge in. It loads knowledge a section at a time instead of a file at a time, and it puts each file's signposts in front of Claude at the moment they apply.
+        The plugin teaches the agent to read, write and navigate SDOC files and Lexica knowledge trees, the `lexica/` directories a project keeps its knowledge in. It loads knowledge a section at a time instead of a file at a time. It also puts each file's signposts (its about summary, reading guide, related resources and editing guide) in front of the agent at the moment they apply.
 
         It runs inside Claude Code as a **mod**: a hooks module Claude Code executes in its own runtime. No Node.js, Python or other runtime is needed on the machine.
 
@@ -42,93 +45,333 @@
         {
             {[table]
                 Skill | What it covers
-                `/sdoc-lexica:authoring` | The syntax, the mistakes that break a file, signposts, and reading a large file by section. The full authoring guide ships with it, to be read by section. Claude loads it on its own only around `.sdoc` files.
+                `/sdoc-lexica:authoring` | The syntax, the mistakes that break a file, signposts, and reading a large file by section. The full authoring guide ships with it, to be read by section. The agent loads it on its own only once the conversation involves an `.sdoc` file (the skill's `paths`).
                 `/sdoc-lexica:lexica` | Finding knowledge in `lexica/` directories, keeping it current (impl-status, specs, conventions), starting a new knowledge file, and handing questions to the research agent (@plugin-research-agent).
             }
 
-            Claude loads a skill when the task calls for it, and either can be invoked by name.
+            The agent loads a skill when the task calls for it, and either can be invoked by name.
         }
 
         # Tools @plugin-tools
         {
-            Read-only tools Claude calls directly. In a project with a `lexica/` directory they are always listed; elsewhere they wait behind tool search and cost nothing until wanted. Each path a call names gets the permission check a Read of it would get: inside the project they run with no prompt, a deny rule holds, and a path elsewhere is asked about (@plugin-permissions).
+            Read-only tools the agent calls directly. In a project with a `lexica/` directory they are loaded with every conversation. Elsewhere they are deferred: only their names are listed, until the agent loads one through tool search. Each path a call names gets the permission check a Read of it would get: inside the project they run with no prompt, a deny rule holds, and a path elsewhere is asked about (@plugin-permissions).
 
-            {[table]
-                Tool | Answers
-                `mcp__sdoc-lexica__list` | Every `.sdoc` file under the `lexica/` directories, or under the `paths` given (directories or `.sdoc` files), each with its type, line count, age (@plugin-ages) and about summary. `detail: "titles"` gives titles instead of summaries
-                `mcp__sdoc-lexica__outline` | A file's sections: id, title, line range and first words, plus the signposts it has. `file_paths` outlines up to 20 at once, `depth: 1` shows the top-level sections only, and `previews: false` leaves out the first words
-                `mcp__sdoc-lexica__read` | Sections by id, as source with line numbers. The file's own id reads it whole, or answers a large file's outline; a section over 300 lines with sections inside it answers its opening and their outline, and one without is read whole; an unknown id answers the ids the file has. To change what it shows, Claude Reads those lines first: Edit refuses a file Read has not opened
-                `mcp__sdoc-lexica__search` | The sections that best match a query, best first (@plugin-search), in the `lexica/` directories or the `paths` given. `read: true` adds the best sections whole
-                `mcp__sdoc-lexica__guides` | A file's about, reading guide, related resources and editing guide
-                `mcp__sdoc-lexica__check` | Parse errors and signpost, reference and citation findings, as `build-doc --check` reports them
-                `mcp__sdoc-lexica__backlinks` | What links to a file, or to one of its sections (`file.sdoc#id`, or `id`), each link with its line and the section it sits in. For use before renaming, moving or removing a section or a file; `exact: true` gives what a rename changes
-            }
+            A lookup goes from `search` or `list`, which find the file, to `outline`, which shows its sections, to `read`, which loads the ones needed. This guide calls each tool by its short name; its full name, which permission rules and the session use, starts with `mcp__sdoc-lexica__` (`mcp__sdoc-lexica__list`). A path is absolute or relative to the project. `paths` takes directories or `.sdoc` files, and without it a tool looks in every `lexica/` directory. Every call sees the files as they are then: a file parsed earlier in the conversation is parsed again once its size or modification time changes.
 
-            # Search @plugin-search
+            The examples below were run on this repository.
+
+            # list @tool-list
             {
-                Search ranks sections as a search engine does (BM25): a rare word, a word in the title and a short section count for more, and a file's about summary half as much again as a section. A word also matches inside a longer one (`fsync` finds `fsynced`). A repeated word counts once, and a one-letter word is dropped unless it is all there is.
+                `list` answers which knowledge files there are: every `.sdoc` file under the `lexica/` directories, one line each, with its type, line count, age (@plugin-ages) and about summary. It serves to choose a file when the index is not in the conversation, or when the index gave titles only.
 
                 {[.]
-                    - When no section holds every word of a query of two or more, it lists those that hold the most, each marked with the words it lacks (`[no "fsync"]`). When fewer than three hold the most, those one word short follow, as long as that is still half the words.
-                    - It shows the best 20, and says when there were more.
-                    - `read: true` adds the best sections whole, in rank order: up to 5, within 6,000 characters. One that does not fit is named with its line range, never cut.
+                    - `paths` (optional): the directories or files to list instead.
+                    - `detail` (optional): `"titles"` gives each file's title instead of its summary, for a shorter answer.
+                }
+
+                With `{"detail": "titles"}`:
+
+                ```
+lexica/impl-status.sdoc [doc] (350 lines, changed today) — SDOC — Implementation Status
+lexica/requirements.sdoc [doc] (188 lines, changed 7 months ago) — SDOC Requirements
+lexica/sdoc-plan.sdoc [doc] (133 lines, changed 7 months ago) — SDOC Plan
+lexica/specification.sdoc [doc] (1399 lines, changed 2 weeks ago) — SDOC Specification v0.2
+lexica/suggestions.sdoc [doc] (324 lines, changed 3 weeks ago) — SDOC Feature Suggestions
+                ```
+
+                The index and `list` keep each file's description (type, title, line count, about summary) in the plugin's store between sessions, and parse a file again only when its size or modification time changes, or when a plugin update changed its parser. When the store's 4 MiB fill up, the oldest project's entry is dropped. With `verbose` on, a second session shows `descriptions: 12 of 12 knowledge files from the cache, 0 read`.
+
+                # How Old a File Is @plugin-ages
+                {
+                    The index and `list` give each file's age, as in `(212 lines, changed 3 weeks ago)`, from the latest commit that touched it, never from its modification time, which a checkout resets. One `git log` runs per index or list, within 3 seconds, and its answer is kept a minute.
+
+                    {[.]
+                        - An uncommitted edit shows the last commit's age; an untracked file shows none.
+                        - In a shallow clone, a file not changed within the fetched history shows the oldest fetched commit's age.
+                        - Outside a git repository, without git, when git takes over 3 seconds, or for a directory outside the project, no age is shown.
+                    }
                 }
             }
 
-            # Backlinks @plugin-backlinks
+            # outline @tool-outline
             {
-                Without an id, `backlinks` lists the links to a file from other files. With one (`file.sdoc#id`, or `id`), it lists the links to that section or a section inside it, by id or title slug, including the file's own `@id` references and `#id` links; a reference from within the section to a section inside it moves with it, so it is left out. Links in signposts count, web links do not. When the section has sections inside it, each link to one of them says which, and a last line names those nothing links to, so none needs asking about on its own. It looks in the `lexica/` directories or the `paths` given, and for a section in its own file too.
+                `outline` answers what a file holds without reading it: each section's id, title, line range and first words, indented by depth, and which signposts the file has. The ids and line ranges it gives are what `read` and Read take next.
 
-                With `exact: true` it answers what a rename of the id changes, in a form an edit can be made from: the line that gives the id, then each reference to it with the text of its line (a long line around the reference), and nothing about the sections inside it, whose ids stay.
+                {[.]
+                    - `file_path`, or `file_paths` to outline up to 20 files in one call.
+                    - `depth` (optional): `1` shows the top-level sections only, `2` their children too. Without it, every level.
+                    - `previews` (optional): `false` leaves out the first words.
+                }
+
+                With `{"file_path": "lexica/sdoc-plan.sdoc", "depth": 1}`:
+
+                ```
+lexica/sdoc-plan.sdoc @sdoc-plan — SDOC Plan (133 lines)
+signposts: @about
+L18-37 @parser Parser Improvements
+L39-82 @spec-additions Spec Additions — These are the highest-priority additions to the SDOC spec. See [suggestions.sdoc](suggest…
+L84-108 @export Export Pipeline
+L110-131 @extension Extension Improvements
+(12 deeper sections not shown)
+                ```
+            }
+
+            # read @tool-read
+            {
+                `read` loads sections by id, as the file's source with line numbers, so that the agent reads a section rather than the whole file.
+
+                {[.]
+                    - `file_path` and `ids`: the file, and the ids of the sections to read, from `outline`. A heading without an id goes by the slug `outline` shows for it.
+                    - `text` (optional): `true` gives plain text instead of source.
+                }
+
+                With `{"file_path": "lexica/requirements.sdoc", "ids": ["r4"]}`:
+
+                ```
+lexica/requirements.sdoc L71-76 — R4: Arbitrary Nesting Depth
+    71	        # R4: Arbitrary Nesting Depth @r4
+    72	        {
+    73	            Documents must support unlimited nesting depth with no artificial limits. [...]
+    74
+    75	            Implication: the scope mechanism must be recursive with no hardcoded depth limits.
+    76	        }
+                ```
+
+                {[.]
+                    - The file's own id reads the whole file. For a file over 300 lines it answers the file's outline instead, to read from.
+                    - A section over 300 lines that has sections inside it answers its opening and the outline of those sections. One with none inside is read whole.
+                    - An id the file does not have answers the ids it has: `No section "nope" in lexica/requirements.sdoc. Its ids: @sdoc-requirements (the whole file), @why, @abstract-requirements, @r1, [...]`.
+                    - To edit what it shows, the agent Reads those lines first: Edit refuses a file Read has not opened.
+                }
+            }
+
+            # search @plugin-search
+            {
+                `search` answers where a topic is written about: the sections that hold the words of a query, best first, each with its file, line, id and a snippet. It finds a section whose file the agent does not know, across every knowledge file at once.
+
+                {[.]
+                    - `query`: the words to look for.
+                    - `paths` (optional): the directories or files to search instead.
+                    - `read` (optional): `true` also returns the best sections whole, in rank order: up to 5, within 6,000 characters. One that does not fit is named with its line range, never cut.
+                }
+
+                With `{"query": "bare email autolink"}`:
+
+                ```
+lexica/specification.sdoc:664 @autolinks Autolinks — Bare URLs starting with `http://`, `https://`, or `mailto:` are also auto-linked without angle brackets.
+lexica/specification.sdoc:12 @about About — …tting, references, autolinks (including bare email detection), the meta scope, [...]
+                ```
+
+                Search ranks sections with BM25, a standard ranking function of text search [@bm25]: a rare word, a word in the title and a short section count for more. A file's about summary is ranked as a section, its score multiplied by 1.5. A word also matches inside a longer one (`fsync` finds `fsynced`). A repeated word counts once, and a one-letter word is dropped unless it is all there is. It shows the best 20, and says when there were more.
+
+                When no section holds every word of a query of two or more, it lists those that hold the most, each marked with the words it lacks. When fewer than three sections hold the most, those holding one word fewer follow them, if that is still at least half the query's words. With `{"query": "nested list indentation"}`:
+
+                ```
+No section holds all 3 words; these hold 2:
+lexica/specification.sdoc:154 @headingless-scopes Headingless Scopes [no "list"] — - Can be nested arbitrarily
+lexica/specification.sdoc:234 @multi-line-list-items Multi-line List Item Shorthand [no "nested"] — Inside an explicit list block [...]
+[...]
+                ```
+
+                {[citations]
+                    - @bm25 S. Robertson and H. Zaragoza, "The Probabilistic Relevance Framework: BM25 and Beyond," *Foundations and Trends in Information Retrieval*, 2009. [doi:10.1561/1500000019](https://doi.org/10.1561/1500000019)
+                }
+            }
+
+            # guides @tool-guides
+            {
+                `guides` answers a file's signposts alone: its about summary, reading guide, related resources and editing guide, whichever it has. It tells the agent how a file is meant to be read, or edited, before it opens the file.
+
+                {[.]
+                    - `file_path`: the file.
+                }
+
+                With `{"file_path": "docs/guide/claude-code-plugin.sdoc"}`:
+
+                ```
+About:
+The SDOC plugin for Claude Code, `sdoc-lexica`: what it adds, [...]
+
+Reading guide:
+- @what-it-does, @plugin-permissions, @plugin-limits, @install: Installing it for yourself
+- @team-rollout, @updates: Rolling it out to a team
+[...]
+                ```
+            }
+
+            # check @tool-check
+            {
+                `check` answers whether files are well formed: their parse errors, and their signpost, reference and citation findings, one per line with its line number, as `build-doc --check` reports them. A link that leaves the project is not checked. After an edit, its result already says what the edit added or cleared (@hook-edits), so `check` is for files the agent has not just changed.
+
+                {[.]
+                    - `file_paths`: the files to check.
+                }
+
+                With `{"file_paths": ["lexica/impl-status.sdoc", "lexica/requirements.sdoc"]}`:
+
+                ```
+lexica/impl-status.sdoc:25: Broken reference: @entropicwarrior does not match any scope @id
+lexica/impl-status.sdoc:162: Broken citation: [@key] is not defined in any {[citations] block
+[...]
+lexica/requirements.sdoc: no findings
+                ```
+            }
+
+            # backlinks @plugin-backlinks
+            {
+                `backlinks` answers what links to a file or a section, each link with its line and the section it sits in. It serves before renaming, moving or removing a section or a file, to find the links that would break.
+
+                {[.]
+                    - `file_path`: the file; `file.sdoc#id` names a section of it.
+                    - `id` (optional): the section, instead of `#id` in the path.
+                    - `exact` (optional): `true` answers what a rename of the id changes (below).
+                    - `paths` (optional): the directories or files to look in instead.
+                }
+
+                Without an id, it lists the links to the file from other files. With `{"file_path": "lexica/suggestions.sdoc"}`:
+
+                ```
+2 links to lexica/suggestions.sdoc:
+lexica/impl-status.sdoc:339 (spec-additions) Spec Additions — suggestions.sdoc#s2
+lexica/sdoc-plan.sdoc:42 @spec-additions Spec Additions — suggestions.sdoc
+                ```
+
+                With an id, it lists the links to that section or to a section inside it, by id or by title slug. It looks in the section's own file too, where `@id` references and `#id` links count. A reference from within the section to a section inside it moves with the section, so it is left out. Links in signposts count; web links do not. Each link to a section inside names it, and a last line names the sections inside that nothing links to (up to 20, then a count), so none needs a call of its own. With `{"file_path": "lexica/requirements.sdoc#abstract-requirements"}`:
+
+                ```
+15 links to lexica/requirements.sdoc @abstract-requirements or a section inside it:
+lexica/impl-status.sdoc:148 @current-state Current State — requirements.sdoc#r10 (to @r10)
+lexica/requirements.sdoc:138 @c1 C1: Single Root Scope — @r1 (to @r1)
+[...]
+Covers the 10 sections inside it: nothing links to @r3, @r4, @r9.
+                ```
+
+                With `exact: true` it answers what a rename of the id changes, in a form an edit can be made from: the line that gives the id, then each reference to it with the text of its line (a long line around the reference). References to the sections inside are left out, since their ids stay. With `{"file_path": "lexica/requirements.sdoc#r5", "exact": true}`:
+
+                ```
+lexica/requirements.sdoc:78 gives the id: # R5: AI Agent Parseability @r5
+4 references to it, those to sections inside it left out:
+lexica/requirements.sdoc:138 @r5 — Supports: @r1, @r5
+lexica/requirements.sdoc:147 @r5 — Supports: @r5, @r6
+[...]
+                ```
             }
         }
 
         # Hooks @plugin-hooks
         {
-            {[table]
-                When | What the plugin adds
-                The first prompt of a conversation, in a project with `lexica/` | An index of the knowledge files, each with its summary and age, and the tools that load them by section, within `indexSize` (@plugin-settings). A summary is never cut: when they do not all fit, files are listed by title, and past that some are left out, with a count
-                Claude starts a subagent, in a project with `lexica/` | The index, within 3,000 characters, added to the subagent's task. A fork, a resumed agent and a workflow's agent get none
-                The first time Claude opens an `.sdoc` file, by Read or by the outline, read or guides tool | The file's reading guide and related resources, when it has them
-                A Read of a file over 300 lines, whole | The file's outline, to read by section next time
-                A prompt mentions `@lexica/file.sdoc#id` | Only that section, by id or title slug. The document's own id attaches the file whole, and so does an id it lacks, with the ids it has; `#L10-20` is Claude Code's own. The file's reading guide comes with it, as with a Read
-                You type `#` after a mention of an `.sdoc` file | The file's section ids, below Claude Code's suggestions: those starting with the text typed first, then those whose id or title holds it, up to 15
-                The first edit of a file with an editing guide | The edit is applied, and its result carries the guide and the sections the guide links to, as a Bash change's does. Not when the guide was shown already: a Read whose lines held it, the `guides` tool, or a `read` or `search` answer that held it. Nothing is refused (@plugin-limits)
-                Every edit of an `.sdoc` file | The findings the edit added (a parse error, a broken reference, a signpost of the wrong shape), and nothing about what was already there. An edit that adds none says the file was checked, what the edit cleared and how many findings are left, so that Claude does not call `check` to find out
-                A Bash command that names an `.sdoc` file and changes it (`sed -i`, a script) | What an edit gets, after the change: the editing guide and its linked sections the first time, and the findings the change added, or that it was checked
+            Hooks add text to what the agent receives at set moments: to a prompt, to a subagent's task, or to a tool's result. The agent reads it; the session does not show it, except as one line each with the `verbose` option (@plugin-verbose). In a project with no `.sdoc` files the hooks add nothing.
+
+            Each thing is added once: the index once per conversation, and a file's guides and outline once per file and agent, a subagent counting as an agent of its own. After a `/clear` or a compaction they are added again from the next prompt, since the agent no longer has them. A compaction partway through a turn can go unseen (@plugin-limits).
+
+            # At the Start of a Conversation @hook-index
+            {
+                In a project with a `lexica/` directory, the first prompt of a conversation carries an index of the knowledge files. A few lines on the tools that load a file by section come first, then one line per file: its path, type, line count, age (@plugin-ages) and about summary. The agent thus knows what the project's knowledge covers, and which file to open, before it opens any.
+
+                In this repository, the index begins:
+
+                ```
+This project keeps its knowledge in SDOC files under lexica/ (type doc: what something is; type skill: how to do something), indexed below. The plugin's tools load it by section rather than whole:
+- mcp__sdoc-lexica__search finds sections by words; mcp__sdoc-lexica__outline gives a file's section ids and line ranges; [...]
+lexica/impl-status.sdoc [doc] (350 lines, changed today) — Implementation status for the SDOC project. Tracks what is completed, what is in progress, and what is next. Read this first when starting a new task.
+lexica/requirements.sdoc [doc] (188 lines, changed 7 months ago) — Why SDOC exists and what it must achieve. [...]
+                ```
+
+                The index takes at most `indexSize` characters (@plugin-settings), and a summary is never cut to fit. When the summaries do not all fit, each file is listed by its title instead. When the titles do not fit either, the last files are left out, and a closing line says how many and that the `list` tool shows them all.
             }
 
-            The index comes once per conversation, and a file's guides and outline once per file and agent (a subagent gets its own). A compaction or a clear starts over from the next prompt, since what was shown went with it, except a compaction partway through a long turn, which can go unseen (@plugin-limits). In a project with no `.sdoc` files the plugin adds nothing.
+            # When a Subagent Starts @hook-brief
+            {
+                A subagent starts with none of the conversation, so without the index. In a project with a `lexica/` directory, the plugin adds a brief to the subagent's task: the index again, within 3,000 characters, after this line:
 
-            The sections an editing guide links to come whole, up to 6,000 characters in all; one that does not fit is named with its line range. Links and mentions are followed only to `.sdoc` files inside the project.
+                ```
+Added by the sdoc-lexica plugin, as context rather than part of the task: an index of the project's knowledge files.
+                ```
 
-            A Bash command is watched for the files it names, up to 20; one it changes without naming it goes unseen (@plugin-limits).
+                A fork has the conversation already and gets no brief; neither does a resumed agent or a workflow's agent.
+            }
+
+            # When the Agent Reads a File @hook-reading
+            {
+                The first time the agent opens an `.sdoc` file, by Read or by the `outline`, `read` or `guides` tool, the result carries the file's reading guide and related resources, when it has them. A reading guide says which sections serve which task, so the agent can go to those sections directly. For this guide:
+
+                ```
+docs/guide/claude-code-plugin.sdoc has signposts for whoever reads it.
+
+Reading guide:
+- @what-it-does, @plugin-permissions, @plugin-limits, @install: Installing it for yourself
+- @team-rollout, @updates: Rolling it out to a team
+[...]
+                ```
+
+                When the agent Reads a file of over 300 lines whole, the result also carries the file's outline, with each section's id and line range. Its next read of the file can then take only the sections it needs, by id with the `read` tool or by line range with Read:
+
+                ```
+docs/guide/claude-code-plugin.sdoc has 370 lines and was read whole. Its outline, below, gives each section's id and lines: mcp__sdoc-lexica__read reads sections by id, and Read with offset/limit a range of lines, for a fraction of the whole.
+
+docs/guide/claude-code-plugin.sdoc @claude-code-plugin — Claude Code Plugin (370 lines)
+L22-33 @plugin-goals What It Is For
+L35-127 @what-it-does What It Does
+[...]
+                ```
+            }
+
+            # When You Mention a File @hook-mentions
+            {
+                In a Claude Code prompt, `@` followed by a path attaches that file, and `@file#L10-20` attaches lines 10 to 20 of it. For an `.sdoc` file inside the project, the plugin also takes a section after the `#`, and attaches only that section's lines. `@docs/guide/claude-code-plugin.sdoc#plugin-settings` attaches the Settings section of this guide, not the whole guide.
+
+                {[.]
+                    - The part after `#` is a section's id or its title slug: `#plugin-settings` and `#settings` name the same section.
+                    - The document's own id, `#claude-code-plugin` here, attaches the whole file.
+                    - An id the file does not have also attaches the whole file, with a note listing the ids it has.
+                    - `#L10-20` keeps Claude Code's meaning, a range of lines.
+                    - The file's reading guide comes with the mention, as it would with a Read.
+                }
+
+                Typing `#` after a mention offers the file's section ids, below Claude Code's own suggestions: first the ids that start with the text typed, then those whose id or title holds it, up to 15. After `@docs/guide/claude-code-plugin.sdoc#plugin-t`, it offers `plugin-tools` and `plugin-testing`.
+            }
+
+            # When the Agent Edits a File @hook-edits
+            {
+                An edit of an `.sdoc` file is applied as made, and the plugin adds to its result what the agent needs to check it. This holds for an Edit, a Write, and a Bash command that names the file and changes it, such as `sed -i` or a script.
+
+                **The editing guide, on the first edit.** When the file has an editing guide the agent has not been shown, the first edit's result carries it, with the sections it links to in `.sdoc` files of the project. Those come whole, up to 6,000 characters in all; one that does not fit is named with its line range. The edit is not refused, so the agent may have to go back to it (@plugin-limits). The guide counts as shown when the lines of a Read held it, or when the `guides` tool or a `read` or `search` answer gave it. For a file whose editing guide says how to record a decision:
+
+                ```
+This edit changed lexica/decisions.sdoc, which has an editing guide that was not shown before the change: the change has not been checked against it.
+
+Editing guide:
+Add a decision after the last one, with the next number. Never delete one: mark it superseded, and link to the decision that replaced it.
+                ```
+
+                **The findings, on every edit.** The plugin checks the file after each edit and reports what the edit added: a parse error, a broken reference or citation, a signpost of the wrong shape. Findings the file had before the edit are not repeated. An edit that cites a source it does not define gets:
+
+                ```
+The edit added 1 finding to docs/guide/claude-code-plugin.sdoc. The error leaves the file failing its check until it is fixed; the edit that fixes it says so.
+docs/guide/claude-code-plugin.sdoc:74: Broken citation: [@bm25] is not defined in any {[citations] block
+                ```
+
+                An edit that adds no finding says so, with what it cleared and how many findings are left, as the `check` tool would answer. The edit that defined the citation above got:
+
+                ```
+docs/guide/claude-code-plugin.sdoc checked after the edit, which cleared 1 finding: no findings left, as mcp__sdoc-lexica__check would answer.
+                ```
+
+                **Bash commands.** A command is watched for the `.sdoc` files it names, up to 20. Each one it changes gets what an edit gets, with "after the command" in place of "after the edit". A file it changes without naming it, through a glob or a `find`, goes unseen (@plugin-limits).
+            }
         }
 
         # The Research Agent @plugin-research-agent
         {
-            In a project with a `lexica/` directory, the plugin registers a subagent, `sdoc-lexica:research`, that Claude can hand a question about the project's knowledge; the sections it reads stay out of the main conversation. It answers in at most 200 words, the answer first, citing each claim as `path @id (Lx-y)`, and says what the knowledge does not cover. It is read-only (the plugin's tools, Read, Grep and Glob) and sets no model of its own.
+            In a project with a `lexica/` directory, the plugin registers a subagent, `sdoc-lexica:research`, that the agent can hand a question about the project's knowledge; the sections it reads stay out of the main conversation. It answers in at most 200 words, the answer first, citing each claim as `path @id (Lx-y)`, and says what the knowledge does not cover. It is read-only (the plugin's tools, Read, Grep and Glob) and sets no model of its own.
 
-            It is for a question whose answer may be spread over several files, or whose place Claude does not know. Its description steers Claude away from it when Claude already knows where to look and expects the answer in one place: the agent starts with none of the conversation, so a question one section answers costs more and takes longer through it than read directly.
-        }
-
-        # How Old a File Is @plugin-ages
-        {
-            The index and `list` give each file's age, `(212 lines, changed 3 weeks ago)`, from the latest commit that touched it, never from its modification time, which a checkout resets. One `git log` runs per index or list, within 3 seconds, and its answer is kept a minute.
-
-            {[.]
-                - An uncommitted edit shows the last commit's age; an untracked file shows none.
-                - In a shallow clone, a file not changed within the fetched history shows the oldest fetched commit's age.
-                - Outside a git repository, without git, when git takes over 3 seconds, or for a directory outside the project, no age is shown.
-            }
-
-            Each file's description (type, title, line count, about) is kept in the plugin's store between sessions, and a file is parsed again only when its size or modification time changes, or when an update of the plugin changed its parser. When the store's 4 MiB fill up, the oldest project's entry is dropped. With `verbose` on, a second session shows `descriptions: 12 of 12 knowledge files from the cache, 0 read`. Within a conversation, the `lexica/` directories are found once (again after `/clear` or a compaction), and `search` and `backlinks` read and parse a file again only when its size or modification time changes. A `lexica/` directory added mid-conversation is seen in the next one, or at once in a project that had none.
+            It is for a question whose answer may be spread over several files, or whose place the agent does not know. Its description steers the agent away from it when the agent already knows where to look and expects the answer in one place: the research agent starts with none of the conversation, so a question one section answers costs more and takes longer through it than read directly.
         }
     }
 
     # Settings @plugin-settings
     {
-        Set them with `/plugin configure sdoc-lexica@sdoc` in a session, or from a shell by piping JSON to `claude plugin configure sdoc-lexica@sdoc --values-stdin`. A change made in a session applies at once: `verbose` from the plugin's next line, `indexSize` from the next index it sends (the next conversation, or after a `/clear` or a compaction), since the index already in the conversation stays. A change made from a shell applies to sessions started after it.
+        Set them with `/plugin configure sdoc-lexica@sdoc` in a session, or from a shell by piping JSON to `claude plugin configure sdoc-lexica@sdoc --values-stdin`.
 
         {[table]
             Setting | Values | What it does
@@ -150,19 +393,19 @@
 
         {[.]
             - **Deny rules hold inside the project too.** With `Read(./secrets/**)` in `permissions.deny`, `outline` of a file under `secrets/` is refused. So does a rule naming the tool, such as `mcp__sdoc-lexica__search`.
-            - **Elsewhere, you are asked** once per call: Allow once, Allow for this session (what the question named: that file, or for a directory everything under it, until the session ends), or Deny. Anything typed instead refuses the call, and Claude is told what you wrote.
-            - **With no one to ask** (`claude -p`, or the question dismissed), a path elsewhere is refused, and Claude is pointed to Read.
-            - **Every file the plugin reads unasked is checked too, and left out on a deny.** `list`, `search` and `backlinks` check each `.sdoc` file of the directories they walk, the `lexica/` ones by default included, and say how many they left out; so does the index Claude is given, which then lists none of a denied file's summary. A denied file is not followed from an editing guide, not watched when an Edit or a command changes it, and offers no ids after `#`. With `Read(./lexica/private/**)` denied, nothing under `lexica/private/` reaches Claude through the plugin.
+            - **Elsewhere, you are asked** once per call: Allow once, Allow for this session (what the question named: that file, or for a directory everything under it, until the session ends), or Deny. Anything typed instead refuses the call, and the agent is told what you wrote.
+            - **With no one to ask** (`claude -p`, or the question dismissed), a path elsewhere is refused, and the agent is pointed to Read.
+            - **Every file the plugin reads unasked is checked too, and left out on a deny.** `list`, `search` and `backlinks` check each `.sdoc` file of the directories they walk, the `lexica/` ones by default included, and say how many they left out; so does the index the agent is given, which then lists none of a denied file's summary. A denied file is not followed from an editing guide, not watched when an Edit or a command changes it, and offers no ids after `#`. With `Read(./lexica/private/**)` denied, nothing under `lexica/private/` reaches the agent through the plugin.
             - **Symbolic links are followed inside the project only.** A walk (the index, `list`, `search`, `backlinks`) follows a link to a file or a directory inside the project, so a linked `lexica/` or a linked `.sdoc` file is found, and a `lexica/` reached both through a link and as itself is listed once. A link that leads outside the project is left out, and the answer says how many; a loop, or a link into a directory the walk already covers, is passed over.
         }
     }
 
     # Seeing It Work @plugin-verbose
     {
-        What the plugin hands Claude, such as the index, a reading guide or an edit's findings, is never shown in the session. Two ways to see it work:
+        What the plugin hands the agent, such as the index, a reading guide or an edit's findings, is never shown in the session. Two ways to see it work:
 
         {[.]
-            - **The verbose option.** Each thing the plugin does is shown as one dim line in the session, which Claude is not sent: what it attached (the index, a brief, guides, an outline, findings), what it refused, narrowed or allowed, and where file descriptions came from. A tool's plain answer has no line, since the session shows the call. Turn it on with `/plugin configure sdoc-lexica@sdoc` in a session, where it applies at once, or from a shell, where it applies to the sessions started after it:
+            - **The verbose option.** Each thing the plugin does is shown as one dim line in the session, which the agent is not sent: what it attached (the index, a brief, guides, an outline, findings), what it refused, narrowed or allowed, and where file descriptions came from. A tool's plain answer has no line, since the session shows the call. Turn it on with `/plugin configure sdoc-lexica@sdoc` in a session, where it applies at once, or from a shell, where it applies to the sessions started after it:
             {
                 ```
 echo '{"verbose":"true"}' | claude plugin configure sdoc-lexica@sdoc --values-stdin
@@ -185,14 +428,14 @@ tail -f ~/sdoc-debug.log | grep --line-buffered sdoc-lexica
         What the plugin does not do, or not reliably, and why each is left as it is.
 
         {[.]
-            - **A compaction partway through a long turn can go unseen.** Claude Code does not tell a user plugin that it compacted, so the plugin infers it at the next prompt, from a context smaller than at the prompt before. When the context has grown back past that size by the time the turn ends, the compaction goes unseen, and the index and the guides are not shown again in that conversation. Several ways of inferring it were tried, and none was reliable. It will be closed when Claude Code reports a compaction to a user plugin.
-            - **An editing guide is never enforced.** The edit is applied, and the guide comes in its result. A model that does not go back to its edit leaves what the guide would have changed. The plugin first refused the first edit of a guided file once; that cost a round trip on every rename in the evals, where the guide was about something else, and was dropped.
-            - **A file a Bash command changes without naming it goes unseen,** as through a glob or a `find`; and a command is watched for 20 files at most.
+            - **A compaction partway through a turn can go unseen.** The events that report a compaction never reach a user plugin (@plugin-rules), so the plugin infers it at the next prompt, from a context smaller than at the prompt before. When the context has grown back past that size by the time the turn ends, the compaction goes unseen, and the index and the guides are not shown again in that conversation. This stays open until Claude Code reports a compaction to a user plugin.
+            - **An editing guide is never enforced.** The edit is applied, and the guide comes in its result. A model that does not go back to its edit leaves what the guide would have changed. An earlier version refused the first edit of a guided file once. In the evals that cost a round trip on every rename, where the guide was about something else, so it was dropped.
+            - **A file a Bash command changes without naming it goes unseen,** as through a glob or a `find`, and a command is watched for 20 files at most (@plugin-hooks).
             - **A skill run in a fork is briefed although it has the conversation.** Its spawn raises no event the plugin sees, and Claude Code does not list it as a fork, so its first tool call brings the index, about 750 tokens. Telling it apart would mean reading its conversation, which can cost more than the brief.
             - **A helper agent in its own worktree is briefed from the main checkout.** The worktree is made after the brief is written, and nothing says there will be one. The copy starts from the last commit, so the brief can list a file the copy lacks, or an older summary; the helper's tools read its copy.
             - **A `lexica/` directory added mid-conversation,** in a project that already had one, is seen in the next conversation, or after a `/clear` or a compaction.
             - **Every walk checks each file's permission.** The index, a brief, and each `list`, `search` and `backlinks` call put every `.sdoc` file they walk to the permission check, with a look at where it leads, and nothing is remembered between calls. Not measured on a large tree yet: the index's and each tool's line in the debug log (@plugin-verbose) say how many files a walk checked and how long it took.
-            - **Ages come from commits.** An edit not committed yet shows the last commit's age, an untracked file none, and in a shallow clone a file older than the history fetched shows the oldest fetched commit's age. Outside a repository, without git, when git takes over 3 seconds, or for a directory outside the project, no file has an age.
+            - **Ages come from commits,** so an uncommitted edit, an untracked file or a shallow clone shows an age that is wrong or none (@plugin-ages).
             - **The skills are listed in every project,** with a `lexica/` directory or not: a plugin cannot hide a skill per project. The lexica skill's description says the index announces a project's knowledge, so where there is no index there is none to look for.
             - **Mentions, autocomplete and the permission question are checked by hand only.** The tests drive the hooks' code, not Claude Code raising them (@plugin-testing).
         }
@@ -200,10 +443,25 @@ tail -f ~/sdoc-debug.log | grep --line-buffered sdoc-lexica
         Not verified yet:
 
         {[.]
-            - the earliest Claude Code version that runs the plugin's hooks module; it is built and tested on 2.1.312;
+            - a model other than Anthropic's Claude models: the evals and the checks by hand used Haiku, Sonnet and Opus only;
+            - the earliest Claude Code version that runs the plugin's hooks module; it is tested on 2.1.312 and 2.1.318 only;
             - that a repository's `.claude/settings.json` loads the plugin with no install step (@team-rollout);
             - Cowork and claude.ai, where only the absence of a top-level `bin/` folder has been checked.
         }
+    }
+
+    # Other Agents @plugin-other-agents
+    {
+        The plugin runs only in Claude Code. Claude Code executes its hooks module, registers its tools, raises the events its hooks answer, and loads its skills and research agent from the plugin format, so an agent outside Claude Code cannot load it. These parts of SDOC serve any agent:
+
+        {[.]
+            - **The knowledge.** A `lexica/` tree is plain `.sdoc` text with an about summary in each file. An agent that reads files needs only an instruction saying where the knowledge is and what to read first, as this repository's `AGENTS.md` gives.
+            - **The format guide.** `docs/reference/sdoc-authoring.sdoc`, the guide the authoring skill ships, names none of the plugin's tools. In VS Code, the SDOC extension also offers it to agents as the `sdoc_reference` language model tool.
+            - **The check.** `node tools/build-doc.js <file> --check` reports what the `check` tool reports, links leaving the project included, so an agent with a shell can check its own edits.
+            - **The library.** `src/knowledge-base.js`, which lists, outlines, reads, searches and checks by section, loads no Node module, so another host can run it: behind an MCP server, for example, which any MCP client could call. SDOC ships no such server yet.
+        }
+
+        The hooks do not carry over, since each answers a Claude Code event: the index on the first prompt, the guides on a first Read, the findings after an edit and the brief for a subagent. Nor do the skills as written: they name the plugin's tools (`mcp__sdoc-lexica__*`), so another agent would need tools of those names, or skills rewritten without them.
     }
 
     # Installing It @install
@@ -223,10 +481,12 @@ claude plugin marketplace add entropicwarrior/sdoc --sparse .claude-plugin plugi
 claude plugin install sdoc-lexica@sdoc
         ```
 
+        To turn it off, `claude plugin disable sdoc-lexica@sdoc` (`enable` turns it back on); to remove it, `claude plugin uninstall sdoc-lexica@sdoc`. `/plugin` in a session does both.
+
         # Requirements @plugin-requirements
         {
             {[.]
-                - A recent Claude Code. The plugin is built and tested on 2.1.312.
+                - A Claude Code that runs mods. The plugin is tested on 2.1.312 and 2.1.318; the earliest version that runs it is not known (@plugin-limits).
                 - Mods enabled. An organisation's managed settings can switch them off. The skills still load then, but the tools and hooks do not.
             }
 
@@ -258,9 +518,7 @@ claude plugin install sdoc-lexica@sdoc
 
     # Updates @updates
     {
-        The plugin sets no version number, so Claude Code versions it by commit. Every commit on the branch you track is an update, and on `main` that means every release and every plugin fix merged there. With auto-update on, Claude Code fetches it in the background and asks for `/reload-plugins`. Without it, run `claude plugin update sdoc-lexica@sdoc`, then `/reload-plugins` in a running session.
-
-        `/plugin` therefore shows a commit rather than a version number, and an SDOC release that leaves the plugin unchanged still counts as an update.
+        Claude Code updates the plugin when the version in its `plugin.json` goes up on the branch you track. Every change to the plugin raises it (@plugin-rules), so on `main` an update is a release or a plugin fix that changed the plugin; an SDOC release that leaves the plugin alone is no update. With auto-update on, Claude Code fetches it in the background and asks for `/reload-plugins`. Without it, run `claude plugin update sdoc-lexica@sdoc`, then `/reload-plugins` in a running session. `/plugin` shows the version installed.
     }
 
     # Changing the Plugin @plugin-development
@@ -272,8 +530,9 @@ claude plugin install sdoc-lexica@sdoc
                 `.claude-plugin/marketplace.json` | The marketplace, listing `plugins/sdoc-lexica`
                 `plugins/sdoc-lexica/hooks/register.mjs` | The hooks module: binds Claude Code's events to the handlers
                 `plugins/sdoc-lexica/hooks/handlers.mjs` | Everything the plugin does, written against a small file-access interface so Node tests can drive it
-                `plugins/sdoc-lexica/skills/` | The two skills
+                `plugins/sdoc-lexica/skills/` | The skills (@plugin-skills)
                 `plugins/sdoc-lexica/lib/` | Generated ES-module copies of `src/sdoc.js` and `src/knowledge-base.js`
+                `tools/plugin-version.json` | The plugin's version, with a digest of its files at that version, written by `npm run build:plugin` (@plugin-rules)
                 `src/knowledge-base.js` | Discovery, outlines, section reads, ranked search, backlinks, signposts and checks over SDOC text; runtime-neutral, and shared with `tools/build-doc.js`
                 `test/plugin-evals/` | The evals (@plugin-evals): the cases under `evals/`, the fixture project and `compare.js`. Under `test/`, so never shipped
             }
@@ -284,35 +543,21 @@ claude plugin install sdoc-lexica@sdoc
             {[.]
                 - **Nothing the hooks module loads may use Node.** No `require`, `fs`, `path` or `process`: Claude Code runs the module without them. Files are reached through `$.fs`, in `register.mjs` only.
                 - **Edit the sources, never `plugins/sdoc-lexica/lib/`.** Run `npm run build:plugin` after changing `src/sdoc.js`, `src/knowledge-base.js` or the authoring guide, and commit what it writes; a marketplace install runs no build step. The tests fail while a generated file is stale.
-                - **Never give the plugin a version.** Not in `plugin.json`, and not in the marketplace entry. Once a version is set, Claude Code updates the plugin only when that number changes, so a fix shipped without a bump reaches nobody, and nothing says so. Without one, every commit is a version. `claude plugin validate` warns that no version is set; that warning is expected.
-                - **Four events never reach the plugin.** Claude Code's built-in security plugin passes over a user plugin's hooks on `prompt.context`, `session.compact`, `session.append` for a compaction's rows, and the classic `SessionStart` (so a hook matching `source: "compact"`, the usual way to see a compaction, is closed to it). The index goes with the first prompt instead, and a compaction or a clear is seen at the next prompt: the conversation's opening message has changed, since the summary took its place. The transcript is fetched to see it only when `$.session.usage()`, which costs nothing, says one may have happened: a new `startedAt` (a clear), or a context token count that is missing, as it is from a compaction until the next response, or lower than at the last prompt. A transcript past the 4,096 messages `$.session.messages` returns is not taken for a compaction.
+                - **Raise the version with every change to the plugin.** Claude Code updates an installed plugin only when the version in `plugin.json` changes, so a change shipped under the old number reaches no one, with no warning (@updates). `tools/plugin-version.json` records the version with a digest of every file under `plugins/sdoc-lexica/`. After a change, `npm run build:plugin` refuses to record the files under the old version and says to raise it, and `npm test` fails until the new version is raised and recorded. Raise the last number for a fix and the middle one for a feature; the version can only go up. It goes in `plugin.json` only, never in the marketplace entry. Two branches that each raise it conflict there: after merging them, raise it once more and rebuild.
+                - **The events that report a compaction never reach the plugin.** Claude Code's built-in security plugin passes over a user plugin's hooks on `prompt.context`, `session.compact`, `session.append` for a compaction's rows, and the classic `SessionStart` (so a hook matching `source: "compact"`, the usual way to see a compaction, is closed to it). The index goes with the first prompt instead, and a compaction or a clear is seen at the next prompt: the conversation's opening message has changed, since the summary took its place. The transcript is fetched to see it only when `$.session.usage()`, which costs nothing, says one may have happened: a new `startedAt` (a clear), or a context token count that is missing, as it is from a compaction until the next response, or lower than at the last prompt. A transcript past the 4,096 messages `$.session.messages` returns is not taken for a compaction.
                 - **`agent.spawn` does reach it.** Checked on 2.1.312: the debug log says `agent.spawn general-purpose: prompt rewritten by a hook`, and nothing about it being bypassed. A `tool.call` fallback in `register.mjs` briefs, at its first tool call, any subagent the spawn hook did not see: one a release passes over the hook for, or one whose spawn raises none.
                 - **A tool call the plugin answers skips Claude Code's permission check.** That check runs beneath the step the plugin's hook does not take, so `consent()` in `handlers.mjs` puts the question to it instead: every path the call names, as written and where it leads through links, as a Read or a Glob (@plugin-permissions). A new tool names its paths in `toolPaths`, and a parameter that names a directory needs the kind `dir` in `toolRequests`, or it is checked as a file; `paths` gives each entry the kind of what it names (`dir` unless it is an `.sdoc` file).
                 - **Call each `$` noun where it is written.** The engine accepts no other form: `claude plugin validate` refuses `$.store` passed as a value. That is why `ioOf` in `register.mjs` spells out every call.
                 - **A skill is named after its folder.** `skills/lexica/` is `/sdoc-lexica:lexica`; a `name:` in the frontmatter does not change it, so the two must agree.
             }
         }
-
-        # Shipping a Fix @plugin-hotfix
-        {
-            The mod interface is in early access, so a Claude Code update can break the plugin with no SDOC change at all. A fix for that does not wait for a release:
-
-            {[#]
-                1. Branch `hotfix/plugin-<what>` from `main`.
-                2. Fix it, run `npm test`, and check it by hand as @plugin-testing describes.
-                3. Open a pull request to `main`. Once it is merged, coworkers tracking `main` have the fix with their next update.
-                4. Merge `main` back into `develop`.
-            }
-
-            Publish no GitHub release for it. The npm and VS Code Marketplace publishing runs on a release, and nothing outside the plugin changed.
-        }
-
+        
         # Testing @plugin-testing
         {
             `npm test` runs `test/test-plugin.js`, which covers:
 
             {[.]
-                - the generated files and manifests;
+                - the generated files and manifests, and that the version was raised with the last change;
                 - that the ES-module parser builds the same tree as `src/sdoc.js` for every file in the repository;
                 - the knowledge-base functions;
                 - every hook and tool through an in-memory file system.
@@ -329,13 +574,13 @@ claude --plugin-dir plugins/sdoc-lexica
             In that session, in a project with a `lexica/` directory:
 
             {[.]
-                - ask what knowledge index Claude was given, and look for the ages in it;
+                - ask what knowledge index the agent was given, and look for the ages in it;
                 - Read a file with a reading guide;
                 - edit a file with an editing guide (applied, the guide in its result);
                 - break a reference in an edit and look for the finding;
                 - change a file with an editing guide through Bash (`sed -i`), and look for the guide after the change;
-                - run `/compact`, and ask again what knowledge index Claude was given;
-                - have Claude start a subagent, then look in the debug log for `prompt rewritten by a hook` on the `agent.spawn` line, and for no `bypassed` there;
+                - run `/compact`, and ask again what knowledge index the agent was given;
+                - have the agent start a subagent, then look in the debug log for `prompt rewritten by a hook` on the `agent.spawn` line, and for no `bypassed` there;
                 - mention `@lexica/<file>.sdoc#<id>` and ask what was attached (that section only); mention `#nope` (the whole file, and the ids it has); type `#` after a mention and look for the ids offered;
                 - with `Read(./secrets/**)` in `permissions.deny`, call `outline` on a file under `secrets/` (refused);
                 - call a tool on a file in the project (answered, with no prompt) and on one outside it (a question: allow it once, then for the session, and deny it);
@@ -349,18 +594,33 @@ claude --plugin-dir plugins/sdoc-lexica
 
         # Evals @plugin-evals
         {
-            The tests show what the plugin does; the evals show whether it helps, by the three goals (@plugin-goals). Each case is a task Claude carries out in a small project with a `lexica/` directory, run with the plugin and without it. Accuracy is the graders' score, each grader checking an outcome (the answer, the files it edited) the same way in both runs; speed is the wall time of a run; tokens are counted from its trace in three kinds, input at full price, input re-read from the prompt cache (about a tenth of the price) and output, with the run's price beside them. `compare.js` reports them per case and for the suite. A case is never chosen, nor a grader written, because the plugin wins it.
+            The tests show what the plugin does; the evals show whether it helps, by the goals (@plugin-goals). Each case is a task the agent carries out in a small project with a `lexica/` directory, run with the plugin and without it. Accuracy is the graders' score, each grader checking an outcome (the answer, the files it edited) the same way in both runs; speed is the wall time of a run; tokens are counted from its trace in three kinds, input at full price, input re-read from the prompt cache (about a tenth of the price) and output, with the run's price beside them. `compare.js` reports them per case and for the suite.
 
-            The project's knowledge is 23 files, about 5,800 lines, among them a 2,700-line format specification and documents that are out of date and say so, whose old values a text search finds next to the current ones. The eleven cases cover finding a fact that an outdated document states differently, finding a skill, citing across two files, a question that shares few words with the section that answers it, finding the links to a section before changing it, renaming an id and fixing every link to it, an edit an editing guide governs, creating a new file, telling which file is stale from git history alone, handing research to a subagent, and staying out of the way in a project with no `lexica/`.
+            The project's knowledge is 23 files, 5,818 lines, among them a 2,718-line format specification and documents that are out of date and say so, whose old values a text search finds next to the current ones. Each case is a directory under `test/plugin-evals/evals/`, and `compare.js` reports it by that name:
+
+            {[table]
+                Case | Task
+                `find-fact` | Give the current values of a fact that a superseded document states differently
+                `locate-skill` | Follow the current release procedure, filed beside a deprecated one
+                `cross-file-citation` | Cite a requirement in one file and the design that meets it in another
+                `partial-words` | Answer a question that shares few words with the section that answers it
+                `backlinks-before-change` | Find everything that links to a section, where other files only mention its topic
+                `rename-id-fix-links` | Rename a section id and fix every link to it, leaving a look-alike id alone
+                `record-decision` | Add a decision the way the file's editing guide says, superseding an older one
+                `create-sdoc-file` | Create a well-formed `.sdoc` file
+                `freshness` | Tell which knowledge file has gone longest without a change, from git history alone
+                `delegate-research` | Hand a research question to a subagent
+                `no-lexica-quiet` | Answer a question about code in a project with no `lexica/`, where the plugin stays out of the way
+            }
 
             ```
 npm run eval:plugin
             ```
 
-            This runs `claude plugin eval` on the repository root with `--eval-dir test/plugin-evals/evals` and the plugin trusted; add `--model haiku`, `sonnet` or `opus` after `--`. Results are not committed. `test/plugin-evals/README.md` has the commands for a run before and after a change, and `compare.js` prints them side by side.
+            This runs `claude plugin eval` on the repository root with `--eval-dir test/plugin-evals/evals` and the plugin trusted; add `--model haiku`, `sonnet` or `opus` after `--`. Those three are the only models the evals have run on. Results are not committed. `test/plugin-evals/README.md` has the commands for a run before and after a change, and `compare.js` prints them side by side.
 
             {[.]
-                - **Runs are capped by turns, not money.** Each case sets `max_turns: 12` and `timeout_seconds: 300`. A pass on all three models, with and without the plugin, cost about $16 at the time of writing.
+                - **Runs are capped by turns, not money.** Each case sets `max_turns: 12` and `timeout_seconds: 300`. One pass on Haiku, Sonnet and Opus, with and without the plugin, cost $7.26 with the grader's calls on 2026-11-04 (Claude Code 2.1.318, from ten passes at $72.60), two thirds of it on Opus.
                 - **The target is the repository root.** A case may load only plugins under the target, and `--eval-dir` refuses a path outside it, so the cases name `plugins/sdoc-lexica` from the root.
                 - **The fixture is never a directory named `lexica/`.** It is stored as `fixture/knowledge/`, and each case's scaffold copies it to `lexica/` in a new git repository, with commits backdated so that the ages are real. Stored as `lexica/`, it would be taken for this repository's own knowledge.
             }

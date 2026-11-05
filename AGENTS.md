@@ -280,10 +280,11 @@ should be evaluated against.
   gets, a Bash change must get too.
 - Every action is noted through `io.log`: in the debug log always, in the session
   with the plugin's `verbose` option unless it is `quiet` (the session shows it).
-- The plugin has no version, in plugin.json or the marketplace entry, on purpose:
-  Claude Code then versions it by commit, so a fix merged to `main` reaches everyone.
-  With a number, a fix without a bump would reach no one. validate's "No version
-  specified" warning is expected.
+- Raise the plugin's version in plugin.json (never the marketplace entry) with
+  every change to the plugin: Claude Code updates no one until it changes. Then
+  run `npm run build:plugin`, which records it with a digest of the plugin's files
+  in tools/plugin-version.json; `npm test` fails while the files changed under the
+  recorded version.
 
 **Python (bindings/python):**
 - The binding contains no parser. Anything about the grammar — block or inline —
