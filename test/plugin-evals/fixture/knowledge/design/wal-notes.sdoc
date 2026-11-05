@@ -1,0 +1,143 @@
+# WAL Design Notes @wal-notes
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        Historical: these are the engineering notes written while tidewater's write-ahead log was first designed, kept for the reasoning behind it, and `architecture.sdoc` and `decisions.sdoc` are authoritative and differ from them on several points. They weigh the options for the log's granularity, record layout, checksum, fsync policy, recovery from a bad record and segment deletion, and say which way the authors leaned at the time. Read them to understand why an option was considered, never to learn how the log works today.
+    }
+
+    # Status of These Notes @notes-status
+    {
+        These notes predate [D-0003](../decisions.sdoc#d-0003) and [D-0004](../decisions.sdoc#d-0004) and were not updated after them. Where they lean one way, the design often went the other:
+
+        {[table]
+            Topic | These notes lean towards | What holds now
+            Log granularity | One log per column family | One log per database, by [D-0003](../decisions.sdoc#d-0003); see [One Log per Column Family](../architecture.sdoc#rejected-per-family-log)
+            Record checksum | CRC-32 (IEEE) | CRC32C, by [D-0004](../decisions.sdoc#d-0004); see [Record Format](../architecture.sdoc#wal-format)
+            Fsync policy | Every 256 KiB or every 100 ms | The policy in the Write-Ahead Log section of [the architecture](../architecture.sdoc)
+            Bad record on recovery | Skip the rest of the segment, go on with the next | See [Recovery](../architecture.sdoc#wal-recovery)
+        }
+
+        The text below is left as it was written. Read "we lean towards" as "we leaned towards, at the time".
+    }
+
+    # The Problem @problem
+    {
+        The engine applies writes to an in-memory memtable and flushes it to an SSTable when it is full. Until the flush, a crash loses everything in the memtable. The log closes that gap: every write is appended to it before it reaches the memtable, so that on the next open the memtable can be rebuilt from the log.
+
+        What the log has to guarantee:
+
+        {[.]
+            - A write acknowledged with `Sync: true` survives a power loss.
+            - A batch is applied whole or not at all after a crash.
+            - Recovery finds where the valid log ends without help from any other file.
+            - The write path does not pay an fsync per write unless the caller asks for one.
+        }
+    }
+
+    # One Log or Many @log-granularity
+    {
+        Column families are planned, so the first question is whether each family gets its own log or all of them share one.
+
+        {[table]
+            Option | For | Against
+            One log per database | A batch across families is one record in one log, so it is atomic for free | A segment can be deleted only when every family's memtable that has records in it has flushed; one idle family holds back the whole log
+            One log per column family | Families flush and delete their segments independently; a busy family never waits for an idle one | A batch across families needs records in several logs, and recovery must tell whether all of them made it
+        }
+
+        We lean towards one log per column family. Batches across families are expected to be rare, and the cost of the shared log falls on every user, every day, as log segments pile up behind the slowest family. For the rare cross-family batch, the proposal is to write the batch to each family's log with a shared batch identifier, then a commit marker to the first family's log; recovery applies a cross-family batch only if it finds the marker.
+
+        The commit marker is the weak point of the proposal, and it is not settled how recovery should treat a marker whose batch records are missing from one of the other logs.
+    }
+
+    # Record Layout @record-layout
+    {
+        The log is written in 32 KiB blocks, so that a reader can resynchronise at a block boundary after damage, and a record never straddles a boundary unless it is split into fragments. The proposed header:
+
+        {[table]
+            Field | Size | Notes
+            checksum | 4 bytes | Over the type and the payload; see @checksum-choice
+            length | 2 bytes | Payload length; enough, since no fragment is longer than a block
+            type | 1 byte | `full`, `first`, `middle` or `last`
+        }
+
+        That is 7 bytes of header per record. A batch larger than what is left of the current block is split into a `first` fragment, any number of `middle` fragments and a `last` fragment, and reassembled on read. When fewer than 7 bytes are left in a block, they are filled with zeros and the next record starts in the next block.
+
+        We considered putting the sequence number in the header and lean against it: it costs 8 bytes per record, and replay can assign sequence numbers itself by counting records in log order from the last sequence number the manifest records. The order of the log is already the order of visibility.
+    }
+
+    # Choosing a Checksum @checksum-choice
+    {
+        {[table]
+            Checksum | For | Against
+            CRC-32 (IEEE) | In the standard library as `crc32.ChecksumIEEE`, with an assembly path on amd64; the same polynomial as gzip and zip, so a dumped record can be checked with common tools | Weaker than CRC32C at detecting some burst patterns
+            CRC32C (Castagnoli) | Hardware instruction on modern x86 and arm64; used by most storage engines | Needs a table built with `crc32.MakeTable`; no common command-line tool checks it
+            xxh3 (64-bit) | Fastest of the three on long inputs | 8 bytes per record where 4 are enough for records this short, and no common command-line tool checks it
+        }
+
+        We lean towards CRC-32 (IEEE). The log is not CPU-bound, its records are short, and being able to check a record by hand during an incident is worth more than the speed difference. The same checksum would go on every SSTable block, so that one helper covers both.
+    }
+
+    # When to Fsync @fsync-policy
+    {
+        An fsync after every write is safe and far too slow: on the disks we tested it caps a single writer at a few thousand writes per second. Never fsyncing loses up to the whole page cache on a power loss. Between the two:
+
+        {[.]
+            - A size threshold bounds how much acknowledged data a power loss can take, but under a light write rate the data can sit unsynced indefinitely.
+            - A time threshold bounds how long data stays unsynced, but under a heavy write rate the amount lost is unbounded.
+            - Both together bound each in terms of the other.
+        }
+
+        Proposed policy: the log writer fsyncs the active segment after every 256 KiB appended or every 100 ms, whichever comes first. A write made with `Sync: true` forces an fsync of everything appended before it and returns only after it. Concurrent writers are grouped, so that one append and at most one fsync serve every writer waiting at that moment.
+
+        The 256 KiB and 100 ms figures come from a first run on a development machine, not from the reference host. They should be revisited once the recovery time is measured, since the two are related.
+    }
+
+    # Reading Back After a Crash @recovery-options
+    {
+        On open, the log is replayed from the oldest segment still needed. The question is what to do when a record fails its checksum or its length runs past the end of the block.
+
+        {[table]
+            Option | Effect
+            Refuse to open | Safest, and useless: every power loss during a write would need an operator
+            Stop replay at the first bad record | Everything after it is lost, including later segments that may be intact
+            Skip the rest of the segment, go on with the next | Loses only the damaged segment's tail and keeps the later segments
+        }
+
+        We lean towards skipping the rest of the segment and continuing with the next one. A torn write can only be at the tail of the segment being written, so in the common case the two last options give the same result, and when the damage is in the middle of an older segment, skipping keeps more data. The skipped byte count goes to the log at warning level.
+
+        An incomplete fragment sequence, a `first` with no `last`, is dropped whole, which keeps batches atomic in both options.
+    }
+
+    # When Segments Can Be Deleted @segment-deletion
+    {
+        A segment can be deleted once every record in it is durable in an SSTable, which means once the memtable those records went to has been flushed and the flush recorded in the manifest. Log space therefore depends on flushes keeping up.
+
+        Flushes in turn depend on compaction. A flush adds a table to level 0, and when compaction falls behind, level 0 fills up and new flushes have to wait for it. While they wait, the memtables stay unflushed and their segments cannot be deleted, so a compaction backlog shows first as a growing log directory. Any alert on the size of `wal/` should be read together with how far compaction is behind.
+
+        With one log per column family, this coupling stays within a family: a family whose compaction lags holds back its own segments only.
+    }
+
+    # Out of Scope @out-of-scope
+    {
+        {[.]
+            - Asynchronous submission with io_uring. It could overlap one group's fsync with the next group's write, but it is too new for the kernels we currently support, so these notes do not evaluate it.
+            - Shipping the log to other nodes. Replication is not designed yet, and nothing here should depend on it.
+            - Compressing log records. Records are mostly small, and the SSTables are where space matters.
+        }
+    }
+
+    # Open Questions @notes-open-questions
+    {
+        {[#]
+            1. How recovery treats a cross-family commit marker whose records are missing from another family's log.
+            2. Whether the fsync thresholds should be options or constants.
+            3. Whether a skipped segment tail should also be copied aside for inspection before the segment is reused.
+            4. Whether the manifest should use the same block and record framing as the log, so that one reader covers both.
+        }
+    }
+}

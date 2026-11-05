@@ -26,8 +26,10 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, validateRefs, validateCitations, validateSignposts, fixSignpostOrder, SIGNPOST_IDS } = require("../src/sdoc");
+const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, validateSignposts, fixSignpostOrder, SIGNPOST_IDS } = require("../src/sdoc");
 const { hrefPathExists } = require("../src/href-path");
+// The checker --check runs is shared with the Claude Code plugin.
+const { checkText } = require("../src/knowledge-base");
 
 const CONFIG_FILENAME = "sdoc.config.json";
 
@@ -213,22 +215,6 @@ function inlineLocalImages(html, docDir) {
   });
 }
 
-// Every finding for a file: the signposts checked on the full tree (so a
-// misplaced @meta is caught too), references and citations on the body.
-function checkDocument(filePath) {
-  const text = fs.readFileSync(filePath, "utf8");
-  const parsed = parseSdoc(text);
-  const body = extractMeta(parsed.nodes).nodes;
-  const docDir = path.dirname(filePath);
-  const resolveFilePath = (href) => hrefPathExists(href, docDir);
-  return [
-    ...parsed.errors.map((e) => ({ type: "parse-error", severity: "error", message: e.message, lineStart: e.line })),
-    ...validateSignposts(parsed.nodes),
-    ...validateRefs(body, { resolveFilePath }),
-    ...validateCitations(body)
-  ];
-}
-
 // "related-resources,-reading-guide" → { "related-resources": true, "reading-guide": false },
 // merged into `into`. An unknown id is a usage error.
 function parseSignpostList(list, into) {
@@ -311,7 +297,10 @@ async function main() {
   }
 
   if (checkMode) {
-    const findings = checkDocument(resolvedInput);
+    const docDir = path.dirname(resolvedInput);
+    const findings = checkText(fs.readFileSync(resolvedInput, "utf8"), {
+      resolveFilePath: (href) => hrefPathExists(href, docDir)
+    });
     for (const f of findings) {
       const label = f.severity === "warning" ? "warning: " : "";
       console.error(`${shown}:${f.lineStart || 1}: ${label}${f.message}`);

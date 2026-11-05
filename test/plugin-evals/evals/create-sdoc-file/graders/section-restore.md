@@ -1,0 +1,6 @@
+---
+type: regex
+target: { source: file, path: lexica/runbook.sdoc }
+pattern: '^\s*#[^\n]*(restor|recover|\bWAL\b|write-ahead)[^\n]*\s@[a-z0-9][\w-]*\s*\{?\s*$'
+flags: im
+---

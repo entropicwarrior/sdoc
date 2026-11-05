@@ -1,0 +1,115 @@
+# Capacity Planning @capacity-planning
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How to size the disk, the memory and the hosts for a tidewater database, alone or replicated: what takes space and memory, how to add it up, a worked example, and when to plan again. Read it before deploying a new database, before a large import, before adding followers, and whenever a disk-full or memory incident suggests the plan was wrong.
+    }
+
+    # Approach @capacity-approach
+    {
+        Size for the steady state plus the peaks that the design itself causes: compaction's temporary copies, the log since the last checkpoint, and the files readers keep alive. Every default and threshold below is taken from the architecture, which is linked rather than copied here, so that a change there does not leave this plan wrong. The figures there are measured on the reference host described in [Observability](../architecture.sdoc#observability); a different host needs its own measurements.
+    }
+
+    # Disk @disk-sizing
+    {
+        {[table]
+            Component | How much | Where it comes from
+            Live data | The logical data times the space overhead of the compaction style | [Compaction](../architecture.sdoc#compaction)
+            Compaction headroom | Room for the output of the largest compaction that may start | [Disk Full](../architecture.sdoc#disk-full)
+            Log | The log since the last checkpoint, plus the frozen memtables | [Checkpoints](../architecture.sdoc#wal-checkpoints)
+            Tables held by readers | Old tables kept by long-lived iterators, and versions kept by snapshots | [Versions and File Lifetimes](../components/manifest.sdoc#manifest-versions)
+            Local checkpoints | Nothing at first; then every table compaction replaces while the checkpoint is kept | [Backup and Restore](../architecture.sdoc#backup-and-restore)
+            Free-space reserve | Enough that the volume never falls to the threshold at which writes stop | [Disk Full](../architecture.sdoc#disk-full)
+        }
+
+        The compaction style decides most of the plan. Leveled compaction, the default, keeps space overhead small. Tiered compaction lowers write amplification, but uses up to twice the space of the data, and needs that space at the moment its largest merge runs: inputs and outputs both exist until the merge's manifest edit is written. A database switched to tiered for write throughput needs its volume sized again first.
+
+        Space is also amplified by the application. A snapshot held open keeps every version written since it was taken, and an iterator left open keeps every table of its version, however much compaction has rewritten since. Neither shows in the data size the application thinks it stores.
+
+        As a rule of thumb, plan for the volume to be at most 60 percent full at steady state with leveled compaction, and at most 40 percent with tiered.
+    }
+
+    # Memory @memory-sizing
+    {
+        Tidewater's memory is bounded by its configuration, as [Memory Pressure](../architecture.sdoc#memory-pressure) lists. Add up:
+
+        {[table]
+            Component | How much | Set by
+            Memtables | Three times `MemtableSize` | `MemtableSize`
+            Block cache | `BlockCacheSize`, plus a few percent of overhead | `BlockCacheSize`
+            Index and filter blocks | A share of the data on disk, pinned for the life of each table | `BloomBitsPerKey`, and the data size
+            Compaction buffers | A fixed amount per running compaction | `MaxCompactions`
+            Memtables pinned by iterators | One memtable per flush an open iterator outlives | The application
+        }
+
+        Filters grow with the number of keys, not with the data size: a database of many small values pins more filter memory per GiB than one of large values. [Memory](../components/bloom-filters.sdoc#filter-memory) gives the bytes per key for each setting of `BloomBitsPerKey`.
+
+        Tidewater does not watch the system's free memory. Leave about 10 percent above the sum for the Go runtime, and set `GOMEMLIMIT` a little under the container's limit so that the garbage collector works harder before the kernel kills the process. `BlockCacheSize` is the one component that can be lowered on an open database, as [Sizing and Resizing](../components/block-cache.sdoc#cache-sizing) describes.
+    }
+
+    # Hosts @host-sizing
+    {
+        {[.]
+            - CPU
+            {
+                An open database runs a log writer, a flusher, up to `MaxCompactions` compactors, a scrubber, and on a replicated leader one shipper per follower, as [Concurrency Model](../architecture.sdoc#concurrency-model) lists. Compaction is the main consumer, through Snappy and the merge itself; give it a core per compaction slot on top of what the application needs.
+            }
+            - Disk type
+            {
+                Local NVMe is the reference. Network block storage works, but replay after a crash is several times slower, as [Recovery](../architecture.sdoc#wal-recovery) shows, and the recovery budget is stated for the reference host: measure recovery on such a host before relying on it. Fsync latency matters more than throughput, since every grouped write waits for one.
+            }
+            - File descriptors
+            {
+                Every live table holds an open file, as do the current log segment and the manifest. The number of tables is the data on disk divided by the table size of the level structure. Set the process limit, `LimitNOFILE` under systemd, to at least twice the expected number of tables.
+            }
+            - Filesystem
+            {
+                The reference host runs ext4. `db.Checkpoint` hard-links tables, so a checkpoint directory must be on the same filesystem as the database to be cheap.
+            }
+        }
+    }
+
+    # Replication @replication-sizing
+    {
+        Every follower repeats the leader's flushes and compactions, so it needs the same disk, memory and CPU as the leader; a follower sized smaller falls behind exactly when the leader is busiest. A cluster of three nodes survives the loss of one, and a cluster of five the loss of two.
+
+        The leader sends the compressed log to each follower itself, so its outbound bandwidth is the compressed write rate times the number of followers. A new node, or one that falls behind the leader's log, receives a snapshot of every live table: the time to add a node is the size of the data on disk divided by the bandwidth between the two nodes. [Replication](../components/replication.sdoc#replication-limits) lists the other costs.
+    }
+
+    # Worked Example @capacity-example
+    {
+        A service stores 300 GiB of logical data in 2 billion keys, writes 20,000 values of 1 KiB per second at peak, and runs three nodes with leveled compaction. It sets `MemtableSize` to 128 MiB and `BlockCacheSize` to 8 GiB, and leaves the other options at their defaults.
+
+        {[table]
+            Item | Estimate | Reasoning
+            Live data | 330 GiB | 300 GiB with leveled compaction's small overhead
+            Log and headroom | 6 GiB | Leveled compactions are small; the log since a checkpoint is well under 1 GiB
+            Reader margin | 30 GiB | Long scans that run for minutes, about 10 percent
+            Disk in use | 366 GiB | Sum of the above
+            Volume | 640 GiB | At most 60 percent full
+            Memory, tidewater | 12 GiB | Cache 8.3 GiB, index and filters 3.3 GiB, memtables 384 MiB, compaction buffers
+            Memory, container | 16 GiB | The above plus the application and the Go runtime
+            Leader outbound | About 20 MiB/s | 20 MiB/s of writes, compressed about half, to two followers
+            Adding a node | About 1 hour | A snapshot of 330 GiB of tables over a 1 Gbit/s link
+        }
+
+        The same service with tiered compaction would need a volume of about 1.5 TiB, for a gain in write amplification it does not need at this write rate.
+    }
+
+    # When to Plan Again @capacity-review
+    {
+        {[.]
+            - When the data has grown by half since the last plan.
+            - Before changing `CompactionStyle`, `MemtableSize`, `CheckpointInterval` or `BloomBitsPerKey`.
+            - Before adding followers, or moving the database to a different kind of disk.
+            - After any incident from [Disk Full](../runbooks/disk-full.sdoc) or a memory kill.
+        }
+
+        Moving cold tables to object storage, proposed in [D-0011](../decisions.sdoc#d-0011), would change the disk plan for large databases, but it is not decided. Plan with local disk only.
+    }
+}

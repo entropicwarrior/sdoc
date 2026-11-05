@@ -1,0 +1,118 @@
+# Monitoring Tidewater @monitoring
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        Which of tidewater's metrics and log lines to alert on, at what level relative to the performance budgets, with what severity, and which runbook each alert leads to; also what to put on a dashboard and what not to alert on. Read it when setting up monitoring for a service that embeds tidewater, or when an alert is too noisy or too quiet.
+    }
+
+    # How Metrics Reach You @exporting-metrics
+    {
+        Tidewater starts no listener. It reports its metrics through the OpenTelemetry metrics API, as decided in [D-0010](../decisions.sdoc#d-0010), and the application exports them with the exporter it already runs. The names are those of [Observability](../architecture.sdoc#observability), kept unchanged by that decision, so the rules below hold whichever exporter the application uses; the Prometheus registry that earlier releases served is removed in the next minor release. Logs go to the `slog` logger the application passes in.
+
+        The rules are written in PromQL. Besides the core set in Observability, they use these metrics, documented with their components:
+
+        {[table]
+            Metric | Kind | Meaning | Documented in
+            `tidewater_read_seconds` | histogram | Latency of each point read | This document
+            `tidewater_write_seconds` | histogram | Latency of each write, from call to return | This document
+            `tidewater_disk_free_ratio` | gauge | Free share of the volume, as checked before each flush and compaction | [Disk Full](../runbooks/disk-full.sdoc)
+            `tidewater_wal_bytes_since_checkpoint` | gauge | Log written since the last checkpoint | [WAL Recovery](../runbooks/wal-recovery.sdoc)
+            `tidewater_recovery_seconds` | gauge | Duration of the last recovery | [WAL Recovery](../runbooks/wal-recovery.sdoc)
+            `tidewater_level_tables` | gauge | Live tables by `level` | [SSTables](../components/sstables.sdoc#sstable-metrics)
+            `tidewater_leader_changes_total` | counter | Times this node gained or lost the lead | [Replication](../components/replication.sdoc#replication-metrics)
+        }
+    }
+
+    # Principles @alerting-principles
+    {
+        {[.]
+            - Alert on what threatens a requirement or a budget, not on what merely changed. Every latency and lag threshold below is derived from a figure in the architecture, most of them from [Performance Budget](../architecture.sdoc#performance-budget), never chosen on its own, so that a change of budget moves the alerts with it.
+            - Warn at half the budget, sustained; page at the budget. A host slower than the reference host will warn more often, which is the point: it is closer to its budget.
+            - Page only for what needs a person now: lost writes, refused writes, corruption, a cluster without a stable leader. Everything else is a ticket.
+            - Every alert names its runbook.
+        }
+    }
+
+    # Alert Rules @alert-rules
+    {
+        {[table]
+            Alert | Condition | For | Severity | Runbook
+            `TidewaterReadOnly` | `tidewater_read_only == 1` | 1m | Page | [Disk Full](../runbooks/disk-full.sdoc)
+            `TidewaterDiskFreeLow` | `tidewater_disk_free_ratio` under 0.25 | 15m | Ticket | [Disk Full](../runbooks/disk-full.sdoc)
+            `TidewaterL0Stall` | Stalls with `reason="l0"` in each of the last 10 minutes | 10m | Page | [Compaction Stall](../runbooks/compaction-stall.sdoc)
+            `TidewaterMemtableStall` | Stalls with `reason="memtable"` in each of the last 10 minutes | 10m | Ticket | [Life of a Memtable](../components/memtable.sdoc#memtable-lifecycle)
+            `TidewaterWriteLatency` | p99 of `tidewater_write_seconds` over half the write latency budget, or over the budget | 10m | Ticket, or Page | [Compaction Stall](../runbooks/compaction-stall.sdoc)
+            `TidewaterReadLatency` | p99 of `tidewater_read_seconds` over the point read budget | 10m | Ticket | [Block Cache](../components/block-cache.sdoc#cache-metrics)
+            `TidewaterFsyncSlow` | p99 of `tidewater_wal_fsync_seconds` over the threshold in [Slow Disk](../architecture.sdoc#slow-disk) | 1m | Page | [Compaction Stall](../runbooks/compaction-stall.sdoc)
+            `TidewaterChecksumFailure` | Any increase of `tidewater_block_checksum_failures_total` | 0m | Page on a single node, Ticket when replicated | [Silent Corruption](../architecture.sdoc#corruption)
+            `TidewaterWalTruncation` | Any increase of `tidewater_wal_truncations_total` | 0m | Ticket | [WAL Recovery](../runbooks/wal-recovery.sdoc)
+            `TidewaterRecoverySlow` | `tidewater_recovery_seconds` over the bound of R4 for the log replayed | 0m | Ticket | [WAL Recovery](../runbooks/wal-recovery.sdoc)
+            `TidewaterReplicaLag` | `tidewater_replication_lag_seconds` over half the follower lag budget, or over the budget | 5m | Ticket, or Page | [Replica Lag](../runbooks/replica-lag.sdoc)
+            `TidewaterLeaderFlapping` | More than 2 leader changes in an hour | 0m | Page | [Replica Lag](../runbooks/replica-lag.sdoc)
+            `TidewaterIteratorLeak` | `tidewater_open_iterators` rising for an hour | 1h | Ticket | [Versions and File Lifetimes](../components/manifest.sdoc#manifest-versions)
+        }
+
+        A latency rule, with the budget filled in from Performance Budget as a recording rule so that it is written down once:
+
+        ```
+        - record: tidewater:write_latency_budget_seconds
+          expr: vector(BUDGET)          # write latency during compaction, p99, from Performance Budget
+        - alert: TidewaterWriteLatency
+          expr: |
+            histogram_quantile(0.99, sum by (le, instance) (rate(tidewater_write_seconds_bucket[5m])))
+              > on() group_left() (0.5 * tidewater:write_latency_budget_seconds)
+          for: 10m
+          labels: {severity: ticket}
+        ```
+    }
+
+    # Log and Durability Signals @wal-signals
+    {
+        The p99 of `tidewater_wal_fsync_seconds` is the earliest sign of a failing disk. Every grouped write waits for its group's fsync, and a write with `Sync: true` forces one, as [Write-Ahead Log](../architecture.sdoc#write-ahead-log) explains, so fsync latency becomes write latency within seconds. The compaction throttle then slows compaction to protect writes, and a level 0 stall follows if it lasts. Alerting on fsync latency catches the cause before its effects.
+
+        `tidewater_wal_bytes_since_checkpoint` predicts the next recovery. It should fall back near zero at every checkpoint; held well above `CheckpointInterval` plus twice `MemtableSize`, it means checkpoints are not being taken and a crash now would replay more log than the recovery budget allows. Put it on the dashboard and alert when it stays above that sum for 15 minutes.
+
+        `tidewater_wal_truncations_total` should only ever move after a power loss or a host crash. A truncation after anything else is a ticket even when the database opened.
+    }
+
+    # Log Lines Worth Alerting On @log-alerts
+    {
+        {[table]
+            Message | Level | Meaning | Severity
+            `log append failed: entering read-only mode` | ERROR | The volume is full | Page
+            `manifest: corrupt edit before tail` | ERROR | The database will not open again | Page
+            `wal segment truncated` | WARN | A torn log tail was cut at recovery | Ticket
+            `follower behind oldest log segment: sending snapshot` | WARN | A follower needs a full copy | Ticket, if repeated within an hour
+            `stale lock found: last close was not clean` | WARN | The last run did not close cleanly | None; correlate with crashes
+        }
+    }
+
+    # Dashboard @dashboard
+    {
+        One dashboard per service, one row per concern:
+
+        {[.]
+            - Writes: write rate, p99 of `tidewater_write_seconds` against the budget line, stalls by `reason`.
+            - Reads: read rate, p99 of `tidewater_read_seconds` against the budget line, block cache hit ratio.
+            - Log: p99 of `tidewater_wal_fsync_seconds`, `tidewater_wal_bytes_since_checkpoint`.
+            - Compaction: `tidewater_level_tables` by level, `rate(tidewater_compaction_bytes_total[5m])` by level, `tidewater_compaction_rate_bytes`.
+            - Disk: `tidewater_disk_free_ratio`, `tidewater_read_only`.
+            - Replication: `tidewater_replication_lag_seconds` by follower against the budget line, redirects, snapshots, leader changes.
+        }
+    }
+
+    # What Not to Alert On @not-alerting
+    {
+        {[.]
+            - The block cache hit ratio. It moves with the workload; read latency against its budget is what matters.
+            - A single write stall. Stalls are the engine's back-pressure, and a short one is the design working.
+            - `tidewater_compaction_bytes_total` alone. High is normal under writes; it matters only with stalls or with levels that do not shrink.
+            - The bloom filter false-positive rate. It changes only with `BloomBitsPerKey` and the age of the tables.
+        }
+    }
+}

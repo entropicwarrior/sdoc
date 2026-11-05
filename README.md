@@ -27,6 +27,11 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 **A VS Code extension** — live preview, sticky scroll, code folding, document symbols, mermaid/SVG rendering, and commands for all the above.
 
+**A Claude Code plugin**, which needs no Node or other runtime:
+- skills for the format and for Lexica knowledge trees;
+- tools that outline, read and search SDOC files by section;
+- hooks that show each file's reading and editing guides when they apply and check every edit.
+
 ## Quick Start
 
 ### Install from the VS Code Marketplace
@@ -105,6 +110,23 @@ extractSection(nodes, "error-handling"); // ~200-1000 tokens — give me just th
 Optional signposts describe a document to whoever is about to use it: `@about` (should I read this?), `@not-about` (what it leaves out, and why), `@related-resources` (documents, project files and external links that go with it), `@reading-guide` (where to start) and `@editing-guide` (how to change it). See the [authoring guide](docs/reference/sdoc-authoring.sdoc).
 
 Total cost for a precise answer: ~750 tokens. The same lookup in Markdown requires loading the full file (5,000-50,000 tokens).
+
+### Claude Code plugin
+
+```
+/plugin install sdoc-lexica --marketplace entropicwarrior/sdoc
+```
+
+What it adds:
+- the `/sdoc-lexica:authoring` and `/sdoc-lexica:lexica` skills;
+- read-only tools: `mcp__sdoc-lexica__list`, `outline`, `read`, `search`, `guides` and `check`;
+- hooks:
+  - a `lexica/` index on the first prompt;
+  - a file's reading guide on its first Read;
+  - its editing guide before its first edit;
+  - the findings each edit adds.
+
+It runs inside Claude Code as a mod. For team rollout, see [the plugin guide](docs/guide/claude-code-plugin.sdoc).
 
 ## Format at a Glance
 

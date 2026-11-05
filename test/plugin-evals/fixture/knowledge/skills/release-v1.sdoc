@@ -1,0 +1,60 @@
+# Releasing Tidewater 1.x @release-v1
+{
+    @meta {
+        type: skill
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        Deprecated: this procedure is for 1.x releases on the `release/v1.9` maintenance branch only, and every 2.x release follows `release.sdoc` instead. It is the release procedure as it stood for the 1.x series, from the freeze to `make release`, kept unchanged so that a 1.9 patch release is cut the way every earlier 1.x release was. Read it only when you are asked to publish a 1.9.N patch.
+    }
+
+    # Deprecated @deprecated
+    {
+        This is not the release procedure for tidewater 2.x. A 2.x release, minor or patch, follows [Releasing Tidewater](release.sdoc), which differs from the steps below in its long-running test, its tag and its publishing command.
+
+        Use this file only on `release/v1.9`, the last 1.x branch, which receives security and data-loss fixes. No new 1.x minor release is planned, so there is no 1.10 and no branch after `release/v1.9`.
+    }
+
+    # Before You Start @before-v1
+    {
+        A 1.9 patch release needs a green build on `release/v1.9` and every fix on it reviewed by a second maintainer, since the branch receives no other testing between releases. The stress run below needs a host to itself for four hours.
+    }
+
+    # Steps @steps-v1
+    {
+        {[#]
+            - Freeze the branch
+            {
+                Announce the freeze in the team channel. From here on only the fixes for this release land on `release/v1.9`, each one cherry-picked from `main` with `git cherry-pick -x` so that its origin stays visible.
+            }
+            - Run the stress test
+            {
+                From `release/v1.9`, run `make stress`. It drives the engine with concurrent writes, reads and crash injection for four hours and fails on any lost acknowledged write or partly applied batch. A failed run stops the release until a rerun passes after the fix.
+            }
+            - Write the changelog
+            {
+                Add a section headed `1.9.N` to `CHANGELOG.md` on the branch, listing each fix with the issue it closes. A 1.9 patch release changes no default, renames no metric and never changes `TIDEWATER_FORMAT_VERSION`: a fix that needs any of these does not belong on the branch.
+            }
+            - Tag the release commit
+            {
+                Tag the commit that carries the changelog with `git tag v1.9.N`, where `N` is one more than the last 1.9 patch, and push the tag with `git push origin v1.9.N`.
+            }
+            - Build and publish
+            {
+                Run `make release VERSION=v1.9.N` from the tagged commit. It builds the module archive, checks that the tag matches the version, and uploads the release notes from the changelog section. Then post that section in the team channel.
+            }
+        }
+    }
+
+    # If Something Goes Wrong @problems-v1
+    {
+        {[table]
+            Symptom | What to do
+            `make stress` reports a lost write | Stop. Do not tag. Open an issue with the run's log and the seed it prints on its last line, so that the run can be replayed with `make stress SEED=...`.
+            `make release` refuses with `tag v1.9.N does not match VERSION` | The tag is on another commit. Delete the local tag with `git tag -d v1.9.N`, tag the right commit, and rerun.
+            A fix does not apply cleanly to `release/v1.9` | Port it by hand in a pull request against the branch, reviewed like any other change, and rerun the stress test.
+        }
+    }
+}

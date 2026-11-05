@@ -1,0 +1,82 @@
+# Tidewater Requirements @tidewater-requirements
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        What tidewater must do, as numbered requirements R1 to R8, each a single testable statement with the design section that meets it. Read it before changing behaviour an application relies on, or to check whether a design change still meets its budget.
+    }
+
+    # Durability @durability
+    {
+        # R1: Synchronous Writes Survive Power Loss @r1
+        {
+            A write acknowledged with `Sync: true` shall survive a power loss of the host immediately after the acknowledgement.
+
+            Design: [Failure Modes](architecture.sdoc#failure-modes).
+        }
+
+        # R7: A Full Disk Corrupts Nothing @r7
+        {
+            When the volume holding the database runs out of space, tidewater shall fail new writes with `ErrNoSpace` and shall keep every acknowledged write and every read working.
+
+            Design: [Disk Full](architecture.sdoc#disk-full).
+        }
+    }
+
+    # Performance @performance
+    {
+        Every figure is measured on the reference host described in the architecture.
+
+        # R2: Point Read Latency @r2
+        {
+            A point read on a warm cache shall complete within 1 ms at the 99th percentile, at 10,000 reads per second.
+
+            Design: [Block Cache](architecture.sdoc#block-cache).
+        }
+
+        # R3: Write Throughput @r3
+        {
+            A single node shall sustain 200,000 writes per second of 1 KiB values without a write stall lasting longer than 50 ms.
+
+            Design: [Storage Engine](architecture.sdoc#storage-engine).
+        }
+
+        # R4: Recovery Time @r4
+        {
+            Recovery after a crash shall complete in under 3 seconds per 1 GiB of write-ahead log written since the last checkpoint, and in under 10 seconds in all.
+
+            Design: [Write-Ahead Log](architecture.sdoc#write-ahead-log).
+        }
+
+        # R5: Compaction Does Not Hurt Writes @r5
+        {
+            While compactions run, the 99th percentile latency of foreground writes shall stay under 5 ms.
+
+            Design: [Compaction](architecture.sdoc#compaction).
+        }
+    }
+
+    # Replication @replication-requirements
+    {
+        # R6: Follower Lag @r6
+        {
+            Under nominal load, every follower shall be no more than 2 seconds behind the leader.
+
+            Design: [Replication](architecture.sdoc#replication).
+        }
+    }
+
+    # Embedding @embedding
+    {
+        # R8: A Well-Behaved Library @r8
+        {
+            Tidewater shall build without cgo, and no goroutine it started shall still be running after `Close` returns.
+
+            Design: [API Surface](architecture.sdoc#api-surface).
+        }
+    }
+}

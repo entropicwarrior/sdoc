@@ -1,0 +1,65 @@
+# Tidewater Glossary @tidewater-glossary
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        The terms used across tidewater's code and documents, each with a short definition. Read it when a word in the code or the architecture is unfamiliar.
+    }
+
+    # Terms @terms
+    {
+        # Block @g-block
+        {
+            The unit of reading and caching in an SSTable: 16 KiB of sorted entries, compressed and checksummed as one.
+        }
+
+        # Checkpoint @g-checkpoint
+        {
+            A record of the highest sequence number whose effects are durable in SSTables. Recovery replays only the log after the last checkpoint.
+        }
+
+        # Compaction @g-compaction
+        {
+            The background merging of SSTables into fewer, larger ones, dropping overwritten values and old tombstones on the way. See [Compaction](architecture.sdoc#compaction).
+        }
+
+        # Level @g-level
+        {
+            A tier of SSTables. Level 0 holds whole flushed memtables; each level below is larger than the one above.
+        }
+
+        # Manifest @g-manifest
+        {
+            The log of version edits that says which SSTables are live and at which level.
+        }
+
+        # Memtable @g-memtable
+        {
+            The in-memory sorted structure that receives writes after the log. When full it is frozen and flushed to disk.
+        }
+
+        # Sequence Number @g-sequence-number
+        {
+            A 64-bit counter assigned to every write in log order. It orders versions of a key and defines what a snapshot sees.
+        }
+
+        # SSTable @g-sstable
+        {
+            Sorted string table: an immutable file of sorted key-value entries, with an index, a bloom filter and a footer.
+        }
+
+        # Tombstone @g-tombstone
+        {
+            A marker recording that a key was deleted. It hides older versions of the key until compaction can drop them all.
+        }
+
+        # WAL @g-wal
+        {
+            The write-ahead log, which every write enters before the memtable so that it survives a crash. See [Write-Ahead Log](architecture.sdoc#write-ahead-log).
+        }
+    }
+}

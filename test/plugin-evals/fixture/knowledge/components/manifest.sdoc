@@ -1,0 +1,151 @@
+# Manifest @manifest-component
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How the manifest records which SSTables are live: the version edits it holds, how an edit is written and replayed, what happens to a torn edit at the tail, how the manifest is rotated, and how versions keep table files alive for their readers. Read it before changing `src/manifest.go`, or when a database refuses to open with a manifest error.
+    }
+
+    # Role @manifest-role
+    {
+        The manifest is the database's record of its own shape: which tables are live and at which level, the next file number, and the last checkpoint. Every other file in the directory is either reachable from it or garbage. The summary is in [Manifest](../architecture.sdoc#manifest); this document goes into the edits, the replay rules and the rotation.
+
+        The live manifest is the file named in `CURRENT`, such as `MANIFEST-000042`. Its number comes from the same counter as table and log segment numbers, so it is never reused either.
+    }
+
+    # Version Edits @version-edits
+    {
+        An edit is a set of changes applied together. A flush adds one table to level 0; a compaction removes its inputs and adds its outputs in one edit, so no version ever holds both or neither.
+
+        {[table]
+            Field | Appears in | Meaning
+            `format-version` | The first edit of each manifest | On-disk format version the manifest was written in
+            `next-file-number` | Every edit that allocates a file | Lowest file number not yet used
+            `checkpoint` | Checkpoint edits | Highest sequence number whose effects are durable in SSTables
+            `add-table` | Flush and compaction edits | Level, file number, size, smallest and largest key, smallest and largest sequence number
+            `delete-table` | Compaction edits | Level and file number
+            `suspect-table` | Edits after a checksum failure | File number of a table with a corrupt block
+        }
+
+        Each edit is framed by its length and an xxh3-64 checksum of its contents. The manifest is outside [D-0004](../decisions.sdoc#d-0004), which puts CRC32C on log records and table blocks: a manifest that replays wrongly loses whole tables rather than one key range, and a 64-bit checksum makes an undetected corruption far less likely than a 32-bit one.
+    }
+
+    # Writing an Edit @edit-write
+    {
+        Edits are written by one goroutine at a time, under the manifest's mutex. A flush that finishes while a compaction's edit is being written waits for it.
+
+        {[#]
+            - Build the edit from the finished operation. Its new tables are already durable under their final names.
+            - Append the framed edit to the manifest file.
+            - Fsync the manifest.
+            - Apply the edit to a copy of the current version, and install the copy as the new current version.
+            - Release the old version. Tables that only it listed are deleted once no reader still holds it.
+        }
+
+        An edit is applied in memory only after its fsync returns, as [Manifest](../architecture.sdoc#manifest) requires. A crash between the append and the fsync can lose the edit, but never leaves the engine running on a version that is not on disk. The tables the lost edit would have added are orphans, deleted on the next open.
+    }
+
+    # Replay and Torn Edits @manifest-replay
+    {
+        On open, the engine reads `CURRENT`, opens the manifest it names, and applies every edit in order to an empty version. Each edit's checksum is verified before the edit is applied.
+
+        The manifest has its own rule for an edit that fails, distinct from the log's:
+
+        {[table]
+            Where the bad edit is | What happens
+            At the tail, cut short or failing its checksum, with nothing after it | The edit is ignored and the version before it is used. The file is truncated after the last good edit before anything new is appended
+            Anywhere else | The database refuses to open, naming the manifest and the offset of the edit
+        }
+
+        A torn tail is the expected result of a crash during an append, and ignoring it loses nothing: the edit was never applied in memory, so the operation it described never completed. A bad edit followed by good ones cannot come from a crash, since each edit is appended only after the previous one's fsync. It means corruption, and applying the later edits without it would build a version that never existed.
+
+        The log treats a bad record differently, truncating its segment and replaying nothing after it, as [Recovery](../architecture.sdoc#wal-recovery) describes. A startup log can show either; the manifest's messages are these:
+
+        ```
+        level=WARN msg="manifest: ignoring torn edit at tail" manifest=MANIFEST-000042 offset=42417 bytes=187
+        level=ERROR msg="manifest: corrupt edit before tail" manifest=MANIFEST-000042 offset=18233
+        ```
+
+        The second is followed by `Open` failing with an error that wraps `ErrCorrupt`: `tidewater: manifest MANIFEST-000042: corrupt edit at offset 18233 is not the last; refusing to open`.
+    }
+
+    # Rotation @manifest-rotation
+    {
+        The manifest grows by one edit per flush, compaction and checkpoint. When it passes the size given in [Manifest](../architecture.sdoc#manifest), the engine starts a new one, holding the manifest's mutex throughout so that no edit lands in the old file after the version was copied:
+
+        {[#]
+            - Write a new `MANIFEST-NNNNNN` holding a single edit that describes the whole current version, with `format-version` and `next-file-number`.
+            - Fsync it.
+            - Write `CURRENT.tmp` naming the new manifest, fsync it, rename it to `CURRENT`, and fsync the directory.
+            - Delete the old manifest.
+        }
+
+        {[table]
+            Crash during | Next open uses | Cleanup on that open
+            Step 1 or 2 | The old manifest | The new manifest is an orphan and is deleted
+            Step 3, before the rename | The old manifest | `CURRENT.tmp` and the new manifest are deleted
+            Step 3, after the rename | The new one, or the old one if the directory fsync had not returned | The other manifest is deleted
+            Step 4 | The new manifest | The old manifest is deleted
+        }
+    }
+
+    # Versions and File Lifetimes @manifest-versions
+    {
+        A version is an immutable list of live tables per level. Every read, iterator and running compaction holds a reference to the version it started on, and a table file is deleted only when no referenced version lists it.
+
+        Old versions are therefore why a table removed by a compaction can stay on disk. A long-lived iterator, which the `tidewater_open_iterators` gauge reveals, keeps every table of its version for as long as it is open, however much compaction has rewritten since. `tidewater-admin du` reports such tables as obsolete: on disk, but not in the current version.
+    }
+
+    # Inspecting a Manifest @manifest-inspect
+    {
+        `tidewater-admin manifest dump DIR` prints the live manifest's edits in order, one per line, then the version they add up to. It takes no lock and only reads, so it is safe on an open database.
+
+        ```
+        $ tidewater-admin manifest dump /var/lib/app/db
+        MANIFEST-000042 format-version=6
+        @0       next-file-number=948 checkpoint=88412907 add-table=L1:000901,... (whole version, 213 tables)
+        @41872   next-file-number=949 add-table=L0:000948 seq=88412908-88731220
+        @42101   next-file-number=952 delete-table=L0:000948,L1:000911 add-table=L1:000949,L1:000950,L1:000951
+        @42417   checkpoint=88731220
+        version: L0=0 L1=4 L2=38 L3=173 (215 tables, 13.4 GiB)
+        ```
+
+        `tidewater-admin manifest verify DIR` checks every edit's checksum, and that every table the version lists exists with its recorded size. It exits non-zero at the first problem and prints its offset, which is what to attach when escalating a refused open.
+    }
+
+    # Invariants @manifest-invariants
+    {
+        {[.]
+            - Every table in the current version exists under its final name and was fsynced before its edit was written.
+            - No edit is applied in memory before it is durable.
+            - File numbers only grow: `next-file-number` in a later edit is never lower than in an earlier one.
+            - The first edit of every manifest carries `format-version`, and the first edit of a rotated manifest describes a complete version.
+            - The `checkpoint` sequence number never decreases.
+        }
+    }
+
+    # Metrics @manifest-metrics
+    {
+        {[table]
+            Metric | Kind | Meaning
+            `tidewater_manifest_bytes` | gauge | Size of the live manifest
+            `tidewater_manifest_edits_total` | counter | Edits written, by `kind` (`flush`, `compaction`, `checkpoint`, `suspect`, `rotation`)
+            `tidewater_manifest_fsync_seconds` | histogram | Latency of each manifest fsync
+        }
+
+        A manifest fsync is on the path of every flush and compaction, though not of foreground writes. A slow one shows first as longer flushes, and through them as write stalls.
+    }
+
+    # Known Limits @manifest-limits
+    {
+        {[.]
+            - Edits are serialised. With several compactions running, each one spends part of its time waiting for the manifest's mutex and fsync.
+            - A corrupt edit before the tail makes the database unopenable. No tool rebuilds a manifest from the tables on disk: the remedy is a backup, as in [Backup and Restore](../architecture.sdoc#backup-and-restore), or on a replicated database removing the node and adding it back, which seeds it with a snapshot from the leader.
+            - The manifest is read whole on open. Rotation keeps it small, but a manifest that cannot rotate, for lack of disk space, lengthens every open after it.
+        }
+    }
+}
