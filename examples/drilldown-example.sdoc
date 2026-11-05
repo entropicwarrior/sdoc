@@ -1,9 +1,33 @@
 # Drilldown Demo {
-    # Meta @meta
-    {
+    @meta {
         type: slides
 
         title: SDOC Drilldown Demo
+    }
+
+    @about {
+        A small deck showing drilldown: detail slides stacked under a spine
+        slide, reached with Down and left with Up, beside a spine slide that
+        has none.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [Slide Authoring Guide](../docs/reference/slide-authoring.sdoc#drilldown) | Explains the drilldown syntax and navigation this deck shows
+            [Layouts Example](layouts-example.sdoc) | Every slide layout, with details under three of the slides
+        }
+    }
+
+    @reading-guide {
+        Build it and step through it, rather than reading the source:
+
+        `node tools/build-slides.js examples/drilldown-example.sdoc`
+
+        {[table]
+            Sections | Note
+            @why, @cache-mechanism | Spine slides with details: press Down to drill in
+        }
     }
 
     # SDOC Drilldown

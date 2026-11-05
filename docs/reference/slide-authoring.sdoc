@@ -1,23 +1,44 @@
 # SDOC Slide Authoring Guide @slide-authoring
 {
-    # Meta @meta
-    {
+    @meta {
         type: skill
 
         sdoc-version: 0.2
     }
 
-    # About @about
-    {
+    @about {
         How to create presentation slides from SDOC files, and how to get
-        them out as HTML, PDF or a Google Slides deck. Covers the deck
-        structure, the slide properties, the plain layouts (default, center,
-        two-column) and the structured ones (title, section, columns, stats,
-        pipeline, matrix, rows, bars, split, stack), speaker notes, the theme
-        system, and CLI usage. Read the Quick Reference for everyday
-        authoring, [Structured Layouts](#structured-layouts) when a slide
-        needs more than prose, and the Full Example for a complete deck
-        template.
+        them out as HTML, PDF, a PowerPoint or Google Slides deck, or a
+        Claude Slides artifact. Covers the deck structure, the slide
+        properties, the plain and structured layouts, connectors, background
+        images, drilldown and optional slides, speaker notes, the theme
+        system, and CLI usage.
+    }
+
+    @related-resources {
+        {[table]
+            Resource | Relation
+            [SDOC Authoring Guide](sdoc-authoring.sdoc) | Prerequisite; covers the format itself, which this guide leaves out
+            [CLI and Tools Reference](cli.sdoc) | Running `build-slides.js` from the command line
+            [Layouts Example](../../examples/layouts-example.sdoc) | Every layout, variant and slide property in one deck, to build and check a theme against
+            [Background Example](../../examples/background-example.sdoc) | Every form of slide background in one deck
+            [Drilldown Example](../../examples/drilldown-example.sdoc) | A small deck with vertical drilldown slides
+            [Default Theme](../../themes/default/theme.css) | The built-in theme, and the starting point for a custom one
+            [sdoc-artifact Skill](../../skills/sdoc-artifact/SKILL.md) | Covers publishing a Claude Slides artifact and pulling edits back, which this guide leaves out
+        }
+    }
+
+    @reading-guide {
+        Read the Quick Reference once. Everything after it is looked up when a slide needs it.
+
+        {[table]
+            Sections | Note
+            @quick-reference | Everyday authoring
+            @structured-layouts | When a slide needs more than prose
+            @full-example | A complete deck to start from
+            @themes, @fit | When writing or checking a theme
+            @pptx-export, @artifact | Before sending a deck in another format
+        }
     }
 
     # Quick Reference @quick-reference

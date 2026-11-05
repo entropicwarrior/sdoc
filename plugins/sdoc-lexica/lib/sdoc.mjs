@@ -4010,8 +4010,9 @@ function parseSectionsCell(cell) {
 // filesystem path or file: URL, which would not resolve anywhere else.
 // True when an href carries a URL scheme (https:, mailto:, tel:, data:, ...)
 // and so names no file. A scheme is two characters or more, so a Windows
-// drive letter (C:\docs) reads as a path. Shared by resource classification
-// and the broken-link check, so the two never disagree about what is a file.
+// drive letter (C:\docs) reads as a path. Shared by resource classification,
+// the broken-link check and tools/pack-links.js, so none of them disagree about
+// what is a file.
 function hasUrlScheme(href) {
   return /^[a-z][a-z0-9+.-]+:/i.test(href || "");
 }
@@ -4427,12 +4428,13 @@ function validateSignposts(nodes) {
     }
   }
 
-  // @not-about says what is left out and why; the resources that cover it are
-  // linked from @related-resources, so a link here is the boundary being crossed.
+  // @not-about says what a reader might expect here but will not find, and why;
+  // a topic another resource covers is listed in @related-resources instead, so
+  // a link here is the boundary being crossed.
   // @about is shown by discovery tools without the body, where a reference to
   // one of its sections leads nowhere; pointing into the body is @reading-guide's job.
   const NO_INLINE = {
-    "not-about": { type: "link", message: "@not-about says what this document leaves out and why, and holds no links: list the resource in @related-resources instead" },
+    "not-about": { type: "link", message: "@not-about holds no links: a topic another resource covers goes in @related-resources instead, and not here" },
     "about": { type: "ref", message: "@about is read without the body, and holds no section references: point to sections from @reading-guide instead" }
   };
   function hasInline(text, type) {
@@ -4832,6 +4834,7 @@ export {
   extractSignposts,
   extractRelatedResources,
   resourceKind,
+  hasUrlScheme,
   extractReadingGuide,
   extractDataBlocks,
   KNOWN_SCOPE_TYPES,
@@ -4842,7 +4845,6 @@ export {
   validateRefs,
   validateCitations,
   validateSignposts,
-  hasUrlScheme,
   fixSignpostOrder,
   RESERVED_ORDER,
   // Low-level helpers for custom renderers (e.g. slide-renderer)

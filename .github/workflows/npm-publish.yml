@@ -60,4 +60,9 @@ jobs:
             pkg.name = '@entropicwarrior/sdoc';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish --access public --loglevel verbose
+          # A tag older than tools/pack-links.js publishes as it always did.
+          if [ -f tools/pack-links.js ]; then
+            node tools/pack-links.js npm publish --access public --loglevel verbose
+          else
+            npm publish --access public --loglevel verbose
+          fi

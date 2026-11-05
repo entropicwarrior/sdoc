@@ -1,7 +1,7 @@
 {
   "name": "sdoc-lexica",
   "displayName": "SDOC and Lexica",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read, write and navigate SDOC files and Lexica knowledge trees: skills for the format, read-only tools that outline, read and search files by section, and hooks that show each file's reading and editing guides and check every edit.",
   "author": {
     "name": "Entropic Warrior",

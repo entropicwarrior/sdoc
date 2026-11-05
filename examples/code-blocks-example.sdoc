@@ -8,6 +8,14 @@
     Demonstrates syntax highlighting for code blocks across various programming languages.
 }
 
+@related-resources {
+    {[table]
+        Resource | Relation
+        [SDOC Authoring Guide](../docs/reference/sdoc-authoring.sdoc#code-blocks) | Explains code blocks, and including a file by link, which this file does not show
+        [Example Document](example.sdoc) | Every construct of the format, in one file
+    }
+}
+
 # JavaScript @javascript {
     A simple HTTP server using Node.js:
 
