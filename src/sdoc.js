@@ -4413,6 +4413,18 @@ function validateSignposts(nodes) {
     seen.add(id);
   }
 
+  // Paragraphs join consecutive lines; another pair in the value is likely a missing separator.
+  for (const node of top) {
+    if (reservedId(node) !== "meta") continue;
+    for (const child of node.children || []) {
+      if (child.type !== "paragraph") continue;
+      const pair = /^([\w][\w-]*)\s*:\s+(.+)$/.exec(child.text);
+      if (pair && /\s[\w][\w-]*\s*:\s+/.test(pair[2])) {
+        report("meta-joined-pairs", "meta", "@meta value appears to contain another key: value pair; separate pairs with a blank line", child, "warning");
+      }
+    }
+  }
+
   // Prose: paragraphs and lists, list items holding only paragraphs and lists.
   function checkProse(id, children) {
     for (const child of children || []) {

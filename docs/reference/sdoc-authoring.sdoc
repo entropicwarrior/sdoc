@@ -915,6 +915,21 @@ Content of Section B.
     {
         These are easy errors to make — especially for AI agents generating SDOC.
 
+        # Consecutive Metadata Pairs @consecutive-meta-pairs
+        {
+            Separate each \`key: value\` pair in \`@meta\` with a blank line. Consecutive lines form one paragraph, so \`type: doc\` followed immediately by \`company: Acme\` becomes one type value and does not set company. The checker warns when a value appears to contain another pair; it does not split the value automatically.
+
+            ```
+            @meta {
+                type: doc
+
+                company: Acme
+
+                sdoc-version: 0.2
+            }
+            ```
+        }
+
         # Self-Closing Block Syntax @self-closing-blocks
         {
             Writing \`{[.]}\` or \`{[table]}\` with the closing brace on the same line creates an empty block — the \`}\` closes it immediately. Items that follow are bare content outside the block and will not render correctly.
