@@ -2307,6 +2307,28 @@ function withSection(id, body) {
 }
 const TABLE = (header, ...rows) => `        {[table]\n            ${header}\n${rows.map((r) => "            " + r).join("\n")}\n        }`;
 
+test("meta warns when consecutive key-value lines merge into one paragraph", () => {
+  const src = withSection("meta", "        type: doc\n        sdoc-version: 0.2\n        company: Acme");
+  const f = signpostFindings(src);
+  assert(f.length === 1 && f[0].type === "meta-joined-pairs", JSON.stringify(f));
+  assert(f[0].severity === "warning" && f[0].lineStart === 3, JSON.stringify(f));
+  assert(f[0].message.includes("blank line"), f[0].message);
+  assert(extractMeta(parseSdoc(src).nodes).meta.type === "doc sdoc-version: 0.2 company: Acme", "warning must not change metadata parsing");
+});
+
+test("meta accepts separated pairs, wrapped prose, URLs and sub-scopes", () => {
+  for (const body of [
+    "        type: doc\n\n        company: Acme",
+    "        description: A long description\n        continued on another line",
+    "        source: https://example.com/doc",
+    "        # Header {\n            Label: value other: prose\n        }",
+  ]) {
+    const f = signpostFindings(withSection("meta", body));
+    assert(f.length === 0, JSON.stringify(f));
+  }
+  assert(signpostFindings(withSection("about", "        type: doc company: Acme")).length === 0);
+});
+
 test("a document using every signpost correctly has no findings", () => {
   const f = signpostFindings(VALID_SIGNPOST_DOC);
   assert(f.length === 0, JSON.stringify(f));
