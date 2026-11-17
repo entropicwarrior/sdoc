@@ -1361,11 +1361,15 @@
                 Click a cell | Goes to that slide.
                 Arrow keys | Move through the grid. The slide behind does not move.
                 \`Enter\` or \`Space\` | Goes to the chosen slide.
-                \`Escape\` | Puts away a larger copy if one is up; otherwise closes the overview where you were, whatever was chosen.
+                \`Escape\` | Puts away a larger copy if one is up; otherwise closes the overview where you were, whatever was chosen. In full screen the browser keeps Escape for leaving full screen, so use \`O\` there.
             }
 
             A deck too long to fit legibly stops shrinking its cells and
             scrolls instead.
+
+            While the overview is up, focus is on the chosen cell, so a screen
+            reader announces each slide as you move. \`T\` does nothing until it
+            closes.
 
             A pull starts in the top or bottom tenth of the window. With a
             mouse, resting there shows a small handle at the edge. A press in

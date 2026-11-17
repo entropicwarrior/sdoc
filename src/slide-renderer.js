@@ -1151,6 +1151,8 @@ const FILMSTRIP_JS = `
     var t = e.target;
     if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
     if ((e.key || "").toLowerCase() !== KEY) return;
+    // Behind the overview it would switch on unseen and turn up on closing.
+    if (window.sdocOverview && window.sdocOverview.isOpen()) return;
     e.preventDefault();
     setEnabled(!enabled, true);
   });
@@ -1179,12 +1181,13 @@ const FILMSTRIP_JS = `
   function place(t) {
     strip.style.transform = "translateY(" + ((1 - t) * 102) + "%)";
   }
+  var pulls = 0;
   window.sdocFilmstrip = {
     enabled: function () { return enabled; },
     pull: function () {
       if (enabled) return null;
       var motion = window.sdocMotion;
-      var at = 0;
+      var at = 0, mine = ++pulls;
       sizeItems();
       markCurrent();
       centreCurrent();
@@ -1199,7 +1202,8 @@ const FILMSTRIP_JS = `
           ? motion.play(strip, [{ transform: from }, { transform: "translateY(" + ((1 - target) * 102) + "%)" }],
               { duration: how.duration, easing: how.easing })
           : Promise.resolve();
-        done.then(function () { strip.style.transition = ""; });
+        // Not if another pull has begun since: it needs the transition off.
+        done.then(function () { if (mine === pulls) strip.style.transition = ""; });
       }
       return {
         set: function (t) { at = Math.max(0, Math.min(1, t)); place(at); },
@@ -1302,7 +1306,8 @@ const FULLSCREEN_JS = `
   var root = document.documentElement;
 
   function current() {
-    return document.fullscreenElement || document.webkitFullscreenElement || null;
+    return document.fullscreenElement || document.webkitFullscreenElement ||
+      document.webkitCurrentFullScreenElement || null;
   }
   function call(target, names) {
     for (var i = 0; i < names.length; i++) {
@@ -1336,6 +1341,10 @@ const FULLSCREEN_JS = `
       ? call(document, ["exitFullscreen", "webkitExitFullscreen"])
       : call(root, ["requestFullscreen", "webkitRequestFullscreen"]);
     going.catch(function () { say("Full screen is not available here"); });
+  });
+  // Safari refuses by event rather than by rejecting the request.
+  ["fullscreenerror", "webkitfullscreenerror"].forEach(function (type) {
+    document.addEventListener(type, function () { say("Full screen is not available here"); });
   });
 })();
 `;
@@ -1473,14 +1482,16 @@ const OVERVIEW_JS = `
   var overlay = null, backdrop = null, grid = null, legend = null;
   var cells = [], cols = 1, design = null, captionH = 0;
   var closing = false, ready = false, hot = -1, hover = -1, keyed = false, stirred = false;
+  var keyScroll = false;
 
   function build() {
     overlay = el("div", "sdoc-overview");
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-label", "Slide overview");
+    overlay.setAttribute("aria-modal", "true");
     backdrop = el("div", "sdoc-overview-backdrop");
     grid = el("div", "sdoc-overview-grid");
-    legend = el("div", "sdoc-overview-legend", "Click a slide to go to it \\u00b7 Arrows and Enter \\u00b7 Esc to close");
+    legend = el("div", "sdoc-overview-legend", "Click a slide to go to it \\u00b7 Arrows and Enter \\u00b7 O or Esc to close");
     overlay.appendChild(backdrop);
     overlay.appendChild(grid);
     overlay.appendChild(legend);
@@ -1526,7 +1537,18 @@ const OVERVIEW_JS = `
     ["touchstart", "touchend", "pointerdown"].forEach(function (type) {
       overlay.addEventListener(type, function (e) { e.stopPropagation(); });
     });
-    overlay.addEventListener("scroll", function () { hidePeek(); });
+    overlay.addEventListener("scroll", function () {
+      if (keyScroll) {
+        // The grid scrolled to bring the chosen cell into view. Its pending
+        // preview stands; only one already up, now in the wrong place, goes.
+        keyScroll = false;
+        if (peek) { var keep = peekTimer; peekTimer = null; hidePeek(); peekTimer = keep; }
+        return;
+      }
+      hidePeek();
+      // What is under a resting pointer has changed; the next move decides.
+      hover = -1;
+    });
   }
 
   // The grid that makes the cells as large as they can be. Every column count
@@ -1686,14 +1708,27 @@ const OVERVIEW_JS = `
     if (hot !== -1 && cells[hot]) cells[hot].el.classList.remove("is-hot");
     hot = i;
     cells[i].el.classList.add("is-hot");
+    // Focus follows the choice, so a screen reader says which slide it is.
+    // Not while the cells are flying in: focusing one can scroll the grid.
+    if (ready) focusHot();
     if (fromKeys) {
       if (peek && peekAt !== i) collapsePeek(false);
       var c = cells[i];
       var top = c.y, bottom = c.y + c.h + captionH;
-      if (top < overlay.scrollTop) overlay.scrollTop = top - 16;
-      else if (bottom > overlay.scrollTop + overlay.clientHeight) overlay.scrollTop = bottom - overlay.clientHeight + 16;
+      var before = overlay.scrollTop, to = before;
+      if (top < before) to = top - 16;
+      else if (bottom > before + overlay.clientHeight) to = bottom - overlay.clientHeight + 16;
+      if (to !== before) {
+        overlay.scrollTop = to;
+        if (overlay.scrollTop !== before) keyScroll = true;
+      }
       armPeek(i);
     }
+  }
+  function focusHot() {
+    var c = cells[hot];
+    if (!c) return;
+    try { c.el.focus({ preventScroll: true }); } catch (err) { c.el.focus(); }
   }
 
   function step(dx, dy) {
@@ -1716,7 +1751,10 @@ const OVERVIEW_JS = `
   // when not. One description of the motion, so the two cannot drift apart.
   var plan = null, pulling = false;
 
+  var returnFocus = null;
   function setup() {
+    returnFocus = document.activeElement;
+    keyScroll = false;
     var cur = currentIndex();
     var real = activeSlide();
     var from = real ? real.getBoundingClientRect() : null;
@@ -1827,7 +1865,9 @@ const OVERVIEW_JS = `
       if (!overlay || closing) return;
       g.el.style.zIndex = "";
       g.el.classList.add("is-current");
+      g.el.setAttribute("aria-current", "true");
       ready = true;
+      focusHot();
       // Pulled open, the pointer is where the pull let go. That is not a
       // choice of cell, so nothing comes up until it moves.
       if (fromPull) stirred = false;
@@ -1849,6 +1889,8 @@ const OVERVIEW_JS = `
   // were on exactly over the real one, and then gone.
   function animateOut(pFrom) {
     var start = stateAt(pFrom), end = stateAt(0), waits = [], mine = overlay;
+    // Leaving: no key, click or second pull may act on it while it goes.
+    closing = true;
     applyState(0);
     start.forEach(function (e, k) {
       waits.push(play(e.el, [e.style, end[k].style], { duration: SETTLE.duration, easing: SETTLE.easing }));
@@ -1900,6 +1942,12 @@ const OVERVIEW_JS = `
       hot = -1;
       closing = false;
       pulling = false;
+      // Focus was moved into the overview; give it back to the deck.
+      var back = returnFocus;
+      returnFocus = null;
+      if (back && back !== document.body && document.contains(back) && back.focus) {
+        try { back.focus({ preventScroll: true }); } catch (err) {}
+      }
     }
   }
 
@@ -2002,12 +2050,15 @@ const OVERVIEW_JS = `
     var t = e.target;
     if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
     var k = e.key || "";
-    // Mid-pull the keys belong to the gesture, which takes Escape to call it off.
-    if (pulling) return;
+    // Mid-pull the keys belong to the gesture — this one or the strip's.
+    if (pulling || document.documentElement.classList.contains("sdoc-pulling")) return;
     if (!overlay) {
       if (k.toLowerCase() === KEY && !e.repeat) { e.preventDefault(); open(); }
       return;
     }
+    if (closing) { e.preventDefault(); e.stopPropagation(); return; }
+    // Holding O past the key-repeat delay would close what it just opened.
+    if (e.repeat && k.toLowerCase() === KEY) { e.preventDefault(); e.stopPropagation(); return; }
     var handled = true;
     if (k === "Escape" && peek) collapsePeek(false);
     else if (k === "Escape" || k.toLowerCase() === KEY) close(-1);
@@ -2185,8 +2236,10 @@ const GESTURE_JS = `
     var h = g;
     g = null;
     if (!h || !h.dragging) return false;
-    // The click the browser sends after this is not a click on the slide.
-    swallowUntil = Date.now() + 400;
+    // The click the browser sends straight after a mouse pull is not a click
+    // on the slide. A finger's pull sends none, and a window left open would
+    // eat the next real tap.
+    swallowUntil = h.touch ? 0 : Date.now() + 120;
     root.classList.remove("sdoc-pulling", "sdoc-pull-armed");
     if (letGo && h.armed) h.ctl.commit(); else h.ctl.cancel();
     return true;
@@ -2257,7 +2310,12 @@ const GESTURE_JS = `
     if (!g || !g.touch) return;
     var t = e.touches[0];
     if (!travel(t.clientX, t.clientY)) return;
-    if (e.cancelable) e.preventDefault();
+    // Held from scrolling only once it is heading the pull's way, so a code
+    // block or table in the band still scrolls sideways under a finger.
+    var d = g.zone === "top" ? t.clientY - g.y0 : g.y0 - t.clientY;
+    if (g.dragging || (d > 0 && d >= Math.abs(t.clientX - g.x0))) {
+      if (e.cancelable) e.preventDefault();
+    }
     if (g && g.dragging) e.stopPropagation();
   }, { capture: true, passive: false });
 
@@ -2272,13 +2330,18 @@ const GESTURE_JS = `
 
   // ---- Calling it off ------------------------------------------------------
 
+  // While a pull is held every key is its: an arrow would turn the slide
+  // under a half-open overview, and the cancel would then land on the wrong
+  // one. Escape calls it off.
   window.addEventListener("keydown", function (e) {
-    if (!g || !g.dragging || e.key !== "Escape") return;
+    if (!g || !g.dragging) return;
     e.preventDefault();
     e.stopPropagation();
-    release(false);
+    if (e.key === "Escape") release(false);
   }, true);
   window.addEventListener("blur", function () { if (g) release(false); });
+  // A rotated phone or a resized window invalidates the grid being pulled.
+  window.addEventListener("resize", function () { if (g && g.dragging) release(false); });
 })();
 `;
 
@@ -2706,6 +2769,9 @@ function renderSlides(nodes, options = {}) {
 .sdoc-overview {
   position: fixed; inset: 0; z-index: 60;
   overflow-x: hidden; overflow-y: auto;
+  /* Room for a scrollbar that takes space (Windows, Linux) reserved up front:
+     the grid is measured before it knows whether it will scroll. */
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
   user-select: none; -webkit-user-select: none;
   /* A stack of offset cards behind a spine slide that has details under it.
@@ -2741,7 +2807,9 @@ function renderSlides(nodes, options = {}) {
               0 6px 20px rgba(0, 0, 0, 0.4);
   transition: box-shadow 140ms;
 }
-.sdoc-overview-cell:hover .sdoc-overview-mini,
+/* No :hover here. The runtime decides which cell the pointer has chosen
+   from movement, and a ring on whatever sits under a resting pointer would
+   mark a second cell beside the one the keys chose. */
 .sdoc-overview-cell.is-hot .sdoc-overview-mini {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), var(--sdoc-overview-stack),
               0 8px 26px rgba(0, 0, 0, 0.5);

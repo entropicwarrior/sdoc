@@ -2000,6 +2000,13 @@ const OVERVIEW_DRIVE_SCRIPT = `
       };
     });
     out.current = indexOf("is-current");
+    out.focusOnHot = document.activeElement === cells()[indexOf("is-hot") - 1];
+    out.ariaCurrent = cells()[0].getAttribute("aria-current");
+    // A held O auto-repeats. The repeats must not close what it opened.
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "o", repeat: true, bubbles: true }));
+    // Past the point a close would have finished and removed it.
+    await wait(900);
+    out.heldStaysOpen = !!document.querySelector(".sdoc-overview");
     // The last slide has a connector and has never been shown, so the runtime
     // has never drawn it. Its miniature is drawn by the overview.
     out.connectors = {
@@ -2212,6 +2219,9 @@ test("the overview opens, moves on the keys, and goes where it is told (browser)
   assert(r.connectors.original === 0, "the unvisited original is undrawn, as expected: " + r.connectors.original);
   assert(r.connectors.clone > 0, "but its miniature has its connector drawn");
   assert(r.current === 1, "the slide we were on is marked current, got " + r.current);
+  assert(r.ariaCurrent === "true", "and says so to a screen reader");
+  assert(r.focusOnHot, "focus moves to the chosen cell, so it is announced");
+  assert(r.heldStaysOpen, "holding O does not close the overview it just opened");
   // The clone is scaled from its design box to exactly the cell, and every
   // cell fits the window: five slides should never need a scroll.
   for (const [i, f] of r.fit.entries()) {
@@ -2251,6 +2261,94 @@ test("the overview opens, moves on the keys, and goes where it is told (browser)
   assert(s.f.fullscreenCalls === 1, "F asked for full screen");
   assert(!s.f.stripOpen, "and did not open the filmstrip, which it used to");
   assert(s.t.stripOpen, "T opens the filmstrip");
+});
+
+test("no cell is ringed just for sitting under a resting pointer", () => {
+  // The runtime reads hover from movement, so that a resting mouse cannot take
+  // the choice from the keys. A :hover rule would ring that cell anyway, and
+  // two cells would look chosen with only one answering Enter.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n\n    # Two {\n        b\n    }\n}");
+  assert(!/\.sdoc-overview-cell:hover/.test(html), "no :hover ring on a cell");
+});
+
+// A deck long enough that the overview scrolls.
+const LONG_DRIVE_SCRIPT = `
+(function () {
+  var out = {};
+  var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var until = function (cond, ms) {
+    var t0 = Date.now();
+    return new Promise(function (resolve) {
+      (function check() {
+        if (cond()) return resolve(true);
+        if (Date.now() - t0 > ms) return resolve(false);
+        setTimeout(check, 40);
+      })();
+    });
+  };
+  var press = function (k) { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true })); };
+  function report() {
+    var el = document.createElement("script");
+    el.type = "application/json";
+    el.id = "sdoc-long-drive";
+    el.textContent = JSON.stringify(out) + "\\n/*${SENTINEL}*/";
+    document.body.appendChild(el);
+  }
+  async function run() {
+    press("o");
+    await until(function () { return !!document.querySelector(".sdoc-overview-cell.is-current"); }, 4000);
+    var ov = document.querySelector(".sdoc-overview");
+    out.scrolls = ov.scrollHeight > ov.clientHeight;
+    var cells = [].slice.call(document.querySelectorAll(".sdoc-overview-cell"));
+    var room = ov.getBoundingClientRect().left + ov.clientWidth;
+    out.overhang = Math.max.apply(null, cells.map(function (c) { return c.getBoundingClientRect().right - room; }));
+    // To the last cell, below the fold: the grid scrolls to it, and its
+    // larger copy still comes up after the usual wait.
+    press("End");
+    await wait(60);
+    out.scrolled = ov.scrollTop > 0;
+    out.peek = await until(function () { return !!document.querySelector(".sdoc-overview-peek"); }, 2500);
+    out.peekOf = out.peek ? document.querySelector(".sdoc-overview-peek").getAttribute("aria-label") : null;
+  }
+  function start() {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        run().catch(function (e) { out.__error = String((e && e.message) || e); }).then(report);
+      });
+    });
+  }
+  if (document.readyState === "complete") start();
+  else window.addEventListener("load", start);
+})();
+`;
+
+test("a deck too long to fit scrolls, and the keys still bring up the larger copy (browser)", async () => {
+  if (!require("../src/slide-pdf").findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  let src = "# Deck {\n    @meta { type: slides }\n";
+  for (let i = 1; i <= 150; i++) src += `\n    # Slide ${i} {\n        Body ${i}.\n    }\n`;
+  src += "}\n";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-long-"));
+  const file = path.join(dir, "deck.html");
+  const themeDir = path.join(__dirname, "..", "themes", "default");
+  fs.writeFileSync(file, parseAndRender(src, {
+    themeCss: fs.readFileSync(path.join(themeDir, "theme.css"), "utf-8"),
+    themeJs: fs.readFileSync(path.join(themeDir, "theme.js"), "utf-8"),
+  }), "utf-8");
+  let r;
+  try {
+    r = await runHarvest(file, LONG_DRIVE_SCRIPT, "sdoc-long-drive");
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+  assert(!r.__error, "the drive threw: " + r.__error);
+  assert(r.scrolls, "a hundred and fifty slides do not fit, so the overview scrolls");
+  assert(r.overhang <= 0.5, "no column runs past the scroll area: " + r.overhang + "px over");
+  assert(r.scrolled, "End scrolls the grid to the last cell");
+  assert(r.peek && r.peekOf === "Slide 150: Slide 150",
+    "and the scroll does not cancel its larger copy: " + r.peekOf);
 });
 
 // A pull from either edge, driven the way a mouse and a finger would drive it.
@@ -2330,12 +2428,19 @@ const PULL_DRIVE_SCRIPT = `
       armed: armed(),
       grabbing: getComputedStyle(document.body).cursor
     };
+    // An arrow mid-pull belongs to the pull, not to the deck underneath.
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    await wait(40);
+    out.arrowMidPull = location.hash;
     drag(cx, range(126, 320, 6));
     out.armedAtLine = { armed: armed(), cursor: getComputedStyle(document.body).cursor };
     pe("pointerup", cx, 320);
     click(cx, 320);
     out.pullOpened = await until(settled, 4000);
     out.afterPull = { hash: location.hash, cls: document.documentElement.className };
+    // T behind the overview would switch the strip on unseen.
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "t", bubbles: true }));
+    out.tBehindOverview = document.querySelector(".sdoc-filmstrip").classList.contains("is-open");
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await until(function () { return !overlay(); }, 4000);
 
@@ -2420,6 +2525,7 @@ test("a pull from either edge opens its view, and only a pull does (browser)", a
   assert(r.midPull.currentMoving, "and the slide we were on is part way into its cell — the pull scrubs the way in");
   assert(r.midPull.currentFading > 0 && r.midPull.currentFading < 0.9,
     "and fading as it goes, so the grid reads through it: " + r.midPull.currentFading);
+  assert(r.arrowMidPull === "#1", "an arrow key mid-pull did not turn the slide underneath: " + r.arrowMidPull);
   assert(!r.midPull.armed && r.midPull.grabbing === "grabbing",
     "short of the line the cursor is a closed hand: " + JSON.stringify(r.midPull));
   assert(r.armedAtLine.armed && r.armedAtLine.cursor === "grab",
@@ -2427,6 +2533,7 @@ test("a pull from either edge opens its view, and only a pull does (browser)", a
   assert(r.pullOpened, "let go past the line, the overview finishes opening");
   assert(r.afterPull.hash === "#1", "and the click after the pull did not turn the slide: " + r.afterPull.hash);
   assert(!/sdoc-pull/.test(r.afterPull.cls), "and the pull's cursors are gone: " + r.afterPull.cls);
+  assert(!r.tBehindOverview, "T does nothing while the overview is up");
 
   assert(r.backedOff === false, "dragged back above the line, it no longer counts");
   assert(r.cancelGone, "let go there, the overview goes back where it came from");
