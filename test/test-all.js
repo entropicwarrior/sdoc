@@ -2321,6 +2321,8 @@ test("meta accepts separated pairs, wrapped prose, URLs and sub-scopes", () => {
     "        type: doc\n\n        company: Acme",
     "        description: A long description\n        continued on another line",
     "        source: https://example.com/doc",
+    "        title: Part 2: The Return",
+    "        description: Two modes of operation: fast and slow",
     "        # Header {\n            Label: value other: prose\n        }",
   ]) {
     const f = signpostFindings(withSection("meta", body));

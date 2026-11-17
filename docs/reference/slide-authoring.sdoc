@@ -1790,6 +1790,7 @@
         # Wrong — these become one paragraph:
         @meta {
             type: slides
+
             title: My Deck
         }
 
