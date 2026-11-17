@@ -208,7 +208,7 @@ should be evaluated against.
   `npm run test:browser`   — or `npm run test:all` for both
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
-  (790 fast + 360 browser = 1150 as of v0.6.2)
+  (790 fast + 369 browser = 1159 as of v0.7.0)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure
