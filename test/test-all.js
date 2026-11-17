@@ -5101,5 +5101,62 @@ test("headerless table supports a copy directive row", () => {
 });
 
 // ============================================================
+console.log("\n--- Preview scroll sync ---");
+{
+  const { lineAtOffset, offsetForLine, PREVIEW_SYNC_SCRIPT } = require("../src/preview-sync.js");
+  // Three blocks: a one-line heading, a paragraph over lines 3-5, a line 8.
+  // Line 2 and lines 6-7 are the gaps between them.
+  const E = [
+    { line: 1, end: 1, top: 0, bottom: 20 },
+    { line: 3, end: 5, top: 40, bottom: 100 },
+    { line: 8, end: 8, top: 120, bottom: 140 },
+  ];
+
+  test("a block spreads its own lines over its height", () => {
+    assert(lineAtOffset(E, 40) === 3, "top of the paragraph is its first line: " + lineAtOffset(E, 40));
+    assert(lineAtOffset(E, 70) === 4.5, "halfway down three lines is line 4.5: " + lineAtOffset(E, 70));
+  });
+
+  test("a gap spreads the lines between its two blocks", () => {
+    assert(lineAtOffset(E, 30) === 2.5, "halfway between line 1's block and line 3's: " + lineAtOffset(E, 30));
+    assert(lineAtOffset(E, 110) === 7, "halfway between line 5's end and line 8: " + lineAtOffset(E, 110));
+  });
+
+  test("above the first block and below the last stay in the document", () => {
+    assert(lineAtOffset(E, -50) === 1, "above everything is the first block's line");
+    assert(lineAtOffset(E, 500) === 9, "below everything is the line after the last block");
+    assert(lineAtOffset([], 10) === 1 && offsetForLine([], 10) === 0, "no blocks at all");
+  });
+
+  test("a line and its offset are each other's inverse", () => {
+    // What makes the two directions agree: the editor sends a line, the
+    // preview scrolls there, and reading the top back gives the same line.
+    for (let y = 0; y <= 140; y += 2.5) {
+      const back = offsetForLine(E, lineAtOffset(E, y));
+      assert(Math.abs(back - y) < 1e-9, "offset " + y + " came back as " + back);
+    }
+    assert(offsetForLine(E, 4.5) === 70 && offsetForLine(E, 2.5) === 30, "the spot values");
+  });
+
+  test("the sync script still compiles once out of its template literal", () => {
+    new Function(PREVIEW_SYNC_SCRIPT);
+    assert(PREVIEW_SYNC_SCRIPT.includes("window.sdocLineAtOffset = function lineAtOffset"),
+      "the tested function is the one the preview runs");
+  });
+
+  test("the extension runs the sync in its preview, and offers both settings", () => {
+    // extension.js needs the vscode module and cannot be loaded here, so this
+    // reads what it says rather than what it does.
+    const ext = fs.readFileSync(path.join(__dirname, "..", "src", "extension.js"), "utf8");
+    assert(ext.includes('require("./preview-sync")'), "the extension loads the sync");
+    assert(ext.includes("window.sdocPreviewSync(vscodeApi,"), "and its preview script calls it");
+    assert(ext.includes('case "revealLine":') && ext.includes("onDidChangeTextEditorVisibleRanges"), "both directions are wired");
+    const props = require("../package.json").contributes.configuration.properties;
+    for (const key of ["sdoc.preview.scrollEditorWithPreview", "sdoc.preview.scrollPreviewWithEditor"]) {
+      assert(props[key] && props[key].default === true, key + " is declared and on by default");
+    }
+  });
+}
+
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

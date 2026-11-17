@@ -7,6 +7,7 @@ const vscode = require("vscode");
 const { hrefCandidates, hrefPathExists } = require("./href-path");
 const { parseSdoc, extractMeta, resolveIncludes, renderHtmlDocumentFromParsed, slugify, listSections, getDocumentScope, foldRootSiblings, RESERVED_SCOPE_IDS, validateRefs, validateCitations, validateSignposts, fixSignpostOrder } = require("./sdoc");
 const { buildKnowledgeSkeleton } = require("./knowledge-template");
+const { PREVIEW_SYNC_SCRIPT } = require("./preview-sync");
 
 const PREVIEW_VIEW_TYPE = "sdoc.preview";
 const CONFIG_FILENAME = "sdoc.config.json";
@@ -348,6 +349,29 @@ function activate(context) {
     })
   );
 
+  // Scroll sync: the editor has scrolled, so the preview follows — unless the
+  // preview is what scrolled it, which would send the move straight back.
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+      const document = event.textEditor.document;
+      if (document.languageId !== "sdoc") return;
+      const key = document.uri.toString();
+      const panel = panels.get(key);
+      if (!panel || !event.visibleRanges.length) return;
+      if (!syncSettings().scrollPreview) return;
+      const ours = revealedByPreview.get(key);
+      if (ours && Date.now() - ours < SYNC_ECHO_MS) return;
+      panel.webview.postMessage({ type: "scrollToLine", line: event.visibleRanges[0].start.line + 1 });
+    })
+  );
+
+  // The sync settings are read when a preview is built, so a change rebuilds.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("sdoc.preview")) updateAllPreviews();
+    })
+  );
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.languageId !== "sdoc") {
@@ -564,6 +588,9 @@ function handleWebviewMessage(message, document) {
     case "navigateToLine":
       navigateToLine(document, message.line);
       break;
+    case "revealLine":
+      revealSourceLine(document, message.line);
+      break;
     case "openLink":
       if (message.href) {
         openLink(message.href, document);
@@ -607,11 +634,56 @@ function navigateToLine(document, line) {
   const lineIndex = Math.max(0, line - 1);
   const position = new vscode.Position(lineIndex, 0);
   const selection = new vscode.Selection(position, position);
+  // The column the source is already open in, so a click does not open a
+  // second copy of it beside the first.
+  const open = editorsShowing(document)[0];
   vscode.window.showTextDocument(document.uri, {
-    viewColumn: vscode.ViewColumn.One,
+    viewColumn: open ? open.viewColumn : vscode.ViewColumn.One,
     selection,
     preserveFocus: false
   });
+}
+
+// ---- Scroll sync (src/preview-sync.js does the mapping) -------------------
+
+function syncSettings() {
+  const config = vscode.workspace.getConfiguration("sdoc.preview");
+  return {
+    scrollEditor: config.get("scrollEditorWithPreview", true),
+    scrollPreview: config.get("scrollPreviewWithEditor", true)
+  };
+}
+
+function editorsShowing(document) {
+  const key = document.uri.toString();
+  return vscode.window.visibleTextEditors.filter((editor) => editor.document.uri.toString() === key);
+}
+
+// When the preview last moved an editor, per document. The editor reports
+// every scroll, its own and ours alike, and one we caused must not be sent
+// back to the preview that asked for it.
+const revealedByPreview = new Map();
+const SYNC_ECHO_MS = 250;
+
+// The preview has scrolled: the source line at its top goes to the top of
+// every editor showing the document. Never opens one, never moves the cursor
+// or the focus.
+function revealSourceLine(document, line) {
+  if (!syncSettings().scrollEditor) return;
+  const editors = editorsShowing(document);
+  if (!editors.length || !(line > 0)) return;
+  const index = Math.max(0, Math.min(document.lineCount - 1, Math.floor(line) - 1));
+  revealedByPreview.set(document.uri.toString(), Date.now());
+  for (const editor of editors) {
+    editor.revealRange(new vscode.Range(index, 0, index, 0), vscode.TextEditorRevealType.AtTop);
+  }
+}
+
+// The line at the top of an editor showing this document, if one is.
+function editorTopLine(document) {
+  const editor = editorsShowing(document)[0];
+  if (!editor || !editor.visibleRanges.length) return null;
+  return editor.visibleRanges[0].start.line + 1;
 }
 
 async function updatePreview(document) {
@@ -666,8 +738,9 @@ function buildTitle(uri) {
   return `SDOC Preview: ${name}`;
 }
 
-function buildWebviewScript() {
+function buildWebviewScript(syncOptions) {
   return `
+${PREVIEW_SYNC_SCRIPT}
 (function() {
   const vscodeApi = acquireVsCodeApi();
 
@@ -814,6 +887,12 @@ function buildWebviewScript() {
       if (el) el.scrollIntoView({ behavior: 'smooth' });
     }
   });
+
+  // Scroll sync with the editor. After the pixel restore above, so that when
+  // an editor is showing the source, its line wins.
+  if (window.sdocPreviewSync) {
+    window.sdocPreviewSync(vscodeApi, ${JSON.stringify(syncOptions || {})});
+  }
 
 })();
 `;
@@ -1021,7 +1100,7 @@ async function buildHtml(document, title, webview) {
       config,
       cssOverride: cssOverride || undefined,
       cssAppend: cssAppendParts.join("\n"),
-      script: buildWebviewScript(),
+      script: buildWebviewScript({ ...syncSettings(), initialLine: editorTopLine(document) }),
       mermaidTheme: isDark ? "dark" : "neutral",
       // The editor's theme, not the system's: a webview's prefers-color-scheme
       // need not match it. Every theme change re-renders (see
