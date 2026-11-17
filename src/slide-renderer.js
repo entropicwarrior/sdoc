@@ -880,7 +880,9 @@ const FILMSTRIP_JS = `
 // slide: the point is to recognise a slide's place in the run, and at this
 // size a picture of it would be a grey smudge.
 (function () {
-  var KEY = "f";
+  // T, for thumbnails. F used to be this; it is full screen now, which is
+  // what that key means in every other viewer a presenter has used.
+  var KEY = "t";
   var MAX_VISIBLE = 15;
   var STORE = "sdocFilmstrip";
 
@@ -1169,6 +1171,1114 @@ const FILMSTRIP_JS = `
   var remembered = null;
   try { remembered = sessionStorage.getItem(STORE); } catch (err) {}
   setEnabled(remembered === "1", false);
+
+  // A pull up from the bottom edge (the gesture runtime): the strip rises
+  // with the pointer, fully up exactly where letting go starts to count, and
+  // is switched on as T would switch it if let go there. Short of that it
+  // drops back and nothing has changed.
+  function place(t) {
+    strip.style.transform = "translateY(" + ((1 - t) * 102) + "%)";
+  }
+  window.sdocFilmstrip = {
+    enabled: function () { return enabled; },
+    pull: function () {
+      if (enabled) return null;
+      var motion = window.sdocMotion;
+      var at = 0;
+      sizeItems();
+      markCurrent();
+      centreCurrent();
+      // The stylesheet's own transition would lag every move by 160ms.
+      strip.style.transition = "none";
+      place(0);
+      function settle(target, how) {
+        var from = strip.style.transform;
+        strip.style.transform = "";
+        if (target === 1) setEnabled(true, false);
+        var done = motion
+          ? motion.play(strip, [{ transform: from }, { transform: "translateY(" + ((1 - target) * 102) + "%)" }],
+              { duration: how.duration, easing: how.easing })
+          : Promise.resolve();
+        done.then(function () { strip.style.transition = ""; });
+      }
+      return {
+        set: function (t) { at = Math.max(0, Math.min(1, t)); place(at); },
+        commit: function () { settle(1, motion ? motion.SPRING : {}); },
+        cancel: function () { settle(0, motion ? motion.SETTLE : {}); }
+      };
+    }
+  };
+})();
+`;
+
+// Motion shared by the deck runtimes: the overview, the filmstrip and the pull
+// gesture all spring, and one spring keeps them feeling like one thing. On the
+// window rather than repeated in each, because each is its own script.
+//
+// Same escaping rule as the filmstrip: this is a template literal.
+const MOTION_JS = `
+(function () {
+  // A damped spring, sampled into a linear() easing so the browser runs it
+  // like any other curve, on the compositor. Underdamped for the way in: a
+  // cell overshoots its place by a few percent and settles back, which is
+  // what reads as springing into position rather than sliding there. Damped
+  // critically for the way out, because overshooting the full-size slide
+  // would show its edges past the window.
+  var reduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var hasLinear = !!(window.CSS && CSS.supports && CSS.supports("animation-timing-function", "linear(0, 1)"));
+
+  function spring(w0, zeta) {
+    if (!hasLinear) {
+      return { duration: 420, easing: zeta < 1 ? "cubic-bezier(0.34, 1.4, 0.64, 1)" : "cubic-bezier(0.2, 0.9, 0.2, 1)" };
+    }
+    // Long enough for the motion to be under half a percent of the travel.
+    var settle = zeta < 1
+      ? Math.log(200 / Math.sqrt(1 - zeta * zeta)) / (zeta * w0)
+      : 7.4 / w0;
+    var steps = 48, pts = [];
+    for (var i = 0; i <= steps; i++) {
+      var t = settle * i / steps, v;
+      if (zeta < 1) {
+        var wd = w0 * Math.sqrt(1 - zeta * zeta);
+        v = 1 - Math.exp(-zeta * w0 * t) * (Math.cos(wd * t) + (zeta * w0 / wd) * Math.sin(wd * t));
+      } else {
+        v = 1 - Math.exp(-w0 * t) * (1 + w0 * t);
+      }
+      pts.push(i === steps ? 1 : Math.round(v * 10000) / 10000);
+    }
+    return { duration: Math.round(settle * 1000), easing: "linear(" + pts.join(", ") + ")" };
+  }
+
+  // Resolves when the animation is over — or when it should have been. A
+  // browser producing no frames (a headless one, a tab in the background)
+  // never finishes an animation, and the overview changes state when its
+  // animations end: without a deadline it would open and never settle, or
+  // close and never leave. So at the deadline the animation is finished by
+  // hand, which also lands everything where it was going.
+  function play(el, frames, timing) {
+    if (reduced || !el.animate) return Promise.resolve();
+    var a;
+    try { a = el.animate(frames, timing); } catch (err) { return Promise.resolve(); }
+    return new Promise(function (resolve) {
+      var done = false;
+      var end = function () { if (!done) { done = true; resolve(); } };
+      // A cancelled animation rejects its promise; that is not an error here.
+      a.finished.then(end, end);
+      setTimeout(function () {
+        if (done) return;
+        try { a.finish(); } catch (err) {}
+        end();
+      }, (timing.duration || 0) + (timing.delay || 0) + 150);
+    });
+  }
+
+  // The transform that makes a box whose natural place is "to" look as if it
+  // were at "from", scaled from its top-left corner.
+  function fly(from, to) {
+    var sx = from.width / to.width, sy = from.height / to.height;
+    return "translate(" + (from.left - to.left) + "px, " + (from.top - to.top) + "px) scale(" + sx + ", " + sy + ")";
+  }
+
+  window.sdocMotion = {
+    reduced: reduced,
+    spring: spring,
+    SPRING: spring(18, 0.66),
+    SETTLE: spring(22, 1),
+    play: play,
+    fly: fly
+  };
+})();
+`;
+
+// Full screen on F. Structural for the same reason the filmstrip is: every
+// theme would otherwise write the same ten lines. A page that may not go full
+// screen — an iframe without allowfullscreen, a webview — rejects the request,
+// and that is said out loud rather than the key appearing to do nothing.
+//
+// Same escaping rule as the filmstrip: this is a template literal.
+const FULLSCREEN_JS = `
+(function () {
+  var KEY = "f";
+  var root = document.documentElement;
+
+  function current() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+  function call(target, names) {
+    for (var i = 0; i < names.length; i++) {
+      if (typeof target[names[i]] === "function") {
+        try { return Promise.resolve(target[names[i]]()); } catch (err) { return Promise.reject(err); }
+      }
+    }
+    return Promise.reject(new Error("unsupported"));
+  }
+
+  var hint = null, hintTimer = null;
+  function say(text) {
+    if (!hint) {
+      hint = document.createElement("div");
+      hint.className = "sdoc-deck-hint";
+      document.body.appendChild(hint);
+    }
+    hint.textContent = text;
+    hint.classList.add("is-shown");
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(function () { hint.classList.remove("is-shown"); }, 1600);
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
+    if ((e.key || "").toLowerCase() !== KEY) return;
+    e.preventDefault();
+    var going = current()
+      ? call(document, ["exitFullscreen", "webkitExitFullscreen"])
+      : call(root, ["requestFullscreen", "webkitRequestFullscreen"]);
+    going.catch(function () { say("Full screen is not available here"); });
+  });
+})();
+`;
+
+// The overview: every spine slide at once, in a grid that fills the window.
+//
+// The filmstrip answers "where am I in the argument" without leaving the
+// slide. This answers "what does the whole deck look like" and gets you
+// anywhere in it in one click, which is what a presenter wants mid-talk and a
+// designer wants when checking that thirty slides belong to one deck.
+//
+// A cell is the slide itself, cloned and scaled down, so the pictures,
+// colours and layout are the real ones. Its type is not readable at that
+// size, so the kicker and title are set again underneath at a size that is —
+// the same text the filmstrip uses. Resting on a cell brings up a larger copy
+// beside it, big enough to check it is the one you meant; a click goes there.
+//
+// Built when it opens and removed when it closes, so nothing that reads a
+// built deck — the harvests, print, any export — can ever see it. Couples to a
+// theme the way the filmstrip does: the hash to navigate, .active to read.
+//
+// Same escaping rule as the filmstrip: this is a template literal, so a
+// backslash in it has to be written twice.
+const OVERVIEW_JS = `
+(function () {
+  var KEY = "o";
+
+  var slides = [].slice.call(document.querySelectorAll(".slide"));
+  var spine = slides.filter(function (s) {
+    return (s.getAttribute("data-detail") || "0") === "0";
+  });
+  if (spine.length < 2) return;
+
+  // ---- What each cell says -------------------------------------------------
+
+  function textOf(slide, sel) {
+    var el = slide.querySelector(sel);
+    return el ? el.textContent.replace(/\\s+/g, " ").trim() : "";
+  }
+  function detailsUnder(slide) {
+    var s = slide.getAttribute("data-spine");
+    if (!s) return 0;
+    var n = 0;
+    for (var i = 0; i < slides.length; i++) {
+      if (slides[i].getAttribute("data-spine") === s &&
+          (slides[i].getAttribute("data-detail") || "0") !== "0") n++;
+    }
+    return n;
+  }
+  var info = spine.map(function (slide) {
+    return {
+      kicker: textOf(slide, ".kicker"),
+      title: textOf(slide, "h1") || textOf(slide, "h2") || textOf(slide, "h3"),
+      details: detailsUnder(slide)
+    };
+  });
+
+  // The originals, never the clones: a clone carries .active too, so a
+  // document-wide query for the active slide would find whichever came first.
+  function activeSlide() {
+    for (var i = 0; i < slides.length; i++) if (slides[i].classList.contains("active")) return slides[i];
+    return null;
+  }
+  function currentIndex() {
+    var active = activeSlide();
+    if (!active) return 0;
+    var k = spine.indexOf(active);
+    if (k !== -1) return k;
+    // A detail is up: its spine is the nearest one before it.
+    for (var j = slides.indexOf(active); j >= 0; j--) {
+      k = spine.indexOf(slides[j]);
+      if (k !== -1) return k;
+    }
+    return 0;
+  }
+  function goTo(i) { window.location.hash = String(i + 1); }
+
+  // The design box, from a laid-out slide for the reason theme.js gives: a
+  // custom property is not resolved to px, and offsetWidth ignores transforms.
+  function designBox() {
+    var el = activeSlide();
+    if (el && el.offsetWidth > 0 && el.offsetHeight > 0) return { w: el.offsetWidth, h: el.offsetHeight };
+    var cs = getComputedStyle(document.documentElement);
+    var w = parseFloat(cs.getPropertyValue("--sdoc-slide-w"));
+    var h = parseFloat(cs.getPropertyValue("--sdoc-slide-h"));
+    return { w: w > 0 ? w : 1280, h: h > 0 ? h : 720 };
+  }
+
+  // ---- Motion --------------------------------------------------------------
+
+  // Shared with the filmstrip and the pull gesture; see MOTION_JS.
+  var motion = window.sdocMotion;
+  var SPRING = motion.SPRING, SETTLE = motion.SETTLE, play = motion.play, fly = motion.fly;
+
+  // ---- Building ------------------------------------------------------------
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // A miniature is the slide's own markup, made inert and scaled. It keeps
+  // .active, because that is the class every theme uses to show a slide, and
+  // whatever the theme does to the slide on screen is what the miniature
+  // should look like.
+  function miniature(slide) {
+    var box = el("div", "sdoc-overview-mini");
+    var c = slide.cloneNode(true);
+    c.classList.add("active");
+    c.setAttribute("aria-hidden", "true");
+    c.setAttribute("inert", "");
+    box.appendChild(c);
+    return box;
+  }
+  function sizeMiniature(box, w, h) {
+    box.style.width = w + "px";
+    box.style.height = h + "px";
+    box.style.setProperty("--sdoc-overview-k", String(w / design.w));
+  }
+  // Once it is in the page and measurable. A connector is drawn by the
+  // runtime against laid-out boxes, and a slide nobody has visited yet has
+  // never been drawn, so its clone is drawn here. Handed over whole: the
+  // connector runtime decides what in it is a connector, and it is only on
+  // the page when the deck has one. A later redraw of the whole document
+  // reaches the clones too, which is harmless — positions are in design
+  // pixels, the same at any scale.
+  function settleMiniature(box) {
+    if (window.sdocConnectors && box.firstChild) {
+      try { window.sdocConnectors.resolve(box.firstChild); } catch (err) {}
+    }
+  }
+
+  var overlay = null, backdrop = null, grid = null, legend = null;
+  var cells = [], cols = 1, design = null, captionH = 0;
+  var closing = false, ready = false, hot = -1, hover = -1, keyed = false, stirred = false;
+
+  function build() {
+    overlay = el("div", "sdoc-overview");
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-label", "Slide overview");
+    backdrop = el("div", "sdoc-overview-backdrop");
+    grid = el("div", "sdoc-overview-grid");
+    legend = el("div", "sdoc-overview-legend", "Click a slide to go to it \\u00b7 Arrows and Enter \\u00b7 Esc to close");
+    overlay.appendChild(backdrop);
+    overlay.appendChild(grid);
+    overlay.appendChild(legend);
+
+    cells = spine.map(function (slide, i) {
+      var d = info[i];
+      var cell = el("button", "sdoc-overview-cell");
+      cell.type = "button";
+      // Out of the tab order, as in the filmstrip: the overview has its own
+      // arrow keys, and Tab walking forty buttons is not how anyone uses it.
+      cell.setAttribute("tabindex", "-1");
+      cell.setAttribute("aria-label", "Slide " + (i + 1) + (d.title ? ": " + d.title : ""));
+      if (d.details) cell.classList.add("has-details");
+      var mini = miniature(slide);
+      mini.appendChild(el("div", "sdoc-overview-n", String(i + 1)));
+      if (d.details) {
+        mini.appendChild(el("div", "sdoc-overview-more", "+" + d.details));
+      }
+      cell.appendChild(mini);
+
+      var cap = el("div", "sdoc-overview-caption");
+      // A kicker line even when there is no kicker, so every title in a row
+      // starts at the same height.
+      cap.appendChild(el("div", "sdoc-overview-kicker", d.kicker || "\\u00a0"));
+      if (d.title) cap.appendChild(el("div", "sdoc-overview-title", d.title));
+      cell.appendChild(cap);
+      grid.appendChild(cell);
+
+      cell.setAttribute("data-sdoc-overview", String(i));
+      cell.addEventListener("click", function (e) {
+        e.stopPropagation();
+        close(i);
+      });
+      return { el: cell, mini: mini, caption: cap, x: 0, y: 0, w: 0, h: 0 };
+    });
+
+    // The deck's own handlers navigate on any click, swipe or arrow key.
+    // None of that may reach them while the overview is up.
+    overlay.addEventListener("click", function (e) {
+      e.stopPropagation();
+      close(-1);
+    });
+    ["touchstart", "touchend", "pointerdown"].forEach(function (type) {
+      overlay.addEventListener(type, function (e) { e.stopPropagation(); });
+    });
+    overlay.addEventListener("scroll", function () { hidePeek(); });
+  }
+
+  // The grid that makes the cells as large as they can be. Every column count
+  // is tried, because the best one depends on the window's shape as much as
+  // on the number of slides. Below a floor the cells stop shrinking and the
+  // overview scrolls, since a caption narrower than that tells you nothing.
+  var MIN_W = 120;
+
+  function layout() {
+    var vw = overlay.clientWidth || window.innerWidth;
+    var vh = window.innerHeight;
+    var short = Math.min(vw, vh);
+    var pad = Math.max(16, Math.min(44, Math.round(short * 0.04)));
+    var gap = Math.max(12, Math.min(28, Math.round(short * 0.024)));
+    var legendH = legend.offsetHeight || 0;
+    var W = vw - 2 * pad, H = vh - 2 * pad - legendH;
+    var aspect = design.w / design.h;
+    var n = cells.length;
+    captionH = cells[0].caption.offsetHeight || 0;
+
+    var best = null;
+    for (var c = 1; c <= n; c++) {
+      var r = Math.ceil(n / c);
+      var w = Math.min((W - gap * (c - 1)) / c, ((H - gap * (r - 1)) / r - captionH) * aspect);
+      if (!best || w > best.w + 0.5) best = { cols: c, w: w };
+    }
+    var cw = best.w;
+    cols = best.cols;
+    if (cw < MIN_W) {
+      cols = Math.max(1, Math.floor((W + gap) / (MIN_W + gap)));
+      cw = (W - gap * (cols - 1)) / cols;
+    }
+    cw = Math.floor(cw);
+    var ch = Math.round(cw / aspect);
+    var rows = Math.ceil(n / cols);
+    var totalW = cols * cw + (cols - 1) * gap;
+    var totalH = rows * (ch + captionH) + (rows - 1) * gap;
+    var x0 = pad + Math.max(0, (W - totalW) / 2);
+    var y0 = pad + Math.max(0, (H - totalH) / 2);
+
+    cells.forEach(function (cell, i) {
+      cell.x = Math.round(x0 + (i % cols) * (cw + gap));
+      cell.y = Math.round(y0 + Math.floor(i / cols) * (ch + captionH + gap));
+      cell.w = cw;
+      cell.h = ch;
+      var s = cell.el.style;
+      s.left = cell.x + "px";
+      s.top = cell.y + "px";
+      s.width = cw + "px";
+      sizeMiniature(cell.mini, cw, ch);
+    });
+    grid.style.height = Math.ceil(y0 + totalH + pad + legendH) + "px";
+  }
+
+  // ---- The larger copy -----------------------------------------------------
+
+  // Rest on a cell and, after a moment, a larger copy grows out of it, centred
+  // on it. It holds while the pointer stays inside it, and a click on it goes
+  // to that slide. Moving off it shrinks it back into its cell, and the wait
+  // starts over: nothing else comes up until the pointer rests again, so
+  // crossing the grid on the way somewhere does not set off a run of them.
+  // Not offered when the cells are already nearly that big.
+  var PEEK_DELAY = 600;
+  var peek = null, peekAt = -1, peekRect = null, peekFrom = null, peekTimer = null;
+
+  function peekTarget(r) {
+    var vw = window.innerWidth, vh = window.innerHeight, m = 16;
+    var aspect = design.w / design.h;
+    var w = Math.min(Math.min(vw - 2 * m, (vh - 2 * m) * aspect) * 0.6, design.w);
+    if (w < r.width * 1.3) return null;
+    var h = w / aspect;
+    // Centred on the cell, then kept on screen.
+    var x = Math.max(m, Math.min(r.left + r.width / 2 - w / 2, vw - m - w));
+    var y = Math.max(m, Math.min(r.top + r.height / 2 - h / 2, vh - m - h));
+    return { left: x, top: y, width: w, height: h };
+  }
+  function within(r, x, y) {
+    return x >= r.left && x <= r.left + r.width && y >= r.top && y <= r.top + r.height;
+  }
+  // The cell under a point, asked of the page as it is now.
+  function cellAt(x, y) {
+    if (x === null) return -1;
+    var under = document.elementFromPoint(x, y);
+    var cell = under && under.closest ? under.closest(".sdoc-overview-cell") : null;
+    return cell ? parseInt(cell.getAttribute("data-sdoc-overview"), 10) : -1;
+  }
+
+  function armPeek(i) {
+    clearTimeout(peekTimer);
+    if (peek) return;
+    peekTimer = setTimeout(function () { showPeek(i); }, PEEK_DELAY);
+  }
+  function disarmPeek() { clearTimeout(peekTimer); }
+
+  function showPeek(i) {
+    if (!overlay || closing || !ready || peek) return;
+    var r = cells[i].mini.getBoundingClientRect();
+    var t = peekTarget(r);
+    if (!t) return;
+    var p = el("div", "sdoc-overview-peek");
+    p.setAttribute("role", "button");
+    p.setAttribute("aria-label", cells[i].el.getAttribute("aria-label"));
+    var box = miniature(spine[i]);
+    p.appendChild(box);
+    p.style.left = t.left + "px";
+    p.style.top = t.top + "px";
+    p.style.width = t.width + "px";
+    p.style.height = t.height + "px";
+    p.addEventListener("click", function (e) {
+      e.stopPropagation();
+      close(i, true);
+    });
+    overlay.appendChild(p);
+    sizeMiniature(box, t.width, t.height);
+    settleMiniature(box);
+    peek = p;
+    peekAt = i;
+    peekRect = t;
+    peekFrom = r;
+    setHot(i, false);
+    play(p, [{ transform: fly(r, t) }, { transform: "none" }],
+      { duration: SPRING.duration, easing: SPRING.easing });
+  }
+
+  // Back down into its cell. It ends exactly on the cell's own miniature,
+  // which is the same slide at the same size, so nothing jumps when it goes.
+  // When the pointer sent it back, the cell now under the pointer starts its
+  // wait from nothing.
+  function collapsePeek(fromPointer) {
+    clearTimeout(peekTimer);
+    if (!peek) return;
+    var p = peek, t = peekRect, r = peekFrom;
+    peek = null;
+    peekAt = -1;
+    p.style.pointerEvents = "none";
+    play(p, [{ transform: "none" }, { transform: fly(r, t) }],
+      { duration: SETTLE.duration, easing: SETTLE.easing, fill: "forwards" })
+      .then(function () { if (p.parentNode) p.parentNode.removeChild(p); });
+    if (!fromPointer) return;
+    hover = cellAt(px, py);
+    if (hover !== -1) { setHot(hover, false); armPeek(hover); }
+  }
+
+  function hidePeek() {
+    clearTimeout(peekTimer);
+    if (!peek) return;
+    if (peek.parentNode) peek.parentNode.removeChild(peek);
+    peek = null;
+    peekAt = -1;
+  }
+
+  // ---- Choosing with the keyboard ------------------------------------------
+
+  function setHot(i, fromKeys) {
+    if (i < 0 || i >= cells.length) return;
+    if (fromKeys && !ready) keyed = true;
+    if (hot !== -1 && cells[hot]) cells[hot].el.classList.remove("is-hot");
+    hot = i;
+    cells[i].el.classList.add("is-hot");
+    if (fromKeys) {
+      if (peek && peekAt !== i) collapsePeek(false);
+      var c = cells[i];
+      var top = c.y, bottom = c.y + c.h + captionH;
+      if (top < overlay.scrollTop) overlay.scrollTop = top - 16;
+      else if (bottom > overlay.scrollTop + overlay.clientHeight) overlay.scrollTop = bottom - overlay.clientHeight + 16;
+      armPeek(i);
+    }
+  }
+
+  function step(dx, dy) {
+    var i = hot === -1 ? currentIndex() : hot;
+    var n = cells.length;
+    if (dx) i = Math.max(0, Math.min(n - 1, i + dx));
+    if (dy > 0 && i + cols < n) i += cols;
+    else if (dy > 0 && Math.floor(i / cols) < Math.floor((n - 1) / cols)) i = n - 1;
+    if (dy < 0 && i - cols >= 0) i -= cols;
+    setHot(i, true);
+  }
+
+  // ---- Opening, by key or by pull ------------------------------------------
+
+  // The whole way in is a function of one number. At 0 the deck is as it
+  // was: the slide you were on fills its box and nothing else is visible. At
+  // 1 the grid is at rest. A key runs it from 0 on a spring. A pull from the
+  // top edge (the gesture runtime) sets it under the pointer, then hands
+  // whatever is left to the same spring when let go, or springs it back to 0
+  // when not. One description of the motion, so the two cannot drift apart.
+  var plan = null, pulling = false;
+
+  function setup() {
+    var cur = currentIndex();
+    var real = activeSlide();
+    var from = real ? real.getBoundingClientRect() : null;
+    design = designBox();
+    closing = false;
+    ready = false;
+    hover = -1;
+    keyed = false;
+    stirred = false;
+
+    build();
+    document.body.appendChild(overlay);
+    layout();
+    cells.forEach(function (c) { settleMiniature(c.mini); });
+    setHot(cur, false);
+    var g = cells[cur];
+    if (overlay.scrollHeight > overlay.clientHeight) {
+      overlay.scrollTop = Math.max(0, g.y - (overlay.clientHeight - g.h) / 2);
+    }
+    var m = g.mini.getBoundingClientRect();
+    var gc = cur % cols, gr = Math.floor(cur / cols);
+    plan = {
+      cur: cur,
+      from: from && from.width > 0 && m.width > 0 ? from : null,
+      mini: m,
+      radius: parseFloat(getComputedStyle(g.mini).borderTopLeftRadius) || 0,
+      // How far into the way in each cell waits before it moves: nearest
+      // first, so the grid spreads out from the slide you were on.
+      lag: cells.map(function (c, i) {
+        if (i === cur) return 0;
+        var dc = (i % cols) - gc, dr = Math.floor(i / cols) - gr;
+        return Math.min(0.4, Math.sqrt(dc * dc + dr * dr) * 0.05);
+      })
+    };
+    g.el.style.zIndex = "2";
+  }
+
+  function clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // Every style the way in touches, at progress p. "at" is the progress at
+  // which that piece starts to move, which becomes its delay on a spring.
+  function stateAt(p) {
+    var out = [], g = cells[plan.cur];
+    out.push({ el: backdrop, kind: "fade", at: 0, style: { opacity: String(clamp01(p / 0.4)) } });
+    out.push({ el: legend, kind: "fade", at: 0.6, style: { opacity: String(clamp01((p - 0.6) / 0.4)) } });
+    // The slide you were on shrinks into its place in the grid ...
+    if (plan.from) {
+      var f = plan.from, m = plan.mini;
+      var r = { left: lerp(f.left, m.left, p), top: lerp(f.top, m.top, p),
+                width: lerp(f.width, m.width, p), height: lerp(f.height, m.height, p) };
+      // It also fades while it is pulled, so the grid reads through it, and
+      // comes back as it lands. A key's way in runs straight from 0 to 1 and
+      // never passes through the dip; a held pull sits in it.
+      var dim = p >= 1 ? 1 : p < 0.6 ? 1 - 0.85 * (p / 0.6) : p < 0.85 ? 0.15 : 0.15 + 0.85 * ((p - 0.85) / 0.15);
+      out.push({ el: g.el, kind: "spring", at: 0, style: { transform: p >= 1 ? "none" : fly(r, m), opacity: String(dim) } });
+      out.push({ el: g.mini, kind: "ease", at: 0, style: { borderRadius: (plan.radius * p) + "px" } });
+      // Its caption and badges are scaled with it, so until it is nearly
+      // home they would be a slide-sized number and a title twice the size
+      // of the slide's own. A pull can hold it there; a key never showed it.
+      var late = String(clamp01((p - 0.75) / 0.25));
+      out.push({ el: g.caption, kind: "fade", at: 0.75, style: { opacity: late } });
+      [].forEach.call(g.mini.querySelectorAll(".sdoc-overview-n, .sdoc-overview-more"), function (b) {
+        out.push({ el: b, kind: "fade", at: 0.75, style: { opacity: late } });
+      });
+    }
+    // ... and the rest come out from behind it.
+    cells.forEach(function (c, i) {
+      if (i === plan.cur) return;
+      var lag = plan.lag[i];
+      var q = clamp01((p - lag) / (1 - lag));
+      var sc = lerp(0.55, 1, q), full = c.h + captionH;
+      var tx = (g.x - c.x) * 0.35 * (1 - q) + (1 - sc) * c.w / 2;
+      var ty = (g.y - c.y) * 0.35 * (1 - q) + (1 - sc) * full / 2;
+      out.push({ el: c.el, kind: "spring", at: lag, style: {
+        transform: q >= 1 ? "none" : "translate(" + tx + "px, " + ty + "px) scale(" + sc + ")",
+        opacity: String(q)
+      } });
+    });
+    return out;
+  }
+  function applyState(p) {
+    stateAt(p).forEach(function (e) { for (var k in e.style) e.el.style[k] = e.style[k]; });
+  }
+  function clearState() {
+    stateAt(1).forEach(function (e) { for (var k in e.style) e.el.style[k] = ""; });
+  }
+
+  // From wherever the way in has got to, the rest of it. The page is set to
+  // the end state at once and each piece animates from where it was, so a
+  // piece that has not started yet still waits its turn.
+  function animateIn(pFrom, fromPull) {
+    var start = stateAt(pFrom), end = stateAt(1), waits = [];
+    clearState();
+    start.forEach(function (e, k) {
+      var delay = Math.max(0, e.at - pFrom) * 600;
+      var timing = e.kind === "spring"
+        ? { duration: SPRING.duration, easing: SPRING.easing, delay: delay, fill: "backwards" }
+        : e.kind === "fade"
+          ? { duration: 220, easing: "ease-out", delay: Math.max(0, e.at - pFrom) * SPRING.duration, fill: "backwards" }
+          : { duration: SPRING.duration, easing: "ease-out", delay: delay, fill: "backwards" };
+      var to = {};
+      for (var key in end[k].style) to[key] = end[k].style[key] === "" ? "none" : end[k].style[key];
+      waits.push(play(e.el, [e.style, to], timing));
+    });
+    var g = cells[plan.cur];
+    Promise.all(waits).then(function () {
+      if (!overlay || closing) return;
+      g.el.style.zIndex = "";
+      g.el.classList.add("is-current");
+      ready = true;
+      // Pulled open, the pointer is where the pull let go. That is not a
+      // choice of cell, so nothing comes up until it moves.
+      if (fromPull) stirred = false;
+      // A choice made with the keys while the cells were still flying in
+      // stands. The pointer gets a say only if the keys said nothing, and
+      // only if it moved: cells passing under a resting pointer are not
+      // somebody choosing one. Which cell it is on is asked now, not taken
+      // from mid-flight — the slide you were on shrinks across half the
+      // window on its way in, and was under the pointer for most of it.
+      if (keyed) armPeek(hot);
+      else if (stirred) {
+        hover = cellAt(px, py);
+        if (hover !== -1) { setHot(hover, false); armPeek(hover); }
+      }
+    });
+  }
+
+  // A pull let go short of the line: back to 0, which leaves the slide you
+  // were on exactly over the real one, and then gone.
+  function animateOut(pFrom) {
+    var start = stateAt(pFrom), end = stateAt(0), waits = [], mine = overlay;
+    applyState(0);
+    start.forEach(function (e, k) {
+      waits.push(play(e.el, [e.style, end[k].style], { duration: SETTLE.duration, easing: SETTLE.easing }));
+    });
+    Promise.all(waits).then(function () { teardown(mine); });
+  }
+
+  function open() {
+    if (overlay) return;
+    setup();
+    animateIn(0, false);
+  }
+
+  // The handle the gesture runtime drives. set(t) takes the pull's own
+  // progress, 0 to 1; it is eased here so the first few pixels of a pull
+  // already move the slide, which is what makes it feel attached.
+  function pull() {
+    if (overlay) return null;
+    pulling = true;
+    setup();
+    var at = 0;
+    applyState(0);
+    return {
+      set: function (t) {
+        if (!pulling || !overlay) return;
+        var u = clamp01(t);
+        at = 1 - (1 - u) * (1 - u);
+        applyState(at);
+      },
+      commit: function () {
+        if (!pulling) return;
+        pulling = false;
+        animateIn(at, true);
+      },
+      cancel: function () {
+        if (!pulling) return;
+        pulling = false;
+        animateOut(at);
+      }
+    };
+  }
+
+  function teardown(mine) {
+    if (mine && mine.parentNode) mine.parentNode.removeChild(mine);
+    if (overlay === mine) {
+      overlay = backdrop = grid = legend = peek = peekRect = peekFrom = plan = null;
+      peekAt = -1;
+      cells = [];
+      hot = -1;
+      closing = false;
+      pulling = false;
+    }
+  }
+
+  // target: the spine index to go to, or -1 to go back to where you were.
+  // fromPeek: chosen on the larger copy, which is then what grows to fill the
+  // window, rather than the cell underneath it.
+  function close(target, fromPeek) {
+    if (!overlay || closing || pulling) return;
+    closing = true;
+    clearTimeout(peekTimer);
+    var grower = fromPeek && peek && peekAt === target ? peek : null;
+    if (!grower) hidePeek();
+    // Anything still springing in lands where it was going first, so the way
+    // out starts from where the cells actually are.
+    try {
+      overlay.getAnimations({ subtree: true }).forEach(function (a) { a.finish(); });
+    } catch (err) {}
+
+    var real = activeSlide();
+    var to = real ? real.getBoundingClientRect() : null;
+    var i = target >= 0 ? target : currentIndex();
+    // Every slide occupies the same box, so the one you were on gives the
+    // rect the next one will fill, measured before the theme swaps them.
+    if (target >= 0) goTo(target);
+
+    var c = cells[i];
+    var mine = overlay, waits = [];
+    c.el.classList.remove("is-current", "is-hot");
+    if (grower) {
+      grower.style.pointerEvents = "none";
+      if (to && to.width > 0) {
+        waits.push(play(grower, [{ transform: "none", borderRadius: getComputedStyle(grower).borderRadius },
+          { transform: fly(to, peekRect), borderRadius: "0px" }],
+          { duration: SETTLE.duration, easing: SETTLE.easing, fill: "forwards" }));
+      }
+    } else {
+      c.el.style.zIndex = "3";
+      var m = c.mini.getBoundingClientRect();
+      if (to && to.width > 0 && m.width > 0) {
+        waits.push(play(c.el, [{ transform: "none" }, { transform: fly(to, m) }],
+          { duration: SETTLE.duration, easing: SETTLE.easing, fill: "forwards" }));
+        play(c.caption, [{ opacity: 1 }, { opacity: 0 }], { duration: 100, fill: "forwards" });
+        play(c.mini, [{ borderRadius: getComputedStyle(c.mini).borderRadius }, { borderRadius: "0px" }],
+          { duration: SETTLE.duration, fill: "forwards" });
+      }
+    }
+    cells.forEach(function (o, k) {
+      if (k === i && !grower) return;
+      var s = 0.92, full = o.h + captionH;
+      waits.push(play(o.el, [
+        { opacity: 1, transform: "none" },
+        { opacity: 0, transform: "translate(" + ((1 - s) * o.w / 2) + "px, " + ((1 - s) * full / 2) + "px) scale(" + s + ")" }
+      ], { duration: 170, easing: "ease-in", fill: "forwards" }));
+    });
+    play(legend, [{ opacity: 1 }, { opacity: 0 }], { duration: 120, fill: "forwards" });
+    waits.push(play(backdrop, [{ opacity: 1 }, { opacity: 0 }], { duration: SETTLE.duration, easing: "ease-in", fill: "forwards" }));
+
+    Promise.all(waits).then(function () { teardown(mine); });
+  }
+
+  // ---- The pointer ---------------------------------------------------------
+
+  // Hover is read from movement, not from pointerenter. Cells springing into
+  // place, or the grid scrolling under the arrow keys, pass under a pointer
+  // that is not moving, and the browser reports each as the pointer entering
+  // a cell — which would take the choice away from the keys and hand it to
+  // wherever the mouse happened to be resting. A move only counts if the
+  // pointer is somewhere it was not.
+  var px = null, py = null;
+  window.addEventListener("pointermove", function (e) {
+    if (e.pointerType === "touch") return;
+    var moved = e.clientX !== px || e.clientY !== py;
+    px = e.clientX;
+    py = e.clientY;
+    if (!overlay || closing || pulling || !moved) return;
+    // Inside the larger copy, everything stays as it is. Its final box is
+    // what counts, not where its animation has got to, so the pointer is not
+    // judged to have left a copy that is still growing towards it.
+    if (peek) {
+      if (!within(peekRect, px, py)) collapsePeek(true);
+      return;
+    }
+    if (!ready) { stirred = true; return; }
+    var cell = e.target && e.target.closest ? e.target.closest(".sdoc-overview-cell") : null;
+    var i = cell ? parseInt(cell.getAttribute("data-sdoc-overview"), 10) : -1;
+    if (i === hover && (i === -1 || i === hot)) return;
+    hover = i;
+    if (i === -1) { disarmPeek(); return; }
+    setHot(i, false);
+    armPeek(i);
+  }, true);
+
+  // ---- Keys ----------------------------------------------------------------
+
+  // On the window, in the capture phase: that runs before the theme's own
+  // listener on the document, so while the overview is up an arrow key moves
+  // through the grid instead of turning the slide underneath it.
+  window.addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
+    var k = e.key || "";
+    // Mid-pull the keys belong to the gesture, which takes Escape to call it off.
+    if (pulling) return;
+    if (!overlay) {
+      if (k.toLowerCase() === KEY && !e.repeat) { e.preventDefault(); open(); }
+      return;
+    }
+    var handled = true;
+    if (k === "Escape" && peek) collapsePeek(false);
+    else if (k === "Escape" || k.toLowerCase() === KEY) close(-1);
+    else if ((k === "Enter" || k === " ") && peek) close(peekAt, true);
+    else if (k === "Enter" || k === " ") close(hot === -1 ? currentIndex() : hot);
+    else if (k === "ArrowRight") step(1, 0);
+    else if (k === "ArrowLeft") step(-1, 0);
+    else if (k === "ArrowDown") step(0, 1);
+    else if (k === "ArrowUp") step(0, -1);
+    else if (k === "Home") setHot(0, true);
+    else if (k === "End") setHot(cells.length - 1, true);
+    else handled = false;
+    if (handled) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  var queued = false;
+  window.addEventListener("resize", function () {
+    if (!overlay || closing || pulling || queued) return;
+    queued = true;
+    requestAnimationFrame(function () {
+      queued = false;
+      if (!overlay || closing) return;
+      hidePeek();
+      design = designBox();
+      layout();
+    });
+  });
+
+  window.sdocOverview = {
+    open: open,
+    pull: pull,
+    isOpen: function () { return !!overlay; }
+  };
+})();
+`;
+
+// Pull from an edge. Down from the top opens the overview, and the overview's
+// own way in follows the pointer as it goes; up from the bottom raises the
+// filmstrip. The views themselves are the feedback: the overview's way in
+// and the strip both move with the pointer. The cursor says the rest — a
+// closed hand while pulling, an open one once letting go would count — so
+// nothing else is drawn over the slides. Dragging back past that point calls
+// it off.
+//
+// This is the keyboard-free way to the two views — a touchscreen, a tablet
+// presenting — and it has to coexist with a deck that already does things
+// with every press and swipe: a click turns the slide, a vertical swipe moves
+// through a drilldown column, a drag selects text or drags a picture, and a
+// phone's browser reloads on a pull from the top. Each of those is held off
+// here for a press that turns into a pull, and left alone for one that does
+// not.
+//
+// It drives the overview and the filmstrip through the handles they publish
+// (window.sdocOverview, window.sdocFilmstrip) rather than by faking their
+// keys, so a pull can scrub them rather than only switch them on.
+//
+// Same escaping rule as the filmstrip: this is a template literal.
+const GESTURE_JS = `
+(function () {
+  var overview = window.sdocOverview, film = window.sdocFilmstrip;
+  if (!overview && !film) return;
+  var motion = window.sdocMotion;
+  var root = document.documentElement;
+
+  var SLOP = 8;
+  // The pull's own progress at which the overview's way in is complete.
+  // Below 1, so that where letting go starts to count the overview is
+  // already most of the way there, and letting go springs the rest.
+  var OVERVIEW_SPAN = 1.8;
+
+  function band() { return Math.max(48, window.innerHeight * 0.1); }
+
+  function el(tag, cls) {
+    var e = document.createElement(tag);
+    e.className = cls;
+    return e;
+  }
+
+  // ---- What it looks like --------------------------------------------------
+
+  var handles = { top: el("div", "sdoc-pull-handle is-top"), bottom: el("div", "sdoc-pull-handle is-bottom") };
+  document.body.appendChild(handles.top);
+  document.body.appendChild(handles.bottom);
+
+  // ---- Where a pull may start ----------------------------------------------
+
+  function zoneAt(y) {
+    var b = band(), vh = window.innerHeight;
+    var up = overview && overview.isOpen();
+    if (up) return null;
+    if (y <= b && overview) return "top";
+    if (y >= vh - b && film && !film.enabled()) return "bottom";
+    return null;
+  }
+  function excluded(target) {
+    return !!(target && target.closest &&
+      target.closest(".sdoc-overview, .sdoc-filmstrip, input, textarea, select, [contenteditable]"));
+  }
+
+  // A handle at the edge when the pointer rests in a band, so the gesture
+  // can be found with a mouse at all.
+  function hint(y, target) {
+    var zone = g || excluded(target) ? null : zoneAt(y);
+    handles.top.classList.toggle("is-shown", zone === "top");
+    handles.bottom.classList.toggle("is-shown", zone === "bottom");
+    root.classList.toggle("sdoc-pull-ready", !!zone);
+  }
+  function unhint() {
+    handles.top.classList.remove("is-shown");
+    handles.bottom.classList.remove("is-shown");
+    root.classList.remove("sdoc-pull-ready");
+  }
+
+  // ---- The pull ------------------------------------------------------------
+
+  var g = null, swallowUntil = 0;
+
+  function press(x, y, id, target, touch) {
+    if (g) return;
+    var zone = zoneAt(y);
+    if (!zone || excluded(target)) return;
+    var vh = window.innerHeight;
+    var fromEdge = zone === "top" ? y : vh - y;
+    // Letting go counts once the pointer is a fifth of the window in from the
+    // edge — and never less than a short drag from where it was pressed, or a
+    // press near that line would be a pull before it moved.
+    var counts = Math.max(vh * 0.2, fromEdge + 56);
+    g = { zone: zone, id: id, x0: x, y0: y, y: y, touch: touch,
+          dragging: false, armed: false, reach: counts - fromEdge, d: 0, ctl: null };
+  }
+
+  // false when this press is not a pull after all, and is left to the deck.
+  function travel(x, y) {
+    var d = g.zone === "top" ? y - g.y0 : g.y0 - y;
+    if (!g.dragging) {
+      var side = Math.abs(x - g.x0);
+      if (Math.max(Math.abs(d), side) < SLOP) return true;
+      if (d < SLOP || side > d) { g = null; return false; }
+      g.ctl = g.zone === "top" ? overview.pull() : film.pull();
+      if (!g.ctl) { g = null; return false; }
+      g.dragging = true;
+      begin();
+    }
+    g.d = Math.max(0, d);
+    g.y = y;
+    draw();
+    return true;
+  }
+
+  function begin() {
+    unhint();
+    root.classList.add("sdoc-pulling");
+    clearSelection();
+  }
+
+  function clearSelection() {
+    var sel = window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount && !sel.isCollapsed) sel.removeAllRanges();
+  }
+
+  function draw() {
+    var t = g.d / g.reach;
+    clearSelection();
+    var armed = t >= 1;
+    if (armed !== g.armed) {
+      g.armed = armed;
+      root.classList.toggle("sdoc-pull-armed", armed);
+      // A finger has no cursor; on a phone the moment it counts is a tap.
+      if (armed && g.touch && navigator.vibrate) { try { navigator.vibrate(8); } catch (err) {} }
+    }
+    g.ctl.set(g.zone === "top" ? t / OVERVIEW_SPAN : t);
+  }
+
+  function release(letGo) {
+    var h = g;
+    g = null;
+    if (!h || !h.dragging) return false;
+    // The click the browser sends after this is not a click on the slide.
+    swallowUntil = Date.now() + 400;
+    root.classList.remove("sdoc-pulling", "sdoc-pull-armed");
+    if (letGo && h.armed) h.ctl.commit(); else h.ctl.cancel();
+    return true;
+  }
+
+  // ---- Mouse and pen -------------------------------------------------------
+
+  window.addEventListener("pointerdown", function (e) {
+    if (e.pointerType === "touch" || e.button !== 0) return;
+    press(e.clientX, e.clientY, e.pointerId, e.target, false);
+  }, true);
+
+  window.addEventListener("pointermove", function (e) {
+    if (e.pointerType === "touch") return;
+    if (!g) { hint(e.clientY, e.target); return; }
+    if (e.pointerId !== g.id) return;
+    var was = g.dragging;
+    if (!travel(e.clientX, e.clientY)) return;
+    if (g && g.dragging) {
+      // Every move from here is the pull's: held, so leaving the window does
+      // not lose it, and kept from the overview's hover and the strip.
+      if (!was) { try { root.setPointerCapture(e.pointerId); } catch (err) {} }
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+
+  window.addEventListener("pointerup", function (e) {
+    if (!g || e.pointerId !== g.id) return;
+    if (release(true)) {
+      try { root.releasePointerCapture(e.pointerId); } catch (err) {}
+      e.stopPropagation();
+    }
+  }, true);
+  window.addEventListener("pointercancel", function (e) {
+    if (g && e.pointerId === g.id) release(false);
+  }, true);
+
+  // A press in a band that never became a pull is an ordinary click and
+  // turns the slide as one. A pull's own click does not.
+  window.addEventListener("click", function (e) {
+    if (Date.now() < swallowUntil) {
+      swallowUntil = 0;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+
+  // Pressing on a picture or a link and moving starts the browser's own drag,
+  // which ends every pointer event with a cancel.
+  window.addEventListener("dragstart", function (e) { if (g) e.preventDefault(); }, true);
+
+  root.addEventListener("mouseleave", unhint);
+
+  // ---- Touch ---------------------------------------------------------------
+
+  // Touch is read from touch events, not pointer events: a browser that
+  // decides a touch is a scroll cancels its pointer events, and only a
+  // touchmove can be told not to scroll — or not to pull-to-refresh, which
+  // on a phone is this very motion and would reload the deck.
+  window.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { if (g && g.touch) release(false); return; }
+    var t = e.touches[0];
+    press(t.clientX, t.clientY, "touch", e.target, true);
+  }, { capture: true, passive: true });
+
+  window.addEventListener("touchmove", function (e) {
+    if (!g || !g.touch) return;
+    var t = e.touches[0];
+    if (!travel(t.clientX, t.clientY)) return;
+    if (e.cancelable) e.preventDefault();
+    if (g && g.dragging) e.stopPropagation();
+  }, { capture: true, passive: false });
+
+  window.addEventListener("touchend", function (e) {
+    if (!g || !g.touch) return;
+    // The theme reads a vertical swipe as a move through a drilldown column.
+    if (release(true)) e.stopPropagation();
+  }, true);
+  window.addEventListener("touchcancel", function () {
+    if (g && g.touch) release(false);
+  }, true);
+
+  // ---- Calling it off ------------------------------------------------------
+
+  window.addEventListener("keydown", function (e) {
+    if (!g || !g.dragging || e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    release(false);
+  }, true);
+  window.addEventListener("blur", function () { if (g) release(false); });
 })();
 `;
 
@@ -1574,6 +2684,160 @@ function renderSlides(nodes, options = {}) {
   pointer-events: none;
 }
 .sdoc-filmstrip-hint.is-shown { opacity: 1; }
+/* A word from a deck runtime other than the strip — that full screen was
+   refused, say. Above the overview, which can be up when it is said. */
+.sdoc-deck-hint {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 70;
+  font: 500 12px/1 system-ui, sans-serif; letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(22, 22, 24, 0.92);
+  border-radius: 20px; padding: 8px 16px;
+  opacity: 0; transition: opacity 200ms;
+  pointer-events: none;
+}
+.sdoc-deck-hint.is-shown { opacity: 1; }
+
+/* Overview: every spine slide in one grid, on demand (O). Built when it opens
+   and removed when it closes, and hidden in print besides, so no export, no
+   harvest and no PDF can see it. A theme may restyle the chrome. The rules on
+   the cloned .slide are what make a miniature of it and are not a theme's to
+   change: without them the clone is a full-size slide centred in the window. */
+.sdoc-overview {
+  position: fixed; inset: 0; z-index: 60;
+  overflow-x: hidden; overflow-y: auto;
+  overscroll-behavior: contain;
+  user-select: none; -webkit-user-select: none;
+  /* A stack of offset cards behind a spine slide that has details under it.
+     A shadow layer rather than an element, so it costs no layout and every
+     state of the cell keeps it. */
+  --sdoc-overview-stack: 0 0 0 0 transparent;
+}
+/* Opaque: at anything less the slide underneath reads through it, and its
+   title at full size competes with every caption in the grid. */
+.sdoc-overview-backdrop {
+  position: fixed; inset: 0;
+  background: #0e0e10;
+}
+.sdoc-overview-grid { position: relative; }
+.sdoc-overview-cell {
+  position: absolute; display: block;
+  margin: 0; padding: 0; border: 0; background: none;
+  appearance: none; -webkit-appearance: none;
+  font: inherit; color: inherit; text-align: left;
+  cursor: pointer;
+  /* The open and close animations scale a cell from its top-left corner,
+     which is the miniature's, so a slide lands exactly on the real one. */
+  transform-origin: 0 0;
+}
+.sdoc-overview-cell:focus { outline: none; }
+.sdoc-overview-cell.has-details {
+  --sdoc-overview-stack: 6px 6px 0 -1px rgba(160, 160, 172, 0.32);
+}
+.sdoc-overview-mini {
+  position: relative; overflow: hidden;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), var(--sdoc-overview-stack),
+              0 6px 20px rgba(0, 0, 0, 0.4);
+  transition: box-shadow 140ms;
+}
+.sdoc-overview-cell:hover .sdoc-overview-mini,
+.sdoc-overview-cell.is-hot .sdoc-overview-mini {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), var(--sdoc-overview-stack),
+              0 8px 26px rgba(0, 0, 0, 0.5);
+}
+.sdoc-overview-cell.is-current .sdoc-overview-mini {
+  box-shadow: 0 0 0 3px #fff, var(--sdoc-overview-stack),
+              0 8px 26px rgba(0, 0, 0, 0.5);
+}
+/* The miniature: the real slide at its design size, scaled from its corner.
+   Everything a theme might do to place or hide a slide is undone here. */
+.sdoc-overview-mini > .slide {
+  position: absolute !important;
+  top: 0 !important; left: 0 !important; right: auto !important; bottom: auto !important;
+  margin: 0 !important;
+  transform: scale(var(--sdoc-overview-k, 0.2)) !important;
+  transform-origin: 0 0 !important;
+  opacity: 1 !important; visibility: visible !important;
+  pointer-events: none !important;
+  transition: none !important; animation: none !important;
+}
+/* Navigation chrome is noise at this size. Opacity rather than display, so
+   the footer it sits in keeps its layout. */
+.sdoc-overview-mini .nav-prev, .sdoc-overview-mini .nav-next,
+.sdoc-overview-mini .nav-vert { opacity: 0 !important; }
+.sdoc-overview-n, .sdoc-overview-more {
+  position: absolute; top: 6px; z-index: 1;
+  font: 600 10px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.04em; font-variant-numeric: tabular-nums;
+  color: #fff; background: rgba(0, 0, 0, 0.62);
+  padding: 4px 6px; border-radius: 9px;
+  pointer-events: none;
+}
+.sdoc-overview-n { left: 6px; }
+.sdoc-overview-more { right: 6px; }
+/* The caption is the readable part: at this scale the slide's own type is
+   texture. Its height is measured by the runtime, so a theme may change it. */
+.sdoc-overview-caption {
+  height: 54px; padding-top: 8px; box-sizing: border-box; overflow: hidden;
+  color: rgba(255, 255, 255, 0.86);
+}
+.sdoc-overview-kicker {
+  font-size: 10px; line-height: 13px; height: 13px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0.55;
+}
+.sdoc-overview-title {
+  font-size: 13px; line-height: 15px; margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sdoc-overview-cell.is-current .sdoc-overview-caption { color: #fff; }
+.sdoc-overview-legend {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
+  padding: 10px 16px 10px;
+  text-align: center;
+  font: 500 11px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.42);
+  background: linear-gradient(rgba(14, 14, 16, 0), rgba(14, 14, 16, 0.92) 45%);
+  pointer-events: none;
+}
+/* Pull from an edge: down from the top for the overview, up from the bottom
+   for the filmstrip. Screen-only, like the rest of the deck's chrome. */
+html, body { overscroll-behavior: none; }
+html.sdoc-pull-ready, html.sdoc-pull-ready body { cursor: grab; }
+html.sdoc-pulling, html.sdoc-pulling * {
+  cursor: grabbing !important;
+  user-select: none !important; -webkit-user-select: none !important;
+}
+/* Far enough: the hand opens, which is what letting go now does. */
+html.sdoc-pulling.sdoc-pull-armed, html.sdoc-pulling.sdoc-pull-armed * {
+  cursor: grab !important;
+}
+.sdoc-pull-handle {
+  position: fixed; left: 50%; z-index: 59;
+  width: 44px; height: 5px; margin-left: -22px;
+  border-radius: 3px;
+  background: rgba(120, 120, 130, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+  opacity: 0; transition: opacity 180ms;
+  pointer-events: none;
+}
+.sdoc-pull-handle.is-top { top: 8px; }
+.sdoc-pull-handle.is-bottom { bottom: 8px; }
+.sdoc-pull-handle.is-shown { opacity: 1; transition-delay: 120ms; }
+/* The larger copy that grows out of a cell the pointer rests on. It takes
+   the pointer: staying inside it keeps it, and a click on it goes there. */
+.sdoc-overview-peek {
+  position: fixed; z-index: 5;
+  cursor: pointer;
+  transform-origin: 0 0;
+  border-radius: 6px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+.sdoc-overview-peek .sdoc-overview-mini { border-radius: 0; box-shadow: none; }
 
 /* Scatter: the positioning mechanism, not the styling.  A point carries its
    coordinates as left/bottom percentages, which mean nothing unless the plot
@@ -1644,6 +2908,8 @@ function renderSlides(nodes, options = {}) {
   }
   .nav-prev, .nav-next { display: none !important; }
   .sdoc-filmstrip, .sdoc-filmstrip-hint { display: none !important; }
+  .sdoc-overview, .sdoc-deck-hint { display: none !important; }
+  .sdoc-pull-handle { display: none !important; }
   .nav-vert { display: none !important; }
   .notes { display: none; }
 }`;
@@ -1687,6 +2953,12 @@ blockquote p { color: #9d9d9d; }
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
   // After the theme, so the navigation it couples to already exists.
   const filmstripTag = `<script>\n${FILMSTRIP_JS}\n</script>`;
+  // Neither knows anything a theme does not already publish: the hash, .active.
+  const fullscreenTag = `<script>\n${FULLSCREEN_JS}\n</script>`;
+  const overviewTag = `<script>\n${OVERVIEW_JS}\n</script>`;
+  // Before every runtime that springs; after the two it drives.
+  const motionTag = `<script>\n${MOTION_JS}\n</script>`;
+  const gestureTag = `<script>\n${GESTURE_JS}\n</script>`;
   // Last, so the boxes it measures have been laid out by everything above it.
   const connectorTag = hasConnectors ? `<script>\n${CONNECTOR_JS}\n</script>` : "";
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
@@ -1710,7 +2982,7 @@ ${cssTag}${katexTag}
 <body>
 ${slidesHtml}
 
-${jsTag}${filmstripTag}${connectorTag}${mermaidTag}
+${jsTag}${motionTag}${filmstripTag}${fullscreenTag}${overviewTag}${gestureTag}${connectorTag}${mermaidTag}
 </body>
 </html>`;
 }

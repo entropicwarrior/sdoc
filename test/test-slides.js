@@ -1824,7 +1824,6 @@ test("the filmstrip runtime ships with every deck, whatever the theme", () => {
   // couples to a theme through the URL hash alone.
   const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n\n    # Two {\n        b\n    }\n}");
   assert(html.includes("sdoc-filmstrip-track"), "runtime present with no theme at all");
-  assert(html.includes('var KEY = "f"'), "bound to F");
 });
 
 test("the filmstrip runtime survives being embedded in a template literal", () => {
@@ -1864,6 +1863,584 @@ test("the filmstrip lives outside the slides, so no export can see it", () => {
   const stripAt = body.indexOf("sdoc-filmstrip-track");
   assert(slideAt !== -1 && stripAt !== -1, "both present");
   assert(html.includes("document.body.appendChild(strip)"), "attached to the body, not to a slide");
+});
+
+// ============================================================
+console.log("\n--- Overview, full screen and the deck keys ---");
+
+// Each runtime the renderer ships, by a string only that runtime contains.
+function runtimeScripts(html) {
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const find = (marker) => scripts.find((s) => s.includes(marker));
+  return {
+    all: scripts,
+    filmstrip: find("sdoc-filmstrip-track"),
+    fullscreen: find("requestFullscreen"),
+    overview: find("sdoc-overview-grid"),
+    motion: find("window.sdocMotion = {"),
+    gesture: find("sdoc-pull-handle"),
+  };
+}
+
+test("T is the filmstrip, F is full screen, O is the overview", () => {
+  // F was the filmstrip. It is full screen now, which is what the key means
+  // in every other viewer a presenter has used.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n\n    # Two {\n        b\n    }\n}");
+  const rt = runtimeScripts(html);
+  assert(rt.filmstrip && rt.fullscreen && rt.overview && rt.motion && rt.gesture,
+    "every deck runtime ships with no theme at all");
+  const keyOf = (src) => (/var KEY = "(.)"/.exec(src) || [])[1];
+  assert(keyOf(rt.filmstrip) === "t", "filmstrip on T, got " + keyOf(rt.filmstrip));
+  assert(keyOf(rt.fullscreen) === "f", "full screen on F, got " + keyOf(rt.fullscreen));
+  assert(keyOf(rt.overview) === "o", "overview on O, got " + keyOf(rt.overview));
+});
+
+test("every deck runtime is still valid JavaScript once out of its template literal", () => {
+  // The runtimes are template literals in the renderer, which silently drop
+  // an unrecognised escape — the filmstrip once shipped a regex that deleted
+  // every letter s. Compiling each script is what catches the next one, in a
+  // runtime nobody has opened in a browser since it was edited.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n\n    # Two {\n        b\n    }\n}");
+  for (const src of runtimeScripts(html).all) {
+    try { new Function(src); } catch (e) {
+      throw new Error("a runtime does not compile: " + e.message + " — " + src.slice(0, 80).replace(/\s+/g, " "));
+    }
+  }
+  const ov = runtimeScripts(html).overview;
+  assert(ov.includes('replace(/\\s+/g, " ")'), "the overview's whitespace regex kept its backslash");
+});
+
+test("the overview, the pull handles and the deck hint are hidden in print", () => {
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n}");
+  const print = html.slice(html.indexOf("@media print"));
+  assert(/\.sdoc-overview, \.sdoc-deck-hint \{ display: none !important; \}/.test(print), "overview hidden in print");
+  assert(/\.sdoc-pull-handle \{ display: none !important; \}/.test(print), "pull handles hidden in print");
+});
+
+test("the overview is built when it opens, so a built deck carries none of it", () => {
+  // Nothing that reads a built deck — the harvests, print, any export — can
+  // see what is not there.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n\n    # Two {\n        b\n    }\n}");
+  const body = markupOf(html.slice(html.indexOf("<body")));
+  assert(!body.includes("sdoc-overview"), "no overview markup in the page as built");
+});
+
+test("while the overview is up its keys are caught before the deck's", () => {
+  // The theme listens on the document. The overview listens on the window in
+  // the capture phase, which runs first, so an arrow key moves through the
+  // grid instead of turning the slide underneath it.
+  const html = parseAndRender("# Deck {\n    # One {\n        a\n    }\n\n    # Two {\n        b\n    }\n}");
+  const ov = runtimeScripts(html).overview;
+  assert(/window\.addEventListener\("keydown", function \(e\) \{[\s\S]*?\}, true\);/.test(ov),
+    "keydown on the window, capturing");
+  assert(ov.includes("e.stopPropagation()"), "and stops what it handles");
+});
+
+// Driven in a real browser: open it, move with the keys, go somewhere, and
+// check the deck underneath only moved when it was told to.
+const OVERVIEW_DRIVE_SCRIPT = `
+(function () {
+  var out = { steps: {} };
+  var press = function (k) {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+  };
+  var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  // Polled rather than timed: the springs take what they take in a headless
+  // browser, and a fixed sleep is either slow or flaky.
+  var until = function (cond, ms) {
+    var t0 = Date.now();
+    return new Promise(function (resolve) {
+      (function check() {
+        if (cond()) return resolve(true);
+        if (Date.now() - t0 > ms) return resolve(false);
+        setTimeout(check, 40);
+      })();
+    });
+  };
+  var cells = function () { return [].slice.call(document.querySelectorAll(".sdoc-overview-cell")); };
+  var indexOf = function (cls) {
+    return cells().findIndex(function (c) { return c.classList.contains(cls); }) + 1;
+  };
+  var activeId = function () {
+    var a = [].slice.call(document.querySelectorAll("body > .slide.active"));
+    return a.map(function (s) { return s.id; }).join(",");
+  };
+  var settled = function () { return indexOf("is-current") > 0; };
+  var gone = function () { return !document.querySelector(".sdoc-overview"); };
+
+  function report() {
+    var el = document.createElement("script");
+    el.type = "application/json";
+    el.id = "sdoc-overview-drive";
+    el.textContent = JSON.stringify(out) + "\\n/*${SENTINEL}*/";
+    document.body.appendChild(el);
+  }
+
+  async function run() {
+    out.slidesBefore = document.querySelectorAll(".slide").length;
+
+    press("o");
+    out.steps.opened = await until(settled, 4000);
+    var cs = cells();
+    out.cells = cs.length;
+    out.badges = cs.map(function (c) {
+      var m = c.querySelector(".sdoc-overview-more");
+      return m ? m.textContent : "";
+    });
+    out.captions = cs.map(function (c) {
+      var t = c.querySelector(".sdoc-overview-title");
+      return t ? t.textContent : "";
+    });
+    out.fit = cs.map(function (c) {
+      var mini = c.querySelector(".sdoc-overview-mini").getBoundingClientRect();
+      var clone = c.querySelector(".sdoc-overview-mini > .slide").getBoundingClientRect();
+      return {
+        dw: Math.abs(mini.width - clone.width), dh: Math.abs(mini.height - clone.height),
+        inside: mini.left >= 0 && mini.top >= 0 && mini.right <= innerWidth && mini.bottom <= innerHeight
+      };
+    });
+    out.current = indexOf("is-current");
+    // The last slide has a connector and has never been shown, so the runtime
+    // has never drawn it. Its miniature is drawn by the overview.
+    out.connectors = {
+      original: document.querySelectorAll("body > .slide#s5 .sdoc-conn").length,
+      clone: cs[4].querySelectorAll(".sdoc-conn").length
+    };
+
+    press("ArrowRight");
+    press("ArrowRight");
+    await wait(60);
+    out.steps.arrows = { hash: location.hash, hot: indexOf("is-hot") };
+
+    press("Enter");
+    out.steps.enterClosed = await until(gone, 4000);
+    out.steps.enter = { hash: location.hash, active: activeId(), slides: document.querySelectorAll(".slide").length };
+
+    press("o");
+    await until(settled, 4000);
+    cells()[3].dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 5, clientY: 5 }));
+    out.steps.clickClosed = await until(gone, 4000);
+    out.steps.click = { hash: location.hash, active: activeId() };
+
+    press("o");
+    await until(settled, 4000);
+    press("ArrowLeft");
+    press("Escape");
+    out.steps.escapeClosed = await until(gone, 4000);
+    out.steps.escape = { hash: location.hash };
+
+    // The larger copy. Pointer events are dispatched on whatever is under the
+    // point, as a real pointer's would be.
+    var move = function (x, y) {
+      var target = document.elementFromPoint(x, y) || document.body;
+      target.dispatchEvent(new PointerEvent("pointermove", {
+        clientX: x, clientY: y, bubbles: true, pointerType: "mouse"
+      }));
+    };
+    var centre = function (r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+    var peekEl = function () { return document.querySelector(".sdoc-overview-peek"); };
+    press("o");
+    await until(settled, 4000);
+    var mini = cells()[1].querySelector(".sdoc-overview-mini").getBoundingClientRect();
+    var c = centre(mini);
+    var t0 = Date.now();
+    move(c.x, c.y);
+    await wait(250);
+    var early = !!peekEl();
+    var appeared = await until(peekEl, 3000);
+    var after = Date.now() - t0;
+    await wait(800);
+    var pr = peekEl().getBoundingClientRect();
+    var held = peekEl();
+    // Inside the copy but well clear of the cell it came from.
+    move(pr.left + 8, pr.top + 8);
+    await wait(900);
+    out.steps.peek = {
+      early: early, appeared: appeared, after: after,
+      offCentreX: Math.abs(centre(pr).x - c.x),
+      coversCell: pr.left <= mini.left && pr.right >= mini.right && pr.top <= mini.top && pr.bottom >= mini.bottom,
+      biggerBy: pr.width / mini.width,
+      held: peekEl() === held
+    };
+    // Off it, onto the bare ground: back into its cell, and nothing else
+    // comes up however long the pointer stays there.
+    move(4, 4);
+    await wait(1400);
+    out.steps.peekGone = !peekEl();
+    // Resting on another cell starts the wait from nothing.
+    var mini3 = cells()[2].querySelector(".sdoc-overview-mini").getBoundingClientRect();
+    var c3 = centre(mini3);
+    move(c3.x, c3.y);
+    await wait(250);
+    out.steps.peekAgainEarly = !!peekEl();
+    out.steps.peekAgain = await until(peekEl, 3000);
+    await wait(800);
+    peekEl().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    out.steps.peekClickClosed = await until(gone, 4000);
+    out.steps.peekClick = { hash: location.hash, active: activeId() };
+
+    // A pointer that moves while the cells are still flying in. The slide we
+    // are on starts the size of the window and shrinks into its cell, so for
+    // most of the way in it is under the pointer wherever the pointer is.
+    // Which cell the pointer is on has to be asked once they land.
+    press("o");
+    var first = cells()[0];
+    var aim = {
+      x: parseFloat(first.style.left) + parseFloat(first.style.width) / 2,
+      y: parseFloat(first.style.top) + 20
+    };
+    var underThen = document.elementFromPoint(aim.x, aim.y);
+    underThen = underThen && underThen.closest ? underThen.closest(".sdoc-overview-cell") : null;
+    move(aim.x, aim.y);
+    await until(settled, 4000);
+    await until(peekEl, 3000);
+    out.steps.midFlight = {
+      underThen: underThen ? underThen.getAttribute("data-sdoc-overview") : null,
+      peekOf: peekEl() ? peekEl().getAttribute("aria-label") : null
+    };
+    press("Escape");
+    press("Escape");
+    await until(gone, 4000);
+
+    var calls = 0;
+    document.documentElement.requestFullscreen = function () { calls++; return Promise.resolve(); };
+    press("f");
+    await wait(30);
+    var strip = document.querySelector(".sdoc-filmstrip");
+    out.steps.f = { fullscreenCalls: calls, stripOpen: strip.classList.contains("is-open") };
+    press("t");
+    await wait(30);
+    out.steps.t = { stripOpen: strip.classList.contains("is-open") };
+  }
+
+  function start() {
+    var go = function () {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          run().catch(function (e) { out.__error = String((e && e.message) || e); }).then(report);
+        });
+      });
+    };
+    if (document.fonts && document.fonts.ready && document.fonts.ready.then) document.fonts.ready.then(go);
+    else go();
+  }
+  if (document.readyState === "complete") start();
+  else window.addEventListener("load", start);
+})();
+`;
+
+const OVERVIEW_DECK = `
+# Deck {
+    @meta { type: slides }
+
+    # Opening @s1 {
+        kicker: Start
+
+        The first slide.
+    }
+
+    # With details @s2 {
+        Has two details under it.
+
+        # First detail @s2a :detail {
+            One.
+        }
+
+        # Second detail @s2b :detail {
+            Two.
+        }
+    }
+
+    # Middle @s3 {
+        The third slide.
+    }
+
+    # Fourth @s4 {
+        The fourth slide.
+    }
+
+    # Last @s5 {
+        config: columns
+
+        # Alpha @alpha {
+            One.
+        }
+
+        # Beta @beta {
+            Two.
+        }
+
+        # @connectors {
+            {
+                from: @alpha right
+
+                to: @beta left
+
+                shape: straight
+            }
+        }
+    }
+}
+`;
+
+test("the overview opens, moves on the keys, and goes where it is told (browser)", async () => {
+  if (!require("../src/slide-pdf").findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-overview-"));
+  const file = path.join(dir, "deck.html");
+  const themeDir = path.join(__dirname, "..", "themes", "default");
+  fs.writeFileSync(file, parseAndRender(OVERVIEW_DECK, {
+    themeCss: fs.readFileSync(path.join(themeDir, "theme.css"), "utf-8"),
+    themeJs: fs.readFileSync(path.join(themeDir, "theme.js"), "utf-8"),
+  }), "utf-8");
+  let r;
+  try {
+    r = await runHarvest(file, OVERVIEW_DRIVE_SCRIPT, "sdoc-overview-drive");
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+  assert(!r.__error, "the drive threw: " + r.__error);
+  const s = r.steps;
+
+  assert(s.opened, "the overview opened and settled");
+  assert(r.cells === 5, "one cell per spine slide, details folded in: got " + r.cells);
+  assert(r.badges[1] === "+2" && r.badges.filter(Boolean).length === 1,
+    "the spine slide with two details says so, and only it: " + JSON.stringify(r.badges));
+  assert(r.captions[2] === "Middle", "captions carry the title: " + JSON.stringify(r.captions));
+  assert(r.connectors.original === 0, "the unvisited original is undrawn, as expected: " + r.connectors.original);
+  assert(r.connectors.clone > 0, "but its miniature has its connector drawn");
+  assert(r.current === 1, "the slide we were on is marked current, got " + r.current);
+  // The clone is scaled from its design box to exactly the cell, and every
+  // cell fits the window: five slides should never need a scroll.
+  for (const [i, f] of r.fit.entries()) {
+    assert(f.dw < 1.5 && f.dh < 1.5, "cell " + (i + 1) + ": the miniature is not the cell's size, off by " + f.dw + "x" + f.dh);
+    assert(f.inside, "cell " + (i + 1) + " is outside the window");
+  }
+
+  assert(s.arrows.hash === "#1", "an arrow key turned the slide under the overview: " + s.arrows.hash);
+  assert(s.arrows.hot === 3, "two steps right from the first cell is the third, got " + s.arrows.hot);
+
+  assert(s.enterClosed, "Enter closed the overview");
+  assert(s.enter.hash === "#3" && s.enter.active === "s3", "Enter went to the chosen slide: " + JSON.stringify(s.enter));
+  assert(s.enter.slides === r.slidesBefore, "the clones went with it: " + s.enter.slides + " slides, was " + r.slidesBefore);
+
+  assert(s.clickClosed, "a click closed the overview");
+  assert(s.click.hash === "#4" && s.click.active === "s4", "a click went to that slide: " + JSON.stringify(s.click));
+
+  assert(s.escapeClosed, "Escape closed the overview");
+  assert(s.escape.hash === "#4", "Escape stays where you were, whatever was chosen: " + s.escape.hash);
+
+  const pk = s.peek;
+  assert(!pk.early, "the larger copy waits for the pointer to rest, it does not pop up at once");
+  assert(pk.appeared && pk.after >= 550, "and does come up once it has: after " + pk.after + "ms");
+  assert(pk.offCentreX < 1.5, "centred on its cell, off by " + pk.offCentreX + "px");
+  assert(pk.coversCell && pk.biggerBy > 1.3, "over the cell and larger than it: " + JSON.stringify(pk));
+  assert(pk.held, "the pointer staying inside it keeps it");
+  assert(s.peekGone, "leaving it sends it back, and nothing else comes up unbidden");
+  assert(!s.peekAgainEarly, "the wait starts from nothing on the next cell");
+  assert(s.peekAgain, "and the next cell does get one once the pointer rests");
+  assert(s.peekClickClosed && s.peekClick.hash === "#3" && s.peekClick.active === "s3",
+    "a click on the larger copy goes to its slide: " + JSON.stringify(s.peekClick));
+  assert(s.midFlight.underThen === "2",
+    "the trap was set: the current slide was under the pointer as it moved, got " + s.midFlight.underThen);
+  assert(s.midFlight.peekOf === "Slide 1: Opening",
+    "the copy is of the cell the pointer is on once they land, not the one passing under it: " + s.midFlight.peekOf);
+
+  assert(s.f.fullscreenCalls === 1, "F asked for full screen");
+  assert(!s.f.stripOpen, "and did not open the filmstrip, which it used to");
+  assert(s.t.stripOpen, "T opens the filmstrip");
+});
+
+// A pull from either edge, driven the way a mouse and a finger would drive it.
+const PULL_DRIVE_SCRIPT = `
+(function () {
+  var out = {};
+  var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var until = function (cond, ms) {
+    var t0 = Date.now();
+    return new Promise(function (resolve) {
+      (function check() {
+        if (cond()) return resolve(true);
+        if (Date.now() - t0 > ms) return resolve(false);
+        setTimeout(check, 40);
+      })();
+    });
+  };
+  var pe = function (type, x, y) {
+    var t = document.elementFromPoint(x, y) || document.body;
+    t.dispatchEvent(new PointerEvent(type, {
+      clientX: x, clientY: y, bubbles: true, cancelable: true,
+      pointerType: "mouse", pointerId: 7, button: 0, buttons: type === "pointerup" ? 0 : 1
+    }));
+  };
+  // What a browser sends after a press and release on the page.
+  var click = function (x, y) {
+    document.documentElement.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: x, clientY: y }));
+  };
+  var drag = function (x, ys) { ys.forEach(function (y) { pe("pointermove", x, y); }); };
+  var range = function (a, b, step) {
+    var r = [];
+    for (var y = a; step > 0 ? y <= b : y >= b; y += step) r.push(y);
+    return r;
+  };
+  var overlay = function () { return document.querySelector(".sdoc-overview"); };
+  var settled = function () { return !!document.querySelector(".sdoc-overview-cell.is-current"); };
+  var goHash = function (h) {
+    if (location.hash === "#" + h) return Promise.resolve();
+    location.hash = h;
+    return until(function () { return location.hash === "#" + h; }, 1000).then(function () { return wait(60); });
+  };
+
+  function report() {
+    var el = document.createElement("script");
+    el.type = "application/json";
+    el.id = "sdoc-pull-drive";
+    el.textContent = JSON.stringify(out) + "\\n/*${SENTINEL}*/";
+    document.body.appendChild(el);
+  }
+
+  async function run() {
+    // In the right half, where a click the pull failed to swallow would turn
+    // the slide forward. At the centre it reads as "back", which from the
+    // first slide does nothing and would hide the leak.
+    var cx = Math.round(innerWidth * 0.7), vh = innerHeight;
+
+    // A press in the band that never moves is an ordinary click.
+    pe("pointerdown", innerWidth - 100, 20);
+    pe("pointerup", innerWidth - 100, 20);
+    click(innerWidth - 100, 20);
+    await wait(80);
+    out.plainClick = location.hash;
+    await goHash("1");
+
+    // Down from the top, held part-way: the overview is under the pointer.
+    pe("pointerdown", cx, 20);
+    drag(cx, range(26, 120, 6));
+    var cur = document.querySelector(".sdoc-overview-cell");
+    var bd = document.querySelector(".sdoc-overview-backdrop");
+    var curCell = document.querySelector(".sdoc-overview-cell:nth-child(1)");
+    var armed = function () { return document.documentElement.classList.contains("sdoc-pull-armed"); };
+    out.midPull = {
+      overlay: !!overlay(),
+      backdrop: bd ? parseFloat(bd.style.opacity) : null,
+      currentMoving: cur ? cur.style.transform !== "" && cur.style.transform !== "none" : false,
+      currentFading: curCell ? parseFloat(curCell.style.opacity) : null,
+      armed: armed(),
+      grabbing: getComputedStyle(document.body).cursor
+    };
+    drag(cx, range(126, 320, 6));
+    out.armedAtLine = { armed: armed(), cursor: getComputedStyle(document.body).cursor };
+    pe("pointerup", cx, 320);
+    click(cx, 320);
+    out.pullOpened = await until(settled, 4000);
+    out.afterPull = { hash: location.hash, cls: document.documentElement.className };
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await until(function () { return !overlay(); }, 4000);
+
+    // Past the line and back: called off.
+    pe("pointerdown", cx, 20);
+    drag(cx, range(26, 320, 6));
+    drag(cx, range(314, 40, -6));
+    out.backedOff = armed();
+    pe("pointerup", cx, 40);
+    click(cx, 40);
+    out.cancelGone = await until(function () { return !overlay(); }, 4000);
+    out.afterCancel = { hash: location.hash, slides: document.querySelectorAll(".slide").length };
+
+    // Up from the bottom: the filmstrip, switched on as T would.
+    var strip = document.querySelector(".sdoc-filmstrip");
+    pe("pointerdown", cx, vh - 20);
+    drag(cx, range(vh - 26, vh - 320, -6));
+    out.bottomArmed = armed();
+    pe("pointerup", cx, vh - 320);
+    click(cx, vh - 320);
+    await wait(700);
+    out.strip = { open: strip.classList.contains("is-open"), stored: sessionStorage.getItem("sdocFilmstrip"), hash: location.hash };
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "t", bubbles: true }));
+
+    // A finger, on a drilldown slide, where the theme reads a vertical swipe
+    // as a move up the column. The pull has to be the only thing that happens.
+    await goHash("2.1");
+    var tt = document.elementFromPoint(cx, 20);
+    var touch = function (y) { return new Touch({ identifier: 1, target: tt, clientX: cx, clientY: y }); };
+    tt.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [touch(20)], changedTouches: [touch(20)] }));
+    var moves = 0, held = 0;
+    range(26, 320, 6).forEach(function (y) {
+      var ev = new TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [touch(y)], changedTouches: [touch(y)] });
+      tt.dispatchEvent(ev);
+      moves++;
+      if (ev.defaultPrevented) held++;
+    });
+    tt.dispatchEvent(new TouchEvent("touchend", { bubbles: true, cancelable: true, touches: [], changedTouches: [touch(320)] }));
+    out.touch = { moves: moves, held: held, opened: await until(settled, 4000), hash: location.hash };
+  }
+
+  function start() {
+    var go = function () {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          run().catch(function (e) { out.__error = String((e && e.message) || e); }).then(report);
+        });
+      });
+    };
+    if (document.fonts && document.fonts.ready && document.fonts.ready.then) document.fonts.ready.then(go);
+    else go();
+  }
+  if (document.readyState === "complete") start();
+  else window.addEventListener("load", start);
+})();
+`;
+
+test("a pull from either edge opens its view, and only a pull does (browser)", async () => {
+  if (!require("../src/slide-pdf").findChrome()) {
+    console.log("    SKIP: Chrome not found");
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-pull-"));
+  const file = path.join(dir, "deck.html");
+  const themeDir = path.join(__dirname, "..", "themes", "default");
+  fs.writeFileSync(file, parseAndRender(OVERVIEW_DECK, {
+    themeCss: fs.readFileSync(path.join(themeDir, "theme.css"), "utf-8"),
+    themeJs: fs.readFileSync(path.join(themeDir, "theme.js"), "utf-8"),
+  }), "utf-8");
+  let r;
+  try {
+    r = await runHarvest(file, PULL_DRIVE_SCRIPT, "sdoc-pull-drive");
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+  assert(!r.__error, "the drive threw: " + r.__error);
+
+  assert(r.plainClick === "#2", "a press in the band that never moved still turns the slide: " + r.plainClick);
+
+  assert(r.midPull.overlay, "the overview is there while the pull is held");
+  assert(r.midPull.backdrop > 0 && r.midPull.backdrop <= 1, "its ground is coming in: " + r.midPull.backdrop);
+  assert(r.midPull.currentMoving, "and the slide we were on is part way into its cell — the pull scrubs the way in");
+  assert(r.midPull.currentFading > 0 && r.midPull.currentFading < 0.9,
+    "and fading as it goes, so the grid reads through it: " + r.midPull.currentFading);
+  assert(!r.midPull.armed && r.midPull.grabbing === "grabbing",
+    "short of the line the cursor is a closed hand: " + JSON.stringify(r.midPull));
+  assert(r.armedAtLine.armed && r.armedAtLine.cursor === "grab",
+    "past it, the cursor says letting go counts: " + JSON.stringify(r.armedAtLine));
+  assert(r.pullOpened, "let go past the line, the overview finishes opening");
+  assert(r.afterPull.hash === "#1", "and the click after the pull did not turn the slide: " + r.afterPull.hash);
+  assert(!/sdoc-pull/.test(r.afterPull.cls), "and the pull's cursors are gone: " + r.afterPull.cls);
+
+  assert(r.backedOff === false, "dragged back above the line, it no longer counts");
+  assert(r.cancelGone, "let go there, the overview goes back where it came from");
+  assert(r.afterCancel.hash === "#1", "having changed nothing: " + r.afterCancel.hash);
+  assert(r.afterCancel.slides === 7, "and leaving no clones behind: " + r.afterCancel.slides + " slides");
+
+  assert(r.bottomArmed, "the bottom edge counts the same way");
+  assert(r.strip.open && r.strip.stored === "1", "and switches the strip on as T does: " + JSON.stringify(r.strip));
+  assert(r.strip.hash === "#1", "without turning the slide: " + r.strip.hash);
+
+  assert(r.touch.held === r.touch.moves, "every touchmove of a pull is kept from scrolling or reloading the page: " +
+    r.touch.held + " of " + r.touch.moves);
+  assert(r.touch.opened, "a finger pulls the overview open too");
+  assert(r.touch.hash === "#2.1", "and the theme never saw it as a swipe up the column: " + r.touch.hash);
 });
 
 // ============================================================
@@ -1958,9 +2535,11 @@ console.log("\n--- Background images ---");
 // Just the markup. The structural stylesheet names .slide-bg, transform and
 // slide-content-scale too, so a bare includes() on the whole document would
 // match the CSS and pass whatever the renderer did.
+// The slide markup only. A runtime shipped beside it may well say "transform"
+// or "scale(" — the overview's does — and that is not the slide asking for one.
 function bgSlide(lines) {
   const html = parseAndRender(`# Deck {\n    # Slide {\n${lines}\n\n        Body copy.\n    }\n}`);
-  return html.slice(html.indexOf("<body"));
+  return markupOf(html.slice(html.indexOf("<body")));
 }
 
 test("background: emits an img behind the content", () => {
