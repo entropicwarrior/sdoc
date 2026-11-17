@@ -1,0 +1,305 @@
+# Tidewater On-Disk Format, Version 3 @format-v1
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        Superseded: this specification of format version 3 is replaced by `format.sdoc`, which specifies the current format version 6, and the current fsync policy of the log is in the Write-Ahead Log section of `architecture.sdoc`. It describes the on-disk format as it stood for release 1.0, field by field: the database directory, the log and its recovery, SSTables, the manifest and the version number. Read it only to inspect files written in format version 3 or to see how the format has changed since.
+    }
+
+    # Superseded @superseded
+    {
+        This is the specification of format version 3, written by release 1.0, kept as it stood then. It is not the current format: the engine now writes format version 6 and reads versions 3 to 6, as [the current format specification](format.sdoc) describes. The current fsync policy of the log is in the Write-Ahead Log section of [the architecture](../architecture.sdoc).
+
+        The log record layout, the fsync policy and the recovery rule below have all changed since. Do not take any of them for what the engine does today.
+    }
+
+    # Conventions @conventions
+    {
+        {[.]
+            - Fixed-width integers are little-endian.
+            - A varint is an unsigned integer in the encoding of Go's `binary.PutUvarint`, at most 10 bytes.
+            - Length-prefixed bytes are a varint length followed by that many bytes.
+            - File numbers are unsigned 64-bit integers, start at 1 and are never reused. A file name holds its number zero-padded to six digits.
+            - 1 KiB is 1,024 bytes.
+        }
+    }
+
+    # Database Directory @directory
+    {
+        ```
+        db/
+          CURRENT              name of the live manifest
+          MANIFEST-000007      version edits
+          LOCK                 held while the database is open
+          wal/000012.log       log segments
+          sst/000010.sst       SSTables
+        ```
+
+        {[table]
+            File | Content | Section
+            `CURRENT` | The name of the live manifest, followed by a newline | @manifest-v3
+            `MANIFEST-NNNNNN` | The version edits of the database | @manifest-v3
+            `LOCK` | Empty; locked with `flock` while the database is open | This section
+            `wal/NNNNNN.log` | One log segment | @log-format
+            `sst/NNNNNN.sst` | One SSTable | @sstable-format
+        }
+
+        Log segments and manifests are appended to under their final names. SSTables and `CURRENT` are written whole under a temporary name, fsynced and renamed into place. A file whose number is at or above the manifest's next file number, or an SSTable that no live edit adds, is an orphan of a crash and is deleted on open.
+    }
+
+    # Log Format @log-format
+    {
+        The log is a sequence of segment files under `wal/`. A segment is a sequence of 32 KiB blocks, the last of which may be short. Records are packed into blocks; a record that does not fit in what is left of a block is split into fragments.
+
+        # Blocks @log-blocks
+        {
+            A writer never starts a record header in the last 6 bytes of a block. When fewer than 7 bytes are left, they are filled with zeros and the next record starts at the next block boundary. When exactly 7 bytes are left, the writer emits a `first` fragment with an empty payload there.
+
+            A reader therefore always finds a record header at the start of a block, which is what lets it resynchronise after damage.
+        }
+
+        # Record Header @log-record-header
+        {
+            ```
+            +----------+---------+--------+-----------------+
+            | crc32    | length  | type   | payload         |
+            | 4 bytes  | 2 bytes | 1 byte | length bytes    |
+            +----------+---------+--------+-----------------+
+            ```
+
+            {[table]
+                Offset | Field | Size | Encoding | Meaning
+                0 | checksum | 4 | uint32 | CRC-32 (IEEE) over the type and the payload
+                4 | length | 2 | uint16 | Length of the payload in bytes
+                6 | type | 1 | uint8 | Record type, see @log-record-types
+                7 | payload | length | bytes | The batch, or a fragment of it
+            }
+
+            The checksum is computed with `crc32.ChecksumIEEE` from Go's `hash/crc32`, the polynomial of gzip and zip. It does not cover the length field: a damaged length makes the checksum run over the wrong bytes and fail.
+
+            A record carries no sequence number; see @log-sequence-numbers. The header is 7 bytes, and no payload is longer than a block less its header, so 2 bytes of length are enough.
+        }
+
+        # Record Types @log-record-types
+        {
+            {[table]
+                Value | Name | Meaning
+                0 | (none) | Zero padding at the end of a block, never a record
+                1 | `full` | A whole batch in one record
+                2 | `first` | The first fragment of a batch
+                3 | `middle` | A fragment that is neither the first nor the last
+                4 | `last` | The last fragment of a batch
+            }
+
+            Any other value is a bad record. A batch is reassembled by concatenating the payloads of a `first`, any number of `middle` and a `last` fragment, in order.
+
+            For example, a 50,000-byte batch whose record starts at offset 20,000 of a block is written as a `first` fragment of 12,761 bytes, which fills that block, a `middle` fragment of 32,761 bytes, which fills the next, and a `last` fragment of 4,478 bytes.
+        }
+
+        # Batch Payload @log-batch-payload
+        {
+            A full record, or a reassembled fragment sequence, holds exactly one batch. A single `Put` or `Delete` is written as a batch of one entry.
+
+            {[table]
+                Field | Encoding | Meaning
+                count | uint32 | Number of entries in the batch
+                entries | `count` times the entry below | In the order the application added them
+            }
+
+            {[table]
+                Entry field | Encoding | Meaning
+                kind | 1 byte | 1 for a put, 0 for a delete
+                key | length-prefixed bytes | The user key
+                value | length-prefixed bytes | The value; absent for a delete
+            }
+        }
+
+        # Sequence Numbers @log-sequence-numbers
+        {
+            Records carry no sequence number. Sequence numbers are assigned in log order, one per entry, when a batch is appended, and the order of the log is the order of visibility.
+
+            On replay the reader assigns them again the same way: the first entry replayed gets the manifest's `last_sequence` plus one, and every entry after it the next number, across batches and segments.
+        }
+
+        # Example Record @log-example
+        {
+            A batch holding one put of the key `k1` with the value `v1`, written as a full record:
+
+            ```
+            c3 2c 0b 47   0b 00   01   01 00 00 00   01   02 6b 31   02 76 31
+            checksum      length  type count         kind key "k1"   value "v1"
+            ```
+
+            The checksum is `0x470b2cc3`, the CRC-32 (IEEE) of the type byte and the 11 bytes of payload, stored little-endian. The record is 18 bytes long.
+        }
+
+        # Segments @log-segments
+        {
+            A segment is named after its file number, as in `wal/000012.log`. A new segment is opened each time the active memtable is frozen, so every segment holds the records of exactly one memtable.
+
+            A segment is deleted once its memtable has been flushed and a manifest edit has moved `log_number` past it. Until then it is needed for recovery.
+        }
+
+        # Durability @log-durability
+        {
+            The log writer fsyncs the active segment after every 256 KiB appended or every 100 ms, whichever comes first. The thresholds are constants in `src/wal.go`, not options.
+
+            A write made with `Sync: true` does not wait for either threshold: it forces an fsync of everything appended before it and returns once the fsync completes. A write without it is acknowledged as soon as it is in the operating system's page cache. It survives a crash of the process, and may be lost to a power failure if it was made less than 256 KiB or 100 ms before it.
+
+            Concurrent writers are grouped. The first writer to reach the log appends the records of every writer queued behind it in one system call and wakes them once the append, and the fsync if any of them needs one, is done.
+        }
+    }
+
+    # Log Recovery @log-recovery
+    {
+        On open, the engine rebuilds the memtable from the log:
+
+        {[#]
+            1. Read `CURRENT` and replay the manifest it names, to find `log_number` and `last_sequence`.
+            2. List the segments in `wal/` whose number is at least `log_number`, in ascending order.
+            3. Read each segment block by block, reassemble its batches and apply them to a fresh memtable, assigning sequence numbers as in @log-sequence-numbers.
+            4. Flush the memtable to a level 0 table, write a manifest edit that adds the table and advances `log_number`, and delete the replayed segments.
+        }
+
+        # Bad Records @log-bad-records
+        {
+            A record is bad when any of these holds:
+
+            {[table]
+                Condition | Typical cause
+                The checksum does not match | A torn write at the tail, or a damaged sector
+                The length runs past the end of the block | A torn header
+                The type is not 0 to 4 | Garbage where a header should be
+                A `middle` or `last` arrives without a `first` before it | A lost fragment
+                A `first` or `full` arrives while a batch is being reassembled | A lost `last` fragment
+            }
+
+            When the reader meets a bad record, it skips the rest of that segment and continues with the next one. The batch being reassembled, if any, is dropped whole, so a batch is never partly applied. The skip is logged at warning level with the segment, the offset and the number of bytes skipped:
+
+            ```
+            WARN wal: bad record in wal/000012.log at offset 98304 (checksum mismatch): skipping 30720 bytes, continuing with wal/000013.log
+            ```
+
+            A bad record never stops recovery, and the database always opens. Since a torn write can only be at the tail of the segment that was being written, the common case skips the end of the last segment and loses only the writes made since its last fsync.
+        }
+    }
+
+    # SSTable Format @sstable-format
+    {
+        An SSTable is written once, to a temporary name, fsynced and renamed into place before any manifest edit names it.
+
+        ```
+        +-------------+-----+-------------+--------+-------------+------------+--------+
+        | data block  | ... | data block  | filter | properties  | index      | footer |
+        |             |     |             | block  | block       | block      |        |
+        +-------------+-----+-------------+--------+-------------+------------+--------+
+        ```
+
+        Data blocks are not compressed in format version 3. Every block, of whatever kind, is followed by a 4-byte trailer holding the CRC32C of its contents, computed with `crc32.MakeTable(crc32.Castagnoli)`. Tables and the log do not share a checksum in this format: log records use CRC-32 (IEEE), as @log-record-header says.
+
+        # Internal Keys @sstable-internal-keys
+        {
+            Keys in a table are internal keys: the user key followed by an 8-byte trailer, the uint64 `(sequence << 8) | kind`, where kind is 1 for a put and 0 for a delete. Internal keys sort by user key ascending, then by sequence number descending, so the newest version of a key comes first.
+        }
+
+        # Data Blocks @sstable-data-blocks
+        {
+            A data block is closed once its entries reach 16 KiB. Each entry shares a prefix with the entry before it:
+
+            {[table]
+                Field | Encoding
+                shared | varint, bytes of the key shared with the previous entry
+                unshared | varint, bytes of the key that follow
+                value length | varint
+                key suffix | `unshared` bytes
+                value | `value length` bytes
+            }
+
+            Every 16th entry is a restart point, which shares nothing with the entry before it. After the last entry come the offsets of the restart points, each a uint32, then their number as a uint32. A reader binary-searches the restart points, then scans forward.
+        }
+
+        # Index Block @sstable-index-block
+        {
+            The index block has the same encoding as a data block, with one entry per data block. The entry's key is a separator no less than the last key of the block and less than the first key of the next one; its value is the block's handle, the offset and size of the block as two varints, the size not counting the trailer.
+        }
+
+        # Filter Block @sstable-filter-block
+        {
+            One bloom filter covers every user key in the table: a bit array, followed by one byte giving the number of probes. The size of the array follows from the number of keys and the `BloomBitsPerKey` option. The probes are derived from one 64-bit xxh3 hash of the user key by double hashing.
+        }
+
+        # Properties Block @sstable-properties-block
+        {
+            The properties block has the encoding of a data block, with string keys and varint values:
+
+            {[table]
+                Key | Value
+                `tidewater.num-entries` | Entries in the table, deletions included
+                `tidewater.num-deletions` | Entries of kind delete
+                `tidewater.raw-key-size` | Total bytes of the internal keys
+                `tidewater.raw-value-size` | Total bytes of the values
+                `tidewater.smallest-seqno` | Lowest sequence number in the table
+                `tidewater.largest-seqno` | Highest sequence number in the table
+            }
+        }
+
+        # Footer @sstable-footer
+        {
+            The footer is the last 60 bytes of the file:
+
+            {[table]
+                Offset | Field | Size | Encoding
+                0 | index block offset | 8 | uint64
+                8 | index block size | 8 | uint64
+                16 | filter block offset | 8 | uint64
+                24 | filter block size | 8 | uint64
+                32 | properties block offset | 8 | uint64
+                40 | properties block size | 8 | uint64
+                48 | format version | 4 | uint32, 3
+                52 | magic | 8 | the constant `tableMagic` in `src/format.go`
+            }
+
+            A reader checks the magic and the format version before anything else, and refuses the table if either is wrong.
+        }
+    }
+
+    # Manifest @manifest-v3
+    {
+        The manifest uses the framing of the log: 32 KiB blocks, records with the 7-byte header of @log-record-header and a CRC-32 (IEEE) checksum, and the record types of @log-record-types. Each logical record is one version edit.
+
+        An edit is a sequence of tagged fields, each a varint tag followed by its value:
+
+        {[table]
+            Tag | Field | Value
+            1 | `format_version` | varint; in the first edit of a manifest only
+            2 | `log_number` | varint; segments numbered below it are no longer needed
+            3 | `next_file_number` | varint
+            4 | `last_sequence` | varint; the highest sequence number in any table
+            5 | `remove_table` | varint level, varint file number
+            6 | `add_table` | varint level, varint file number, varint file size, smallest and largest internal keys as length-prefixed bytes
+        }
+
+        Replaying the edits in order yields the current version. An edit is fsynced before it is applied in memory, so a crash can lose the edit being written but never apply one that is not on disk.
+
+        A torn edit at the tail of the manifest, one that fails its checksum or is cut short, is ignored, and the version before it is used. A bad record anywhere before the last edit means the manifest itself is damaged, and the database refuses to open with `ErrCorrupt`.
+
+        On every open the engine writes a new manifest holding a single edit that describes the whole current version, fsyncs it, and points `CURRENT` at it by writing a temporary file and renaming it. The previous manifest is deleted once `CURRENT` is durable. The manifest is never rewritten while the database is open.
+    }
+
+    # Format Version @format-version-v3
+    {
+        The format version is the constant `TIDEWATER_FORMAT_VERSION` in `src/format.go`, 3 in this specification. It is written in the footer of every SSTable and in the `format_version` field of the first edit of every manifest.
+
+        Release 1.0 writes and reads format version 3 only. Versions 1 and 2 were used by development snapshots before 1.0 and are not readable. A database holding a file of any other version refuses to open:
+
+        ```
+        tidewater: sst/000010.sst: unsupported format version 2 (this release reads version 3)
+        ```
+
+        A change to anything this document specifies increases the version, and a release that writes a new version must keep reading the old one.
+    }
+}

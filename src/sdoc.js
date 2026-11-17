@@ -4811,6 +4811,7 @@ module.exports = {
   inferType,
   listSections,
   extractSection,
+  collectPlainText,
   extractAbout,
   isAboutEmpty,
   stripAboutScopes,

@@ -1,0 +1,104 @@
+# Replication @replication-component
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How tidewater replicates a database across nodes: the Raft group that elects the leader, the shipping stream that carries the data, how followers apply and acknowledge records, how follower reads bound their staleness, what each failure does to the cluster, and the metrics and known limits. Read it before changing `src/replication.go`, before turning on `Replication` for a database, or when a follower falls behind.
+    }
+
+    # Role @replication-role
+    {
+        Replication is optional and off unless `Replication` is set in the options. A replicated database has one leader, which accepts writes, and followers, which apply the leader's log and serve reads, as [Replication](../architecture.sdoc#replication) describes.
+
+        Each node is an ordinary tidewater database with its own memtables, flushes and compactions. What travels between nodes is log records, never tables, except in a snapshot. Leader and follower files therefore differ even when their contents agree, and a table copied from one node to another means nothing to the second.
+    }
+
+    # Two Channels @replication-channels
+    {
+        Two separate channels connect the nodes, and keeping them apart is the core of the design.
+
+        {[table]
+            Channel | Carries | Volume | Ordered by
+            Raft group | Leadership terms and membership changes | A few messages per lease renewal, whatever the write rate | Raft log index
+            Shipping stream | Every log record, in sequence order | The write rate, compressed | Sequence number
+        }
+
+        Raft is used for election only, as decided in [D-0006](../decisions.sdoc#d-0006). Sending data records through the Raft log would have made every write wait for a Raft round and tied election traffic to the write rate. The leader's write-ahead log already orders the records, so the stream only has to carry them in that order.
+    }
+
+    # Election and Lease @replication-election
+    {
+        A node becomes leader by winning a Raft election, then holds a lease that it renews while it can reach a majority. The lease and renewal periods are in [Leader Election](../architecture.sdoc#leader-election). Leases are measured on each node's monotonic clock, which is why the design depends on clock rates and not on wall-clock time, as [Clock Skew](../architecture.sdoc#clock-skew) explains.
+
+        A leader gives up the lead in three cases: its lease runs out without a renewal from a majority; a membership change removes it; or its disk is slow and a follower reports a better fsync latency, as [Slow Disk](../architecture.sdoc#slow-disk) describes. From then on it refuses writes with `ErrNotLeader`.
+    }
+
+    # Log Shipping @replication-shipping
+    {
+        The leader runs one shipper goroutine per follower, each with its own connection and its own cursor, the next sequence number to send. Batch sizes, compression and acknowledgements are set out in [Log Shipping](../architecture.sdoc#log-shipping).
+
+        {[#]
+            - The shipper takes records from the leader's in-memory tail as soon as they are appended, without waiting for the leader's fsync. A shipper that has fallen behind the tail reads its records back from the log segments on disk.
+            - On the follower, the applier goroutine appends each record to the follower's own log, keeping the leader's sequence number, and applies it to the follower's memtable.
+            - The follower acknowledges the highest sequence number it has appended and fsynced, and the leader records it as that follower's match point.
+            - A write made with `Sync: true` and `Quorum: true` returns once a majority of nodes, the leader included, have a match point at or past it.
+        }
+
+        The leader keeps a log segment only until its memtable has been flushed, exactly as an unreplicated database does; it keeps no extra log for slow followers. A follower whose cursor falls before the oldest segment the leader still has cannot be caught up from the log and is sent a snapshot instead: the leader's live tables, file by file, then the log from the snapshot's sequence number. A snapshot copies the whole database, so a follower that falls that far behind is expensive to bring back.
+    }
+
+    # Follower Reads @replication-follower-reads
+    {
+        Followers serve reads with bounded staleness, as decided in [D-0008](../decisions.sdoc#d-0008). Each read states the staleness it accepts, or gets the `MaxStaleness` option when it states none; the default is given in [Read Replicas](../architecture.sdoc#read-replicas).
+
+        A follower measures its staleness without comparing its clock with the leader's. Every shipment carries the leader's latest sequence number, and an idle leader sends an empty shipment carrying it at each lease renewal. The follower's staleness is the time, on its own monotonic clock, since it last held every record the leader had announced; a follower that has not heard from the leader for a whole lease counts itself stale whatever it holds. A read on a follower staler than the read accepts fails with `ErrTooStale`, and the application retries it on the leader.
+
+        A read that passes the sequence number of an earlier write waits until the follower has applied that number, for no longer than the wait given in [Read Replicas](../architecture.sdoc#read-replicas), and is then redirected. This gives a client its own writes back on any node.
+    }
+
+    # Membership Changes @replication-membership
+    {
+        Nodes join and leave one at a time through a Raft configuration change, as [Membership Changes](../architecture.sdoc#membership-changes) describes. A joining node stays a non-voting learner until its lag has stayed low for long enough, so the majority needed for a quorum write does not grow while the node is still catching up. It receives a snapshot first, so adding a node to a large database moves the whole database over the network once.
+    }
+
+    # Failures @replication-failures
+    {
+        {[table]
+            Failure | What the cluster does | Design
+            Leader process crash | The others elect a new leader once the lease has run out. The old node recovers its own log, rejoins as a follower, and has its log truncated back to the new leader's | [Process Crash](../architecture.sdoc#process-crash)
+            Leader cut off from the majority | It keeps its lease until the lease expires, then refuses writes. Writes it took without `Quorum: true` meanwhile may be discarded when it rejoins | [Network Partition](../architecture.sdoc#network-partition)
+            Follower crash | The leader's shipper reconnects when the node is back and resumes from its match point, or sends a snapshot | @replication-shipping
+            Corrupt table on one node | The node fetches the table's key range from the leader, or from a follower when it is the leader | [Silent Corruption](../architecture.sdoc#corruption)
+            Slow disk on the leader | The leader steps down if a follower reports a better fsync latency | [Slow Disk](../architecture.sdoc#slow-disk)
+        }
+    }
+
+    # Metrics @replication-metrics
+    {
+        {[table]
+            Metric | Kind | Meaning
+            `tidewater_replication_lag_seconds` | gauge | Staleness of each follower: on the leader by `follower`, on a follower its own
+            `tidewater_replication_shipped_bytes_total` | counter | Compressed bytes sent by the leader, by `follower`
+            `tidewater_replication_snapshots_total` | counter | Snapshots sent by the leader, by `follower`
+            `tidewater_leader_changes_total` | counter | Times this node gained or lost the lead
+            `tidewater_follower_redirects_total` | counter | Reads a follower redirected, by `reason` (`stale` or `wait_timeout`)
+        }
+
+        The budget for follower lag is in [Performance Budget](../architecture.sdoc#performance-budget), and [Replica Lag](../runbooks/replica-lag.sdoc) covers a follower that exceeds it.
+    }
+
+    # Known Limits @replication-limits
+    {
+        {[.]
+            - The leader sends the stream to every follower itself, with no relay through followers, so its outbound bandwidth grows with the number of followers.
+            - Every follower repeats the leader's flushes and compactions on its own disk, so it needs the same disk bandwidth as the leader.
+            - A snapshot copies every live table. A follower that falls behind the oldest log segment the leader keeps pays that full cost, and so does every new node.
+            - A write acknowledged without `Quorum: true` may exist on the leader alone, and is lost if the leader loses the lead before its followers have it.
+            - One database is one replication group. A process with many replicated databases runs one Raft group and one set of shippers for each.
+        }
+    }
+}

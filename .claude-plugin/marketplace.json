@@ -1,0 +1,22 @@
+{
+  "name": "sdoc",
+  "owner": {
+    "name": "Entropic Warrior",
+    "url": "https://github.com/entropicwarrior"
+  },
+  "description": "Claude Code plugins for the SDOC documentation format.",
+  "plugins": [
+    {
+      "name": "sdoc-lexica",
+      "source": "./plugins/sdoc-lexica",
+      "description": "Read, write and navigate SDOC files and Lexica knowledge trees.",
+      "category": "documentation",
+      "tags": [
+        "sdoc",
+        "lexica",
+        "documentation",
+        "knowledge-base"
+      ]
+    }
+  ]
+}

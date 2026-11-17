@@ -1,0 +1,125 @@
+# Runbook: Disk Full @disk-full-runbook
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        What to do when the volume holding a tidewater database runs out of space: how it shows, the metrics and log lines that confirm it, how to find what is using the space with `tidewater-admin`, how to make the database writable again without losing data, and when to escalate. Use it when writes fail with `ErrNoSpace` or `tidewater_read_only` is 1.
+    }
+
+    # Symptoms @symptoms
+    {
+        {[.]
+            - Writes fail with `ErrNoSpace`, while reads still succeed.
+            - The application reports the database as read-only, or its health check fails on a write probe.
+            - The `TidewaterReadOnly` alert fires, usually after the `TidewaterDiskFreeLow` warning from [Alert Rules](../operations/monitoring.sdoc#alert-rules).
+        }
+
+        The behaviour is by design, as [Disk Full](../architecture.sdoc#disk-full) describes: nothing acknowledged is lost, reads continue, and the database leaves read-only mode by itself once enough space is back. The job is to give it that space, and to make sure the space is not held by something tidewater keeps alive.
+    }
+
+    # Confirm @confirm
+    {
+        {[table]
+            Signal | During the incident
+            `tidewater_read_only` | 1
+            `tidewater_disk_free_ratio` | Close to 0
+            `tidewater_write_stalls_total` | Often rising with `reason="memtable"` just before, as flushes are refused
+        }
+
+        The log shows the flushes refused first, then the failed append:
+
+        ```
+        level=WARN msg="flush deferred: not enough free space" need_bytes=96468992 free_bytes=71303168
+        level=ERROR msg="log append failed: entering read-only mode" err="write wal/000412.log: no space left on device"
+        ```
+
+        And once space is back:
+
+        ```
+        level=INFO msg="leaving read-only mode" free_ratio=0.14
+        ```
+    }
+
+    # Diagnosis @diagnosis
+    {
+        {[#]
+            - Check that tidewater's directory is what fills the volume
+            {
+                ```
+                $ df -h /var/lib/app
+                $ du -sh /var/lib/app/*
+                ```
+
+                If something else on the volume grew, such as application logs or core dumps, the remedy is outside tidewater: free that space and watch the database leave read-only mode.
+            }
+            - Break down tidewater's own use
+            {
+                `tidewater-admin du DIR` reads only the manifest and the file names, takes no lock, and is safe on the open database.
+
+                ```
+                $ tidewater-admin du /var/lib/app/db
+                live tables        L0=3 L1=4 L2=39 L3=371                 26.1 GiB
+                obsolete tables    61 files, not in the current version   3.7 GiB
+                log segments       5 files                                0.3 GiB
+                orphans and temp   2 files                                0.1 GiB
+                manifest                                                  2.1 MiB
+                total                                                     30.2 GiB
+                ```
+            }
+            - If obsolete tables are large, find what holds them
+            {
+                Obsolete tables stay on disk while an older version that lists them is referenced, as [Versions and File Lifetimes](../components/manifest.sdoc#manifest-versions) explains. Check `tidewater_open_iterators`: an iterator left open for hours keeps every table of its version. A snapshot held open does not keep files, but it keeps compaction from dropping anything written since, and the live tables grow instead. Both are fixed in the application.
+            }
+            - If log segments are large, check the flusher
+            {
+                A segment is deleted only once its memtable has been flushed. A pile of segments means flushes stopped, usually because they too were refused for lack of space; it clears once space is back.
+            }
+            - If live tables grew unexpectedly, check compaction
+            {
+                Compactions refuse to start without room for their output. A database that filled up during a burst of writes holds overwritten values and tombstones until compaction can run again and drop them. [Compaction Stall](compaction-stall.sdoc) covers a compaction that cannot keep up even with space.
+            }
+        }
+    }
+
+    # Remedies @remedies
+    {
+        {[.]
+            - Free space on the volume, or grow it
+            {
+                This is the remedy in most cases. The database leaves read-only mode by itself once free space has stayed above the threshold in [Disk Full](../architecture.sdoc#disk-full) for long enough; no restart is needed. Watch `tidewater_read_only` return to 0.
+            }
+            - Release what holds obsolete tables
+            {
+                Close long-lived iterators in the application. The tables they held are deleted as soon as the last reference goes, without a restart.
+            }
+            - Remove orphans
+            {
+                Orphans and temporary files are deleted by the next `Open`. When the database cannot wait for a restart, close it and run `tidewater-admin gc DIR`, which deletes the same files `Open` would and refuses to run while the `LOCK` is held.
+            }
+            - Never delete files under `sst/` or `wal/` by hand
+            {
+                A table the manifest lists is live, whatever its age, and a log segment holds writes that may be in no table yet. Deleting either loses acknowledged data, and an open with a listed table missing fails.
+            }
+        }
+
+        Do not switch the database to `CompactionStyle: Tiered` to get out of the incident: tiered compaction needs more space, not less, as [Disk](../operations/capacity.sdoc#disk-sizing) explains.
+    }
+
+    # Escalation @escalation
+    {
+        Escalate to the tidewater maintainers in the team channel, attaching the output of `tidewater-admin du DIR` and `tidewater-admin info DIR` and the log lines above, when:
+
+        {[.]
+            - `tidewater_read_only` is still 1 five minutes after free space came back above the threshold.
+            - `tidewater-admin du` shows obsolete tables growing while `tidewater_open_iterators` is 0.
+            - `tidewater_block_checksum_failures_total` rose during the incident. A full disk must corrupt nothing, as [R7](../requirements.sdoc#r7) requires, so a checksum failure after one is a defect.
+            - The database fails to open after the disk was full.
+        }
+
+        After the incident, check the volume's size against [Capacity Planning](../operations/capacity.sdoc#disk-sizing).
+    }
+}

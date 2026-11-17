@@ -1,0 +1,145 @@
+# Tidewater FAQ @tidewater-faq
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        Short answers to the questions developers most often ask about tidewater, on using the API, running it in production, the on-disk format, replication and settled design questions, each with a link to the document that answers it in full. Read it for a quick answer or to find the right document; the linked documents, not this page, are the authority.
+    }
+
+    @reading-guide {
+        Questions are grouped by topic. Each answer is a few sentences and a link; follow the link before relying on a detail.
+
+        {[table]
+            Sections | Note
+            @faq-using | Writing, reading, batches and iterators
+            @faq-operating | Disk use, stalls, crashes, backups and metrics
+            @faq-format | The files on disk and moving between releases
+            @faq-replication | Followers and their reads
+            @faq-design | Why the design is the way it is, and what is still open
+        }
+    }
+
+    # Using Tidewater @faq-using
+    {
+        # Does tidewater need cgo or a C toolchain? @faq-cgo
+        {
+            No. Tidewater is pure Go and builds with `CGO_ENABLED=0`, as decided in [D-0001](decisions.sdoc#d-0001), and a dependency that needs cgo is not accepted. Building without cgo is a requirement, [R8](requirements.sdoc#r8).
+        }
+
+        # Is a write durable when Put returns? @faq-durable-put
+        {
+            It depends on `Sync`. A write made with `Sync: true` returns only after the log has been fsynced, and survives a power loss, as [R1](requirements.sdoc#r1) requires. A write without it is acknowledged once it is in the operating system's page cache: it survives a crash of the process, but a power loss can take it if it falls within the log's fsync window. The policy and its thresholds are in [Write-Ahead Log](architecture.sdoc#write-ahead-log).
+        }
+
+        # Does tidewater have transactions? @faq-transactions
+        {
+            Only atomic batches within one database: a batch of puts and deletes becomes visible all at once or not at all, and is never half-applied after a crash. There are no multi-key transactions across databases, and no per-key locks; an application that needs read-modify-write builds it above the API, as [Per-Key Locks](architecture.sdoc#rejected-key-locks) explains. Batches have a size limit, given in [Batches and Snapshots](architecture.sdoc#batches).
+        }
+
+        # Can several goroutines share one database? @faq-goroutines
+        {
+            Yes. Every method of `DB` is safe to call from any number of goroutines, and concurrent writes are grouped into one log append. Iterators and batches are not: each belongs to the goroutine that uses it. See [Concurrency Model](architecture.sdoc#concurrency-model).
+        }
+
+        # What does an iterator see? @faq-iterators
+        {
+            The database as it was when the iterator was created: writes made afterwards are invisible to it. An iterator pins the files and memtables it started with until it is closed, so always close iterators, and never keep one open for hours; see [Iterators](architecture.sdoc#iterators).
+        }
+
+        # Does an expired key free its space at once? @faq-ttl
+        {
+            No. An expired key reads as absent from the moment its expiry passes, but its value stays on disk until compaction rewrites the table that holds it. A level full of expired keys is compacted early. See [Time to Live](architecture.sdoc#time-to-live).
+        }
+    }
+
+    # Running Tidewater @faq-operating
+    {
+        # Why does the database use more disk than my data? @faq-disk-use
+        {
+            Because compaction rewrites data in the background, keeps old tables until no reader needs them, and needs room for its output before it starts. Overwritten values and deleted keys also stay on disk until compaction reaches them, and a snapshot or an iterator left open keeps old versions alive. [Disk](operations/capacity.sdoc#disk-sizing) explains how to size a volume for all of it.
+        }
+
+        # Why do writes sometimes stall? @faq-write-stalls
+        {
+            Stalls are the engine's back-pressure. A write waits when two memtables are already waiting for a flush, or when level 0 has grown to its stall threshold because compaction has fallen behind. A short stall is the design working; stalls that last mean the disk cannot keep up. See [Life of a Memtable](components/memtable.sdoc#memtable-lifecycle) and [Compaction Stall](runbooks/compaction-stall.sdoc).
+        }
+
+        # How long does recovery take after a crash? @faq-recovery-time
+        {
+            It is bounded by the amount of log since the last checkpoint, not by the size of the database or the write rate before the crash. The requirement is [R4](requirements.sdoc#r4), and the checkpoints that meet it are described in [Checkpoints](architecture.sdoc#wal-checkpoints). If recovery is slower than that, follow [WAL Recovery](runbooks/wal-recovery.sdoc).
+        }
+
+        # What happens when the disk fills up? @faq-disk-full
+        {
+            Writes fail with `ErrNoSpace` and the database turns read-only. Nothing acknowledged is lost, reads continue, and the database becomes writable again by itself once there is space. See [Disk Full](architecture.sdoc#disk-full) for the design and [the disk full runbook](runbooks/disk-full.sdoc) for what to do.
+        }
+
+        # How do I back up a live database? @faq-backup
+        {
+            Call `db.Checkpoint(dir)` with a directory on the same filesystem. It hard-links the live tables and copies the recent log, so it takes seconds whatever the size of the database, and the copy opens like any database. Backups are not incremental. See [Backup and Restore](architecture.sdoc#backup-and-restore).
+        }
+
+        # How big should the block cache be? @faq-cache-size
+        {
+            Big enough for the working set of your point reads, and no bigger: capacity beyond it is wasted memory, and scans never earn it, since the cache keeps scanned blocks on probation. Raise `BlockCacheSize` step by step and stop when the hit ratio stops improving. See [Sizing and Resizing](components/block-cache.sdoc#cache-sizing).
+        }
+
+        # Where do the metrics go? @faq-metrics
+        {
+            Tidewater reports them through the OpenTelemetry metrics API, as decided in [D-0010](decisions.sdoc#d-0010), and your application exports them with its own exporter; tidewater opens no port. [Monitoring Tidewater](operations/monitoring.sdoc) lists what to alert on.
+        }
+    }
+
+    # Format and Compatibility @faq-format
+    {
+        # What does a log record look like on disk? @faq-log-format
+        {
+            Each record carries a CRC32C checksum, its length, its type and its sequence number, followed by its payload, and records are packed into 32 KiB blocks, with a large batch split into fragments across blocks. The exact layout, byte by byte, is in [Write-Ahead Log Format](spec/format.sdoc#write-ahead-log-format).
+        }
+
+        # Can I open a database written by an older release, or go back? @faq-upgrade
+        {
+            Yes, forward: the engine reads every on-disk format version from 3 to 6 and writes 6, upgrading tables lazily as compaction rewrites them. Back only to the previous minor release, and only after `tidewater-admin downgrade` has rewritten any table in the newer format. See [On-Disk Format](architecture.sdoc#on-disk-format).
+        }
+
+        # Is data encrypted at rest? @faq-encryption
+        {
+            No, and it is a non-goal: applications that need it put the database on an encrypted filesystem. See [Goals and Non-Goals](architecture.sdoc#goals).
+        }
+    }
+
+    # Replication @faq-replication
+    {
+        # Can I read from followers? @faq-follower-reads
+        {
+            Yes, with bounded staleness, as decided in [D-0008](decisions.sdoc#d-0008). A follower further behind than the read accepts returns `ErrTooStale`, and the read should be retried on the leader. A read can also ask to see its own earlier writes by passing their sequence number. See [Follower Reads](components/replication.sdoc#replication-follower-reads).
+        }
+
+        # What does Quorum add to a write? @faq-quorum
+        {
+            A write made with `Sync: true` and `Quorum: true` returns only once a majority of nodes, the leader included, have it on disk, so it survives the loss of the leader. Without `Quorum`, a write the leader took may be lost if the leader is cut off and loses the lead. See [Log Shipping](architecture.sdoc#log-shipping) and [Network Partition](architecture.sdoc#network-partition).
+        }
+    }
+
+    # Design Questions @faq-design
+    {
+        # Why one bloom filter per table, not per block? @faq-bloom
+        {
+            Per-block filters were tried and rejected in [D-0012](decisions.sdoc#d-0012): they made every point read search the index first and took about twice the memory for the same false-positive rate. [Why One Filter per Table](components/bloom-filters.sdoc#filter-per-table) has the detail.
+        }
+
+        # Why leveled compaction by default? @faq-leveled
+        {
+            Most applications read far more than they write, and with size-tiered compaction their reads touched many more tables and their disk use doubled during large merges. Leveled compaction became the default in [D-0007](decisions.sdoc#d-0007), which superseded [D-0002](decisions.sdoc#d-0002). Size-tiered compaction is still available through `CompactionStyle: Tiered` for write-heavy workloads that rarely read.
+        }
+
+        # Which design questions are still open? @faq-open-questions
+        {
+            Two proposals are under discussion, and nothing is built on either yet: submitting log writes through io_uring on Linux, [D-0009](decisions.sdoc#d-0009), and moving cold tables to object storage, [D-0011](decisions.sdoc#d-0011). The [decisions log](decisions.sdoc) has the status of every decision.
+        }
+    }
+}

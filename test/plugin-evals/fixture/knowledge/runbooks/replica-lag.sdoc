@@ -1,0 +1,113 @@
+# Runbook: Replica Lag @replica-lag-runbook
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        What to do when a follower falls behind its leader: the symptoms, the metrics and log lines that show which follower and by how much, how to tell whether the follower, the network or the leader is the cause, the remedies, and when to escalate. Use it when `tidewater_replication_lag_seconds` is over the follower lag budget, when follower reads fail with `ErrTooStale`, or when a follower keeps receiving snapshots.
+    }
+
+    # Background @lag-background
+    {
+        A follower applies the leader's log as it arrives, and serves a read only while its staleness is within what the read accepts, as [Follower Reads](../components/replication.sdoc#replication-follower-reads) describes. The budget for follower lag under nominal load is in [Performance Budget](../architecture.sdoc#performance-budget), and the staleness reads accept by default is in [Read Replicas](../architecture.sdoc#read-replicas). Lag beyond that staleness turns into redirected reads, which move read load onto the leader.
+    }
+
+    # Symptoms @symptoms
+    {
+        {[.]
+            - Reads on one follower, or on all of them, fail with `ErrTooStale`, and the leader's read load rises as the application retries there.
+            - The `TidewaterReplicaLag` alert fires for one or more followers.
+            - A follower is sent one snapshot after another.
+        }
+    }
+
+    # Confirm @confirm
+    {
+        {[table]
+            Metric | Read on | Shows
+            `tidewater_replication_lag_seconds` | The leader, by `follower` | Which followers are behind, and by how much
+            `tidewater_follower_redirects_total` | Each follower, by `reason` | The reads the lag has turned away
+            `tidewater_replication_shipped_bytes_total` | The leader, by `follower` | Whether the stream to each follower is moving
+            `tidewater_replication_snapshots_total` | The leader, by `follower` | Followers that fell behind the leader's log
+            `tidewater_leader_changes_total` | Every node | Elections, each of which restarts every follower's stream
+        }
+
+        On the leader, the log names the follower:
+
+        ```
+        level=WARN msg="follower behind oldest log segment: sending snapshot" follower=node-3 follower_seqno=40213377 oldest_seqno=41870012
+        level=INFO msg="snapshot sent" follower=node-3 tables=212 bytes=13958643712 duration=4m12s
+        level=WARN msg="shipper reconnecting" follower=node-2 err="connection reset by peer"
+        ```
+    }
+
+    # Diagnosis @diagnosis
+    {
+        {[#]
+            - One follower, or all of them?
+            {
+                Lag on one follower points at that follower or its link. Lag on all of them at once points at the leader: its write rate, its outbound bandwidth, or a leader change.
+            }
+            - After a leader change, wait
+            {
+                After an election, every follower's stream restarts from its match point with the new leader, and lag shows briefly on all of them. It clears by itself within a few lease periods. `tidewater_leader_changes_total` rising again and again is a different problem: escalate.
+            }
+            - Check the follower's disk
+            {
+                A follower acknowledges a record only after its own fsync and applies the stream in order, so a follower with a slow disk lags whatever the network does. Compare the p99 of `tidewater_wal_fsync_seconds` on the follower with the leader's.
+            }
+            - Check the follower for write stalls
+            {
+                The applier writes into the follower's own memtables and depends on the follower's own flushes and compactions. A follower in a write stall stops applying until the stall clears: look for `tidewater_write_stalls_total` rising on the follower, and follow [Compaction Stall](compaction-stall.sdoc) there.
+            }
+            - Check the stream
+            {
+                If `tidewater_replication_shipped_bytes_total` for the follower is flat while the leader takes writes, the stream is not moving. Look for `shipper reconnecting` lines and check the network path between the two nodes. The leader sends to every follower itself, so its outbound bandwidth must cover the write rate once per follower.
+            }
+            - Compare positions
+            {
+                `tidewater-admin info DIR` prints, among other things, the last sequence number in a node's log. It reads without a lock and is safe on an open database. The difference between leader and follower, against the leader's write rate, is the follower's lag in seconds of writes.
+
+                ```
+                $ tidewater-admin info /var/lib/app/db
+                format       6 (tables: v5=12 v6=203)
+                last_seqno   89551207
+                checkpoint   88731220
+                log          3 segments, 112.6 MiB since checkpoint
+                levels       L0=2 L1=4 L2=38 L3=171
+                lock         held (database open)
+                ```
+            }
+        }
+    }
+
+    # Remedies @remedies
+    {
+        {[table]
+            Cause | Remedy
+            A slow disk on the follower | Replace the disk or the node. Until then, have the application send reads to other nodes
+            A follower in a write stall | Follow [Compaction Stall](compaction-stall.sdoc) on the follower
+            The network between leader and follower | Fix the path. The shipper reconnects by itself and resumes from the follower's match point
+            The leader's outbound bandwidth saturated | Fewer followers per leader, or a faster network; there is no relay through followers
+            A follower in a snapshot loop | Remove it from the cluster, fix its cause above, and add it back; as a learner it does not vote until it has caught up
+            A write rate beyond what followers can apply | Lower the write rate: a follower does as much disk work as the leader
+        }
+
+        Reads that must not be redirected can go to the leader directly while a follower recovers. Raising the staleness a read accepts also stops the redirects, but only for reads that can live with older data: it hides the lag rather than fixing it.
+    }
+
+    # Escalation @escalation
+    {
+        Escalate to the tidewater maintainers in the team channel, attaching the metrics above for the leader and the lagging followers over the last hour, the leader's shipping log lines, and `tidewater-admin info DIR` from each node, when:
+
+        {[.]
+            - `tidewater_leader_changes_total` rises more than once an hour without a known cause.
+            - Two nodes report themselves as leader at the same time.
+            - A follower lags with a healthy disk, a moving stream and no write stall.
+            - Every follower is over the lag budget under nominal load, which breaks a requirement, [R6](../requirements.sdoc#r6).
+        }
+    }
+}

@@ -1,0 +1,137 @@
+# SSTables @sstables-component
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        How tidewater's SSTables are written, opened, read and deleted: their parts, the life of a table from a temporary file to deletion, how a point read finds its entry, the properties compaction chooses tables by, and the metrics and known limits. Read it before changing `src/sstable.go`, or when a table fails its checksum or a level holds more tables than expected.
+    }
+
+    # Role @sstable-role
+    {
+        An SSTable is an immutable file of sorted entries, written once by a flush or a compaction and never changed, as [SSTables](../architecture.sdoc#sstables) describes. Immutability is what lets the block cache, the iterators and replication snapshots treat a table as a value: a table is either live, listed in the current version, or waiting to be deleted.
+    }
+
+    # Parts of a Table @sstable-parts
+    {
+        {[table]
+            Part | Count | Holds | Read
+            Data blocks | Many | Sorted internal keys and their values, prefix-compressed, with restart points | On demand, through the block cache
+            Index block | One | One entry per data block: a separator key and the block's offset and size | At open, then pinned
+            Filter block | One | The table's bloom filter | At open, then pinned
+            Properties block | One | Counts and bounds of the table's contents | At open
+            Footer | One | The offsets of the other blocks, the format version and a magic number | First, at open
+        }
+
+        In the current format every block ends with a CRC32C of its contents, as [D-0004](../decisions.sdoc#d-0004) decided. Data blocks are compressed with Snappy unless compression would not shrink them enough, and each block records whether it is compressed. The byte layout of every part is given in the [format specification](../spec/format.sdoc).
+
+        Data blocks are closed at a target of 16 KiB of entries. An entry larger than that makes a block of its own, as large as the entry.
+    }
+
+    # Life of a Table @sstable-lifecycle
+    {
+        {[#]
+            - Write
+            {
+                A flush or a compaction writes the table as `sst/NNNNNN.sst.tmp`: the data blocks in key order, then the other blocks and the footer. A compaction cuts its output into several tables at the target table size, and cuts early where an output table would overlap many tables of the level below, which keeps the next compaction of that range small.
+            }
+            - Seal
+            {
+                The file is fsynced and renamed to `sst/NNNNNN.sst`, and the directory is fsynced. Only then is the table recorded in a manifest edit, as [Writing an Edit](manifest.sdoc#edit-write) describes.
+            }
+            - Open
+            {
+                A table is opened when it enters the current version, or when the database opens for the tables already listed. The footer is read and its magic and format version checked, then the index and filter blocks are read, verified and pinned. The file stays open for as long as the table is live.
+            }
+            - Serve
+            {
+                Reads go through the pinned filter and index to data blocks, which come from the block cache or from the disk.
+            }
+            - Delete
+            {
+                Once a compaction has removed the table from the current version and no older version still referenced lists it, the file is closed and deleted, and its pinned blocks are freed.
+            }
+        }
+
+        A crash at any step before the manifest edit leaves an orphan: a temporary file, or a sealed table that no edit names. Both are deleted on the next open, which is safe because file numbers are never reused.
+    }
+
+    # Point Reads @sstable-reads
+    {
+        For a point read, a table answers from at most one data block:
+
+        {[#]
+            - Test the bloom filter, as [Lookup](bloom-filters.sdoc#filter-lookup) describes. A negative answer ends the search in this table.
+            - Binary-search the pinned index for the first separator at or after the key. It names the only data block that can hold the key.
+            - Take the block from the block cache, or on a miss read it, verify its checksum and decompress it.
+            - Binary-search the block's restart points, then scan forward to the first entry for the key at or below the read's sequence number.
+        }
+
+        A read that passes the filter but finds no entry for its key counts as a seek against the table. A table that collects too many is compacted early by the seek trigger in [Triggers](../architecture.sdoc#compaction-triggers), since its keys are probably dead.
+
+        A block that fails its checksum is never returned. The read fails with `ErrCorrupt` for that key range, `tidewater_block_checksum_failures_total` is incremented, and the table is marked suspect in the manifest, as [Silent Corruption](../architecture.sdoc#corruption) describes.
+    }
+
+    # Table Properties @sstable-properties
+    {
+        The properties block describes a table's contents without reading them. Compaction reads it to choose what to compact, and `tidewater-admin levels` reads it to report on each level.
+
+        {[table]
+            Property | Since format | Used by
+            Entries, deletions, raw key and value sizes | 3 | Size estimates
+            Smallest and largest sequence number | 3 | Snapshots, and dropping tombstones
+            Seek counts | 5 | The seek trigger
+            Tombstone share | 5 | The tombstone trigger
+            Earliest expiry time | 6 | The tombstone trigger, which counts expired values as tombstones
+        }
+
+        Tables written before format version 5 have no seek counts or tombstone share, so the two triggers that need them never fire for those tables. They are compacted by size alone until compaction rewrites them in the current format.
+    }
+
+    # Format Versions @sstable-versions
+    {
+        The footer carries the format version the table was written in. The engine reads versions 3 to 6 and writes only 6, the value of `TIDEWATER_FORMAT_VERSION` in `src/format.go`. [On-Disk Format](../architecture.sdoc#on-disk-format) lists what each version added.
+
+        Old tables are not rewritten on upgrade. Compaction writes its output in the current version, so old tables disappear as compaction reaches their key ranges. A manual compaction of the whole key space, as described in [Manual Compaction](../architecture.sdoc#manual-compaction), forces the matter. `tidewater-admin info DIR` prints the number of live tables of each version.
+    }
+
+    # Tables and Compaction @sstable-compaction
+    {
+        Compaction is the only thing that removes tables, and it chooses them by what the tables say about themselves:
+
+        {[.]
+            - The level 0 count, the level sizes, the seek counts and the tombstone share decide when a compaction is due, by the rules in [Triggers](../architecture.sdoc#compaction-triggers).
+            - Leveled and tiered compaction pick their input tables differently and leave different numbers of tables per level, as [Strategy](../architecture.sdoc#compaction-strategy) explains.
+            - The disk bandwidth spent reading and writing tables is limited as [Throttling](../architecture.sdoc#compaction-throttling) describes.
+            - `db.Compact` rewrites every table in a key range down to the last level, as [Manual Compaction](../architecture.sdoc#manual-compaction) describes.
+        }
+
+        A compaction reads each input block once, in key order, without going through the block cache, and verifies every checksum as it goes. A compaction that meets a corrupt block stops, leaves its inputs live and marks the table suspect: it never writes a merged table built from damaged input.
+    }
+
+    # Metrics @sstable-metrics
+    {
+        {[table]
+            Metric | Kind | Meaning
+            `tidewater_block_checksum_failures_total` | counter | Blocks that failed their checksum, in reads, compactions and the scrubber
+            `tidewater_level_tables` | gauge | Live tables, by `level`
+            `tidewater_level_bytes` | gauge | Bytes of live tables, by `level`
+            `tidewater_open_tables` | gauge | Table files held open
+        }
+
+        Any increase of `tidewater_block_checksum_failures_total` deserves a look: on a healthy disk it stays at zero for the life of the database.
+    }
+
+    # Known Limits @sstable-limits
+    {
+        {[.]
+            - Every live table holds an open file descriptor. A database of tens of thousands of tables needs the process's file limit raised, as [Host Sizing](../operations/capacity.sdoc#host-sizing) explains.
+            - Index blocks are pinned whole. A table of small entries has a large index, and pinned memory grows with the number of blocks, not with the cache.
+            - Values are stored inline in their data blocks, with no separate value log, so very large values make very large blocks, each read and cached whole.
+            - On a single node, a corrupt block leaves its key range unreadable until it is restored from a backup.
+        }
+    }
+}

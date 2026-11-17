@@ -1,0 +1,115 @@
+# Runbook: Compaction Stall @compaction-stall-runbook
+{
+    @meta {
+        type: doc
+
+        sdoc-version: 0.2
+    }
+
+    @about {
+        What to do when compaction falls behind the write rate and writes start to wait: the symptoms, the metrics and log lines that confirm a level 0 stall, how to find the cause with `tidewater-admin` and the throttle's metrics, the remedies and their risks, and when to escalate. Use it when `tidewater_write_stalls_total` rises with `reason="l0"`, or when write latency degrades while compactions run.
+    }
+
+    # Background @stall-background
+    {
+        Compaction keeps level 0 small, by the design in [Compaction](../architecture.sdoc#compaction). When level 0 reaches the stall threshold given in [Triggers](../architecture.sdoc#compaction-triggers), writes wait until compaction brings it back down. The stall is back-pressure by design: without it, every point read would consult a level 0 that grows without bound. It becomes an incident when it lasts or keeps coming back, because compaction cannot keep up with the write rate.
+
+        A stall with `reason="memtable"` is a different problem, the flusher falling behind, covered in [Life of a Memtable](../components/memtable.sdoc#memtable-lifecycle).
+    }
+
+    # Symptoms @symptoms
+    {
+        {[.]
+            - Write latency rises in steps, with writes waiting tens or hundreds of milliseconds, while reads stay close to normal.
+            - The `TidewaterL0Stall` alert from [Alert Rules](../operations/monitoring.sdoc#alert-rules) fires.
+            - Point reads slow down slightly in the minutes before, since every level 0 table is consulted.
+        }
+    }
+
+    # Confirm @confirm
+    {
+        {[table]
+            Metric | In a compaction stall
+            `rate(tidewater_write_stalls_total{reason="l0"}[5m])` | Above 0
+            `tidewater_level_tables{level="0"}` | At or near the stall threshold
+            `tidewater_compactions_running` | At `MaxCompactions` most of the time
+            `tidewater_compaction_rate_bytes` | Often at the throttle's floor
+            `rate(tidewater_compaction_bytes_total[5m])` | Flat, or below the incoming write rate times the write amplification
+        }
+
+        The log shows the stall begin and end, and any change of the throttle's rate in between:
+
+        ```
+        level=WARN msg="write stall" reason=l0 l0_tables=12
+        level=INFO msg="compaction rate lowered" rate_mib_s=32 write_p99_ms=3.4
+        level=INFO msg="write stall cleared" reason=l0 l0_tables=7 waited=2.8s
+        ```
+    }
+
+    # Diagnosis @diagnosis
+    {
+        {[#]
+            - Look at the levels
+            {
+                `tidewater-admin levels DIR` reads the manifest and the table properties, takes no lock, and is safe on the open database. A level's score is its size over its target; for level 0 it is the table count over the count that triggers a compaction.
+
+                ```
+                $ tidewater-admin levels /var/lib/app/db
+                level  tables  size       score
+                L0     11      0.7 GiB    2.75
+                L1     9       0.6 GiB    2.31
+                L2     41      2.6 GiB    1.04
+                L3     380     23.6 GiB   0.94
+                ```
+
+                Level 0 and level 1 both high means level 0 compactions are waiting on level 1: each one merges with every level 1 table it overlaps, so an oversized level 1 slows them all. Level 0 high with the other levels near their targets means compaction is starved of bandwidth or of slots.
+            }
+            - Check the throttle
+            {
+                `tidewater_compaction_rate_bytes` is the rate the throttle currently allows. At the floor, it means foreground write latency has been above the throttle's upper mark and compaction is being slowed to protect it, as [Throttling](../architecture.sdoc#compaction-throttling) describes. The throttle is working as designed; the cause is the write latency, usually a slow disk. Check the p99 of `tidewater_wal_fsync_seconds` and the device's latency with `iostat -x 1`.
+            }
+            - Check the slots
+            {
+                If `tidewater_compactions_running` stays at `MaxCompactions` while `tidewater_compaction_bytes_total{manual="true"}` rises, a manual compaction is holding a slot, as [Manual Compaction](../architecture.sdoc#manual-compaction) describes. Level 0 compactions may still start, but every other level waits behind it.
+            }
+            - Check for compactions refused for space
+            {
+                `compaction deferred: not enough free space` in the log means compaction is not running at all. Go to [Disk Full](disk-full.sdoc).
+            }
+            - Check for rewrites that do not shrink
+            {
+                If compaction runs at full rate and the levels still grow, it may be rewriting data it is not allowed to drop. A snapshot held open keeps every version written since it was taken, as [Batches and Snapshots](../architecture.sdoc#batches) warns; the bytes compacted then rise without the level sizes falling.
+            }
+            - Compare the write rate with what compaction can absorb
+            {
+                With leveled compaction each byte written is rewritten about once per level, as [Strategy](../architecture.sdoc#compaction-strategy) explains. If the write rate times that amplification is more than the disk bandwidth compaction may use, no setting will stop the stalls: the write rate or the disk has to change.
+            }
+        }
+    }
+
+    # Remedies @remedies
+    {
+        {[table]
+            Cause | Remedy | Risk
+            A slow disk holding the throttle down | Fix or replace the disk; on a replicated database, move the lead to a node with a healthy disk | None
+            A manual compaction holding a slot | Let it finish, or close the database, which stops it after its current table; it is not resumed | The space it would have freed comes back later
+            All slots busy on deep levels | Raise `MaxCompactions` by one | More disk bandwidth goes to compaction; watch write p99 against R5
+            The throttle's rate too low for the write rate | Raise `CompactionRate` | As above
+            A snapshot held open | Release it in the application | None
+            A sustained write rate beyond what the disk can compact | Lower the write rate or move to faster disks. For a workload that writes far more than it reads, consider `CompactionStyle: Tiered` | Tiered compaction takes more space and slows reads; read [Strategy](../architecture.sdoc#compaction-strategy) first
+        }
+
+        `CompactionRate`, `MaxCompactions` and `CompactionStyle` take effect at the next `Open`. Raising either of the first two takes disk bandwidth from foreground writes, which is exactly what the throttle protects: check the p99 write latency during compaction against [R5](../requirements.sdoc#r5) after the change, on the reference host first when you can.
+    }
+
+    # Escalation @escalation
+    {
+        Escalate to the tidewater maintainers in the team channel, attaching the output of `tidewater-admin levels DIR`, the metrics above over the last hour and the stall log lines, when:
+
+        {[.]
+            - Stalls continue with the throttle at its full rate, free slots, and a write rate the reference host sustains within [R3](../requirements.sdoc#r3).
+            - A single stall lasts longer than a minute.
+            - Level 0 does not shrink during a stall while compactions are running.
+        }
+    }
+}
