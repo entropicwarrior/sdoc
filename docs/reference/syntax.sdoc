@@ -572,11 +572,17 @@ Content of section A.
 # Meta @meta
 {
     style: path/to/custom.css
+
     header: My Header
+
     footer: My Footer
+
     author: Jane Smith
+
     date: 2026-02-09
+
     version: 1.0
+
     sdoc-version: 0.2
 }
             ```

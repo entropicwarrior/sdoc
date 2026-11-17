@@ -1006,12 +1006,19 @@ Content of Section B.
                 # Meta @meta
                 {
                     style: styles/custom.css
+
                     header: My Header
+
                     footer: My Footer
+
                     author: Jane Smith
+
                     date: 2026-02-09
+
                     version: 1.0
+
                     status: Draft
+
                     sdoc-version: 0.2
                 }
                 ```
@@ -1168,6 +1175,7 @@ Content of Section B.
                     `signpost-content` | error | a section contains a block its content model does not allow, including anything after the `@reading-guide` table, `@not-about` contains a link, or `@about` contains an `@id` reference
                     `signpost-table` | error | the table is missing, `@related-resources` has more than one, the header is wrong, a row has the wrong number of cells or an empty cell, a `Resource` cell is not one link or links into this document or to an absolute path, or a `Sections` token is not an `@id` reference
                     `signpost-order` | warning | a reserved scope at the top level comes after the body, or after a reserved scope ranked later in the conventional order (reported on the scope that is out of place)
+                    `meta-joined-pairs` | warning | a `@meta` paragraph spans more than one line and its value holds another `key: value` pair: consecutive pairs with no blank line between them, read as one value. Not reported for a value on a single line, which may contain a colon
                 }
 
                 `fixSignpostOrder(text)` restores the conventional order. It moves the reserved scopes as source text, each with the `//` comment lines directly above it, and re-indents them to their new place. A scope written beside the root stays there when its rank allows, and moves into the root's children otherwise. The fix is applied only when the result reparses to the same tree with just those scopes moved, keeps every non-blank line, and leaves no order warning. A braceless scope next to body content can fail that test; the fix then reports why and changes nothing.

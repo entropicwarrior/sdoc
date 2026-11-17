@@ -1,5 +1,6 @@
 @meta {
     title: Binding regressions
+
     sdoc-version: 0.2
 }
 

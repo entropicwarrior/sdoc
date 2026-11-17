@@ -39,10 +39,15 @@
         # Meta @meta
         {
             author: Jane Smith
+
             date: 2026-02-06
+
             version: 0.3
+
             status: Draft
+
             tags: specification, api, v2
+
             style: styles/custom.css
         }
         ```
@@ -209,12 +214,17 @@
         # Meta @meta
         {
             type: doc
+
             tags: authentication, api, security
+
             status: active
 
             audience: contributors, security-reviewers
+
             depends-on: @user-model, @api-gateway
+
             related: architecture.sdoc, spec.sdoc
+
             read-when: adding-auth-features, reviewing-security
         }
         ```

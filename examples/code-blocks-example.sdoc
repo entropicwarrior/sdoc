@@ -315,6 +315,7 @@
 
     @meta {
         sdoc-version: 0.2
+
         type: doc
     }
 
