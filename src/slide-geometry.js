@@ -626,8 +626,10 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, atte
       // into a function that ignored it. 2,544 profiles and 8.7GB had
       // accumulated before anyone looked at the disk rather than the process
       // table. A single printed error would have shown it on the first day.
+      // Retried: SIGKILL is sent above, but a helper can take a moment to
+      // stop, and until it has, the last rmdir fails ENOTEMPTY.
       try {
-        fs.rmSync(profile, { recursive: true, force: true });
+        fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
       } catch (rmErr) {
         console.error(
           `sdoc: could not remove the Chrome profile ${profile} (${rmErr.code || rmErr.message}). ` +

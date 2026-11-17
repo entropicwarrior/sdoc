@@ -88,6 +88,9 @@ test/               Test files
   test-knr.js         K&R brace placement tests (node test/test-knr.js)
   test-notion.js      Notion renderer tests (node test/test-notion.js)
   test-slides.js      Slide renderer tests (node test/test-slides.js)
+  browser.js          Whether the browser tests run here (Chrome, SDOC_SKIP_BROWSER),
+                      and the skip count every browser suite reports
+  tempdir.js          tempDir(): a fixture directory removed when the suite exits
   test-slide-artifact.js  Claude Slides export, its validator and the pull diff
                          (node test/test-slide-artifact.js; Chrome-gated tests
                          skip themselves when it is absent). Also parses both
@@ -201,11 +204,20 @@ should be evaluated against.
 
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
-- Run the fast suites — no browser, half a second, 578 tests:
+- Run the fast suites — no browser, about a second, 792 tests:
   `npm test`
-- Run the browser-gated ones too (under a minute, needs Chrome; each suite runs its
-  browser tests one at a time, since starting them together froze the machine):
+- Run the browser-gated ones too (about 30 seconds, needs Chrome; each suite runs its
+  browser tests one at a time, since starting them together froze the machine — one
+  headless Chrome, about 1GB at its peak, none left running after):
   `npm run test:browser`   — or `npm run test:all` for both
+- Without Chrome the browser tests are skipped, never failed, and the Results line
+  says so: `131 passed, 0 failed, 9 skipped (Chrome not found)`. A run that skipped
+  has not tested the slide runtimes or the exporters. `SDOC_SKIP_BROWSER=1` skips
+  them on a machine that does have Chrome
+- A new test that needs Chrome either calls `browser.skip()` as its first line or is
+  registered inside `browser.group(() => { ... })` (test/browser.js), so a skip is
+  counted rather than passed or silently left out. A temporary directory a test
+  makes comes from `tempDir()` (test/tempdir.js), which removes it on exit
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
   (792 fast + 369 browser = 1161 as of v0.7.1)

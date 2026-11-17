@@ -2,6 +2,8 @@
 // harvest / PPTX export. Run with: node test/test-slide-layouts.js
 
 const fs = require("fs");
+const browser = require("./browser.js");
+const { tempDir } = require("./tempdir.js");
 const os = require("os");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
@@ -25,16 +27,22 @@ function runTest(name, fn) {
     if (result && typeof result.then === "function") {
       return result.then(
         () => { pass++; console.log("  PASS: " + name); },
-        (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
+        (e) => {
+          if (browser.isSkip(e)) { browser.record(name); return; }
+          fail++; console.log("  FAIL: " + name + " — " + e.message);
+        }
       );
     }
     pass++; console.log("  PASS: " + name);
   } catch (e) {
+    if (browser.isSkip(e)) { browser.record(name); return undefined; }
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
   return undefined;
 }
 function test(name, fn) {
+  // Inside a browser group with no browser here: counted, never run.
+  if (browser.skipping()) { browser.record(name); return; }
   if (fn.constructor.name === "AsyncFunction") {
     browserQueue = browserQueue.then(() => runTest(name, fn));
     asyncTests.push(browserQueue);
@@ -1340,9 +1348,7 @@ function writeTestTheme(dir) {
   return path.join(dir, "theme");
 }
 
-if (!findChrome()) {
-  console.log("  SKIP: Chrome not found — geometry and PPTX tests need it");
-} else {
+browser.group(() => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-geom-test-"));
   const htmlPath = path.join(tmpDir, "deck.html");
   const theme = loadTheme(writeTestTheme(tmpDir), path.join(__dirname, "..", "themes", "default"));
@@ -1414,7 +1420,7 @@ if (!findChrome()) {
   // suite executes it. Keys go in, the active slide's position comes back.
   // ----------------------------------------------------------------------
   function driveKeys(keys) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-nav-"));
+    const dir = tempDir("sdoc-nav-");
     const file = path.join(dir, "nav.html");
     const theme = loadTheme(path.join(__dirname, "..", "themes", "default"));
     // Spine 2 carries the details; 1 and 3 have none, so a move off either
@@ -1541,7 +1547,7 @@ if (!findChrome()) {
   // spine slide with details. Nothing else in the build can see this, because
   // one chevron comes from the theme and the other from the renderer.
   test("a theme carrying the old chevron rule is warned about", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-stale-chevron-"));
+    const dir = tempDir("sdoc-stale-chevron-");
     fs.writeFileSync(
       path.join(dir, "theme.css"),
       `.slide { background: #fff; }
@@ -1565,7 +1571,7 @@ if (!findChrome()) {
   });
 
   test("a theme that only mentions the old rule in a comment is left alone", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-chevron-comment-"));
+    const dir = tempDir("sdoc-chevron-comment-");
     fs.writeFileSync(
       path.join(dir, "theme.css"),
       `/* Was: .slide-has-details::after { content: "x"; } — now .nav-down. */
@@ -2180,14 +2186,12 @@ if (!findChrome()) {
     assert(xml.includes('<a:off x="952500"'), "100px gutter is 952500 EMU");
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
-}
+});
 
 // ============================================================
 console.log("\n--- A decorative drawing is not content ---");
 
-if (!findChrome()) {
-  console.log("  SKIP: Chrome not found");
-} else {
+browser.group(() => {
   test("a full-bleed aria-hidden drawing does not report an overflow", async () => {
     // Rasterising an <svg> so it survives the export turned a theme's
     // decorative overlay — connector lines drawn across the whole slide — into
@@ -2224,11 +2228,11 @@ if (!findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // ============================================================
 allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
-  console.log(`Results: ${pass} passed, ${fail} failed`);
+  console.log(`Results: ${pass} passed, ${fail} failed${browser.summary()}`);
   process.exit(fail > 0 ? 1 : 0);
 });

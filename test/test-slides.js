@@ -1,4 +1,6 @@
 const fs = require("fs");
+const browser = require("./browser.js");
+const { tempDir } = require("./tempdir.js");
 const path = require("path");
 const os = require("os");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
@@ -18,16 +20,22 @@ function runTest(name, fn) {
     if (result && typeof result.then === "function") {
       return result.then(
         () => { pass++; console.log("  PASS: " + name); },
-        (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
+        (e) => {
+          if (browser.isSkip(e)) { browser.record(name); return; }
+          fail++; console.log("  FAIL: " + name + " — " + e.message);
+        }
       );
     }
     pass++; console.log("  PASS: " + name);
   } catch (e) {
+    if (browser.isSkip(e)) { browser.record(name); return undefined; }
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
   return undefined;
 }
 function test(name, fn) {
+  // Inside a browser group with no browser here: counted, never run.
+  if (browser.skipping()) { browser.record(name); return; }
   if (fn.constructor.name === "AsyncFunction") {
     browserQueue = browserQueue.then(() => runTest(name, fn));
     asyncTests.push(browserQueue);
@@ -563,7 +571,7 @@ const PNG_1PX = Buffer.from(
 );
 
 function imageFixture() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-img-"));
+  const dir = tempDir("sdoc-img-");
   fs.mkdirSync(path.join(dir, "img"), { recursive: true });
   fs.writeFileSync(path.join(dir, "img", "pic.png"), PNG_1PX);
   return dir;
@@ -822,11 +830,8 @@ test("findChrome returns a string or null", () => {
 });
 
 test("exportPdf produces a file (integration)", async () => {
-  const { exportSlidePdf, findChrome } = require("../src/slide-pdf");
-  if (!findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  const { exportSlidePdf } = require("../src/slide-pdf");
+  browser.skip();
 
   const themeCss = fs.readFileSync(
     path.join(__dirname, "..", "themes", "default", "theme.css"), "utf-8"
@@ -857,11 +862,8 @@ test("a PDF export makes its folder, and fails when nothing was written (integra
   // Chrome neither creates the folder nor reports that it could not write the
   // file: it exits 0, so a missing folder used to print "PDF: <path>", exit 0
   // and write nothing.
-  const { exportSlidePdf, findChrome } = require("../src/slide-pdf");
-  if (!findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  const { exportSlidePdf } = require("../src/slide-pdf");
+  browser.skip();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-pdf-dir-"));
   try {
     const tmpHtml = path.join(dir, "deck.html");
@@ -1039,10 +1041,7 @@ function printGeometry() {
 }
 
 test("print keeps a centred slide centred (geometry)", async () => {
-  if (!require("../src/slide-pdf").findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  browser.skip();
   const g = await printGeometry();
   for (const id of ["cover", "body"]) {
     const s = g[id];
@@ -1062,10 +1061,7 @@ test("print keeps a centred slide centred (geometry)", async () => {
 });
 
 test("an auto margin still reaches the foot of the page in print (geometry)", async () => {
-  if (!require("../src/slide-pdf").findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  browser.skip();
   const g = await printGeometry();
   const pinned = g.pinned, body = g.body;
   assert(pinned && body, "measured both footnote slides");
@@ -1079,10 +1075,7 @@ test("an auto margin still reaches the foot of the page in print (geometry)", as
 });
 
 test("content taller than the page is scaled to fit, not clipped (geometry)", async () => {
-  if (!require("../src/slide-pdf").findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  browser.skip();
   const g = await printGeometry();
   const s = g.toomuch;
   assert(s, "measured the overflowing slide");
@@ -2191,10 +2184,7 @@ const OVERVIEW_DECK = `
 `;
 
 test("the overview opens, moves on the keys, and goes where it is told (browser)", async () => {
-  if (!require("../src/slide-pdf").findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  browser.skip();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-overview-"));
   const file = path.join(dir, "deck.html");
   const themeDir = path.join(__dirname, "..", "themes", "default");
@@ -2323,10 +2313,7 @@ const LONG_DRIVE_SCRIPT = `
 `;
 
 test("a deck too long to fit scrolls, and the keys still bring up the larger copy (browser)", async () => {
-  if (!require("../src/slide-pdf").findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  browser.skip();
   let src = "# Deck {\n    @meta { type: slides }\n";
   for (let i = 1; i <= 150; i++) src += `\n    # Slide ${i} {\n        Body ${i}.\n    }\n`;
   src += "}\n";
@@ -2499,10 +2486,7 @@ const PULL_DRIVE_SCRIPT = `
 `;
 
 test("a pull from either edge opens its view, and only a pull does (browser)", async () => {
-  if (!require("../src/slide-pdf").findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  browser.skip();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-pull-"));
   const file = path.join(dir, "deck.html");
   const themeDir = path.join(__dirname, "..", "themes", "default");
@@ -2919,11 +2903,8 @@ function gsSoftMasks(pdfPath) {
 }
 
 test("baking a fade removes the soft mask Preview renders wrong (integration)", async () => {
-  const { exportSlidePdf, findChrome } = require("../src/slide-pdf");
-  if (!findChrome()) {
-    console.log("    SKIP: Chrome not found");
-    return;
-  }
+  const { exportSlidePdf } = require("../src/slide-pdf");
+  browser.skip();
   const { bakeFades } = require("../src/slide-fade-bake.js");
   const themeCss = fs.readFileSync(
     path.join(__dirname, "..", "themes", "default", "theme.css"), "utf-8"
@@ -2980,6 +2961,6 @@ test("baking a fade removes the soft mask Preview renders wrong (integration)", 
 // Summary — wait for async tests before reporting
 allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
-  console.log(`Results: ${pass} passed, ${fail} failed`);
+  console.log(`Results: ${pass} passed, ${fail} failed${browser.summary()}`);
   process.exit(fail > 0 ? 1 : 0);
 });
