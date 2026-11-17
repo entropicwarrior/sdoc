@@ -18,13 +18,13 @@
 // Regenerate with --update after an intentional change, and read the diff.
 
 const fs = require("fs");
+const browser = require("./browser.js");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
 const { renderSlides, inlineDeckImages } = require("../src/slide-renderer.js");
 const { loadTheme } = require("../src/theme.js");
-const { findChrome } = require("../src/slide-pdf.js");
 const { buildPptx } = require("../src/slide-pptx.js");
 const { STRUCTURED_LAYOUTS } = require("../src/slide-layouts.js");
 
@@ -42,16 +42,22 @@ function runTest(name, fn) {
     if (result && typeof result.then === "function") {
       return result.then(
         () => { pass++; console.log("  PASS: " + name); },
-        (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
+        (e) => {
+          if (browser.isSkip(e)) { browser.record(name); return; }
+          fail++; console.log("  FAIL: " + name + " — " + e.message);
+        }
       );
     }
     pass++; console.log("  PASS: " + name);
   } catch (e) {
+    if (browser.isSkip(e)) { browser.record(name); return undefined; }
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
   return undefined;
 }
 function test(name, fn) {
+  // Inside a browser group with no browser here: counted, never run.
+  if (browser.skipping()) { browser.record(name); return; }
   if (fn.constructor.name === "AsyncFunction") {
     browserQueue = browserQueue.then(() => runTest(name, fn));
     asyncTests.push(browserQueue);
@@ -348,7 +354,7 @@ async function exportCorpus() {
 }
 
 if (UPDATE) {
-  if (!findChrome()) { console.log("  Cannot regenerate without Chrome."); process.exit(1); }
+  if (browser.SKIP) { console.log("  Cannot regenerate: " + browser.SKIP + "."); process.exit(1); }
   asyncTests.push(exportCorpus().then((results) => {
     fs.mkdirSync(GOLDEN, { recursive: true });
     for (const { entry, digest } of results) {
@@ -360,9 +366,7 @@ if (UPDATE) {
     console.log(`  Wrote ${results.length} digest(s) to test/pptx-golden/.`);
     console.log("  Read the diff before committing it.");
   }));
-} else if (!findChrome()) {
-  console.log("  SKIP: Chrome not found — the export harvests a live page");
-} else {
+} else browser.group(() => {
   test("a live export still matches the checked-in digests", async () => {
     const results = await exportCorpus();
     const drifted = [];
@@ -375,11 +379,11 @@ if (UPDATE) {
     assert(drifted.length === 0,
       `${drifted.join(", ")} drifted. If intended: node test/test-pptx-conformance.js --update`);
   });
-}
+});
 
 // ============================================================
 allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
-  console.log(`Results: ${pass} passed, ${fail} failed`);
+  console.log(`Results: ${pass} passed, ${fail} failed${browser.summary()}`);
   process.exit(fail > 0 ? 1 : 0);
 });

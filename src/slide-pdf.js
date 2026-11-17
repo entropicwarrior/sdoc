@@ -100,8 +100,20 @@ function chromePdf(htmlPath, pdfPath, options = {}) {
     args.push(fileUrl);
 
     execFile(chrome, args, { timeout: 30000 }, (err, _stdout, stderr) => {
-      // Clean up temp profile
-      fs.rm(tmpProfile, { recursive: true, force: true }, () => {});
+      // The profile, synchronously and loudly. This was an async rm with an
+      // empty callback — the bug slide-geometry.js already paid for: a Chrome
+      // helper still writing makes the last rmdir fail ENOTEMPTY, which
+      // `force` does not cover, and the error went nowhere. Every PDF export
+      // left about 3MB behind in the temp folder. Retries cover the helper
+      // that has not quite stopped.
+      try {
+        fs.rmSync(tmpProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch (rmErr) {
+        console.error(
+          `sdoc: could not remove the Chrome profile ${tmpProfile} (${rmErr.code || rmErr.message}). ` +
+          "Something is still writing to it; it will be left on disk."
+        );
+      }
 
       if (err) {
         reject(new Error(`Chrome PDF export failed: ${err.message}\n${stderr}`));

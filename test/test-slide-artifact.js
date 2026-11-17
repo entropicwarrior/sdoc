@@ -3,12 +3,12 @@
 // Run with: node test/test-slide-artifact.js
 
 const fs = require("fs");
+const browser = require("./browser.js");
 const os = require("os");
 const path = require("path");
 const { parseSdoc, extractMeta } = require("../src/sdoc.js");
 const { renderSlides } = require("../src/slide-renderer.js");
 const { loadTheme } = require("../src/theme.js");
-const { findChrome } = require("../src/slide-pdf.js");
 const {
   parseSubsetHtml,
   parseStyle,
@@ -41,16 +41,22 @@ function runTest(name, fn) {
     if (result && typeof result.then === "function") {
       return result.then(
         () => { pass++; console.log("  PASS: " + name); },
-        (e) => { fail++; console.log("  FAIL: " + name + " — " + e.message); }
+        (e) => {
+          if (browser.isSkip(e)) { browser.record(name); return; }
+          fail++; console.log("  FAIL: " + name + " — " + e.message);
+        }
       );
     }
     pass++; console.log("  PASS: " + name);
   } catch (e) {
+    if (browser.isSkip(e)) { browser.record(name); return undefined; }
     fail++; console.log("  FAIL: " + name + " — " + e.message);
   }
   return undefined;
 }
 function test(name, fn) {
+  // Inside a browser group with no browser here: counted, never run.
+  if (browser.skipping()) { browser.record(name); return; }
   if (fn.constructor.name === "AsyncFunction") {
     browserQueue = browserQueue.then(() => runTest(name, fn));
     asyncTests.push(browserQueue);
@@ -432,9 +438,7 @@ test("raising to the floor is still available, and still says so", () => {
 
 const EXAMPLE = path.join(__dirname, "..", "examples", "layouts-example.sdoc");
 
-if (!findChrome()) {
-  console.log("  SKIP: Chrome not found — the artifact export harvests a live page");
-} else {
+browser.group(() => {
   // One harvest, shared. A browser run costs seconds; the four claims below are
   // all about what buildArtifact does with the result, not about the browser.
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-artifact-test-"));
@@ -527,7 +531,7 @@ if (!findChrome()) {
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
-}
+});
 
 // ============================================================
 console.log("\n--- Pulling edits back (artifact-diff) ---");
@@ -749,9 +753,7 @@ test("a deck with images exports rather than refusing outright", () => {
 // ============================================================
 console.log("\n--- Declarations are filtered to what each tag may carry ---");
 
-if (!findChrome()) {
-  console.log("  SKIP: Chrome not found");
-} else {
+browser.group(() => {
   test("an <img> never carries the type it inherited (integration)", async () => {
     // Reported against a real deck: 26 of its 35 export errors were
     // "font-size is not allowed on <img>", and the same for padding,
@@ -806,9 +808,9 @@ if (!findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
-if (findChrome()) {
+browser.group(() => {
   test("a pseudo-element the theme paints becomes a box of its own (integration)", async () => {
     // A pseudo-element has no node, so a DOM walk cannot see it — and a theme
     // that draws a rule or a disk with one has drawn something the reader sees.
@@ -850,9 +852,9 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
-if (findChrome()) {
+browser.group(() => {
   test("a figure set large in its own paragraph keeps its size (integration)", async () => {
     // The subset has no font-size or font-family on a span, so an inline mark
     // set larger is flattened to its parent's type — a 44px figure rendering as
@@ -891,9 +893,9 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
-if (findChrome()) {
+browser.group(() => {
   test("tracing pins every box and arranges nothing (integration)", async () => {
     // The opt-in alternative to flow. The subset has no margin, and a container
     // has one gap — which says "space my children equally" and nothing else —
@@ -941,11 +943,11 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 
 // --- Traced text that fitted on one line is held to one line ---------------
-if (findChrome()) {
+browser.group(() => {
   test("traced text that took one line is not left free to wrap (integration)", async () => {
     // Tracing pins a text box at exactly the ink's measured width, with no
     // headroom at all. The artifact's copy of a face is never bit-identical to
@@ -986,10 +988,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- An inline mark keeps a colour of its own ------------------------------
-if (findChrome()) {
+browser.group(() => {
   test("an inline mark keeps its own colour (integration)", async () => {
     // The colour of a run was kept only for <span> and <code>, by tag. A theme
     // that colours one word with `h3 strong { color: ... }` lost it: <strong>
@@ -1020,10 +1022,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A shadow is paint, and paint was not travelling -----------------------
-if (findChrome()) {
+browser.group(() => {
   test("a box-shadow survives the export, in the order the grammar wants (integration)", async () => {
     // box-shadow is in the subset — `[inset] LEN LEN [LEN [LEN]] COLOR` on a
     // div, a text element, an image or a table — and was neither harvested nor
@@ -1063,10 +1065,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- Two more the subset has and the exporter never wrote ------------------
-if (findChrome()) {
+browser.group(() => {
   test("align-self and text-shadow reach the export (integration)", async () => {
     // Both are in the subset and neither was harvested, so both were lost in
     // silence. align-self matters beyond its own sake: converting a theme's
@@ -1104,7 +1106,7 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A grid's cells are emitted in the order the grid placed them -----------
 // The direct children of the first grid whose columns start with `first`, as
@@ -1179,7 +1181,7 @@ test("grid cells that overlap keep their source order and say so", () => {
   assert(built.warnings.some((w) => w.kind === "grid-overlap"), "with a warning: " + JSON.stringify(built.warnings));
 });
 
-if (findChrome()) {
+browser.group(() => {
   test("a grid placed out of source order exports in placement order (integration)", async () => {
     // The real shape: a bars child is .bar > [.bar-head > (.bar-label, .bar-value)],
     // .bar-track, [.bar-note]. The deck dissolves the head and places all three.
@@ -1220,10 +1222,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A gap too wide for padding is given back as a spacer ------------------
-if (findChrome()) {
+browser.group(() => {
   test("a leading gap wider than padding allows becomes a spacer (integration)", async () => {
     // A ::before in flow holds space open on its host's first line. Pinning it
     // hands that space back, so the words slide left by its width, and the
@@ -1270,10 +1272,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A deck can ask for its lists as boxes ---------------------------------
-if (findChrome()) {
+browser.group(() => {
   test("artifact-lists: boxes keeps what a plain li cannot carry (integration)", async () => {
     // The format allows a plain <li> and nothing else, so a list is always a
     // stack of items at their natural height. A deck that spaces its items
@@ -1311,10 +1313,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A deck can ask for its tables as boxes --------------------------------
-if (findChrome()) {
+browser.group(() => {
   test("an item that does not grow keeps its flex, and one that declared nothing stays silent", async () => {
     // `flex` was emitted only inside `if (grow > 0)`, with no else, so any
     // item that does not grow lost the lot — basis, shrink and all. A column
@@ -1645,10 +1647,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A list item's painted marks are not lost with the list ----------------
-if (findChrome()) {
+browser.group(() => {
   test("a pseudo-element on a list item becomes a box of its own (integration)", async () => {
     // A list is taken whole and turned into runs, so an <li> never reaches the
     // walk and anything it paints went with it. One real deck draws its
@@ -1686,10 +1688,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A painted pseudo-element lands in its host's layer --------------------
-if (findChrome()) {
+browser.group(() => {
   test("a pseudo-element is not painted over by a later backdrop (integration)", async () => {
     // Every synthesised pseudo box used to be emitted before all the content,
     // so it sat behind it. That is right for a band drawn behind its own text
@@ -1733,10 +1735,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A pinned box is lifted out of the flow it was nested in ---------------
-if (findChrome()) {
+browser.group(() => {
   test("a pinned box is emitted as a direct child of the section (integration)", async () => {
     // The page does not place a pinned box the way CSS does. Measured on a
     // live artifact, one variable at a time: the same box directly under the
@@ -1791,10 +1793,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A positioned box keeps the edge it was anchored to --------------------
-if (findChrome()) {
+browser.group(() => {
   test("a box anchored at the bottom is exported anchored at the bottom (integration)", async () => {
     // getComputedStyle resolves top AND bottom to used lengths on a positioned
     // element, so neither says which edge the author chose — the cascade does.
@@ -1834,10 +1836,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- What an export lost, as a number ------------------------------------
-if (findChrome()) {
+browser.group(() => {
   test("the engine's own footer chrome costs a deck no dropped margins (integration)", async () => {
     // .sdoc-company-footer and .slide-indicator carried margins, and the footer
     // is on every slide — so every deck paid two dropped margins per slide for
@@ -1905,10 +1907,10 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- A labelled drawing is painted, because the viewer will not load its font --
-if (findChrome()) {
+browser.group(() => {
   test("a labelled drawing is painted rather than carried as markup (integration)", async () => {
     // The format treats a drawing as one opaque graphic and never loads a font
     // inside one, so a <text> label carried as markup arrives in whatever face
@@ -1943,7 +1945,7 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 // --- and the faces its labels ask for travel with it ----------------------
 const PROBE_FONTS = [
@@ -1954,7 +1956,7 @@ const PROBE_FONTS = [
 ];
 const probeFont = PROBE_FONTS.find((f) => fs.existsSync(f));
 
-if (findChrome() && probeFont) {
+if (probeFont) browser.group(() => {
   test("a painted label uses the deck's webfont, not a fallback (integration)", async () => {
     // Painting alone is not enough, and this is the half that is easy to miss.
     // An <svg> handed to an <img> is an isolated document: it cannot see the
@@ -1997,9 +1999,9 @@ if (findChrome() && probeFont) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
-if (findChrome()) {
+browser.group(() => {
   test("an unlabelled drawing stays markup, and its var() is resolved (integration)", async () => {
     // An <svg> is display:inline by default and its own <text> counts towards
     // textContent, so the block holding a labelled diagram looked like a run of
@@ -2041,7 +2043,7 @@ if (findChrome()) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-}
+});
 
 test("the browser-half scripts keep their regex escapes", () => {
   // Both harvests are held in template literals, which eat any escape they do
@@ -2321,7 +2323,7 @@ test("the virtual-time budget grows with the attempt, as the wall clock does", (
 });
 
 
-if (findChrome()) {
+browser.group(() => {
   // A connector names the two elements it joins; the deck's own runtime turns
   // that into absolutely positioned painted divs against the boxes the browser
   // laid out, and this export sees them as ordinary pinned painted boxes.
@@ -2483,11 +2485,11 @@ if (findChrome()) {
     assert(Math.abs(bar.x + bar.w / 2 - (from.x + to.x) / 2) < 2, "centred across the run");
     assert(Math.abs(bar.y + bar.h / 2 - (from.y + to.y) / 2) < 2, "centred down the run");
   });
-}
+});
 
 // ============================================================
 allSettled().then(() => {
   console.log("\n" + "=".repeat(40));
-  console.log(`Results: ${pass} passed, ${fail} failed`);
+  console.log(`Results: ${pass} passed, ${fail} failed${browser.summary()}`);
   process.exit(fail > 0 ? 1 : 0);
 });
