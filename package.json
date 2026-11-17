@@ -57,8 +57,8 @@
   "scripts": {
     "package": "node tools/pack-links.js npx vsce package --out dist/",
     "test": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js",
-    "test:browser": "node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js",
-    "test:all": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js"
+    "test:browser": "node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js && node test/test-preview-sync.js",
+    "test:all": "node test/test-all.js && node test/test-knr.js && node test/test-notion.js && node test/test-slides.js && node test/test-slide-layouts.js && node test/test-slide-artifact.js && node test/test-artifact-conformance.js && node test/test-pptx-conformance.js && node test/test-preview-sync.js"
   },
   "main": "./src/extension.js",
   "contributes": {
@@ -124,6 +124,21 @@
         "icon": "$(open-preview)"
       }
     ],
+    "configuration": {
+      "title": "SDOC",
+      "properties": {
+        "sdoc.preview.scrollEditorWithPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the preview is scrolled, scroll the source editor to the same place."
+        },
+        "sdoc.preview.scrollPreviewWithEditor": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the source editor is scrolled, scroll the preview to the same place."
+        }
+      }
+    },
     "configurationDefaults": {
       "[sdoc]": {
         "editor.wordWrap": "on"

@@ -68,6 +68,7 @@ code --install-extension dist/sdoc-*.vsix
         The preview panel supports interactive features:
 
         {[.]
+            - **Scroll sync**: with the preview beside the source, scrolling either one scrolls the other to the same place. The line at the top of the preview is the line at the top of the editor. Scrolling the preview moves neither your cursor nor the focus, and following a link to another section of the document moves the editor with it. Turn either direction off with `sdoc.preview.scrollEditorWithPreview` and `sdoc.preview.scrollPreviewWithEditor`
             - **Click-to-navigate**: click any element in the preview to jump to its source line in the editor
             - **Collapsible scopes**: hover over a heading with children to reveal a toggle triangle. Click it to collapse or expand the section. Collapse state persists across refreshes.
             - **Links**: clicking a hyperlink in the preview opens it in your default browser

@@ -73,6 +73,10 @@ src/                Source code
   extension.js        VS Code extension with preview and document server
   knowledge-template.js  The skeleton "New Knowledge File" writes; kept out of
                       extension.js so test-all.js can parse it
+  preview-sync.js     Scroll sync between the editor and the VS Code preview: the pure
+                      line <-> offset mapping over the blocks' data-line marks, and
+                      the webview half, serialised with toString() so the fast suite
+                      tests the code the preview runs (extension.js needs vscode)
   href-path.js        Resolves a link href to a file on disk (raw, then percent-
                       decoded); shared by extension.js and build-doc --check
   site-template/      Shared viewer templates (index.html, viewer.css)
@@ -91,6 +95,8 @@ test/               Test files
   browser.js          Whether the browser tests run here (Chrome, SDOC_SKIP_BROWSER),
                       and the skip count every browser suite reports
   tempdir.js          tempDir(): a fixture directory removed when the suite exits
+  test-preview-sync.js  Scroll sync in the preview's real page, every block both ways
+                         (node test/test-preview-sync.js; needs Chrome)
   test-slide-artifact.js  Claude Slides export, its validator and the pull diff
                          (node test/test-slide-artifact.js; Chrome-gated tests
                          skip themselves when it is absent). Also parses both
