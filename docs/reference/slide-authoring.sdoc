@@ -1300,7 +1300,7 @@
 
         # The Filmstrip @filmstrip
         {
-            Press \`F\` while presenting and a strip of every spine slide hides
+            Press \`T\` while presenting and a strip of every spine slide hides
             at the bottom edge, rising when the pointer reaches for it. It
             exists for the case where two people are working on one slide and
             need to see where it sits in the argument without leaving it.
@@ -1312,7 +1312,8 @@
 
             {[table]
                 Doing | What happens
-                \`F\` | Turns the strip on, centred on the current slide, and leaves it up until you have moved into it and out again. Press again to turn it off.
+                \`T\` | Turns the strip on, centred on the current slide, and leaves it up until you have moved into it and out again. Press again to turn it off.
+                Pull up from the bottom edge | The strip rises with the pointer or finger. Let go once it is fully up, a fifth of the way up the window, and it is on, as with \`T\`; let go short of that and it drops back.
                 Pointer at the bottom edge | Raises the strip, centred on the current slide.
                 Click a thumbnail | Goes to that slide.
                 Drag the strip | Scrolls it.
@@ -1334,6 +1335,55 @@
             changing anything.
         }
 
+        # The Overview @overview
+        {
+            Press \`O\` and the deck folds into a grid of every spine slide,
+            sized to fill the window. The filmstrip shows where one slide sits
+            in the argument. The overview shows the whole deck at once, for a
+            presenter who needs to jump somewhere mid-talk or a designer
+            checking that thirty slides look like one deck.
+
+            Each cell is the slide itself, scaled down: its pictures, colours
+            and layout are the real ones. Its type is too small to read at that
+            size, so the kicker and title are set again underneath, as in the
+            filmstrip. A spine slide with drilldown details under it is drawn
+            as a small stack, with the number of details in its corner. The
+            cells spring into place out of the slide you were on, and the one
+            you choose grows back to full size as the overview closes.
+
+            {[table]
+                Doing | What happens
+                \`O\` | Opens the overview, with the current slide outlined. Press again to close it where you were.
+                Pull down from the top edge | The overview opens under the pointer or finger: the slide shrinks towards its cell and fades as you pull. Past a fifth of the way down the closed hand of the cursor opens, and letting go finishes the opening. Drag back above that and let go to call it off.
+                Rest the pointer on a cell | After a moment, a larger copy grows out of it, centred on it, to check it is the slide you meant. Not offered when the cells are already about that size.
+                Keep the pointer inside the copy | It stays. Click it to go to that slide.
+                Move off the copy | It shrinks back into its cell, and nothing else comes up until the pointer rests on a cell again.
+                Click a cell | Goes to that slide.
+                Arrow keys | Move through the grid. The slide behind does not move.
+                \`Enter\` or \`Space\` | Goes to the chosen slide.
+                \`Escape\` | Puts away a larger copy if one is up; otherwise closes the overview where you were, whatever was chosen. In full screen the browser keeps Escape for leaving full screen, so use \`O\` there.
+            }
+
+            A deck too long to fit legibly stops shrinking its cells and
+            scrolls instead.
+
+            While the overview is up, focus is on the chosen cell, so a screen
+            reader announces each slide as you move. \`T\` does nothing until it
+            closes.
+
+            A pull starts in the top or bottom tenth of the window. With a
+            mouse, resting there shows a small handle at the edge. A press in
+            that band that does not move is still an ordinary click, and turns
+            the slide as one; only a press that becomes a pull is held back from
+            the deck. On a touchscreen this is the way to both views without a
+            keyboard, and a pull from the top does not reload the page.
+
+            Like the filmstrip it is a screen affordance and nothing more. It
+            is built when it opens and removed when it closes, so no export
+            sees it and print cannot reach it, and a custom theme gets it
+            without changing anything.
+        }
+
         # Navigation Controls @navigation
         {
             All themes include these controls by default:
@@ -1349,6 +1399,15 @@
             Home — first slide.
 
             End — last spine slide.
+
+            F — full screen, and again to leave it. A page that may not go
+            full screen (an embedded frame without permission) says so rather
+            than doing nothing.
+
+            T — the [filmstrip](#filmstrip). O — the [overview](#overview).
+
+            Pull down from the top edge for the overview, up from the bottom
+            edge for the filmstrip, with a mouse or a finger.
 
             Touch swipe horizontal / vertical on mobile devices.
 
