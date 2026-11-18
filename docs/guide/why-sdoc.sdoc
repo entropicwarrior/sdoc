@@ -153,9 +153,9 @@
             The same SDOC source renders to multiple formats:
 
             {[.]
-                - HTML with collapsible section headings, click-to-navigate, and live preview
+                - HTML with collapsible section headings, click-to-navigate, and a live preview in VS Code that scrolls with the editor
                 - PDF via headless Chrome with page-break-safe tables and code blocks
-                - HTML slide decks with themes, layouts, speaker notes, and mermaid diagrams
+                - HTML slide decks with themes, layouts, speaker notes, and mermaid diagrams, presented with a presenter view for the notes, an overview of every slide, and clicker support
                 - Standalone HTML for distribution
             }
 

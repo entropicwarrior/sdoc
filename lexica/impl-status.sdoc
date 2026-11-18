@@ -171,7 +171,7 @@
 
     # Current State @current-state
     {
-        SDOC v0.8.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.9.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
@@ -204,6 +204,7 @@
             - v0.7.0 — the slide deck gets an overview on \`O\`: every spine slide in a grid that fills the window, each cell the slide itself cloned and scaled with its kicker and title set readably underneath, springing out of the current slide. Rest on a cell and a larger copy grows out of it; click it to go there. A pull down from the top edge opens the overview with its way in scrubbed under the pointer, and a pull up from the bottom raises the filmstrip, by mouse or by touch. \`F\` is full screen now, and the filmstrip moved to \`T\`. All of it is structural runtime in the renderer, built on demand, so no export or harvest sees it. Every state change has a deadline, because headless Chrome and background tabs never finish an animation
             - v0.7.1 — \`validateSignposts\` warns (\`meta-joined-pairs\`) when a \`\@meta\` value spans more than one line and holds another \`key: value\` pair: consecutive pairs with no blank line between them are one paragraph, so the first key swallows the rest (#102, #103, from an outside contributor). A value on a single line is not checked, since it may contain a colon. The grammar is unchanged. Six examples in the docs and the Python binding's regression fixture had joined pairs, and are fixed
             - v0.8.0 — the VS Code preview scrolls with the editor and the editor with the preview, aligned on the top line as the Markdown preview is (\`src/preview-sync.js\`: two pure functions over the blocks' \`data-line\` marks, serialised into the webview so the fast suite tests what runs). Two settings, \`sdoc.preview.scrollEditorWithPreview\` and \`sdoc.preview.scrollPreviewWithEditor\`, the extension's first. Headings carry their section's end line and are read as one line. Browser tests count skips and say why, and \`SDOC_SKIP_BROWSER=1\` skips them; a PDF export no longer leaves its ~3MB Chrome profile in the temp folder (#109, #110)
+            - v0.9.0 — the presenter view (\`P\`): the deck in a second window with the notes, a timer and the slides around the current one, private until Start; drawing on a slide in either window (pens, highlighter, rectangle, callouts, laser, eraser), mirrored between the two and never written to the file; Page Down and Page Up for a presentation clicker; in the overview the chosen cell wears a prominent ring and the keys no longer bring up its larger copy. See [The Presenter View](../docs/reference/slide-authoring.sdoc#presenter) (#113, #114, #115)
         }
 
         # GitHub Adoption
@@ -271,6 +272,30 @@
             - [ ] The geometry harvest and the fade bake both run in *screen* media, where a deck carries a fit-to-window scale on \`.slide\`. Anything print-only is unguarded by \`--check\`, which is how the print-layout bug above survived a release; and a \`getBoundingClientRect\` in a harvest returns scaled pixels, which is a live trap for the next script written against one
             - [ ] A blurred \`text-shadow\` does not survive a PDF on macOS either (filled grey box behind the text), while \`filter: drop-shadow\` does. Reported against a deck's own CSS rather than the engine's, so it is not an engine bug, but it belongs in the authoring guidance on what survives an export
             - [ ] Chrome's PDF export declares no output intent, so text and vector fills are untagged \`/DeviceRGB\` while images carry ICC profiles. On a wide-gamut display the same colour renders differently in text and in a picture. An sRGB output intent in the export path would fix it for every deck
+        }
+
+        # Presenter View and Annotations @presenter-wip
+        {
+            Released in v0.9.0. \`P\` opens the deck again in a second
+            window as a presenter view: the current slide and the ones around it, the
+            speaker notes, a timer, Start and Reset, a focus mode and a divider for the
+            notes. Either window can draw on the current slide — pens with editable
+            colours, a highlighter that snaps to words, a rectangle that snaps to
+            elements, callouts, a laser, an eraser, undo and clear — and what one draws
+            the other shows. Page Down and Page Up, a clicker's keys, are in the
+            default theme. See
+            [The Presenter View](../docs/reference/slide-authoring.sdoc#presenter).
+
+            - [x] The presenter view and the deck window's half of it (\`src/slide-presenter.js\`), the drawing tools shared by both (\`src/slide-annotate.js\`), and the pure parts under them, unit-tested: stroke outlines and eraser hits (\`slide-ink.js\`), snapping (\`slide-snap.js\`), callout placement (\`slide-callout.js\`), the stroke store and its messages (\`slide-strokes.js\`). Each is one function serialised into the deck with \`toString()\`
+            - [x] Each window hears only the other: the presenter window is opened under a name derived from the deck's path and listens to its opener alone; the deck listens to the window it opened and, after a reload, takes on the sender of a hello only if it is that window's opener. \`P\` after a deck reload finds the live presenter window rather than loading it afresh
+            - [x] A deck that reloads is noticed by a token it makes on each page load and sends with its position. After Start the presenter window then sends back all the ink, whichever window drew it; before Start it sends nothing, and ink drawn in the deck window is lost with the reload
+            - [x] The deck's shared kit is a module of its own (\`src/slide-deck-kit.js\`), serialised like the others
+            - [ ] The renderer's scripts are embedded as written, comments included: about 213 KB in every HTML deck, some 150 KB of it the presenter view and drawing tools. Removing comments safely needs a JavaScript parser, which the dependency-free renderer does not have
+            - [ ] A served deck posts to and accepts its own origin only. No test runs a deck over http, so that path is unexercised; from disk, where the tests run, the window a message came from is the whole check
+            - [ ] The message checks are tested with stand-in windows. Two real decks open side by side, and a real reload of the deck window mid-talk, have only been reasoned about: a file:// window cannot be read from another, so the browser tests cannot look inside a presenter window they open
+            - [ ] Ink lasts as long as the windows do. Nothing is saved with the deck or exported
+            - [ ] A deck window that reloads after Start does not send what is drawn in it until the presenter window's next hello, up to two seconds later, and the ink it is then given back replaces that. A stroke drawn in the deck window in those two seconds is lost
+            - [ ] From disk, a deck takes on a presenter window by its hello if that window's opener is the deck's own window. A different deck loaded into the same tab while the first one's presenter window is still open is therefore taken for its deck, and after Start is sent the first deck's ink. Close the presenter window before opening another deck in that tab
         }
 
     }

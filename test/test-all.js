@@ -5158,5 +5158,875 @@ console.log("\n--- Preview scroll sync ---");
   });
 }
 
+// ============================================================
+console.log("\n--- Slide ink (presenter pen geometry) ---");
+{
+  const ink = require("../src/slide-ink.js");
+  const { INK_JS } = ink;
+
+  // The outline is a polygon whose vertices sit exactly at the stroke's
+  // half-width from the centre, so its extent over a stretch of a horizontal
+  // stroke is the stroke's width there.
+  function widthAt(outline, x0, x1) {
+    const ys = outline.filter((p) => p[0] >= x0 && p[0] <= x1).map((p) => p[1]);
+    assert(ys.length > 0, "the outline has points between x=" + x0 + " and x=" + x1);
+    return Math.max(...ys) - Math.min(...ys);
+  }
+  function bbox(outline) {
+    const xs = outline.map((p) => p[0]), ys = outline.map((p) => p[1]);
+    return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  }
+  function pathNumbers(d) { return (d.match(/-?[\d.]+(e-?\d+)?|NaN|-?Infinity/g) || []); }
+  function allFinite(d) { return pathNumbers(d).every((n) => isFinite(Number(n))) && !/NaN|Infinity/.test(d); }
+  // The nonzero rule: the number of times the outline winds round a point.
+  function winding(poly, x, y) {
+    let w = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const side = (b[0] - a[0]) * (y - a[1]) - (x - a[0]) * (b[1] - a[1]);
+      if (a[1] <= y) { if (b[1] > y && side > 0) w++; }
+      else if (b[1] <= y && side < 0) w--;
+    }
+    return w;
+  }
+  function segDist(x, y, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy;
+    const t = l ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l)) : 0;
+    return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy);
+  }
+  function line(x0, x1, step, y, pressure) {
+    const pts = [];
+    for (let x = x0; x <= x1; x += step) pts.push(pressure === undefined ? [x, y] : [x, y, pressure]);
+    return pts;
+  }
+  let seed = 7;
+  function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+  test("a tap is a closed round dot of the nominal size", () => {
+    const d = ink.stroke([[100, 200]], { size: 6 });
+    assert(d.startsWith("M") && d.endsWith("Z"), "a closed path: " + d.slice(0, 20));
+    const box = bbox(ink.outline([[100, 200]], { size: 6 }));
+    assert(Math.abs(box.w - 6) < 0.1 && Math.abs(box.h - 6) < 0.1, "6 x 6, got " + box.w + " x " + box.h);
+    const nums = pathNumbers(d).map(Number);
+    const xs = nums.filter((_, i) => i % 2 === 0), ys = nums.filter((_, i) => i % 2 === 1);
+    assert(Math.abs((Math.max(...xs) + Math.min(...xs)) / 2 - 100) < 0.05 &&
+      Math.abs((Math.max(...ys) + Math.min(...ys)) / 2 - 200) < 0.05, "centred on the tap");
+    const def = bbox(ink.outline([[0, 0]]));
+    assert(Math.abs(def.w - ink.DEFAULTS.size) < 0.1, "the default size is the default dot");
+  });
+
+  test("two points make a capped segment", () => {
+    const o = ink.outline([[0, 0], [40, 0]], { size: 4, streamline: 0, simulatePressure: false });
+    const box = bbox(o);
+    assert(Math.abs(box.w - 44) < 0.1, "length plus a round cap at each end, got " + box.w);
+    assert(Math.abs(box.h - 4) < 0.1, "the nominal width, got " + box.h);
+    assert(ink.stroke([[0, 0], [40, 0]]).endsWith("Z"), "a closed path");
+    const lagged = bbox(ink.outline([[0, 0], [10, 0], [20, 0], [40, 0]], { size: 4, streamline: 0.9, simulatePressure: false }));
+    assert(Math.abs(lagged.w - 44) < 0.1, "streamline lags, but the stroke still ends where the pen lifted: " + lagged.w);
+  });
+
+  test("a straight stroke of constant pressure is size wide along its length", () => {
+    const o = ink.outline(line(0, 400, 4, 300, 0.5), { size: 6, thinning: 0.8 });
+    for (const x of [60, 200, 340]) {
+      const w = widthAt(o, x - 10, x + 10);
+      assert(Math.abs(w - 6) < 0.06, "width " + w + " at x=" + x);
+    }
+    const mouse = ink.outline(line(0, 400, 4, 300), { size: 6, simulatePressure: false });
+    assert(Math.abs(widthAt(mouse, 190, 210) - 6) < 0.06, "no pressure and no simulation: size");
+  });
+
+  test("thinning: harder pressure draws a wider line", () => {
+    const pts = [];
+    for (let i = 0; i <= 100; i++) pts.push([i * 4, 300, 0.1 + 0.9 * i / 100]);
+    const o = ink.outline(pts, { size: 6, thinning: 0.7 });
+    const light = widthAt(o, 30, 50), hard = widthAt(o, 350, 370);
+    assert(hard > light * 2, "hard " + hard + " against light " + light);
+    const flat = ink.outline(pts, { size: 6, thinning: 0 });
+    assert(Math.abs(widthAt(flat, 30, 50) - widthAt(flat, 350, 370)) < 0.01, "thinning 0 ignores pressure");
+  });
+
+  test("without pressure, speed stands in for it: a slow stretch is wider than a fast one", () => {
+    const pts = line(0, 150, 1, 300).concat(line(165, 600, 15, 300));
+    const o = ink.outline(pts, { size: 6, thinning: 0.6 });
+    const slow = widthAt(o, 60, 90), fast = widthAt(o, 420, 520);
+    assert(slow > fast * 1.4, "slow " + slow + " against fast " + fast);
+    const off = ink.outline(pts, { size: 6, thinning: 0.6, simulatePressure: false });
+    assert(Math.abs(widthAt(off, 60, 90) - widthAt(off, 420, 520)) < 0.01, "simulatePressure false: constant");
+  });
+
+  test("taper narrows both ends; a dash shorter than the tapers stays visible", () => {
+    const pts = line(0, 300, 5, 300);
+    const opts = { size: 8, simulatePressure: false, taperStart: 60, taperEnd: 60 };
+    const o = ink.outline(pts, opts);
+    const start = widthAt(o, 0, 8), mid = widthAt(o, 140, 160), end = widthAt(o, 292, 300);
+    assert(Math.abs(mid - 8) < 0.06, "the middle is untouched, got " + mid);
+    assert(start < mid * 0.5 && end < mid * 0.5, "ends " + start + " and " + end + " against " + mid);
+    const plain = ink.outline(pts, { size: 8, simulatePressure: false });
+    assert(widthAt(plain, 0, 8) > 7.9, "no taper, no narrowing");
+    const dash = bbox(ink.outline([[0, 0], [3, 0], [6, 0]], opts));
+    assert(dash.h > 4, "a 6px dash with 60px tapers is still " + dash.h + " tall");
+  });
+
+  test("streamline irons out jitter", () => {
+    // A zig-zag of amplitude 6 about y=300. Measured away from the ends, since
+    // the last raw sample is kept so the stroke ends where the pen lifted.
+    const zig = [];
+    for (let i = 0; i < 60; i++) zig.push([i * 8, 300 + (i % 2 ? 6 : -6)]);
+    const opts = { size: 4, thinning: 0, smoothing: 0 };
+    const deviation = (o) => Math.max(...o.filter((p) => p[0] > 80 && p[0] < 400).map((p) => Math.abs(p[1] - 300))) - 2;
+    const raw = deviation(ink.outline(zig, Object.assign({ streamline: 0 }, opts)));
+    const smooth = deviation(ink.outline(zig, opts));
+    assert(raw > 5.5, "with streamline 0 the outline follows the input, deviation " + raw);
+    assert(smooth < 3, "with the default streamline it deviates " + smooth + " of 6");
+    assert(deviation(ink.outline(zig, Object.assign({ streamline: 0.9 }, opts))) < smooth, "more streamline, less jitter");
+  });
+
+  test("streamline() keeps every valid point, and can run one sample at a time", () => {
+    const pts = [];
+    for (let i = 0; i < 50; i++) pts.push([i * 3 + rnd() * 4, 100 + rnd() * 4, rnd()]);
+    const all = ink.streamline(pts, 0.6);
+    assert(all.length === 50, "one out per point in");
+    const same = ink.streamline(pts, 0);
+    assert(same.every((q, i) => q.every((v, j) => Math.abs(v - pts[i][j]) < 1e-9)), "amount 0 is the input");
+    const live = [ink.streamline([pts[0]], 0.6)[0]];
+    for (let i = 1; i < pts.length; i++) live.push(ink.streamline([live[live.length - 1], pts[i]], 0.6)[1]);
+    assert(JSON.stringify(live) === JSON.stringify(all), "smoothing incrementally gives the same points");
+    assert(ink.streamline([[0, 0], [NaN, 1], [2, 2]], 0).length === 2, "a non-finite point is dropped");
+    assert(ink.streamline([[0, 0], [4, 0]], 0.5)[1].length === 2, "no pressure in, none out");
+  });
+
+  test("the outline is solid under the nonzero rule: hairpins, scribbles, self-crossings", () => {
+    const shapes = [
+      { name: "hairpin", size: 8, pts: [[0, 0], [20, 0], [40, 0], [20, 2], [0, 2]] },
+      { name: "highlighter scribble", size: 24, pts: Array.from({ length: 30 }, (_, i) => [(i % 2 ? 40 : 0) + i * 0.5, i * 3]) }
+    ];
+    for (let k = 0; k < 3; k++) {
+      const pts = [[50, 50]];
+      for (let i = 0; i < 25; i++) { const l = pts[pts.length - 1]; pts.push([l[0] + (rnd() - 0.5) * 30, l[1] + (rnd() - 0.5) * 30]); }
+      shapes.push({ name: "random walk " + k, size: 10, pts });
+    }
+    // smoothing 0, so the drawn centre line is exactly the streamlined one; a
+    // larger value drops close points and may trim a reversal's tip by that gap.
+    for (const s of shapes) {
+      const opts = { size: s.size, thinning: 0, smoothing: 0 };
+      const o = ink.outline(s.pts, opts);
+      const centre = ink.streamline(s.pts).concat([s.pts[s.pts.length - 1]]);
+      const xs = o.map((p) => p[0]), ys = o.map((p) => p[1]);
+      let inside = 0, holes = 0;
+      for (let x = Math.min(...xs); x <= Math.max(...xs); x += 0.5) {
+        for (let y = Math.min(...ys); y <= Math.max(...ys); y += 0.5) {
+          let near = Infinity;
+          for (let i = 1; i < centre.length; i++) near = Math.min(near, segDist(x, y, centre[i - 1], centre[i]));
+          if (near < s.size / 4) { inside++; if (winding(o, x, y) === 0) holes++; }
+        }
+      }
+      assert(inside > 100 && holes === 0, s.name + ": " + holes + " holes in " + inside + " samples");
+    }
+    const ring = [];
+    for (let a = 0; a <= 2.2 * Math.PI; a += 0.2) ring.push([100 + 40 * Math.cos(a), 100 + 40 * Math.sin(a)]);
+    assert(winding(ink.outline(ring, { size: 6 }), 100, 100) === 0, "the middle of an O is not filled");
+  });
+
+  test("degenerate input: no NaN, no Infinity, no throw", () => {
+    assert(ink.stroke([]) === "" && ink.outline([]).length === 0, "empty gives nothing");
+    assert(ink.stroke(null) === "" && ink.stroke(undefined) === "", "missing gives nothing");
+    assert(ink.stroke([[NaN, 1], [2, Infinity]]) === "", "no valid point gives nothing");
+    assert(ink.toPath([]) === "" && ink.toPath(null) === "", "toPath of nothing");
+    const cases = [
+      [[5, 5], [5, 5]],
+      [[5, 5], [5, 5], [5, 5], [5, 5]],
+      [[0, 0], [0, 0], [10, 0], [10, 0], [10, 0], [0, 0]],
+      [[0, 0], [10, 0], [0, 0], [10, 0], [0, 0]],
+      [[0, 0, 0], [10, 0, 0], [20, 0, 0]],
+      [[0, 0], [1e-9, 0], [2e-9, 1e-9]],
+      [[0, 0], [NaN, 5], [10, 10], [undefined, 3], [20, 0]],
+      [[1, 1, 0.5], [1, 1, 0.5], [2, 1, 0.5]]
+    ];
+    const optionSets = [{}, { size: 0 }, { size: -3 }, { thinning: 1, taperStart: 50, taperEnd: 50 },
+      { streamline: 1, smoothing: 1 }, { size: "big", thinning: NaN }];
+    for (const pts of cases) {
+      for (const opts of optionSets) {
+        const d = ink.stroke(pts, opts);
+        assert(d.endsWith("Z") && allFinite(d), JSON.stringify(pts) + " " + JSON.stringify(opts) + " gave " + d.slice(0, 60));
+        assert(ink.outline(pts, opts).every((p) => isFinite(p[0]) && isFinite(p[1])), "finite outline");
+      }
+    }
+    const twin = bbox(ink.outline([[5, 5], [5, 5]], { size: 6 }));
+    assert(Math.abs(twin.w - 6) < 0.1 && Math.abs(twin.h - 6) < 0.1, "two identical points are a tap");
+  });
+
+  test("the path is deterministic, rounded to 2 decimals, and leaves the input alone", () => {
+    const pts = [];
+    for (let i = 0; i < 200; i++) pts.push([i * 1.234567, 100 + Math.sin(i / 7) * 33.3333, 0.5 + 0.4 * Math.sin(i / 11)]);
+    const before = JSON.stringify(pts);
+    const a = ink.stroke(pts, { taperEnd: 20 }), b = ink.stroke(pts, { taperEnd: 20 });
+    assert(a === b, "same input, same path");
+    assert(JSON.stringify(pts) === before, "the points were not changed");
+    assert(pathNumbers(a).every((n) => !/\.\d{3}/.test(n)), "no more than 2 decimals");
+    assert(/^M[-\d.]+,[-\d.]+Q/.test(a), "starts with a move and quadratic curves: " + a.slice(0, 30));
+  });
+
+  test("a 2000-point stroke is quick", () => {
+    const pts = [];
+    for (let i = 0; i < 2000; i++) pts.push([i * 0.6, 300 + Math.sin(i / 30) * 80, 0.3 + 0.4 * Math.sin(i / 50)]);
+    for (let i = 0; i < 3; i++) ink.stroke(pts);
+    const times = [];
+    for (let i = 0; i < 9; i++) {
+      const t0 = process.hrtime.bigint();
+      ink.stroke(pts, { taperStart: 30, taperEnd: 30 });
+      times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+    }
+    times.sort((x, y) => x - y);
+    // Well under a millisecond here; the bound is for a slow, shared machine,
+    // and is still within a few frames.
+    assert(times[4] < 100, "median " + times[4].toFixed(2) + " ms");
+  });
+
+  test("INK_JS defines window.sdocInk on its own and draws the same strokes", () => {
+    assert(!/<\//.test(INK_JS), "nothing in the serialised code could close the script element it sits in");
+    const fakeWindow = {};
+    new Function("window", INK_JS)(fakeWindow);
+    const web = fakeWindow.sdocInk;
+    assert(web, "window.sdocInk is defined");
+    for (const name of ["stroke", "outline", "toPath", "streamline"]) {
+      assert(typeof web[name] === "function", name + " is a function");
+    }
+    assert(JSON.stringify(web.DEFAULTS) === JSON.stringify(ink.DEFAULTS), "the same defaults");
+    const pts = [];
+    for (let i = 0; i < 80; i++) pts.push([i * 5 + rnd() * 3, 200 + rnd() * 3, rnd()]);
+    const inputs = [[[3, 4]], [[0, 0], [9, 9]], pts, pts.map((p) => [p[0], p[1]])];
+    for (const p of inputs) {
+      for (const opts of [{}, { size: 24, thinning: 0 }, { taperStart: 20, taperEnd: 40 }]) {
+        assert(web.stroke(p, opts) === ink.stroke(p, opts), "the page's stroke matches the module's");
+      }
+    }
+  });
+}
+
+// ============================================================
+console.log("\n--- Slide snap (presenter annotations onto the slide) ---");
+{
+  const snap = require("../src/slide-snap.js");
+  const { SNAP_JS } = snap;
+  const PAD = snap.DEFAULTS.pad;
+
+  // A slide's measured boxes in design pixels. Words are laid out left to
+  // right with an 8px space, and every line names itself.
+  function lineOf(id, x0, y, widths, level, h) {
+    const out = [];
+    let x = x0;
+    for (const w of widths) { out.push({ x, y, w, h: h || 22, kind: "word", level, line: id }); x += w + 8; }
+    return out;
+  }
+  const fx = [];
+  // A paragraph of two lines: words 100-450 on the first (The 100-140,
+  // quick 148-208, brown 216-276, fox 284-324, jumps 332-392, over 400-450),
+  // 100-334 on the second; the lines are 105-127 and 137-159.
+  const para = { x: 100, y: 100, w: 360, h: 64, kind: "block", level: 1 };
+  fx.push(para, ...lineOf("p1a", 100, 105, [40, 60, 60, 40, 60, 50], 2), ...lineOf("p1b", 100, 137, [50, 70, 30, 60], 2));
+  // One line, 205-227, with an inline code span round its 2nd and 3rd words.
+  const span = { x: 154, y: 203, w: 96, h: 26, kind: "inline", level: 2 };
+  fx.push({ x: 100, y: 200, w: 360, h: 32, kind: "block", level: 1 }, span);
+  fx.push(...lineOf("p2a", 100, 205, [50], 2), ...lineOf("p2a", 158, 205, [40, 40], 3), ...lineOf("p2a", 258, 205, [40, 60], 2));
+  // A table of 3 columns by 4 rows of 150 x 40 at (600, 100), as a block, its
+  // columns, its rows and its cells, with a word or two in every cell.
+  const column = (c) => ({ x: 600 + 150 * c, y: 100, w: 150, h: 160, kind: "column", level: 2 });
+  const cell = (r, c) => ({ x: 600 + 150 * c, y: 100 + 40 * r, w: 150, h: 40, kind: "cell", level: 3 });
+  fx.push({ x: 600, y: 100, w: 450, h: 160, kind: "block", level: 1 });
+  for (let c = 0; c < 3; c++) fx.push(column(c));
+  for (let r = 0; r < 4; r++) fx.push({ x: 600, y: 100 + 40 * r, w: 450, h: 40, kind: "row", level: 2 });
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 3; c++) fx.push(cell(r, c), ...lineOf("t" + r + c, 610 + 150 * c, 110 + 40 * r, (r + c) % 2 ? [40, 50] : [70], 4, 20));
+  }
+  // A list of three items.
+  const list = { x: 100, y: 300, w: 360, h: 120, kind: "block", level: 1 };
+  fx.push(list);
+  for (let i = 0; i < 3; i++) {
+    fx.push({ x: 120, y: 300 + 40 * i, w: 340, h: 40, kind: "block", level: 2 }, ...lineOf("li" + i, 120, 309 + 40 * i, [60, 40, 80], 3));
+  }
+
+  function grow(b) { return { x: b.x - PAD, y: b.y - PAD, w: b.w + 2 * PAD, h: b.h + 2 * PAD }; }
+  function same(a, b) { return !!a && !!b && ["x", "y", "w", "h"].every((k) => Math.abs(a[k] - b[k]) < 1e-6); }
+  // The centre line of a stroke from x0 to x1 at y, with a pixel of jitter.
+  function along(x0, x1, y, step) {
+    const pts = [];
+    for (let x = x0, i = 0; x < x1; x += step, i++) pts.push([x, y + ((i % 3) - 1) * 1.5]);
+    pts.push([x1, y]);
+    return pts;
+  }
+  function from(a, b, steps) {
+    const pts = [];
+    for (let i = 0; i <= steps; i++) pts.push([a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps]);
+    return pts;
+  }
+  function rects(r) { return r.snapped ? r.rects : null; }
+  function expectRects(r, want, what) {
+    const got = rects(r);
+    assert(got && got.length === want.length && want.every((w, i) => same(got[i], grow(w))),
+      what + ": want " + JSON.stringify(want.map(grow)) + ", got " + JSON.stringify(r));
+  }
+  function finite(v) { return JSON.stringify(v, (k, x) => (typeof x === "number" && !isFinite(x) ? "BAD" : x)).indexOf("BAD") < 0; }
+
+  const strokes = {
+    threeWords: along(150, 322, 116, 6),
+    grazing: along(136, 336, 116, 5),
+    span: along(160, 244, 216, 4),
+    spanAndNext: along(160, 296, 216, 4),
+    wholeLine: along(102, 364, 216, 6),
+    twoLines: along(104, 446, 116, 6).concat([[400, 124], [300, 132], [200, 140], [104, 148]], along(110, 222, 148, 6)),
+    cellWords: along(762, 856, 120, 4)
+  };
+
+  test("a highlight along one line over three words is one rect spanning exactly those words", () => {
+    expectRects(snap.snapHighlight(strokes.threeWords, fx), [{ x: 148, y: 105, w: 176, h: 22 }], "quick brown fox");
+  });
+
+  test("a word the stroke only grazes at either end is left out", () => {
+    // It starts 4px before the end of The and stops 4px into jumps.
+    expectRects(snap.snapHighlight(strokes.grazing, fx), [{ x: 148, y: 105, w: 176, h: 22 }], "still quick brown fox");
+  });
+
+  test("over all of an inline span, the span's own box; with a word beside it, one rect for the line", () => {
+    expectRects(snap.snapHighlight(strokes.span, fx), [span], "the code span");
+    expectRects(snap.snapHighlight(strokes.spanAndNext, fx), [{ x: 154, y: 203, w: 144, h: 26 }], "span and the next word");
+  });
+
+  test("a whole line of a wide paragraph hugs its words, not the paragraph's box", () => {
+    expectRects(snap.snapHighlight(strokes.wholeLine, fx), [{ x: 100, y: 203, w: 266, h: 26 }], "the words of the line");
+  });
+
+  test("a stroke along one line, back, and along the next gives a rect per line", () => {
+    expectRects(snap.snapHighlight(strokes.twoLines, fx),
+      [{ x: 100, y: 105, w: 350, h: 22 }, { x: 100, y: 137, w: 128, h: 22 }], "two lines");
+    expectRects(snap.snapHighlight(strokes.cellWords, fx), [{ x: 760, y: 110, w: 98, h: 20 }], "the words in a cell");
+    const back = strokes.threeWords.slice().reverse();
+    expectRects(snap.snapHighlight(back, fx), [{ x: 148, y: 105, w: 176, h: 22 }], "drawn right to left");
+  });
+
+  test("not obviously over text: scribbles, vertical, diagonal, ticks, empty space, between lines", () => {
+    const zigzag = [];
+    for (let i = 0; i <= 20; i++) zigzag.push([i % 2 ? 300 : 150, 105 + i * 2.7]);
+    const loops = [];
+    for (let a = 0; a <= 6 * Math.PI; a += 0.3) loops.push([220 + 60 * Math.cos(a), 130 + 20 * Math.sin(a)]);
+    const vertical = [];
+    for (let y = 100, i = 0; y <= 165; y += 4, i++) vertical.push([200 + (i % 2 ? 1 : -1), y]);
+    const cases = {
+      zigzag, loops, vertical,
+      steepDiagonal: from([100, 100], [300, 165], 30),
+      gentleDiagonal: from([100, 110], [330, 150], 40),
+      tick: [[150, 110], [158, 118], [165, 127], [180, 113], [200, 100]],
+      emptySpace: along(380, 600, 116, 6),
+      betweenLines: along(150, 322, 132, 6),
+      tap: [[200, 116]],
+      twitch: [[200, 116], [204, 116]]
+    };
+    for (const name in cases) {
+      const r = snap.snapHighlight(cases[name], fx);
+      assert(r.snapped === false && !r.rects, name + " should not snap: " + JSON.stringify(r));
+    }
+  });
+
+  test("a rubber band over a table column, a little bigger or smaller, is the column", () => {
+    for (const band of [{ x: 745, y: 95, w: 160, h: 170 }, { x: 755, y: 105, w: 140, h: 150 }]) {
+      const r = snap.snapRect(band, fx);
+      assert(r.snapped && same(r.rect, grow(column(1))) && r.target.kind === "column" && r.target.count === 1,
+        JSON.stringify(band) + " gave " + JSON.stringify(r));
+    }
+    const two = snap.snapRect({ x: 745, y: 95, w: 310, h: 170 }, fx);
+    assert(two.snapped && same(two.rect, grow({ x: 750, y: 100, w: 300, h: 160 })) && two.target.kind === "column" && two.target.count === 2,
+      "two of the three columns are those two, not the table: " + JSON.stringify(two));
+  });
+
+  test("a band over part of a word is the word; over a cell, the cell", () => {
+    const word = snap.snapRect({ x: 230, y: 108, w: 20, h: 15 }, fx);
+    assert(word.snapped && same(word.rect, grow({ x: 216, y: 105, w: 60, h: 22 })) && word.target.kind === "word", "brown: " + JSON.stringify(word));
+    const cellText = snap.snapRect({ x: 765, y: 192, w: 80, h: 10 }, fx);
+    assert(cellText.snapped && same(cellText.rect, grow({ x: 760, y: 190, w: 98, h: 20 })) && cellText.target.count === 2,
+      "part of a cell's two words is those words, not the table: " + JSON.stringify(cellText));
+    for (const band of [{ x: 752, y: 182, w: 146, h: 36 }, { x: 746, y: 176, w: 158, h: 48 }]) {
+      const r = snap.snapRect(band, fx);
+      assert(r.snapped && same(r.rect, grow(cell(2, 1))) && r.target.kind === "cell", JSON.stringify(band) + " gave " + JSON.stringify(r));
+    }
+  });
+
+  test("a band over two words is their union, leaving out a word it only grazes", () => {
+    const r = snap.snapRect({ x: 144, y: 102, w: 143, h: 28 }, fx);
+    assert(r.snapped && same(r.rect, grow({ x: 148, y: 105, w: 128, h: 22 })) && r.target.kind === "word" && r.target.count === 2,
+      "quick brown, not fox: " + JSON.stringify(r));
+  });
+
+  test("a band over a whole list is the list, not every item; over empty space it is left alone", () => {
+    const r = snap.snapRect({ x: 95, y: 295, w: 370, h: 130 }, fx);
+    assert(r.snapped && same(r.rect, grow(list)) && r.target.kind === "block" && r.target.level === 1 && r.target.count === 1,
+      "the list: " + JSON.stringify(r));
+    // Hugging the items' left edge matches their union a little better than
+    // the list's box, but not by refineGain: the coarser answer stands.
+    const hug = snap.snapRect({ x: 118, y: 300, w: 344, h: 120 }, fx);
+    assert(hug.snapped && same(hug.rect, grow(list)) && hug.target.count === 1, "still the list: " + JSON.stringify(hug));
+    for (const band of [{ x: 500, y: 400, w: 100, h: 100 }, { x: 380, y: 202, w: 70, h: 26 }, { x: 120, y: 360, w: 900, h: 300 }]) {
+      const e = snap.snapRect(band, fx);
+      assert(!e.snapped && same(e.rect, band) && !e.target, JSON.stringify(band) + " should be unchanged: " + JSON.stringify(e));
+    }
+    const up = snap.snapRect({ x: 600, y: 600, w: -100, h: -100 }, fx);
+    assert(!up.snapped && same(up.rect, { x: 500, y: 500, w: 100, h: 100 }), "a band dragged up and left is normalised");
+  });
+
+  test("snapping: degenerate input gives no NaN and no throw", () => {
+    const bad = [null, undefined, [], [null], [{}], [{ x: NaN, y: 0, w: 5, h: 5, kind: "word" }],
+      [{ x: 0, y: 0, w: 0, h: 0, kind: "word", line: 1 }, { x: 0, y: 0, w: -5, h: 5, kind: "block" }],
+      [{ x: 1, y: 1, w: 10, h: 10 }], fx];
+    const strokesIn = [null, undefined, [], [[5, 5]], [[5, 5], [5, 5]], [[NaN, 1], [2, Infinity]], [[0, 0], [null, 3], [40, 0]],
+      strokes.threeWords];
+    const bands = [null, undefined, {}, { x: 5, y: 5, w: 0, h: 0 }, { x: NaN, y: 1, w: 3, h: Infinity }, { x: 0, y: 0, w: 1280, h: 720 },
+      { x: 230, y: 108, w: 20, h: 15 }];
+    const opts = [undefined, {}, { width: 0, pad: NaN, cover: 7 }, { wordCover: -1, minLength: "far" }];
+    for (const c of bad) {
+      for (const o of opts) {
+        for (const p of strokesIn) {
+          const r = snap.snapHighlight(p, c, o);
+          assert(typeof r.snapped === "boolean" && finite(r), "highlight " + JSON.stringify([p, o]) + " gave " + JSON.stringify(r));
+        }
+        for (const b of bands) {
+          const r = snap.snapRect(b, c, o);
+          assert(typeof r.snapped === "boolean" && finite(r) && r.rect && finite(r.rect), "rect " + JSON.stringify([b, o]) + " gave " + JSON.stringify(r));
+        }
+      }
+    }
+    assert(snap.snapRect({ x: 0, y: 0, w: 0, h: 0 }, fx).snapped === false, "a band of no size snaps to nothing");
+    assert(snap.snapHighlight([[5, 5]], fx).snapped === false, "a single point is not a highlight");
+  });
+
+  test("snapping is deterministic, leaves its input alone, and does not depend on candidate order", () => {
+    const before = JSON.stringify(fx), reversed = fx.slice().reverse();
+    for (const name in strokes) {
+      const a = snap.snapHighlight(strokes[name], fx);
+      assert(JSON.stringify(a) === JSON.stringify(snap.snapHighlight(strokes[name], fx)), name + ": same twice");
+      assert(JSON.stringify(a) === JSON.stringify(snap.snapHighlight(strokes[name], reversed)), name + ": same reversed");
+    }
+    for (const band of [{ x: 745, y: 95, w: 160, h: 170 }, { x: 230, y: 108, w: 20, h: 15 }, { x: 95, y: 295, w: 370, h: 130 }]) {
+      const a = snap.snapRect(band, fx);
+      assert(JSON.stringify(a) === JSON.stringify(snap.snapRect(band, reversed)), JSON.stringify(band) + ": same reversed");
+    }
+    assert(JSON.stringify(fx) === before, "the candidates were not changed");
+  });
+
+  test("snapping among 500 candidates is quick", () => {
+    const many = fx.slice();
+    for (let l = 0; l < 28; l++) {
+      many.push({ x: 40, y: 450 + l * 9, w: 1200, h: 9, kind: "block", level: 1 });
+      many.push(...lineOf("big" + l, 40, 450.5 + l * 9, Array.from({ length: 16 }, (_, i) => 40 + (i * 7) % 30), 2, 8));
+    }
+    assert(many.length >= 500, many.length + " candidates");
+    const stroke = along(42, 1000, 454.5, 3);
+    const whole = { x: 0, y: 0, w: 1280, h: 720 };
+    const time = (fn) => {
+      for (let i = 0; i < 3; i++) fn();
+      const t = [];
+      for (let i = 0; i < 9; i++) { const t0 = process.hrtime.bigint(); fn(); t.push(Number(process.hrtime.bigint() - t0) / 1e6); }
+      return t.sort((a, b) => a - b)[4];
+    };
+    const h = time(() => snap.snapHighlight(stroke, many)), r = time(() => snap.snapRect(whole, many));
+    assert(snap.snapHighlight(stroke, many).snapped, "the long stroke does snap");
+    // A few tenths of a millisecond here; the bound is for a slow, shared
+    // machine, and is still far below what a pause would feel like.
+    assert(h < 40 && r < 40, "median highlight " + h.toFixed(2) + " ms, band " + r.toFixed(2) + " ms");
+  });
+
+  test("SNAP_JS defines window.sdocSnap on its own and snaps the same", () => {
+    assert(!/<\//.test(SNAP_JS), "nothing in the serialised code could close the script element it sits in");
+    const fakeWindow = {};
+    new Function("window", SNAP_JS)(fakeWindow);
+    const web = fakeWindow.sdocSnap;
+    assert(web && typeof web.snapHighlight === "function" && typeof web.snapRect === "function", "window.sdocSnap is defined");
+    assert(JSON.stringify(web.DEFAULTS) === JSON.stringify(snap.DEFAULTS), "the same defaults");
+    for (const name in strokes) {
+      assert(JSON.stringify(web.snapHighlight(strokes[name], fx)) === JSON.stringify(snap.snapHighlight(strokes[name], fx)), name);
+    }
+    for (const band of [{ x: 745, y: 95, w: 160, h: 170 }, { x: 230, y: 108, w: 20, h: 15 }, { x: 500, y: 400, w: 100, h: 100 }]) {
+      assert(JSON.stringify(web.snapRect(band, fx)) === JSON.stringify(snap.snapRect(band, fx)), JSON.stringify(band));
+    }
+  });
+}
+
+// ============================================================
+console.log("\n--- Slide ink (what a stroke covers, what the eraser touches) ---");
+{
+  const ink = require("../src/slide-ink.js");
+  const pen = (id, points, more) => ({ id, tool: "pen", size: 8, points, rects: null, ...more });
+  const ids = (list) => list.join();
+
+  test("a band is the box between two corners, whichever way it was dragged", () => {
+    const want = JSON.stringify({ x: 10, y: 20, w: 30, h: 40 });
+    assert(JSON.stringify(ink.band([10, 20], [40, 60])) === want, "down and right");
+    assert(JSON.stringify(ink.band([40, 60], [10, 20])) === want, "up and left");
+    assert(JSON.stringify(ink.band([5, 5], [5, 5])) === JSON.stringify({ x: 5, y: 5, w: 0, h: 0 }), "a click is a box of no size");
+  });
+
+  test("a stroke is drawn as its rects, a dragged rectangle as its band, and freehand as neither", () => {
+    const rects = [{ x: 1, y: 2, w: 3, h: 4 }];
+    assert(ink.boxesOf({ tool: "highlighter", points: [[0, 0], [9, 9]], rects }) === rects, "a snapped highlight is its boxes");
+    assert(JSON.stringify(ink.boxesOf({ tool: "rect", points: [[10, 10], [4, 30], [60, 50]], rects: null })) ===
+      JSON.stringify([{ x: 10, y: 10, w: 50, h: 40 }]), "a rectangle being dragged runs from its first point to its last");
+    assert(ink.boxesOf({ tool: "rect", points: [], rects: null }) === null, "one with no points yet is nothing");
+    assert(ink.boxesOf(pen("a", [[0, 0], [9, 9]])) === null && ink.boxesOf({ tool: "highlighter", points: [[0, 0]], rects: null }) === null,
+      "a freehand stroke has no boxes");
+  });
+
+  test("the eraser takes a freehand stroke it comes within reach of, anywhere along it", () => {
+    const line = pen("a", [[100, 100], [200, 100], [300, 100]]);
+    // Reach is the eraser's radius and three quarters of the pen's size.
+    assert(ids(ink.hit([line], [250, 115], [250, 115], 10)) === "a", "15 px off the middle of a segment, within 10 + 6");
+    assert(ids(ink.hit([line], [250, 117], [250, 117], 10)) === "", "17 px off is out of reach");
+    assert(ids(ink.hit([line], [316, 100], [316, 100], 10)) === "a" && ids(ink.hit([line], [317, 100], [317, 100], 10)) === "",
+      "and the same past its end");
+    assert(ids(ink.hit([line], [150, 60], [150, 140], 1)) === "a", "a sweep that crosses it touches it, however thin the eraser");
+    assert(ids(ink.hit([line], [150, 60], [150, 80], 1)) === "", "a sweep that stops short does not");
+    const dot = pen("d", [[50, 50]]);
+    assert(ids(ink.hit([dot], [40, 50], [60, 50], 1)) === "d" && ids(ink.hit([dot], [40, 70], [60, 70], 1)) === "", "a tap is a point");
+    const wide = { id: "h", tool: "highlighter", size: 24, points: [[100, 300], [300, 300]], rects: null };
+    assert(ids(ink.hit([wide], [200, 321], [200, 321], 10)) === "h" && ids(ink.hit([wide], [200, 323], [200, 323], 10)) === "",
+      "a highlighter's reach is half its width, which does not vary");
+  });
+
+  test("the eraser takes a box anywhere on it, but a rectangle only on its outline", () => {
+    const box = { x: 100, y: 100, w: 200, h: 100 };
+    const highlight = { id: "h", tool: "highlighter", size: 24, points: [], rects: [box, { x: 100, y: 220, w: 80, h: 30 }] };
+    const callout = { id: "c", tool: "callout", size: 3, points: [[100, 100]], rects: [box] };
+    const rect = { id: "r", tool: "rect", size: 4, points: [[100, 100], [300, 200]], rects: [box] };
+    const all = [highlight, callout, rect];
+    assert(ids(ink.hit(all, [200, 150], [200, 150], 5)) === "h,c", "inside: the highlight and the callout, not the rectangle");
+    assert(ids(ink.hit(all, [200, 150], [220, 160], 5)) === "h,c", "nor when the eraser moves about inside it");
+    assert(ids(ink.hit(all, [200, 150], [200, 250], 5)) === "h,c,r", "a sweep out through its edge takes it too");
+    assert(ids(ink.hit(all, [306, 150], [306, 150], 5)) === "r", "just outside: the outline within the eraser and half the line's width");
+    assert(ids(ink.hit(all, [309, 150], [309, 150], 5)) === "", "further out, nothing");
+    assert(ids(ink.hit(all, [140, 235], [140, 235], 5)) === "h", "a highlight is touched on any of its boxes");
+    const dragging = { id: "d", tool: "rect", size: 4, points: [[100, 100], [300, 200]], rects: null, live: true };
+    assert(ids(ink.hit([dragging], [100, 150], [100, 150], 5)) === "", "a stroke still being drawn is never taken");
+    assert(ids(ink.hit([{ ...dragging, live: false }], [100, 150], [100, 150], 5)) === "d", "once it ends, its band is its outline");
+  });
+
+  test("hit answers in the order drawn and leaves its input alone", () => {
+    const list = [pen("b", [[0, 0], [100, 0]]), pen("a", [[0, 5], [100, 5]]), pen("c", [[0, 400], [100, 400]]), pen("e", [])];
+    const before = JSON.stringify(list);
+    assert(ids(ink.hit(list, [50, -20], [50, 20], 2)) === "b,a", "both crossed, as drawn");
+    assert(JSON.stringify(list) === before, "the strokes were not changed");
+    assert(ink.hit(null, [0, 0], [1, 1], 5).length === 0 && ink.hit([], [0, 0], [1, 1], 5).length === 0, "no strokes, no hits");
+  });
+}
+
+// ============================================================
+console.log("\n--- Slide callouts (where a callout goes) ---");
+{
+  const place = require("../src/slide-callout.js");
+  const { createCalloutPlacement, CALLOUT_JS } = place;
+  const snap = require("../src/slide-snap.js");
+  const D = { w: 1280, h: 720 };
+  const word = (x, y, w) => ({ x, y, w: w || 60, h: 24, kind: "word", level: 3 });
+  const size = { w: 200, h: 60 };
+
+  test("a callout sits a leader's length from its target, centred on it at the sides", () => {
+    const T = { x: 500, y: 300, w: 100, h: 40 };
+    const r = place.beside("right", T, size, D, 1), l = place.beside("left", T, size, D, 1);
+    const b = place.beside("below", T, size, D, 1), a = place.beside("above", T, size, D, 1);
+    assert(r.x === 600 + place.GAP && r.y + r.h / 2 === 320, "right: " + JSON.stringify(r));
+    assert(l.x + l.w === 500 - place.GAP && l.y + l.h / 2 === 320, "left: " + JSON.stringify(l));
+    assert(b.x === 500 && b.y === 340 + place.GAP, "below, from the target's left edge: " + JSON.stringify(b));
+    assert(a.x === 500 && a.y + a.h === 300 - place.GAP, "above: " + JSON.stringify(a));
+    for (const box of [r, l, b, a]) assert(box.w === 200 && box.h === 60, "the size asked for");
+  });
+
+  test("it is pushed back inside the slide, a margin from the edge", () => {
+    const M = place.MARGIN;
+    const corner = place.beside("right", { x: 1200, y: 700, w: 60, h: 20 }, size, D, 1);
+    assert(corner.x === 1280 - M - 200 && corner.y === 720 - M - 60, "kept in at the bottom right: " + JSON.stringify(corner));
+    const top = place.beside("above", { x: 2, y: 10, w: 60, h: 20 }, size, D, 1);
+    assert(top.x === M && top.y === M, "and at the top left: " + JSON.stringify(top));
+    assert(JSON.stringify(place.at([1270, 5], size, D, 1)) === JSON.stringify({ x: 1280 - M - 200, y: M }), "a callout put at a point is kept in the same way");
+    assert(JSON.stringify(place.at([300, 200], size, D, 1)) === JSON.stringify({ x: 300, y: 200 }), "and left where it was put when it fits");
+    const huge = place.at([500, 500], { w: 2000, h: 900 }, D, 1);
+    assert(huge.x === M && huge.y === M, "one too big for the slide starts at the margin: " + JSON.stringify(huge));
+  });
+
+  test("the margins scale with the design box", () => {
+    const D2 = { w: 2560, h: 1440 };
+    const r = place.beside("right", { x: 1000, y: 600, w: 200, h: 80 }, { w: 400, h: 120 }, D2, 2);
+    assert(r.x === 1200 + 2 * place.GAP, "the leader is twice as long on a slide twice as wide: " + r.x);
+    assert(place.width(D) === 448 && place.width(D2) === 896, "and the text runs about a third of the slide: " + place.width(D) + ", " + place.width(D2));
+    assert(place.draggedWidth({ x: 100, y: 100, w: 300, h: 50 }, D, 1) === 300, "a dragged box wraps at its own width");
+    assert(place.draggedWidth({ x: 1100, y: 100, w: 300, h: 50 }, D, 1) === 1280 - place.MARGIN - 1100, "within the slide");
+    assert(place.draggedWidth({ x: 100, y: 100, w: 20, h: 50 }, D, 1) === 120 && place.draggedWidth({ x: 100, y: 100, w: 20, h: 50 }, D2, 2) === 240,
+      "and no narrower than a callout can usefully be");
+  });
+
+  test("a callout goes to the right when nothing is in the way", () => {
+    const T = { x: 300, y: 300, w: 100, h: 30 };
+    const s = place.sideFor(T, D, 1, [], []);
+    assert(s.side === "right" && s.maxW === place.width(D), JSON.stringify(s));
+    assert(place.sideFor(T, D, 1, null, null).side === "right", "with nothing measured either");
+  });
+
+  test("it goes to the side where it hides the fewest words", () => {
+    const T = { x: 560, y: 340, w: 100, h: 30 };
+    const right = [word(720, 330), word(800, 330), word(880, 345)];
+    assert(place.sideFor(T, D, 1, right, []).side === "left", "words to the right: it goes left");
+    const both = right.concat([word(100, 330), word(200, 345)]);
+    assert(place.sideFor(T, D, 1, both, []).side === "below", "words on both sides: below");
+    const three = both.concat([word(580, 420), word(660, 440)]);
+    assert(place.sideFor(T, D, 1, three, []).side === "above", "and below as well: above");
+    const fewest = three.concat([word(580, 250), word(660, 260), word(740, 250)]);
+    assert(place.sideFor(T, D, 1, fewest, []).side === "left", "words everywhere: the side with the fewest, the left's two");
+  });
+
+  test("words inside the target do not count, another callout counts for five words", () => {
+    const small = { x: 560, y: 340, w: 100, h: 30 };
+    // A long word that runs out past the target's right edge, where the
+    // callout would go. Centred on the target it is what the callout is
+    // about; centred beyond it, it is something the callout would hide.
+    assert(place.sideFor(small, D, 1, [word(500, 343, 220)], []).side === "right", "a word that is the target's own is not in the way");
+    assert(place.sideFor(small, D, 1, [word(640, 343, 220)], []).side === "left", "the same word further along is");
+    const left = [word(100, 330), word(200, 345), word(300, 330), word(400, 345)];
+    const callouts = [{ x: 700, y: 320, w: 300, h: 60 }, { x: 560, y: 410, w: 200, h: 40 }, { x: 560, y: 250, w: 200, h: 40 }];
+    assert(place.sideFor(small, D, 1, left, callouts).side === "left", "four words are less to hide than a callout on each other side");
+    assert(place.sideFor(small, D, 1, left.concat([word(120, 345), word(220, 330)]), callouts).side === "right",
+      "six words are more: a callout is hidden instead, the one on the right first");
+    assert(place.sideFor(small, D, 1, left, callouts.slice(0, 2)).side === "above", "and a side with nothing on it beats both");
+  });
+
+  test("a side with no room is not chosen, and the text wraps in the room there is", () => {
+    const nearRight = { x: 1100, y: 300, w: 120, h: 30 };
+    const s = place.sideFor(nearRight, D, 1, [], []);
+    assert(s.side === "left" && s.maxW === place.width(D), "no room to the right of a thing at the right edge: " + JSON.stringify(s));
+    // 300 px to the right: enough for most of the width, so it stays right
+    // and wraps narrower.
+    const some = place.sideFor({ x: 800, y: 300, w: 128, h: 30 }, D, 1, [], []);
+    assert(some.side === "right" && some.maxW === 1280 - 16 - (928 + 36), "the room there is: " + JSON.stringify(some));
+    // A target as wide as the slide, at the very bottom: only above is tall
+    // enough for two lines.
+    const wide = place.sideFor({ x: 20, y: 650, w: 1240, h: 60 }, D, 1, [], []);
+    assert(wide.side === "above", "a full-width target at the bottom: " + JSON.stringify(wide));
+    const everywhere = place.sideFor({ x: 0, y: 0, w: 1280, h: 720 }, D, 1, [], []);
+    assert(everywhere.side === "right" && everywhere.maxW === 120, "a target that is the whole slide still gets an answer, at the narrowest: " + JSON.stringify(everywhere));
+  });
+
+  test("CALLOUT_JS defines window.sdocCallout from the page's snapping, and decides the same", () => {
+    const page = {};
+    new Function("window", snap.SNAP_JS)(page);
+    new Function("window", CALLOUT_JS)(page);
+    const web = page.sdocCallout;
+    assert(web && typeof web.sideFor === "function" && typeof web.beside === "function", "window.sdocCallout is defined");
+    const T = { x: 560, y: 340, w: 100, h: 30 };
+    const words = [word(720, 330), word(800, 330), word(100, 330)];
+    assert(JSON.stringify(web.sideFor(T, D, 1, words, [])) === JSON.stringify(place.sideFor(T, D, 1, words, [])), "the same side");
+    assert(JSON.stringify(web.beside("left", T, size, D, 1)) === JSON.stringify(place.beside("left", T, size, D, 1)), "the same box");
+    let asked = 0;
+    const counting = createCalloutPlacement((a, b) => { asked++; return snap.overlap(a, b); });
+    counting.sideFor(T, D, 1, words, []);
+    assert(asked > 0, "overlap is the one it was handed, not one of its own");
+  });
+}
+
+// ============================================================
+console.log("\n--- Slide strokes (what has been drawn, and its messages) ---");
+{
+  const { createStrokes, STROKES_JS } = require("../src/slide-strokes.js");
+  const make = (unit) => createStrokes({ unit: () => unit || 1, pen: "#ef3434", highlight: "#ffd60a" });
+  const stroke = (id, slide, more) => ({ id, slide, tool: "pen", color: "#2b7cf6", size: 8, points: [[0, 0], [10, 10]], ...more });
+  const idsOn = (s, slide) => s.strokes(slide).map((x) => x.id).join();
+
+  test("strokes are kept per slide, in the order drawn", () => {
+    const s = make();
+    s.add(stroke("a", "1"));
+    s.add(stroke("b", "2.1"));
+    s.add(stroke("c", "1"));
+    assert(idsOn(s, "1") === "a,c" && idsOn(s, "2.1") === "b" && idsOn(s, "3") === "", "each on its own slide");
+    assert(s.count("1") === 2 && s.count() === 3 && s.count("3") === 0, "counted on a slide and in all");
+    assert(s.labels().sort().join() === "1,2.1", "the slides with ink: " + s.labels());
+    assert(s.get("b").slide === "2.1" && s.get("zz") === null, "found by id");
+    assert(idsOn(s, 1) === "a,c", "a slide given as a number is the same slide");
+    s.strokes("1").pop();
+    assert(s.count("1") === 2, "the list handed out is a copy");
+  });
+
+  test("a stroke from outside keeps only what a stroke should hold", () => {
+    const s = make();
+    const t = s.add({ id: 7, slide: 3, tool: "spray", color: "red; background: url(x)", size: -4,
+      points: [[1, 2], [NaN, 3], null, [4, 5, 0.5], ["6", 7], [8, 9, "x"]], rects: [{ x: 1, y: 2, w: -3, h: 4 }], onclick: "x", live: 1 });
+    assert(t.id === "7" && t.slide === "3", "its id and slide are strings");
+    assert(t.tool === "pen" && t.color === "#ef3434" && t.size === 5, "an unknown tool is a pen, a bad colour the pen's, a bad size the default");
+    assert(JSON.stringify(t.points) === "[[1,2],[4,5,0.5],[8,9]]", "points with a number missing are dropped: " + JSON.stringify(t.points));
+    assert(t.rects === null && t.live === true && t.rev === 0 && !("onclick" in t), "no bad boxes, nothing unknown");
+    assert(s.add(stroke("7", "1")) === null && s.count() === 1, "an id already held is not added again");
+    assert(s.add(null) === null && s.add({ slide: "1" }) === null && s.add({ id: "x" }) === null, "nor a stroke with no id or no slide");
+    assert(s.add({ id: "h", slide: "1", tool: "highlighter" }).color === "#ffd60a", "a highlighter that names no colour is the highlighter's");
+    assert(make(2).add({ id: "s", slide: "1" }).size === 10, "the default size is in the deck's design pixels");
+    const many = [];
+    for (let i = 0; i < 300; i++) many.push({ x: i, y: 0, w: 1, h: 1 });
+    assert(s.add(stroke("m", "1", { rects: many })).rects.length === 200, "no more than 200 boxes");
+    assert(s.isColour("#abc") && s.isColour("#A1B2C3"), "a colour is #rgb or #rrggbb");
+    for (const bad of ["blue", "#12", "#abcd", "#abcde", "#abcdef0", "#A1B2C3d4", "#ggg", "rgb(1,2,3)", null, undefined]) {
+      assert(!s.isColour(bad), "and nothing else: " + bad);
+    }
+  });
+
+  test("a slide or a stroke may be named anything", () => {
+    const s = make();
+    for (const name of ["__proto__", "constructor", "toString", "hasOwnProperty"]) {
+      const t = s.add(stroke(name, name));
+      assert(t && s.get(name) === t && idsOn(s, name) === name, name + " is kept like any other");
+    }
+    assert(s.count() === 4 && s.labels().length === 4, "all four, on four slides");
+    assert(s.get("valueOf") === null && s.count("valueOf") === 0, "and a name not added is not found");
+    assert(s.apply({ op: "remove", ids: ["__proto__", "constructor"] }).sort().join() === "__proto__,constructor" && s.count() === 2, "they go like any other");
+    assert(s.apply({ op: "clear" }).length === 2 && s.count() === 0, "and clear");
+  });
+
+  test("a callout holds its text, its width and what it points at", () => {
+    const s = make(2);
+    const c = s.add({ id: "c", slide: "1", tool: "callout", text: "x".repeat(3000), font: 30, maxW: 400, width: 250,
+      target: { x: 1, y: 2, w: 3, h: 4, extra: 1 }, side: "left", rects: [{ x: 5, y: 6, w: 7, h: 8 }] });
+    assert(c.text.length === 2000 && c.font === 30 && c.maxW === 400 && c.width === 250 && c.side === "left", "kept, the text cut at 2000");
+    assert(JSON.stringify(c.target) === JSON.stringify({ x: 1, y: 2, w: 3, h: 4 }), "the target is a box and nothing more");
+    const bare = s.add({ id: "d", slide: "1", tool: "callout", text: 5, side: "sideways", target: { x: "a" } });
+    assert(bare.text === "" && bare.font === 44 && bare.maxW === 1040 && bare.width === null && bare.target === null && bare.side === null,
+      "and one that says nothing gets the defaults, in design pixels: " + JSON.stringify(bare));
+    assert(!("text" in s.add(stroke("p", "1"))), "a pen has none of it");
+  });
+
+  test("wire is a copy that says everything, and adding it elsewhere gives the same stroke", () => {
+    const a = make(), b = make();
+    const c = a.add({ id: "c", slide: "2", tool: "callout", color: "#16a34a", size: 3, text: "hello", font: 22, maxW: 448, width: 300,
+      target: { x: 1, y: 2, w: 3, h: 4 }, side: "below", points: [[9, 9]], rects: [{ x: 5, y: 6, w: 7, h: 8 }] });
+    const w = a.wire(c);
+    assert(!("live" in w) && !("rev" in w), "nothing of this window's own goes");
+    w.points.push([1, 1]);
+    w.rects[0].x = 99;
+    w.target.x = 99;
+    assert(c.points.length === 1 && c.rects[0].x === 5 && c.target.x === 1, "the message can change without the stroke changing");
+    const again = b.add(a.wire(c));
+    assert(JSON.stringify(b.wire(again)) === JSON.stringify(a.wire(c)), "the other window holds the same");
+    const p = a.add(stroke("p", "1", { live: true }));
+    assert(a.wire(p).live === true && !("text" in a.wire(p)) && !("rects" in a.wire(p)), "a live pen stroke says so, and no more than it has");
+  });
+
+  test("the messages of a stroke: begin, add, end, replace", () => {
+    const s = make();
+    assert(s.apply({ op: "begin", stroke: stroke("a", "1") }).join() === "1" && s.get("a").live === true, "it begins live");
+    assert(s.apply({ op: "add", id: "a", points: [[20, 20], [null, 1], [30, 30]] }).join() === "1" && s.get("a").points.length === 4, "more points, the bad ones dropped");
+    assert(s.apply({ op: "end", id: "a", points: [[40, 40]] }).join() === "1" && s.get("a").live === false && s.get("a").points.length === 5, "it ends, with its last points");
+    assert(s.apply({ op: "add", id: "nobody", points: [[1, 1]] }).length === 0, "points for a stroke not held change nothing");
+    assert(s.apply({ op: "begin", stroke: stroke("a", "1") }).length === 0 && s.count() === 1, "nor does a stroke begun twice");
+    const touched = s.apply({ op: "replace", stroke: { id: "a", tool: "rect", color: "#000000", slide: "9", points: [[1, 1], [5, 5]], rects: [{ x: 1, y: 1, w: 4, h: 4 }] } });
+    const a = s.get("a");
+    assert(touched.join() === "1" && a.rev === 1 && a.points.length === 2 && a.rects.length === 1, "its final shape, and a new revision");
+    assert(a.tool === "pen" && a.color === "#2b7cf6" && a.slide === "1" && idsOn(s, "1") === "a", "only the shape changes: not its tool, colour or slide");
+    assert(s.apply({ op: "replace", stroke: { id: "nobody" } }).length === 0 && s.replace(null) === null, "a shape for a stroke not held is nothing");
+  });
+
+  test("the messages of a slide: remove, clear, and all of its ink at once", () => {
+    const s = make();
+    ["a", "b", "c"].forEach((id) => s.add(stroke(id, "1")));
+    s.add(stroke("d", "2"));
+    assert(s.apply({ op: "remove", ids: ["a", "d", "nobody"] }).sort().join() === "1,2" && idsOn(s, "1") === "b,c" && s.get("a") === null, "strokes go by id, across slides");
+    assert(s.labels().join() === "1", "a slide left empty is not a slide with ink");
+    assert(s.apply({ op: "slide", slide: "2", strokes: [stroke("x", "2"), stroke("y", "2")] }).join() === "2" && idsOn(s, "2") === "x,y", "a slide's ink, whole");
+    assert(s.apply({ op: "slide", slide: "2", strokes: [stroke("z", "2")] }).join() === "2" && idsOn(s, "2") === "z" && s.get("x") === null, "replaces what was held for it");
+    assert(s.apply({ op: "slide", slide: "2" }).join() === "2" && s.count("2") === 0, "with no strokes it empties the slide");
+    s.apply({ op: "slide", slide: "2", strokes: [stroke("m", "2"), stroke("n", "3")] });
+    assert(idsOn(s, "2") === "m" && s.get("n") === null && s.count("3") === 0, "a stroke in it that names another slide is not kept");
+    s.apply({ op: "slide", slide: "2" });
+    assert(s.apply({ op: "clear", slide: "1" }).join() === "1" && s.count("1") === 0 && s.get("b") === null, "clear takes one slide");
+    s.add(stroke("p", "3"));
+    s.add(stroke("q", "4"));
+    assert(s.apply({ op: "clear" }).sort().join() === "3,4" && s.count() === 0 && s.get("p") === null, "or with no slide, every one");
+    assert(s.apply({ op: "dance" }).length === 0 && s.apply(null).length === 0 && s.apply({ op: "begin" }).length === 0, "an unknown or empty message changes nothing");
+  });
+
+  test("two stores that exchange their messages end up the same", () => {
+    const here = make(), there = make();
+    const send = (m) => there.apply(JSON.parse(JSON.stringify(m)));
+    const a = here.add(stroke("p1", "1", { points: [[0, 0]] }));
+    a.live = true;
+    send({ op: "begin", stroke: here.wire(a) });
+    here.extend("p1", [[5, 5], [9, 9]]);
+    send({ op: "add", id: "p1", points: a.points.slice(1) });
+    a.live = false;
+    send({ op: "end", id: "p1" });
+    here.replace({ id: "p1", points: [], rects: [{ x: 0, y: 0, w: 9, h: 9 }] });
+    send({ op: "replace", stroke: here.wire(a) });
+    here.add(stroke("p2", "2"));
+    send({ op: "begin", stroke: here.wire(here.get("p2")) });
+    send({ op: "end", id: "p2" });
+    const dump = (s) => JSON.stringify(s.labels().sort().map((l) => s.strokes(l).map(s.wire)));
+    assert(dump(here) === dump(there), "after a stroke and its final shape: " + dump(there));
+    // A window that missed everything is sent the lot.
+    const late = make();
+    late.add(stroke("stale", "1"));
+    late.apply({ op: "clear" });
+    here.labels().forEach((l) => late.apply({ op: "slide", slide: l, strokes: here.strokes(l).map(here.wire) }));
+    assert(dump(late) === dump(here), "and after a clear and each slide's ink");
+  });
+
+  test("STROKES_JS defines the factory for the page, and it keeps the same", () => {
+    const page = {};
+    new Function("window", STROKES_JS)(page);
+    assert(typeof page.sdocStrokes === "function", "window.sdocStrokes is the factory");
+    const web = page.sdocStrokes({ unit: () => 1, pen: "#ef3434", highlight: "#ffd60a" }), mine = make();
+    const msgs = [{ op: "begin", stroke: stroke("a", "1") }, { op: "add", id: "a", points: [[3, 3]] }, { op: "end", id: "a" },
+      { op: "begin", stroke: { id: "c", slide: "1", tool: "callout", text: "hi" } }, { op: "remove", ids: ["a"] }];
+    for (const m of msgs) assert(JSON.stringify(web.apply(JSON.parse(JSON.stringify(m)))) === JSON.stringify(mine.apply(m)), m.op);
+    assert(JSON.stringify(web.strokes("1").map(web.wire)) === JSON.stringify(mine.strokes("1").map(mine.wire)), "the same strokes");
+  });
+}
+
+// ============================================================
+console.log("\n--- The deck runtimes, serialised ---");
+{
+  const modules = {
+    "slide-deck-kit.js": ["DECK_KIT_JS", "createDeckKit"],
+    "slide-ink.js": ["INK_JS", "createInk"],
+    "slide-snap.js": ["SNAP_JS", "createSnap"],
+    "slide-callout.js": ["CALLOUT_JS", "createCalloutPlacement"],
+    "slide-strokes.js": ["STROKES_JS", "createStrokes"],
+    "slide-annotate.js": ["ANNOTATE_JS", "createAnnotate"],
+    "slide-presenter.js": ["PRESENTER_JS", "createPresenter"],
+  };
+
+  // These read source text, which the rest of this suite avoids, because
+  // what they guard is a property of the text: each module reaches the page
+  // as the source of one function inside a script element. A function that
+  // was not the one tested here, or text that ended the element early,
+  // would break every deck and no call in Node would show it.
+  test("each is one function, serialised whole, and safe inside a script element", () => {
+    for (const file in modules) {
+      const mod = require("../src/" + file), [name, factory] = modules[file];
+      const js = mod[name];
+      assert(typeof js === "string" && js.includes(mod[factory].toString()), file + ": " + name + " carries " + factory + " as written");
+      // The page's parser ends a script at the first closing tag it sees,
+      // wherever in the JavaScript that is.
+      assert(!/<\/script|<!--/i.test(js), file + ": nothing in it closes or comments out the script element");
+      try { new Function(js); } catch (e) { throw new Error(file + " does not compile on its own: " + e.message); }
+    }
+  });
+
+  test("the drawing tools come up in a page from the serialised modules alone", () => {
+    // Each script run in order against one stand-in window, as the deck runs
+    // them: a module that reached for something it was not handed would
+    // throw here, or leave its name undefined for the next.
+    const page = { sdocDeckKit: { designBox: () => ({ w: 1280, h: 720 }) } };
+    for (const file of ["slide-ink.js", "slide-snap.js", "slide-callout.js", "slide-strokes.js", "slide-annotate.js"]) {
+      new Function("window", require("../src/" + file)[modules[file][0]])(page);
+    }
+    assert(page.sdocInk && page.sdocSnap && page.sdocCallout && typeof page.sdocStrokes === "function", "the four pure modules");
+    const tools = page.sdocAnnotate;
+    assert(tools && typeof tools.inkBook === "function" && typeof tools.inkTools === "function", "and the tools made of them");
+    // The book keeps strokes with the page's own store and hits them with
+    // the page's own ink: no drawing is asked for, so no document is needed.
+    const book = tools.inkBook(false);
+    book.add({ id: "a", slide: "1", tool: "pen", size: 8, points: [[0, 0], [100, 0]] });
+    assert(book.count("1") === 1 && book.get("a").color === "#ef3434", "a stroke is kept, in the first pen's colour");
+    assert(book.hit("1", [50, -20], [50, 20], 2).join() === "a" && book.hit("1", [50, 40], [50, 60], 2).length === 0, "and found by the eraser");
+  });
+}
+
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

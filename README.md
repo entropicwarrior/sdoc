@@ -19,13 +19,13 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 **A zero-dependency JavaScript parser** — `src/sdoc.js` parses SDOC into a format-neutral AST. No runtime dependencies, works anywhere Node runs. Parsing and rendering are cleanly separated — build your own renderers on top.
 
-**Slide deck generation** — turn any SDOC file into a slide deck with themes, structured layouts (columns, stats, pipeline, matrix, rows, bars, split, stack), speaker notes, mermaid diagrams, and export to PDF or PowerPoint / Google Slides via headless Chrome.
+**Slide deck generation** — turn any SDOC file into a slide deck with themes, structured layouts (columns, stats, pipeline, matrix, rows, bars, split, stack), speaker notes, mermaid diagrams, and export to PDF or PowerPoint / Google Slides via headless Chrome. Decks are built from this repository with `tools/build-slides.js` (the Marketplace extension does not build slides), and a built HTML deck is presented in a browser with a presenter view for your notes, an overview of every slide, and clicker support.
 
 **A document site builder** — serve a folder of SDOC files as a browsable site with sidebar navigation, search, and split-pane comparison.
 
 **PDF and HTML export** — export any document to A4 PDF via headless Chrome, or to standalone HTML. Available as both a CLI tool and a VS Code command.
 
-**A VS Code extension** — live preview, sticky scroll, code folding, document symbols, mermaid/SVG rendering, and commands for all the above.
+**A VS Code extension** — live preview that scrolls with the editor, sticky scroll, code folding, document symbols, mermaid/SVG rendering, and commands for all the above.
 
 ## Quick Start
 
@@ -60,6 +60,20 @@ node tools/build-slides.js deck.sdoc --check    # report slides whose content ov
 ```
 
 Each top-level scope becomes a slide. Set `type: slides` in `@meta`. See `docs/reference/slide-authoring.sdoc` for the full authoring guide.
+
+To present, open the HTML in a browser:
+
+| Key | What it does |
+|---|---|
+| Arrow keys, Space | Move between slides |
+| Page Down, Page Up | Forward and back, as a presentation clicker sends them |
+| `P` | Presenter view: a second window with your notes, a timer and the slides around the current one |
+| `O` | Overview of every slide |
+| `T` | Strip of thumbnails along the bottom edge |
+| `F` | Full screen |
+| `D` `H` `R` `A` `L` `E` | Draw on the slide: pen, highlighter, rectangle, callout, laser, eraser |
+
+The presenter view, drawing, and the gestures for a touchscreen are described in [the slide authoring guide](docs/reference/slide-authoring.sdoc), under The Presenter View and Navigation Controls.
 
 `--artifact` writes the folder `deck.artifact/` rather than a file; the skill at `skills/sdoc-artifact/` publishes it to claude.ai and pulls a collaborator's edits back into the `.sdoc`.
 
@@ -205,7 +219,7 @@ Tag any section with `@id` and cross-reference it anywhere with `@id` — render
 
 ### Slides
 
-Turn any SDOC file into a slide deck with themes, structured layouts, speaker notes, and export to PDF or PowerPoint / Google Slides.
+Turn any SDOC file into a slide deck with themes, structured layouts, speaker notes, and export to PDF or PowerPoint / Google Slides. Present it in a browser with a presenter view that shows your notes and the slides around the current one, an overview of the whole deck, and clicker support.
 
 ### Scope Types
 
@@ -245,7 +259,10 @@ This project uses **Git Flow**:
 **To contribute:**
 
 1. Create a branch off `develop` (`feat/my-feature`, `fix/parser-bug`, etc.)
-2. Make your changes, commit, push
+2. Make your changes, run the tests, commit, push
+   - `npm test` runs the fast suites: about a second, no browser
+   - `npm run test:all` adds the browser suites, which need Google Chrome
+   - Without Chrome the browser tests are reported as skipped, not failed; `SDOC_SKIP_BROWSER=1` skips them deliberately
 3. Open a PR targeting `develop`
 4. Get one approval from another contributor
 5. Merge (squash or regular — your call)

@@ -120,6 +120,18 @@
     }
   }
 
+  // Space backwards: up a drill-down column one detail at a time, otherwise
+  // to the previous spine slide.
+  function retreatStep() {
+    if (cur.d > 0) {
+      show(cur.s, cur.d - 1);
+      return;
+    }
+    if (cur.s > 0) {
+      show(cur.s - 1, 0);
+    }
+  }
+
   function downStep() {
     var col = columns[cur.s] || [];
     if (cur.d < col.length - 1) {
@@ -137,6 +149,10 @@
   }
 
   document.addEventListener("keydown", function (e) {
+    // A key typed into a text field is text, not navigation: Space and the
+    // arrows in a presenter's callout must not turn the slide.
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
     if (e.key === "ArrowRight") {
       e.preventDefault();
       nextStep();
@@ -152,6 +168,14 @@
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       upStep();
+    } else if (e.key === "PageDown") {
+      // A presentation clicker's forward button. Presentation order, as
+      // Space: on through a drill-down column once you are in one.
+      e.preventDefault();
+      advanceStep();
+    } else if (e.key === "PageUp") {
+      e.preventDefault();
+      retreatStep();
     } else if (e.key === "Home") {
       e.preventDefault();
       show(0, 0);
