@@ -130,9 +130,9 @@ node tools/build-doc.js input.sdoc --fix              # put the signposts in ord
         scope becomes one slide. See
         [Slide Authoring](slide-authoring.sdoc) for the deck format and the layouts.
 
-        An HTML deck is presented in a browser. Besides the arrow keys,
-        `O` opens an overview of every slide, `T` a strip of thumbnails
-        and `F` full screen. See
+        An HTML deck is presented in a browser. Besides the arrow keys and a
+        clicker's Page Down and Page Up, `O` opens an overview of every
+        slide, `T` a strip of thumbnails and `F` full screen. See
         [Navigation Controls](slide-authoring.sdoc#navigation).
 
         ```bash
