@@ -20,6 +20,17 @@ const {
   CONNECTOR_JS,
   CONNECTOR_CSS,
 } = require("./slide-connectors");
+// The deck's shared kit, the presenter view and the drawing tools. Each
+// module is written as ordinary JavaScript and serialised into the deck with
+// toString(), the way the connector routing is; ink, snap, callout and
+// strokes are pure and unit-tested in Node.
+const { DECK_KIT_JS } = require("./slide-deck-kit");
+const { INK_JS } = require("./slide-ink");
+const { SNAP_JS } = require("./slide-snap");
+const { CALLOUT_JS } = require("./slide-callout");
+const { STROKES_JS } = require("./slide-strokes");
+const { ANNOTATE_JS } = require("./slide-annotate");
+const { PRESENTER_JS } = require("./slide-presenter");
 
 // ---------------------------------------------------------------------------
 // Image inlining
@@ -890,8 +901,10 @@ const FILMSTRIP_JS = `
   var spine = slides.filter(function (s) {
     return (s.getAttribute("data-detail") || "0") === "0";
   });
-  // One slide is not a story, and nothing about it is worth a strip.
-  if (spine.length < 2) return;
+  // One slide is not a story, and nothing about it is worth a strip. Nor in
+  // the presenter window, whose stage already shows the slides either side:
+  // a strip there would open out of sight beneath it.
+  if (spine.length < 2 || window.sdocDeckKit.presenter) return;
 
   var HOVER_BAND = 64;
   var strip = document.createElement("div");
@@ -1147,9 +1160,7 @@ const FILMSTRIP_JS = `
   }
 
   document.addEventListener("keydown", function (e) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    var t = e.target;
-    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || window.sdocDeckKit.editable(e.target)) return;
     if ((e.key || "").toLowerCase() !== KEY) return;
     // Behind the overview it would switch on unseen and turn up on closing.
     if (window.sdocOverview && window.sdocOverview.isOpen()) return;
@@ -1294,6 +1305,7 @@ const MOTION_JS = `
 })();
 `;
 
+
 // Full screen on F. Structural for the same reason the filmstrip is: every
 // theme would otherwise write the same ten lines. A page that may not go full
 // screen — an iframe without allowfullscreen, a webview — rejects the request,
@@ -1303,6 +1315,7 @@ const MOTION_JS = `
 const FULLSCREEN_JS = `
 (function () {
   var KEY = "f";
+  var kit = window.sdocDeckKit;
   var root = document.documentElement;
 
   function current() {
@@ -1318,33 +1331,20 @@ const FULLSCREEN_JS = `
     return Promise.reject(new Error("unsupported"));
   }
 
-  var hint = null, hintTimer = null;
-  function say(text) {
-    if (!hint) {
-      hint = document.createElement("div");
-      hint.className = "sdoc-deck-hint";
-      document.body.appendChild(hint);
-    }
-    hint.textContent = text;
-    hint.classList.add("is-shown");
-    clearTimeout(hintTimer);
-    hintTimer = setTimeout(function () { hint.classList.remove("is-shown"); }, 1600);
-  }
+  function refused() { kit.say("Full screen is not available here", 1600); }
 
   document.addEventListener("keydown", function (e) {
-    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
-    var t = e.target;
-    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || kit.editable(e.target)) return;
     if ((e.key || "").toLowerCase() !== KEY) return;
     e.preventDefault();
     var going = current()
       ? call(document, ["exitFullscreen", "webkitExitFullscreen"])
       : call(root, ["requestFullscreen", "webkitRequestFullscreen"]);
-    going.catch(function () { say("Full screen is not available here"); });
+    going.catch(refused);
   });
   // Safari refuses by event rather than by rejecting the request.
   ["fullscreenerror", "webkitfullscreenerror"].forEach(function (type) {
-    document.addEventListener(type, function () { say("Full screen is not available here"); });
+    document.addEventListener(type, refused);
   });
 })();
 `;
@@ -1380,10 +1380,9 @@ const OVERVIEW_JS = `
 
   // ---- What each cell says -------------------------------------------------
 
-  function textOf(slide, sel) {
-    var el = slide.querySelector(sel);
-    return el ? el.textContent.replace(/\\s+/g, " ").trim() : "";
-  }
+  // Shared with the presenter view; see src/slide-deck-kit.js.
+  var kit = window.sdocDeckKit;
+  var textOf = kit.textOf;
   function detailsUnder(slide) {
     var s = slide.getAttribute("data-spine");
     if (!s) return 0;
@@ -1402,12 +1401,7 @@ const OVERVIEW_JS = `
     };
   });
 
-  // The originals, never the clones: a clone carries .active too, so a
-  // document-wide query for the active slide would find whichever came first.
-  function activeSlide() {
-    for (var i = 0; i < slides.length; i++) if (slides[i].classList.contains("active")) return slides[i];
-    return null;
-  }
+  var activeSlide = kit.activeSlide;
   function currentIndex() {
     var active = activeSlide();
     if (!active) return 0;
@@ -1422,16 +1416,7 @@ const OVERVIEW_JS = `
   }
   function goTo(i) { window.location.hash = String(i + 1); }
 
-  // The design box, from a laid-out slide for the reason theme.js gives: a
-  // custom property is not resolved to px, and offsetWidth ignores transforms.
-  function designBox() {
-    var el = activeSlide();
-    if (el && el.offsetWidth > 0 && el.offsetHeight > 0) return { w: el.offsetWidth, h: el.offsetHeight };
-    var cs = getComputedStyle(document.documentElement);
-    var w = parseFloat(cs.getPropertyValue("--sdoc-slide-w"));
-    var h = parseFloat(cs.getPropertyValue("--sdoc-slide-h"));
-    return { w: w > 0 ? w : 1280, h: h > 0 ? h : 720 };
-  }
+  var designBox = kit.designBox;
 
   // ---- Motion --------------------------------------------------------------
 
@@ -1448,36 +1433,8 @@ const OVERVIEW_JS = `
     return e;
   }
 
-  // A miniature is the slide's own markup, made inert and scaled. It keeps
-  // .active, because that is the class every theme uses to show a slide, and
-  // whatever the theme does to the slide on screen is what the miniature
-  // should look like.
-  function miniature(slide) {
-    var box = el("div", "sdoc-overview-mini");
-    var c = slide.cloneNode(true);
-    c.classList.add("active");
-    c.setAttribute("aria-hidden", "true");
-    c.setAttribute("inert", "");
-    box.appendChild(c);
-    return box;
-  }
-  function sizeMiniature(box, w, h) {
-    box.style.width = w + "px";
-    box.style.height = h + "px";
-    box.style.setProperty("--sdoc-overview-k", String(w / design.w));
-  }
-  // Once it is in the page and measurable. A connector is drawn by the
-  // runtime against laid-out boxes, and a slide nobody has visited yet has
-  // never been drawn, so its clone is drawn here. Handed over whole: the
-  // connector runtime decides what in it is a connector, and it is only on
-  // the page when the deck has one. A later redraw of the whole document
-  // reaches the clones too, which is harmless — positions are in design
-  // pixels, the same at any scale.
-  function settleMiniature(box) {
-    if (window.sdocConnectors && box.firstChild) {
-      try { window.sdocConnectors.resolve(box.firstChild); } catch (err) {}
-    }
-  }
+  var miniature = kit.miniature, settleMiniature = kit.settleMiniature;
+  function sizeMiniature(box, w, h) { kit.sizeMiniature(box, w, h, design.w); }
 
   var overlay = null, backdrop = null, grid = null, legend = null;
   var cells = [], cols = 1, design = null, captionH = 0;
@@ -1539,10 +1496,11 @@ const OVERVIEW_JS = `
     });
     overlay.addEventListener("scroll", function () {
       if (keyScroll) {
-        // The grid scrolled to bring the chosen cell into view. Its pending
-        // preview stands; only one already up, now in the wrong place, goes.
+        // The grid scrolled to bring the chosen cell into view. A larger
+        // copy already up is now in the wrong place, and goes; where the
+        // pointer rests is as it was.
         keyScroll = false;
-        if (peek) { var keep = peekTimer; peekTimer = null; hidePeek(); peekTimer = keep; }
+        hidePeek();
         return;
       }
       hidePeek();
@@ -1722,7 +1680,10 @@ const OVERVIEW_JS = `
         overlay.scrollTop = to;
         if (overlay.scrollTop !== before) keyScroll = true;
       }
-      armPeek(i);
+      // The larger copy is the pointer's: resting on a cell asks for it. A
+      // cell chosen with the keys gets its ring and nothing more, and a copy
+      // the pointer had asked for a moment ago is no longer wanted.
+      disarmPeek();
     }
   }
   function focusHot() {
@@ -1877,8 +1838,7 @@ const OVERVIEW_JS = `
       // somebody choosing one. Which cell it is on is asked now, not taken
       // from mid-flight — the slide you were on shrinks across half the
       // window on its way in, and was under the pointer for most of it.
-      if (keyed) armPeek(hot);
-      else if (stirred) {
+      if (!keyed && stirred) {
         hover = cellAt(px, py);
         if (hover !== -1) { setHot(hover, false); armPeek(hover); }
       }
@@ -2046,9 +2006,7 @@ const OVERVIEW_JS = `
   // listener on the document, so while the overview is up an arrow key moves
   // through the grid instead of turning the slide underneath it.
   window.addEventListener("keydown", function (e) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    var t = e.target;
-    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || kit.editable(e.target)) return;
     var k = e.key || "";
     // Mid-pull the keys belong to the gesture — this one or the strip's.
     if (pulling || document.documentElement.classList.contains("sdoc-pulling")) return;
@@ -2120,6 +2078,9 @@ const GESTURE_JS = `
 (function () {
   var overview = window.sdocOverview, film = window.sdocFilmstrip;
   if (!overview && !film) return;
+  // The presenter window has a bar at its top and notes at its bottom; a
+  // pull there is a click on them.
+  if (window.sdocDeckKit.presenter) return;
   var motion = window.sdocMotion;
   var root = document.documentElement;
 
@@ -2154,8 +2115,11 @@ const GESTURE_JS = `
     return null;
   }
   function excluded(target) {
+    // While a drawing tool is chosen a press on the slide is ink, and the
+    // tools themselves are not the slide either.
+    if (root.classList.contains("sdoc-inking")) return true;
     return !!(target && target.closest &&
-      target.closest(".sdoc-overview, .sdoc-filmstrip, input, textarea, select, [contenteditable]"));
+      target.closest(".sdoc-overview, .sdoc-filmstrip, .sdoc-deck-ink, input, textarea, select, [contenteditable]"));
   }
 
   // A handle at the edge when the pointer rests in a band, so the gesture
@@ -2810,13 +2774,17 @@ function renderSlides(nodes, options = {}) {
 /* No :hover here. The runtime decides which cell the pointer has chosen
    from movement, and a ring on whatever sits under a resting pointer would
    mark a second cell beside the one the keys chose. */
-.sdoc-overview-cell.is-hot .sdoc-overview-mini {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), var(--sdoc-overview-stack),
+.sdoc-overview-cell.is-current .sdoc-overview-mini {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), var(--sdoc-overview-stack),
               0 8px 26px rgba(0, 0, 0, 0.5);
 }
-.sdoc-overview-cell.is-current .sdoc-overview-mini {
-  box-shadow: 0 0 0 3px #fff, var(--sdoc-overview-stack),
-              0 8px 26px rgba(0, 0, 0, 0.5);
+/* The chosen cell, which Enter goes to, is the loud one: a thick ring in a
+   colour no other cell has and a halo round it, so it is found at a glance
+   as the arrow keys move it. The slide on show keeps a thinner white ring.
+   This rule comes second: a cell that is both shows as chosen. */
+.sdoc-overview-cell.is-hot .sdoc-overview-mini {
+  box-shadow: 0 0 0 4px #3b9eff, 0 0 0 9px rgba(59, 158, 255, 0.32),
+              var(--sdoc-overview-stack), 0 8px 26px rgba(0, 0, 0, 0.5);
 }
 /* The miniature: the real slide at its design size, scaled from its corner.
    Everything a theme might do to place or hide a slide is undone here. */
@@ -2861,7 +2829,8 @@ function renderSlides(nodes, options = {}) {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.sdoc-overview-cell.is-current .sdoc-overview-caption { color: #fff; }
+.sdoc-overview-cell.is-current .sdoc-overview-caption,
+.sdoc-overview-cell.is-hot .sdoc-overview-caption { color: #fff; }
 .sdoc-overview-legend {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
   padding: 10px 16px 10px;
@@ -2872,6 +2841,340 @@ function renderSlides(nodes, options = {}) {
   background: linear-gradient(rgba(14, 14, 16, 0), rgba(14, 14, 16, 0.92) 45%);
   pointer-events: none;
 }
+/* Presenter view (P): the deck opened again in a second window and laid out
+   for the speaker. Above the deck's own slides, which are still there and
+   still navigated by the theme; below the overview, which O opens over it. */
+html.sdoc-presenting body { overflow: hidden; }
+.sdoc-presenter {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) 18px minmax(0, var(--sdoc-presenter-notes, 38%));
+  row-gap: 0; column-gap: 14px; padding: 12px 18px 18px;
+  box-sizing: border-box;
+  background: #0f0f11; color: #eaeaea;
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+/* The bar across the top; the drawing tools in a column down the left of
+   everything below it, so they sit in one place whatever the stage and the
+   divider are doing. */
+.sdoc-presenter-bar { grid-column: 1 / -1; grid-row: 1; }
+.sdoc-ink-tools { grid-column: 1; grid-row: 2 / -1; }
+.sdoc-presenter-stage { grid-column: 2; grid-row: 2; }
+.sdoc-presenter-split { grid-column: 2; grid-row: 3; }
+.sdoc-presenter-notes { grid-column: 2; grid-row: 4; }
+/* One height for every control in the bar, so they line up on both sides. */
+.sdoc-presenter-bar {
+  --sdoc-presenter-control: 38px;
+  display: flex; align-items: center; gap: 12px; min-height: 44px;
+  margin-bottom: 12px;
+}
+/* The divider between the slides and the notes: a grip to drag. */
+.sdoc-presenter-split {
+  display: flex; align-items: center; justify-content: center;
+  cursor: row-resize; touch-action: none; outline: none;
+}
+.sdoc-presenter-grip {
+  width: 56px; height: 4px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  transition: background-color 120ms, width 120ms;
+}
+.sdoc-presenter-split:hover .sdoc-presenter-grip,
+.sdoc-presenter-split.is-dragging .sdoc-presenter-grip,
+.sdoc-presenter-split:focus-visible .sdoc-presenter-grip { background: rgba(255, 255, 255, 0.6); width: 80px; }
+.sdoc-presenter-bar button {
+  appearance: none; -webkit-appearance: none; margin: 0;
+  box-sizing: border-box; height: var(--sdoc-presenter-control);
+  display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; color: inherit; line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px;
+  padding: 0 12px; cursor: pointer;
+}
+.sdoc-presenter-bar button:hover { background: rgba(255, 255, 255, 0.15); }
+.sdoc-presenter-bar .sdoc-presenter-start {
+  background: #2f7d4f; border-color: #45a46b; color: #fff;
+  font-weight: 600; padding: 0 18px;
+}
+.sdoc-presenter-bar .sdoc-presenter-start:hover { background: #379259; }
+/* A control that does not apply now is disabled in place, never hidden, so
+   the bar never shifts under the pointer. */
+.sdoc-presenter-bar button:disabled {
+  opacity: 0.35; cursor: default; pointer-events: none;
+}
+.sdoc-presenter-bar .sdoc-presenter-timer {
+  font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums;
+  min-width: 96px; text-align: center;
+}
+/* Wide enough for both of its labels, so asking to confirm moves nothing. */
+.sdoc-presenter-bar .sdoc-presenter-reset { min-width: 9.5em; }
+.sdoc-presenter.is-paused .sdoc-presenter-timer { color: #f2c94c; }
+.sdoc-presenter-bar .sdoc-presenter-reset.is-armed {
+  background: #8a2b2b; border-color: #b84242; color: #fff;
+}
+.sdoc-presenter-status { color: rgba(255, 255, 255, 0.62); }
+/* Before Start the projector does not follow, and that must not be missed. */
+.sdoc-presenter-status.is-waiting { color: #f2c94c; font-weight: 600; }
+.sdoc-presenter-gap { flex: 1; }
+/* The counter, the clock and the notes size: three widgets, boxed and sized
+   like the buttons on the left. */
+.sdoc-presenter-count, .sdoc-presenter-clock, .sdoc-presenter-sizes {
+  box-sizing: border-box; height: var(--sdoc-presenter-control);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.sdoc-presenter-count, .sdoc-presenter-clock {
+  padding: 0 12px;
+  font-size: 18px; line-height: 1; font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.86);
+}
+/* Room for the longest counter ("12.3 / 40"), so a slide change never
+   nudges it. */
+.sdoc-presenter-count { min-width: 6.5em; }
+.sdoc-presenter-sizes { overflow: hidden; padding: 0; }
+.sdoc-presenter-bar .sdoc-presenter-sizes button {
+  height: 100%; border: 0; border-radius: 0; background: transparent;
+}
+.sdoc-presenter-bar .sdoc-presenter-sizes button:hover { background: rgba(255, 255, 255, 0.12); }
+.sdoc-presenter-bar .sdoc-presenter-sizes button + button { border-left: 1px solid rgba(255, 255, 255, 0.16); }
+/* Previous, current and next across; the next drill-down under the current
+   slide — the way the arrow keys move. The runtime sizes each frame, the
+   current slide first; the grid only places them. */
+.sdoc-presenter-stage {
+  position: relative;
+  display: grid; min-height: 0; overflow: hidden;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: auto auto auto;
+  align-content: center;
+  column-gap: 18px; row-gap: 14px;
+}
+/* Focus (Z, or a click on the current slide): that slide alone, centred on
+   the stage at the size the runtime gives it. Only the stage changes; the
+   bar and the notes are outside it. */
+.sdoc-presenter.is-focused .sdoc-presenter-stage {
+  display: flex; align-items: center; justify-content: center;
+}
+.sdoc-presenter.is-focused .sdoc-presenter-slot:not(.is-current),
+.sdoc-presenter.is-focused .sdoc-presenter-slot.is-current .sdoc-presenter-label { display: none; }
+/* Above the others, which it crosses on its way back into its place. */
+.sdoc-presenter-slot.is-current { position: relative; z-index: 1; }
+.sdoc-presenter-slot.is-current .sdoc-presenter-frame { cursor: zoom-in; }
+.sdoc-presenter.is-focused .sdoc-presenter-slot.is-current .sdoc-presenter-frame { cursor: zoom-out; }
+/* One place and one size in both states; only its icon changes. */
+.sdoc-presenter-focus {
+  position: absolute; z-index: 2; left: 0; top: 0;
+  box-sizing: border-box; width: 30px; height: 30px; margin: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  appearance: none; -webkit-appearance: none;
+  background: rgba(15, 15, 17, 0.72); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 7px;
+  cursor: pointer; opacity: 0.78;
+  transition: opacity 120ms, background-color 120ms;
+}
+.sdoc-presenter-focus:hover, .sdoc-presenter-focus:focus-visible { opacity: 1; background: rgba(44, 44, 48, 0.92); }
+.sdoc-presenter-focus svg, .sdoc-presenter-chevron svg {
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+}
+.sdoc-presenter-focus .is-collapse,
+.sdoc-presenter.is-focused .sdoc-presenter-focus .is-expand { display: none; }
+.sdoc-presenter.is-focused .sdoc-presenter-focus .is-collapse { display: block; }
+/* Where the arrow keys lead from the focused slide: a tab just inside each
+   edge that has a neighbour, small enough to sit in the slide's margin. */
+.sdoc-presenter-chevron {
+  position: absolute; z-index: 2; display: none;
+  box-sizing: border-box; margin: 0; padding: 0;
+  align-items: center; justify-content: center;
+  appearance: none; -webkit-appearance: none;
+  background: rgba(15, 15, 17, 0.62); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 999px;
+  cursor: pointer; opacity: 0.72;
+  transition: opacity 120ms;
+}
+.sdoc-presenter-chevron:hover { opacity: 1; }
+.sdoc-presenter.is-focused .sdoc-presenter-chevron.is-on { display: flex; }
+.sdoc-presenter-chevron.is-left, .sdoc-presenter-chevron.is-right { top: 50%; width: 24px; height: 44px; margin-top: -22px; }
+.sdoc-presenter-chevron.is-up, .sdoc-presenter-chevron.is-down { left: 50%; width: 44px; height: 24px; margin-left: -22px; }
+.sdoc-presenter-chevron.is-left { left: 8px; }
+.sdoc-presenter-chevron.is-right { right: 8px; }
+.sdoc-presenter-chevron.is-up { top: 8px; }
+.sdoc-presenter-chevron.is-down { bottom: 8px; }
+.sdoc-presenter-slot { display: flex; flex-direction: column; min-width: 0; }
+.sdoc-presenter-slot.is-up { grid-column: 2; grid-row: 1; justify-self: center; }
+.sdoc-presenter-slot.is-prev { grid-column: 1; grid-row: 2; justify-self: end; align-self: center; }
+.sdoc-presenter-slot.is-current { grid-column: 2; grid-row: 2; }
+.sdoc-presenter-slot.is-next { grid-column: 3; grid-row: 2; justify-self: start; align-self: center; }
+.sdoc-presenter-slot.is-down { grid-column: 2; grid-row: 3; justify-self: center; }
+/* The slide above: its bottom edge, fading out upwards. */
+.sdoc-presenter-slot.is-up .sdoc-presenter-frame {
+  align-items: flex-end; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 70%);
+  mask-image: linear-gradient(to bottom, transparent, #000 70%);
+}
+.sdoc-presenter-slot.is-up .sdoc-overview-mini { flex: none; }
+.sdoc-presenter-slot.is-up.is-empty { visibility: hidden; }
+.sdoc-presenter-label {
+  height: 20px; margin-bottom: 6px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5); white-space: nowrap;
+}
+.sdoc-presenter-frame {
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+}
+.sdoc-presenter-slot:not(.is-current):not(.is-empty) .sdoc-presenter-frame { cursor: pointer; }
+.sdoc-presenter-slot.is-current .sdoc-overview-mini {
+  box-shadow: 0 0 0 2px #fff, 0 10px 32px rgba(0, 0, 0, 0.55);
+}
+.sdoc-presenter-slot:not(.is-current) .sdoc-overview-mini { opacity: 0.88; transition: opacity 120ms; }
+.sdoc-presenter-slot:not(.is-current) .sdoc-presenter-frame:hover .sdoc-overview-mini { opacity: 1; }
+.sdoc-presenter-none { color: rgba(255, 255, 255, 0.38); font-style: italic; margin: 0; white-space: nowrap; }
+.sdoc-presenter-notes {
+  min-height: 0; overflow: auto;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 10px;
+  padding: 18px 26px;
+  font-size: var(--sdoc-presenter-notes-size, 30px); line-height: 1.45;
+}
+/* The notes are the deck's own markup; the theme's type sizes and colours
+   are for slides, not for this. */
+.sdoc-presenter-notes-body :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th) {
+  font-size: 1em; color: inherit; margin: 0 0 0.5em; line-height: inherit;
+}
+.sdoc-presenter-notes-body :is(ul, ol) { margin: 0 0 0.5em; padding-left: 1.2em; }
+.sdoc-presenter-notes-body :is(strong, b) { color: #fff; }
+/* The drawing tools. Every one is always there, at one size; the chosen
+   tool and pen colour are marked, and what does not apply is disabled. */
+.sdoc-ink-tools {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
+}
+.sdoc-ink-tools button {
+  position: relative; flex: none;
+  box-sizing: border-box; width: 40px; height: 40px; margin: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  appearance: none; -webkit-appearance: none;
+  font: inherit; color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 8px;
+  cursor: pointer;
+}
+.sdoc-ink-tools button:hover { background: rgba(255, 255, 255, 0.14); }
+.sdoc-ink-tools button.is-on {
+  background: rgba(255, 255, 255, 0.2); border-color: #fff; color: #fff;
+}
+.sdoc-ink-tools button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+.sdoc-ink-tools button.is-armed { background: #8a2b2b; border-color: #b84242; color: #fff; }
+.sdoc-ink-tools svg {
+  width: 20px; height: 20px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.sdoc-ink-tool.is-pen svg, .sdoc-ink-tool.is-rect svg, .sdoc-ink-tool.is-callout svg { color: var(--sdoc-ink-pen, #ef3434); }
+/* A callout being typed: over its box on the current slide, scaled with
+   it, so the text and the caret sit exactly where the text will be drawn. */
+.sdoc-ink-editor { position: fixed; z-index: 4; left: 0; top: 0; transform-origin: 0 0; }
+.sdoc-ink-editor[hidden] { display: none; }
+/* The handle that makes a callout wider or narrower, on its side edge. */
+.sdoc-ink-handle {
+  position: fixed; z-index: 5; left: 0; top: 0; box-sizing: border-box;
+  width: 10px; height: 24px; border-radius: 5px;
+  background: #fff; border: 2px solid var(--sdoc-callout-pen, #ef3434);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  cursor: ew-resize; touch-action: none;
+}
+.sdoc-ink-handle[hidden] { display: none; }
+.sdoc-ink-tool[data-key]::after {
+  content: attr(data-key);
+  position: absolute; right: 3px; bottom: 2px;
+  font-size: 9px; line-height: 1; font-weight: 600; color: rgba(255, 255, 255, 0.5);
+}
+.sdoc-ink-swatch-dot {
+  width: 18px; height: 18px; border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+.sdoc-ink-tools-rule { flex: none; width: 24px; height: 1px; margin: 3px 0; background: rgba(255, 255, 255, 0.16); }
+.sdoc-ink-swatch[aria-expanded="true"], .sdoc-ink-tool[aria-expanded="true"] { border-color: #fff; }
+.sdoc-ink-tool.is-highlighter svg { color: var(--sdoc-ink-highlight, #ffd60a); }
+/* A pen's colours, on a double-click: beside the column and over the stage,
+   placed by the runtime, so nothing under it moves. */
+.sdoc-ink-colours {
+  position: fixed; z-index: 5; left: 0; top: 0;
+  box-sizing: border-box; width: max-content; padding: 10px 12px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  background: #1d1d21; color: #eaeaea;
+  border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  font-size: 13px; line-height: 1.2;
+}
+.sdoc-ink-colours[hidden] { display: none; }
+/* The notch, pointing back at the colour being changed. */
+.sdoc-ink-colours::before {
+  content: ""; position: absolute; left: -6px; top: var(--sdoc-ink-colours-notch, 50%);
+  width: 10px; height: 10px; margin-top: -5px;
+  background: inherit; border: inherit; border-width: 0 0 1px 1px; border-radius: 0 0 0 2px;
+  transform: rotate(45deg);
+}
+.sdoc-ink-colours-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+.sdoc-ink-colours-grid { display: grid; grid-template-columns: repeat(4, 28px); gap: 9px; }
+.sdoc-ink-colours-preset, .sdoc-ink-colours-input {
+  appearance: none; -webkit-appearance: none;
+  box-sizing: border-box; width: 28px; height: 28px; margin: 0; padding: 0;
+  border: 2px solid #1d1d21; border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+}
+.sdoc-ink-colours-preset:hover, .sdoc-ink-colours-input:hover { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8); }
+.sdoc-ink-colours-preset.is-on { box-shadow: 0 0 0 2px #fff; }
+.sdoc-ink-colours-other { display: flex; align-items: center; gap: 9px; cursor: pointer; color: rgba(255, 255, 255, 0.78); }
+.sdoc-ink-colours-other:hover { color: #fff; }
+.sdoc-ink-colours-input { overflow: hidden; background: none; }
+.sdoc-ink-colours-input::-webkit-color-swatch-wrapper { padding: 0; }
+.sdoc-ink-colours-input::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.sdoc-ink-colours-input::-moz-color-swatch { border: 0; border-radius: 50%; }
+/* With a tool chosen, a press on the current slide draws: no zoom cursor,
+   no selection, and a pen or a finger does not pan. */
+.sdoc-presenter.is-inking .sdoc-presenter-slot.is-current .sdoc-presenter-frame,
+.sdoc-presenter.is-focused.is-inking .sdoc-presenter-slot.is-current .sdoc-presenter-frame {
+  cursor: crosshair; touch-action: none;
+  user-select: none; -webkit-user-select: none;
+}
+/* Drawing in the deck's own window: the presenter's palette over the left
+   edge, up only while it is wanted, above the slides and below the strip
+   and the overview. Nothing under it moves when it comes and goes. While a
+   tool is chosen, the face takes every press on the page, so none of them
+   turns the slide. */
+.sdoc-deck-ink {
+  position: fixed; inset: 0; z-index: 40; pointer-events: none;
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: #eaeaea;
+}
+.sdoc-deck-ink > * { pointer-events: auto; }
+.sdoc-deck-ink-face {
+  position: fixed; inset: 0; display: none;
+  cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+html.sdoc-inking .sdoc-deck-ink-face { display: block; }
+.sdoc-deck-tools {
+  position: fixed; left: 10px; top: 50%; transform: translateY(-50%);
+  box-sizing: border-box; max-height: calc(100vh - 20px); display: flex;
+  padding: 8px 6px; border-radius: 12px;
+  background: rgba(18, 18, 20, 0.9); border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  visibility: hidden; opacity: 0;
+}
+.sdoc-deck-ink.is-shown .sdoc-deck-tools { visibility: visible; opacity: 1; transition: opacity 160ms; }
+/* The ink itself: an overlay in the slide, in its design pixels, above
+   everything on it and never in the way of a click. */
+.slide > svg.sdoc-ink {
+  position: absolute !important; left: 0 !important; top: 0 !important;
+  width: 100% !important; height: 100% !important;
+  margin: 0 !important; z-index: 1000; pointer-events: none !important; overflow: hidden;
+}
+
 /* Pull from an edge: down from the top for the overview, up from the bottom
    for the filmstrip. Screen-only, like the rest of the deck's chrome. */
 html, body { overscroll-behavior: none; }
@@ -2978,6 +3281,9 @@ html.sdoc-pulling.sdoc-pull-armed, html.sdoc-pulling.sdoc-pull-armed * {
   .sdoc-filmstrip, .sdoc-filmstrip-hint { display: none !important; }
   .sdoc-overview, .sdoc-deck-hint { display: none !important; }
   .sdoc-pull-handle { display: none !important; }
+  .sdoc-presenter { display: none !important; }
+  .sdoc-deck-ink { display: none !important; }
+  .sdoc-ink { display: none !important; }
   .nav-vert { display: none !important; }
   .notes { display: none; }
 }`;
@@ -3019,16 +3325,24 @@ blockquote p { color: #9d9d9d; }
   const css = stripCssComments(`${structuralCss}\n${connectorCss}${themeCss}\n${darkCss}\n${deckCss}`);
   const cssTag = `<style>\n${css}</style>`;
   const jsTag = themeJs ? `<script>\n${themeJs}\n</script>` : "";
+  // Each runtime in a script element of its own, as written: comments and
+  // all. Taking the comments out safely needs a JavaScript parser, which this
+  // dependency-free renderer does not have.
+  const runtimeTag = (js) => `<script>\n${js}\n</script>`;
   // After the theme, so the navigation it couples to already exists.
-  const filmstripTag = `<script>\n${FILMSTRIP_JS}\n</script>`;
+  const filmstripTag = runtimeTag(FILMSTRIP_JS);
   // Neither knows anything a theme does not already publish: the hash, .active.
-  const fullscreenTag = `<script>\n${FULLSCREEN_JS}\n</script>`;
-  const overviewTag = `<script>\n${OVERVIEW_JS}\n</script>`;
+  const fullscreenTag = runtimeTag(FULLSCREEN_JS);
+  const overviewTag = runtimeTag(OVERVIEW_JS);
   // Before every runtime that springs; after the two it drives.
-  const motionTag = `<script>\n${MOTION_JS}\n</script>`;
-  const gestureTag = `<script>\n${GESTURE_JS}\n</script>`;
+  const motionTag = runtimeTag(MOTION_JS);
+  const kitTag = runtimeTag(DECK_KIT_JS);
+  // The drawing tools and the presenter view, each after what it is handed:
+  // the pure modules, then the tools made of them, then the two windows.
+  const presenterTag = [INK_JS, SNAP_JS, CALLOUT_JS, STROKES_JS, ANNOTATE_JS, PRESENTER_JS].map(runtimeTag).join("");
+  const gestureTag = runtimeTag(GESTURE_JS);
   // Last, so the boxes it measures have been laid out by everything above it.
-  const connectorTag = hasConnectors ? `<script>\n${CONNECTOR_JS}\n</script>` : "";
+  const connectorTag = hasConnectors ? runtimeTag(CONNECTOR_JS) : "";
   const mermaidCdn = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
   const mermaidTheme = darkMode ? "dark" : "neutral";
   const mermaidTag = slidesHtml.includes('class="mermaid"')
@@ -3050,7 +3364,7 @@ ${cssTag}${katexTag}
 <body>
 ${slidesHtml}
 
-${jsTag}${motionTag}${filmstripTag}${fullscreenTag}${overviewTag}${gestureTag}${connectorTag}${mermaidTag}
+${jsTag}${motionTag}${kitTag}${filmstripTag}${fullscreenTag}${overviewTag}${gestureTag}${presenterTag}${connectorTag}${mermaidTag}
 </body>
 </html>`;
 }

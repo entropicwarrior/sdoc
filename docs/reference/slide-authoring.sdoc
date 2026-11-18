@@ -231,6 +231,9 @@
             whose notes are internal, build it with \`--no-notes\`, which
             leaves them out of every format.
 
+            To read them while presenting, press \`P\` for the
+            [presenter view](#presenter).
+
             ```
             # My Slide {
                 Visible content.
@@ -1374,7 +1377,7 @@
                 Keep the pointer inside the copy | It stays. Click it to go to that slide.
                 Move off the copy | It shrinks back into its cell, and nothing else comes up until the pointer rests on a cell again.
                 Click a cell | Goes to that slide.
-                Arrow keys | Move through the grid. The slide behind does not move.
+                Arrow keys | Move through the grid. The slide behind does not move. The chosen cell wears a thick blue ring; the slide on show, a thin white one. The larger copy is for the pointer only, and the keys do not bring it up.
                 \`Enter\` or \`Space\` | Goes to the chosen slide.
                 \`Escape\` | Puts away a larger copy if one is up; otherwise closes the overview where you were, whatever was chosen. In full screen the browser keeps Escape for leaving full screen, so use \`O\` there.
             }
@@ -1397,6 +1400,186 @@
             is built when it opens and removed when it closes, so no export
             sees it and print cannot reach it, and a custom theme gets it
             without changing anything.
+        }
+
+        # The Presenter View @presenter
+        {
+            Press \`P\` while presenting and a second window opens for you: the
+            current slide, the slides around it, your notes in large type, a
+            timer, and a pen to draw on the slide. Put it on your own screen
+            and the deck on the projector (\`F\` for full screen there). On one
+            screen it is a way to rehearse.
+
+            The slides are laid out the way the arrow keys move: the previous
+            slide on the left, the next on the right, and the next drill-down
+            detail below the current one. Inside a drill-down column, the
+            bottom edge of the slide above peeks over the current one, so it is
+            plain that Up goes somewhere. Click any of them to go there. \`O\`
+            opens the [overview](#overview) of every slide inside it; \`T\`
+            does nothing there, since the slides either side are already in
+            view.
+
+            To read a dense slide, press \`Z\` or click the current slide:
+            it takes the whole stage, and the slides around it go. A small
+            chevron at each edge that has a neighbour still shows where the
+            arrow keys lead, and clicking one goes there. The slide stays large
+            as you move, until \`Z\`, \`Esc\`, another click on it, or the
+            button in its top-right corner puts the others back. That button
+            does not move as the slide grows and shrinks, so a second click
+            undoes the first; dragging the divider down gives the slide more
+            room still.
+
+            **Nothing reaches the audience until you press Start.** Before
+            that, flick through the slides as you like while people arrive;
+            the projector stays on the slide it shows, and the bar says so, in
+            amber, naming that slide. **Start presentation** brings your
+            window back to that slide, starts the timer, and from then on
+            moving in either window moves both.
+
+            To draw on the current slide, in either layout, pick a tool from
+            the column down the left of the window or by its key: \`D\` the
+            pen, in red, blue or green (\`C\` for the next colour, which picks
+            up no tool by itself), \`H\` a
+            highlighter, \`R\` a rectangle, \`A\` a callout, \`L\` a laser
+            pointer, \`E\` the eraser. The same key again, or the arrow at the
+            top of the column, puts the tool down. While one is chosen, a
+            click on the slide draws instead of enlarging it; the button in
+            its corner still enlarges it. The pen follows a stylus's pressure.
+            The laser is a red dot with a short trail that follows the
+            pointer, and is never kept; with a stylus or a finger it shows
+            while you press.
+
+            The highlighter and the rectangle snap to what is on the slide.
+            Run the highlighter along a line of text, or down several, and
+            when you let go it becomes a neat band over exactly the words it
+            covered; a scribble, a tick or a stroke over empty space stays as
+            you drew it. Drag the rectangle round something — a word, a table
+            cell, a whole column or row, a paragraph, a picture — and it
+            settles round that, with a little room to spare; over nothing it
+            stays as you drew it. A click with the rectangle boxes the word or
+            cell under the pointer. Hold \`Option\` (\`Alt\`) while you draw
+            for no snapping at all. The rectangle is drawn in the pen's colour,
+            and the audience sees each of them change shape as you do.
+
+            A callout is a box of text. Click something on the slide — a word,
+            a cell, a picture — and the box opens beside it, on whichever side
+            covers least of the slide's text, with a short leader pointing at
+            it; click empty space and it opens there; or drag out a box, and
+            the text wraps at that width rather than at the usual third of the
+            slide. Then type: the box fits the text as you go, \`Enter\` starts
+            a new line, and the audience sees it a few times a second as you
+            type. While you type, every key is text: none of them moves the
+            slide or picks a tool. \`Esc\` or a click anywhere else finishes it,
+            and one left empty is dropped. Double-click a callout to type into
+            it again. With the callout tool, point at a callout and a handle
+            appears on its side edge: drag it to make the callout wider or
+            narrower, and the text wraps again. A resize is not a step of its
+            own for Undo, which takes the whole callout. Its border and leader
+            are in the pen's colour and its text is dark on a light fill that
+            lets the slide show through a little, so it reads on a light slide
+            and on a dark one.
+
+            The three pen colours are yours to change: double-click one and its
+            choices open beside the column, a dozen colours that read on a
+            light slide and on a dark one, and **Other colour…** for anything
+            else. A choice applies at once, to that pen, and is remembered in
+            this browser for the next talk; \`C\` goes round the colours as
+            they now are. The highlighter's colour changes the same way:
+            double-click the highlighter for six highlighter colours — yellow,
+            green, pink, blue, orange, purple — or any other, and the
+            highlighter's button shows the one in use. What is already drawn
+            keeps the colour it was drawn in. \`Esc\` or a click anywhere else
+            closes the choices, and a click on the slide that closes them does
+            not also draw there.
+
+            You can draw in the deck's own window too, for a talk given from one
+            screen with people looking over your shoulder. Press a tool's key
+            there — \`D\`, \`H\`, \`R\`, \`A\`, \`L\` or \`E\` — or rest the
+            pointer at the left edge for about a second, and the same palette
+            comes up over that edge; the same key again, or \`Esc\`, puts the
+            tool down, and the palette goes a moment later. Nothing of it is
+            in the deck until then. While a tool is in hand, a click or a
+            swipe on the slide draws instead of turning it and the edge pulls
+            are off; \`O\` and \`T\` still work. What you draw there is the
+            audience's at once. With the presenter window open, what either
+            window draws appears in both — the presenter window's only from
+            Start — and Start brings the deck's existing ink into the
+            presenter window rather than clearing it. Undo in either window
+            takes that window's own last stroke and leaves the other's; Clear
+            and Clear all clear both.
+
+            Ink stays on its slide for as long as both windows are open: leave
+            the slide and come back and it is still there, in both windows and
+            in the previews around the current slide. The eraser removes each
+            stroke it touches, so drag it across several to remove them all; a
+            rectangle goes when the eraser crosses its outline, so you can
+            erase inside one and keep it, and a callout wherever it touches it.
+            \`U\` or \`Cmd-Z\` (\`Ctrl-Z\`) undoes the last thing this window drew
+            on the slide — a stroke, a highlight, a rectangle or a callout —
+            and never what the other window drew; the two buttons at the foot
+            of the column clear this slide, and every slide, which asks for a
+            second click first. Like the slides, **ink is private until
+            Start**: what you draw while rehearsing is never sent, and Start
+            throws it away. After Start the audience sees each stroke as you
+            draw it, and Reset clears the ink in both windows. Ink is never
+            written into the built file or any export, and it does not print.
+
+            The two windows belong to each other and to no one else: each
+            deck opens a presenter window of its own, so two decks open side
+            by side do not move or draw on one another. A deck window
+            reloaded after Start gets its ink back within a couple of seconds,
+            whichever window drew it: the presenter window holds a copy of
+            all of it from Start, and sends it. Before Start it holds none of
+            the deck's and sends nothing, so ink drawn in the deck window
+            before Start is lost if that window reloads. Either way, \`P\` in
+            the reloaded deck brings the same presenter window forward,
+            still started if it was and its timer running, rather than
+            opening a fresh one.
+
+            In full screen the browser keeps \`Esc\` for leaving full screen,
+            so put a tool down with its own key, or the arrow at the top of
+            the palette.
+
+            {[table]
+                Doing | What happens
+                \`P\` | In the deck: opens the presenter window, or brings it forward if it is open, also after the deck has reloaded.
+                Start presentation | Starts the timer and links the two windows, from the slide the audience sees. Ink drawn before it is thrown away.
+                Click the timer | Pauses it, or resumes it.
+                Reset, then Click to confirm | Ends the run: both windows back to the first slide, the timer to zero, the ink cleared in both, and not started again, ready for another rehearsal or the real talk. It asks twice, so a stray click mid-talk does nothing.
+                \`Z\`, or click the current slide with no tool chosen | Focus: the current slide alone, as large as the stage allows, with a chevron at each edge that has a neighbour. It stays on as you move; \`Z\`, \`Esc\`, another click, or the button at the slide's top-right corner puts the other slides back.
+                \`+\` and \`-\`, or A+ and A− | Larger or smaller notes. The size is remembered.
+                \`D\`, \`H\`, \`R\`, \`L\`, \`E\` | The pen, the highlighter, the rectangle, the laser pointer, the eraser; the same key again puts the tool down. Or their buttons, down the left.
+                \`A\` | The callout: click something, or drag a box, then type. \`Esc\` or a click elsewhere finishes it; a double-click on one types into it again, and the handle on its edge makes it wider or narrower.
+                Hold \`Option\` (\`Alt\`) while drawing | The highlight or rectangle stays as drawn instead of snapping to the words or the box under it.
+                \`C\`, or a colour | \`C\` moves on to the next pen colour — red, blue or green to begin with — and leaves whatever tool is in hand, or none; clicking a colour picks up the pen in it.
+                Double-click a colour, or the highlighter | That pen's colour, from a dozen or any other, or the highlighter's, from six or any other. Applied at once and remembered; what is already drawn keeps its colour.
+                \`U\`, \`Cmd-Z\` or \`Ctrl-Z\` | Undo the last stroke, highlight, rectangle or callout this window drew on the current slide.
+                Clear, Clear all | The ink on this slide, or on every slide after a second click to confirm.
+                Drag the divider above the notes | More room for the notes, or for the slides: the current slide grows as the notes shrink. Remembered; a double-click puts it back. With the divider focused, the up and down arrows move it.
+                Arrow keys, Space, Page Down, Page Up | Move, as in the deck.
+            }
+
+            All of this travels in the built file. The renderer's own
+            scripts — the presenter view, the drawing tools, the overview,
+            the filmstrip and the rest — are about 213 KB in every HTML deck,
+            comments included, of which the presenter view and the drawing
+            tools are about 150 KB. They are not minified and their comments
+            are not removed: doing that safely needs a JavaScript parser,
+            and the renderer has no dependencies. A deck with pictures is
+            usually several megabytes, so it is a small share; a text-only
+            deck is mostly this.
+
+            It is the same deck file opened again, so it needs nothing beyond
+            the build, and works opened straight from disk. If the browser
+            blocks the window, the deck says so; allow pop-ups for the page. A
+            deck built with \`--no-notes\` has no notes to show, and the
+            presenter window says that rather than showing nothing. Like the
+            overview it is part of the renderer, so a custom theme gets it.
+
+            Nothing in the bar or the column of tools moves as the talk
+            changes state: a control that does not apply yet, or any more, is
+            greyed out where it is. Focus moves nothing outside the stage
+            either.
         }
 
         # Navigation Controls @navigation
@@ -1424,6 +1607,10 @@
                 F | Full screen, and again to leave it. A page that may not go full screen says so rather than doing nothing
                 O | The [overview](#overview) of every slide
                 T | The [filmstrip](#filmstrip) of thumbnails
+                P | The [presenter view](#presenter), with your notes
+                D, H, R, A, L, E | Draw on the slide — the pen, highlighter, rectangle, callout, laser pointer or eraser — from a palette that comes up over the left edge. The same key again, or Esc, puts the tool down and the palette goes. While a tool is in hand a click or a swipe draws rather than turning the slide. See [drawing in the deck window](#presenter)
+                C, U | The next pen colour, without picking up a tool; undo the last thing this window drew on this slide
+                Rest the pointer at the left edge for about a second | The drawing palette
                 Pull down from the top edge | The overview, opening as you pull
                 Pull up from the bottom edge | The filmstrip
             }

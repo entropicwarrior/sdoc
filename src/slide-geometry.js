@@ -536,7 +536,7 @@ function harvestComplete(text, elementId) {
   return at !== -1 && text.indexOf(SENTINEL, at) !== -1;
 }
 
-function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, attempt, refs) {
+function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, attempt, refs, extraArgs) {
   return new Promise((resolve, reject) => {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), "sdoc-geom-"));
     const out = fs.openSync(outPath, "w");
@@ -594,6 +594,7 @@ function dumpDom(chrome, fileUrl, outPath, timeoutMs, megabytes, elementId, atte
         "--virtual-time-budget=" +
           Math.round(Math.max(45000, 30000 + megabytes * 4000 + refs * 1000) * (attempt || 1)),
         "--user-data-dir=" + profile,
+        ...(extraArgs || []),
         "--dump-dom",
         fileUrl,
       ],
@@ -741,8 +742,13 @@ async function runHarvest(htmlPath, script, elementId, options = {}) {
         // Give the previous attempt's Chrome time to exit and release the
         // machine before competing with it.
         if (attempt > 1) await new Promise((r) => setTimeout(r, 500 * (attempt - 1)));
+        // options.chromeArgs: extra flags for Chrome, such as the one that
+        // lets a page open a second window. options.query: a query string
+        // for the page's address ("?presenter=1"), for a page that reads
+        // its own.
         const dom = await dumpDom(
-          chrome, "file://" + tmpHtml, tmpOut, baseTimeout * attempt, megabytes, elementId, attempt, refs
+          chrome, "file://" + tmpHtml + (options.query || ""), tmpOut, baseTimeout * attempt, megabytes, elementId, attempt, refs,
+          options.chromeArgs
         );
         const match = dom.match(
           new RegExp(

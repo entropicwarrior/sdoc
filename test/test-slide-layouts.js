@@ -463,7 +463,10 @@ test("matrix alternates header accents and can highlight the last row", () => {
   assert(html.includes('<th class="col-a">Who</th>'), "first header track");
   assert(html.includes('<th class="col-b">What</th>'), "second header track");
   assert(html.includes('<tr class="is-highlight">'), "last row highlighted");
-  assert((html.match(/is-highlight/g) || []).length === 1, "only one row highlighted");
+  // In the slides' markup: the page's stylesheet and runtimes name an
+  // .is-highlighter button of the presenter view's.
+  const markup = html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "");
+  assert((markup.match(/is-highlight/g) || []).length === 1, "only one row highlighted");
 });
 
 test("matrix can highlight by name instead of position", () => {

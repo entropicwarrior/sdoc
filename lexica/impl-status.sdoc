@@ -273,6 +273,30 @@
             - [ ] Chrome's PDF export declares no output intent, so text and vector fills are untagged \`/DeviceRGB\` while images carry ICC profiles. On a wide-gamut display the same colour renders differently in text and in a picture. An sRGB output intent in the export path would fix it for every deck
         }
 
+        # Presenter View and Annotations @presenter-wip
+        {
+            Unreleased, on \`feat/presenter-view\`. \`P\` opens the deck again in a second
+            window as a presenter view: the current slide and the ones around it, the
+            speaker notes, a timer, Start and Reset, a focus mode and a divider for the
+            notes. Either window can draw on the current slide — pens with editable
+            colours, a highlighter that snaps to words, a rectangle that snaps to
+            elements, callouts, a laser, an eraser, undo and clear — and what one draws
+            the other shows. Page Down and Page Up, a clicker's keys, are in the
+            default theme. See
+            [The Presenter View](../docs/reference/slide-authoring.sdoc#presenter).
+
+            - [x] The presenter view and the deck window's half of it (\`src/slide-presenter.js\`), the drawing tools shared by both (\`src/slide-annotate.js\`), and the pure parts under them, unit-tested: stroke outlines and eraser hits (\`slide-ink.js\`), snapping (\`slide-snap.js\`), callout placement (\`slide-callout.js\`), the stroke store and its messages (\`slide-strokes.js\`). Each is one function serialised into the deck with \`toString()\`
+            - [x] Each window hears only the other: the presenter window is opened under a name derived from the deck's path and listens to its opener alone; the deck listens to the window it opened and, after a reload, takes on the sender of a hello only if it is that window's opener. \`P\` after a deck reload finds the live presenter window rather than loading it afresh
+            - [x] A deck that reloads is noticed by a token it makes on each page load and sends with its position. After Start the presenter window then sends back all the ink, whichever window drew it; before Start it sends nothing, and ink drawn in the deck window is lost with the reload
+            - [x] The deck's shared kit is a module of its own (\`src/slide-deck-kit.js\`), serialised like the others
+            - [ ] The renderer's scripts are embedded as written, comments included: about 213 KB in every HTML deck, some 150 KB of it the presenter view and drawing tools. Removing comments safely needs a JavaScript parser, which the dependency-free renderer does not have
+            - [ ] A served deck posts to and accepts its own origin only. No test runs a deck over http, so that path is unexercised; from disk, where the tests run, the window a message came from is the whole check
+            - [ ] The message checks are tested with stand-in windows. Two real decks open side by side, and a real reload of the deck window mid-talk, have only been reasoned about: a file:// window cannot be read from another, so the browser tests cannot look inside a presenter window they open
+            - [ ] Ink lasts as long as the windows do. Nothing is saved with the deck or exported
+            - [ ] A deck window that reloads after Start does not send what is drawn in it until the presenter window's next hello, up to two seconds later, and the ink it is then given back replaces that. A stroke drawn in the deck window in those two seconds is lost
+            - [ ] From disk, a deck takes on a presenter window by its hello if that window's opener is the deck's own window. A different deck loaded into the same tab while the first one's presenter window is still open is therefore taken for its deck, and after Start is sent the first deck's ink. Close the presenter window before opening another deck in that tab
+        }
+
     }
 
     # Next Up @next-up
