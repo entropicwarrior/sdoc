@@ -2534,6 +2534,111 @@ test("a pull from either edge opens its view, and only a pull does (browser)", a
   assert(r.touch.hash === "#2.1", "and the theme never saw it as a swipe up the column: " + r.touch.hash);
 });
 
+// ---- Page Down and Page Up: the default theme's.
+test("Page Down and Page Up move as a presentation clicker expects (browser)", async () => {
+  browser.skip();
+  const themeDir = path.join(__dirname, "..", "themes", "default");
+  const html = parseAndRender(`
+# Deck {
+    @meta { type: slides }
+
+    # One @c1 {
+        a
+    }
+
+    # Two @c2 {
+        b
+
+        # First detail @c2a :detail {
+            c
+        }
+
+        # Second detail @c2b :detail {
+            d
+        }
+    }
+
+    # Three @c3 {
+        e
+    }
+}
+`, {
+    themeCss: fs.readFileSync(path.join(themeDir, "theme.css"), "utf-8"),
+    themeJs: fs.readFileSync(path.join(themeDir, "theme.js"), "utf-8"),
+  });
+  const file = path.join(tempDir("sdoc-clicker-"), "deck.html");
+  fs.writeFileSync(file, html, "utf-8");
+  const r = await runHarvest(file, `
+(function () {
+  var out = { steps: [] };
+  // The slide on show, as the hash would write it. The theme takes a hash
+  // set from outside a moment after it is set, so the slide is what says
+  // the deck has arrived.
+  var shown = function () {
+    var a = document.querySelector("body > .slide.active");
+    if (!a) return null;
+    var d = a.getAttribute("data-detail") || "0";
+    return "#" + a.getAttribute("data-spine") + (d === "0" ? "" : "." + d);
+  };
+  var at = function (hash) {
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      (function check() {
+        if (location.hash === hash && shown() === hash) return resolve(true);
+        if (Date.now() - t0 > 1500) return resolve(false);
+        setTimeout(check, 30);
+      })();
+    });
+  };
+  // From a slide, a key: where the deck ends up, once it has moved.
+  var press = async function (from, key, to) {
+    location.hash = from;
+    await at("#" + from);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: key, bubbles: true }));
+    var arrived = await at("#" + to);
+    out.steps.push(from + " " + key + " -> " + location.hash.slice(1) + (arrived ? "" : " (wanted " + to + ")"));
+  };
+  async function run() {
+    await press("2", "PageDown", "3");
+    await press("2.1", "PageDown", "2.2");
+    await press("2.2", "PageDown", "3");
+    await press("2.2", "PageUp", "2.1");
+    await press("2.1", "PageUp", "2");
+    await press("2", "PageUp", "1");
+    await press("3", "PageUp", "2");
+    // At the end there is nowhere to go.
+    location.hash = "3";
+    await at("#3");
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown", bubbles: true }));
+    await new Promise(function (r) { setTimeout(r, 150); });
+    out.stayed = location.hash;
+  }
+  function start() {
+    run().catch(function (e) { out.__error = String((e && e.stack) || e); }).then(function () {
+      var el = document.createElement("script");
+      el.type = "application/json";
+      el.id = "sdoc-clicker";
+      el.textContent = JSON.stringify(out) + "\\n/*${SENTINEL}*/";
+      document.body.appendChild(el);
+    });
+  }
+  if (document.readyState === "complete") start(); else window.addEventListener("load", start);
+})();
+`, "sdoc-clicker");
+  assert(!r.__error, "the drive threw: " + r.__error);
+  const want = [
+    "2 PageDown -> 3",       // from a spine slide, on along the spine
+    "2.1 PageDown -> 2.2",   // inside a column, down it
+    "2.2 PageDown -> 3",     // and from its last detail, on to the next spine slide
+    "2.2 PageUp -> 2.1",     // back up a column a detail at a time
+    "2.1 PageUp -> 2",       // the first detail to its spine slide
+    "2 PageUp -> 1",         // from a spine slide, the previous one
+    "3 PageUp -> 2",         // which is not that slide's last detail
+  ];
+  assert(r.steps.join("; ") === want.join("; "), "each key from each place: " + r.steps.join("; "));
+  assert(r.stayed === "#3", "Page Down on the last slide moves nothing: " + r.stayed);
+});
+
 // ============================================================
 console.log("\n--- Deck-scoped stylesheet ---");
 

@@ -226,7 +226,7 @@ should be evaluated against.
   makes comes from `tempDir()` (test/tempdir.js), which removes it on exit
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
-  (798 fast + 370 browser = 1168 as of v0.8.0)
+  (798 fast + 371 browser = 1169 with Page Down and Page Up, unreleased after v0.8.0)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

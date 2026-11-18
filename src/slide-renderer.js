@@ -2064,8 +2064,8 @@ const OVERVIEW_JS = `
     else if (k === "Escape" || k.toLowerCase() === KEY) close(-1);
     else if ((k === "Enter" || k === " ") && peek) close(peekAt, true);
     else if (k === "Enter" || k === " ") close(hot === -1 ? currentIndex() : hot);
-    else if (k === "ArrowRight") step(1, 0);
-    else if (k === "ArrowLeft") step(-1, 0);
+    else if (k === "ArrowRight" || k === "PageDown") step(1, 0);
+    else if (k === "ArrowLeft" || k === "PageUp") step(-1, 0);
     else if (k === "ArrowDown") step(0, 1);
     else if (k === "ArrowUp") step(0, -1);
     else if (k === "Home") setHot(0, true);

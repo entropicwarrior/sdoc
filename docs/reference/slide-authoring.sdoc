@@ -991,9 +991,16 @@
             Up — one step back up the column; from the first detail, that is
             the spine slide. Nothing on a spine slide.
 
-            Space — presentation order: inside a column, on through its
-            details and then to the next spine slide; from a spine slide, the
-            next spine slide, since details are opened deliberately.
+            Space and Page Down — presentation order: inside a column, on
+            through its details and then to the next spine slide; from a spine
+            slide, the next spine slide, since details are opened deliberately.
+
+            Page Up — back: inside a column, up it one detail at a time, the
+            first detail to its spine slide; from a spine slide, the previous
+            spine slide. It does not go into that slide's details, so it is
+            not Page Down in reverse: Page Down from the last detail under
+            slide 2 goes to slide 3, and Page Up from there goes to slide 2
+            itself. A presentation clicker sends Page Down and Page Up.
 
             Swipe — horizontal swipes mirror Left / Right; vertical swipes
             mirror Up / Down.
@@ -1402,7 +1409,8 @@
                 Key or gesture | What it does
                 Right, Left | The next or previous spine slide
                 Down, Up | Into a drill-down column and through it, and back up it one step at a time
-                Space | On in presentation order: through a column's details once you are in one, otherwise the next spine slide
+                Space, Page Down | On in presentation order: through a column's details once you are in one, otherwise the next spine slide. A presentation clicker's forward button sends Page Down
+                Page Up | Back: up a column one detail at a time, otherwise the previous spine slide, not into its details. A clicker's back button
                 Home, End | The first slide, the last spine slide
                 Click | The right half of the slide goes forward, the left half back
                 Swipe | Left and right, up and down, as the arrow keys

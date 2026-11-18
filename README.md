@@ -19,7 +19,7 @@ Markdown has no formal structure — section boundaries are ambiguous, extractio
 
 **A zero-dependency JavaScript parser** — `src/sdoc.js` parses SDOC into a format-neutral AST. No runtime dependencies, works anywhere Node runs. Parsing and rendering are cleanly separated — build your own renderers on top.
 
-**Slide deck generation** — turn any SDOC file into a slide deck with themes, structured layouts (columns, stats, pipeline, matrix, rows, bars, split, stack), speaker notes, mermaid diagrams, and export to PDF or PowerPoint / Google Slides via headless Chrome. Decks are built from this repository with `tools/build-slides.js` (the Marketplace extension does not build slides), and a built HTML deck is presented in a browser, with an overview of every slide.
+**Slide deck generation** — turn any SDOC file into a slide deck with themes, structured layouts (columns, stats, pipeline, matrix, rows, bars, split, stack), speaker notes, mermaid diagrams, and export to PDF or PowerPoint / Google Slides via headless Chrome. Decks are built from this repository with `tools/build-slides.js` (the Marketplace extension does not build slides), and a built HTML deck is presented in a browser, with an overview of every slide and clicker support.
 
 **A document site builder** — serve a folder of SDOC files as a browsable site with sidebar navigation, search, and split-pane comparison.
 
@@ -66,6 +66,7 @@ To present, open the HTML in a browser:
 | Key | What it does |
 |---|---|
 | Arrow keys, Space | Move between slides |
+| Page Down, Page Up | Forward and back, as a presentation clicker sends them |
 | `O` | Overview of every slide |
 | `T` | Strip of thumbnails along the bottom edge |
 | `F` | Full screen |
@@ -216,7 +217,7 @@ Tag any section with `@id` and cross-reference it anywhere with `@id` — render
 
 ### Slides
 
-Turn any SDOC file into a slide deck with themes, structured layouts, speaker notes, and export to PDF or PowerPoint / Google Slides. Present it in a browser, with an overview of the whole deck.
+Turn any SDOC file into a slide deck with themes, structured layouts, speaker notes, and export to PDF or PowerPoint / Google Slides. Present it in a browser, with an overview of the whole deck and clicker support.
 
 ### Scope Types
 
