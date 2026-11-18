@@ -1241,6 +1241,10 @@ function createAnnotate(kit, ink, snap, place, createStrokes) {
     return {
       overlays: [editorBox, handle],
       at: calloutAt, start: startCallout, edit: editCallout, finish: finishCallout,
+      // The id of a callout being typed that the other window has not been
+      // told of yet, or null. It is in the book all the same, so whoever
+      // sends the book whole has to leave it out: it goes when it has text.
+      unsent: function () { return writing && !writing.begun ? writing.s.id : null; },
       hideHandle: hideHandle,
       // The callout tool's pointer is over this point, or has left the slide.
       hover: function (p) {
@@ -1685,7 +1689,7 @@ function createAnnotate(kit, ink, snap, place, createStrokes) {
       invalidate: targets.invalidate,
       newSlide: function () { targets.invalidate(); callouts.newSlide(); },
       place: function () { callouts.place(); colours.place(); },
-      flush: pointer.flush,
+      flush: pointer.flush, unsent: callouts.unsent,
       // Something under way: a stroke, a callout being typed, its colours open.
       busy: function () { return pointer.busy() || callouts.busy() || colours.isOpen(); }
     };

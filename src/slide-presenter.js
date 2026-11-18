@@ -105,12 +105,15 @@ function createPresenter(kit, annotate) {
     return { ink: sender("ink"), laser: sender("laser") };
   }
   // Everything a window holds, for one that holds something else: a clear,
-  // then each slide's ink.
+  // then each slide's ink. All but a callout still empty and unannounced,
+  // which is sent, or dropped, by its own editor when that is finished.
   function sendAll(book, tools, line) {
     if (tools) tools.flush();
+    var held = tools ? tools.unsent() : null;
     line.ink({ op: "clear" });
     book.labels().forEach(function (label) {
-      line.ink({ op: "slide", slide: label, strokes: book.strokes(label).map(book.wire) });
+      var strokes = book.strokes(label).filter(function (s) { return s.id !== held; });
+      line.ink({ op: "slide", slide: label, strokes: strokes.map(book.wire) });
     });
   }
   // The other window's ink and laser, as they arrive. True for ink.

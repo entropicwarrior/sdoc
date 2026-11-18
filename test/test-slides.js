@@ -4741,6 +4741,27 @@ const CALLOUT_DRIVE = `
     out.erase = { msgs: ops(since()), here: here() };
     q(".sdoc-ink-tool.is-clear").click();
     out.clear = { msgs: ops(since()), here: here() };
+
+    // The deck reloads while a callout is open with nothing typed yet: what
+    // it is sent leaves that callout out, and the callout then goes as any
+    // other does, once it has text.
+    key("a");
+    await trace([[0.6 * W, 0.6 * H]], 1);
+    var rid = lastId(), pos = location.hash.slice(1);
+    from({ type: "position", position: pos, deck: "load-a" });
+    since();
+    from({ type: "position", position: pos, deck: "load-b" });
+    var resent = since();
+    out.reloadOpen = { id: rid, editing: editing(), ops: resent.map(function (m) { return m.op; }),
+      carried: resent.some(function (m) { return (m.strokes || []).some(function (x) { return x.id === rid; }); }) };
+    type("After the reload");
+    keyIn("Escape");
+    await until(function () { return !editing(); }, 1000);
+    out.reloadTyped = said(since());
+    q(".sdoc-ink-tool.is-clear").click();
+    since();
+    key("e");
+
     key("a");
     await trace([[0.1 * W, 0.8 * H], [0.4 * W, 0.82 * H]], 3);
     type("Before the reset");
@@ -4849,6 +4870,10 @@ test("callouts: by a click beside what they are about, or by a drag, typed into 
   assert(r.edit.said.join() === "replace:Leads the platform team today!,end", "what is added reaches the deck: " + show(r.edit.said));
   assert(!r.away.editing && r.away.here === r.away.count && !r.away.focused && r.away.said.join() === "begin:Since 1991,end",
     "a click elsewhere finishes a callout and does nothing more: " + show(r.away));
+
+  assert(r.reloadOpen.id && r.reloadOpen.editing && r.reloadOpen.ops[0] === "clear" && !r.reloadOpen.carried,
+    "a deck that reloads is not sent a callout still open and empty: " + show(r.reloadOpen));
+  assert(r.reloadTyped.join() === "begin:After the reload,end", "which goes once it has text, as any other: " + r.reloadTyped);
 
   // And go again.
   assert(r.kept.length === 3, "three callouts kept: " + r.kept);

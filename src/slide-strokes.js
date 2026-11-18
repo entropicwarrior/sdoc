@@ -204,7 +204,11 @@ function createStrokes(defaults) {
     if (m.op === "clear") return clear(m.slide);
     if (m.op === "slide" && m.slide != null) {
       clear(m.slide);
-      [].concat(m.strokes || []).forEach(add);
+      // Only strokes that say they are on that slide: one that named another
+      // would be kept where nothing repaints it and no later message clears it.
+      [].concat(m.strokes || []).forEach(function (q) {
+        if (q && String(q.slide) === String(m.slide)) add(q);
+      });
       return [String(m.slide)];
     }
     return [];

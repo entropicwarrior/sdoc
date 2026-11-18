@@ -293,6 +293,8 @@
             - [ ] A served deck posts to and accepts its own origin only. No test runs a deck over http, so that path is unexercised; from disk, where the tests run, the window a message came from is the whole check
             - [ ] The message checks are tested with stand-in windows. Two real decks open side by side, and a real reload of the deck window mid-talk, have only been reasoned about: a file:// window cannot be read from another, so the browser tests cannot look inside a presenter window they open
             - [ ] Ink lasts as long as the windows do. Nothing is saved with the deck or exported
+            - [ ] A deck window that reloads after Start does not send what is drawn in it until the presenter window's next hello, up to two seconds later, and the ink it is then given back replaces that. A stroke drawn in the deck window in those two seconds is lost
+            - [ ] From disk, a deck takes on a presenter window by its hello if that window's opener is the deck's own window. A different deck loaded into the same tab while the first one's presenter window is still open is therefore taken for its deck, and after Start is sent the first deck's ink. Close the presenter window before opening another deck in that tab
         }
 
     }
