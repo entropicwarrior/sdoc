@@ -5975,5 +5975,55 @@ console.log("\n--- Slide strokes (what has been drawn, and its messages) ---");
   });
 }
 
+// ============================================================
+console.log("\n--- The deck runtimes, serialised ---");
+{
+  const modules = {
+    "slide-deck-kit.js": ["DECK_KIT_JS", "createDeckKit"],
+    "slide-ink.js": ["INK_JS", "createInk"],
+    "slide-snap.js": ["SNAP_JS", "createSnap"],
+    "slide-callout.js": ["CALLOUT_JS", "createCalloutPlacement"],
+    "slide-strokes.js": ["STROKES_JS", "createStrokes"],
+    "slide-annotate.js": ["ANNOTATE_JS", "createAnnotate"],
+    "slide-presenter.js": ["PRESENTER_JS", "createPresenter"],
+  };
+
+  // These read source text, which the rest of this suite avoids, because
+  // what they guard is a property of the text: each module reaches the page
+  // as the source of one function inside a script element. A function that
+  // was not the one tested here, or text that ended the element early,
+  // would break every deck and no call in Node would show it.
+  test("each is one function, serialised whole, and safe inside a script element", () => {
+    for (const file in modules) {
+      const mod = require("../src/" + file), [name, factory] = modules[file];
+      const js = mod[name];
+      assert(typeof js === "string" && js.includes(mod[factory].toString()), file + ": " + name + " carries " + factory + " as written");
+      // The page's parser ends a script at the first closing tag it sees,
+      // wherever in the JavaScript that is.
+      assert(!/<\/script|<!--/i.test(js), file + ": nothing in it closes or comments out the script element");
+      try { new Function(js); } catch (e) { throw new Error(file + " does not compile on its own: " + e.message); }
+    }
+  });
+
+  test("the drawing tools come up in a page from the serialised modules alone", () => {
+    // Each script run in order against one stand-in window, as the deck runs
+    // them: a module that reached for something it was not handed would
+    // throw here, or leave its name undefined for the next.
+    const page = { sdocDeckKit: { designBox: () => ({ w: 1280, h: 720 }) } };
+    for (const file of ["slide-ink.js", "slide-snap.js", "slide-callout.js", "slide-strokes.js", "slide-annotate.js"]) {
+      new Function("window", require("../src/" + file)[modules[file][0]])(page);
+    }
+    assert(page.sdocInk && page.sdocSnap && page.sdocCallout && typeof page.sdocStrokes === "function", "the four pure modules");
+    const tools = page.sdocAnnotate;
+    assert(tools && typeof tools.inkBook === "function" && typeof tools.inkTools === "function", "and the tools made of them");
+    // The book keeps strokes with the page's own store and hits them with
+    // the page's own ink: no drawing is asked for, so no document is needed.
+    const book = tools.inkBook(false);
+    book.add({ id: "a", slide: "1", tool: "pen", size: 8, points: [[0, 0], [100, 0]] });
+    assert(book.count("1") === 1 && book.get("a").color === "#ef3434", "a stroke is kept, in the first pen's colour");
+    assert(book.hit("1", [50, -20], [50, 20], 2).join() === "a" && book.hit("1", [50, 40], [50, 60], 2).length === 0, "and found by the eraser");
+  });
+}
+
 console.log("\n--- Results: " + pass + " passed, " + fail + " failed ---");
 if (fail > 0) process.exit(1);

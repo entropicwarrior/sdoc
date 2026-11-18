@@ -149,6 +149,10 @@
   }
 
   document.addEventListener("keydown", function (e) {
+    // A key typed into a text field is text, not navigation: Space and the
+    // arrows in a presenter's callout must not turn the slide.
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
     if (e.key === "ArrowRight") {
       e.preventDefault();
       nextStep();
