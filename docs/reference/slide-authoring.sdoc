@@ -1377,7 +1377,7 @@
                 Keep the pointer inside the copy | It stays. Click it to go to that slide.
                 Move off the copy | It shrinks back into its cell, and nothing else comes up until the pointer rests on a cell again.
                 Click a cell | Goes to that slide.
-                Arrow keys | Move through the grid. The slide behind does not move.
+                Arrow keys | Move through the grid. The slide behind does not move. The chosen cell wears a thick blue ring; the slide on show, a thin white one. The larger copy is for the pointer only, and the keys do not bring it up.
                 \`Enter\` or \`Space\` | Goes to the chosen slide.
                 \`Escape\` | Puts away a larger copy if one is up; otherwise closes the overview where you were, whatever was chosen. In full screen the browser keeps Escape for leaving full screen, so use \`O\` there.
             }

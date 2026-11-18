@@ -2010,6 +2010,24 @@ const OVERVIEW_DRIVE_SCRIPT = `
     press("ArrowRight");
     await wait(60);
     out.steps.arrows = { hash: location.hash, hot: indexOf("is-hot") };
+    // How wide a ring each kind of cell wears: the first shadow's spread.
+    var ring = function (cls) {
+      var all = cells().filter(function (c) {
+        return cls ? c.classList.contains(cls) && (cls === "is-hot" || !c.classList.contains("is-hot"))
+          : !c.classList.contains("is-hot") && !c.classList.contains("is-current");
+      });
+      if (!all.length) return null;
+      // The ring fades in, and a headless browser stops drawing frames, so
+      // a fade never ends there: without it, the value is where it ends.
+      var mini = all[0].querySelector(".sdoc-overview-mini");
+      mini.style.transition = "none";
+      var sh = getComputedStyle(mini).boxShadow.split(/,(?![^(]*\\))/)[0];
+      var px = sh.replace(/rgba?\\([^)]*\\)/, "").match(/-?[0-9.]+px/g) || [];
+      return { spread: parseFloat(px[3] || "0"), colour: (sh.match(/rgba?\\([^)]*\\)/) || [""])[0] };
+    };
+    out.rings = { hot: ring("is-hot"), current: ring("is-current"), plain: ring(null) };
+    // The keys choose a cell and no more: the larger copy is the pointer's.
+    out.keyPeek = await until(function () { return !!document.querySelector(".sdoc-overview-peek"); }, 1200);
 
     press("Enter");
     out.steps.enterClosed = await until(gone, 4000);
@@ -2220,6 +2238,12 @@ test("the overview opens, moves on the keys, and goes where it is told (browser)
 
   assert(s.arrows.hash === "#1", "an arrow key turned the slide under the overview: " + s.arrows.hash);
   assert(s.arrows.hot === 3, "two steps right from the first cell is the third, got " + s.arrows.hot);
+  const g = r.rings;
+  assert(g.hot && g.current && g.plain && g.hot.spread >= 4 && g.hot.spread >= 2 * g.current.spread && g.current.spread > g.plain.spread,
+    "the chosen cell wears the widest ring, twice the one on the slide on show: " + JSON.stringify(g));
+  assert(!r.keyPeek, "no larger copy comes up for a cell chosen with the keys");
+  assert(g.hot.colour !== g.current.colour && g.hot.colour !== g.plain.colour,
+    "and in a colour of its own: " + JSON.stringify(g));
 
   assert(s.enterClosed, "Enter closed the overview");
   assert(s.enter.hash === "#3" && s.enter.active === "s3", "Enter went to the chosen slide: " + JSON.stringify(s.enter));
@@ -2291,13 +2315,15 @@ const LONG_DRIVE_SCRIPT = `
     var cells = [].slice.call(document.querySelectorAll(".sdoc-overview-cell"));
     var room = ov.getBoundingClientRect().left + ov.clientWidth;
     out.overhang = Math.max.apply(null, cells.map(function (c) { return c.getBoundingClientRect().right - room; }));
-    // To the last cell, below the fold: the grid scrolls to it, and its
-    // larger copy still comes up after the usual wait.
+    // To the last cell, below the fold: the grid scrolls to it and it is
+    // the chosen one. No larger copy comes up for it: that is the pointer's,
+    // and the pointer has not been near.
     press("End");
     await wait(60);
     out.scrolled = ov.scrollTop > 0;
+    var hot = document.querySelector(".sdoc-overview-cell.is-hot");
+    out.hotOf = hot ? hot.getAttribute("aria-label") : null;
     out.peek = await until(function () { return !!document.querySelector(".sdoc-overview-peek"); }, 2500);
-    out.peekOf = out.peek ? document.querySelector(".sdoc-overview-peek").getAttribute("aria-label") : null;
   }
   function start() {
     requestAnimationFrame(function () {
@@ -2311,7 +2337,7 @@ const LONG_DRIVE_SCRIPT = `
 })();
 `;
 
-test("a deck too long to fit scrolls, and the keys still bring up the larger copy (browser)", async () => {
+test("a deck too long to fit scrolls to the cell the keys choose, and the keys bring up no larger copy (browser)", async () => {
   browser.skip();
   let src = "# Deck {\n    @meta { type: slides }\n";
   for (let i = 1; i <= 150; i++) src += `\n    # Slide ${i} {\n        Body ${i}.\n    }\n`;
@@ -2333,8 +2359,8 @@ test("a deck too long to fit scrolls, and the keys still bring up the larger cop
   assert(r.scrolls, "a hundred and fifty slides do not fit, so the overview scrolls");
   assert(r.overhang <= 0.5, "no column runs past the scroll area: " + r.overhang + "px over");
   assert(r.scrolled, "End scrolls the grid to the last cell");
-  assert(r.peek && r.peekOf === "Slide 150: Slide 150",
-    "and the scroll does not cancel its larger copy: " + r.peekOf);
+  assert(/^Slide 150\b/.test(r.hotOf || ""), "which is the chosen one: " + r.hotOf);
+  assert(!r.peek, "and no larger copy comes up for a cell chosen with the keys");
 });
 
 // A pull from either edge, driven the way a mouse and a finger would drive it.

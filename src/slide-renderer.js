@@ -1496,10 +1496,11 @@ const OVERVIEW_JS = `
     });
     overlay.addEventListener("scroll", function () {
       if (keyScroll) {
-        // The grid scrolled to bring the chosen cell into view. Its pending
-        // preview stands; only one already up, now in the wrong place, goes.
+        // The grid scrolled to bring the chosen cell into view. A larger
+        // copy already up is now in the wrong place, and goes; where the
+        // pointer rests is as it was.
         keyScroll = false;
-        if (peek) { var keep = peekTimer; peekTimer = null; hidePeek(); peekTimer = keep; }
+        hidePeek();
         return;
       }
       hidePeek();
@@ -1679,7 +1680,10 @@ const OVERVIEW_JS = `
         overlay.scrollTop = to;
         if (overlay.scrollTop !== before) keyScroll = true;
       }
-      armPeek(i);
+      // The larger copy is the pointer's: resting on a cell asks for it. A
+      // cell chosen with the keys gets its ring and nothing more, and a copy
+      // the pointer had asked for a moment ago is no longer wanted.
+      disarmPeek();
     }
   }
   function focusHot() {
@@ -1834,8 +1838,7 @@ const OVERVIEW_JS = `
       // somebody choosing one. Which cell it is on is asked now, not taken
       // from mid-flight — the slide you were on shrinks across half the
       // window on its way in, and was under the pointer for most of it.
-      if (keyed) armPeek(hot);
-      else if (stirred) {
+      if (!keyed && stirred) {
         hover = cellAt(px, py);
         if (hover !== -1) { setHot(hover, false); armPeek(hover); }
       }
@@ -2771,13 +2774,17 @@ function renderSlides(nodes, options = {}) {
 /* No :hover here. The runtime decides which cell the pointer has chosen
    from movement, and a ring on whatever sits under a resting pointer would
    mark a second cell beside the one the keys chose. */
-.sdoc-overview-cell.is-hot .sdoc-overview-mini {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), var(--sdoc-overview-stack),
+.sdoc-overview-cell.is-current .sdoc-overview-mini {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), var(--sdoc-overview-stack),
               0 8px 26px rgba(0, 0, 0, 0.5);
 }
-.sdoc-overview-cell.is-current .sdoc-overview-mini {
-  box-shadow: 0 0 0 3px #fff, var(--sdoc-overview-stack),
-              0 8px 26px rgba(0, 0, 0, 0.5);
+/* The chosen cell, which Enter goes to, is the loud one: a thick ring in a
+   colour no other cell has and a halo round it, so it is found at a glance
+   as the arrow keys move it. The slide on show keeps a thinner white ring.
+   This rule comes second: a cell that is both shows as chosen. */
+.sdoc-overview-cell.is-hot .sdoc-overview-mini {
+  box-shadow: 0 0 0 4px #3b9eff, 0 0 0 9px rgba(59, 158, 255, 0.32),
+              var(--sdoc-overview-stack), 0 8px 26px rgba(0, 0, 0, 0.5);
 }
 /* The miniature: the real slide at its design size, scaled from its corner.
    Everything a theme might do to place or hide a slide is undone here. */
@@ -2822,7 +2829,8 @@ function renderSlides(nodes, options = {}) {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.sdoc-overview-cell.is-current .sdoc-overview-caption { color: #fff; }
+.sdoc-overview-cell.is-current .sdoc-overview-caption,
+.sdoc-overview-cell.is-hot .sdoc-overview-caption { color: #fff; }
 .sdoc-overview-legend {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
   padding: 10px 16px 10px;
