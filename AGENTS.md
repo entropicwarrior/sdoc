@@ -58,6 +58,28 @@ src/                Source code
                       which is why the HTML build and every export agree without any
                       of them re-measuring. Both harvests call
                       window.sdocConnectors.resolve(slide) once a slide is visible.
+  slide-deck-kit.js   What the deck's runtimes share: the slides as columns, the
+                      position, a miniature of a slide, the deck's hint, what counts
+                      as typing into a field, and whether this window is the
+                      presenter view
+  slide-presenter.js  The presenter view (P): the same deck in a second window, with
+                      the notes, a timer and the slides around the current one, and
+                      the deck window's half of it. The two windows follow each
+                      other and share ink over postMessage; the protocol, and who
+                      may be heard, is documented at the top of the file
+  slide-annotate.js   Drawing on a slide while presenting, in either window: the ink
+                      overlay, the palette and its colours, callouts, the pointer
+  slide-ink.js        Pure: a stroke's outline from its points; what an eraser hits
+  slide-snap.js       Pure: what a highlight or a rectangle snaps to on the slide
+  slide-callout.js    Pure: which side of its target a callout goes, and where
+  slide-strokes.js    Pure: the strokes kept per slide and the ink messages applied
+                      to them. These seven are each one function, serialised into the
+                      deck with toString() as the connector routing is, so they are
+                      ordinary JavaScript here: handed what they need, ES5, and
+                      free of the tag that closes a script element. The four pure
+                      ones are unit-tested in test-all.js. slide-renderer.js only
+                      assembles the script tags; the runtimes go in as written,
+                      comments and all (about 213 KB a deck)
   slide-geometry.js   Measures a built deck in headless Chrome
   slide-pptx.js       PowerPoint / Google Slides export, driven by that measurement
   slide-pdf.js        PDF export via headless Chrome (used by build-slides.js --pdf)
@@ -91,7 +113,12 @@ test/               Test files
   test-all.js         Comprehensive test suite (node test/test-all.js)
   test-knr.js         K&R brace placement tests (node test/test-knr.js)
   test-notion.js      Notion renderer tests (node test/test-notion.js)
-  test-slides.js      Slide renderer tests (node test/test-slides.js)
+  test-slides.js      Slide renderer tests (node test/test-slides.js). The presenter
+                      and drawing tests drive a built deck in Chrome: presenterPage
+                      writes the page, runHarvest opens it (AS_PRESENTER gives it
+                      ?presenter in its address, which is what makes a window the
+                      presenter view), and DRIVE_HELPERS stands a frame's window in
+                      for the other window, since a message's source must be one
   browser.js          Whether the browser tests run here (Chrome, SDOC_SKIP_BROWSER),
                       and the skip count every browser suite reports
   tempdir.js          tempDir(): a fixture directory removed when the suite exits
@@ -210,9 +237,9 @@ should be evaluated against.
 
 **Testing:**
 - No test framework — tests are plain Node scripts with assert helpers
-- Run the fast suites — no browser, about a second, 792 tests:
+- Run the fast suites — no browser, about a second, 849 tests:
   `npm test`
-- Run the browser-gated ones too (about 30 seconds, needs Chrome; each suite runs its
+- Run the browser-gated ones too (about 45 seconds, needs Chrome; each suite runs its
   browser tests one at a time, since starting them together froze the machine — one
   headless Chrome, about 1GB at its peak, none left running after):
   `npm run test:browser`   — or `npm run test:all` for both
@@ -226,7 +253,7 @@ should be evaluated against.
   makes comes from `tempDir()` (test/tempdir.js), which removes it on exit
 - Before committing anything that touches the parser, the renderer or an
   exporter, run `npm run test:all`. `npm test` alone does not cover slides.
-  (798 fast + 371 browser = 1169 with Page Down and Page Up, unreleased after v0.8.0)
+  (849 fast + 391 browser = 1240 with the presenter view, unreleased after v0.8.0)
 - Python binding: `python3 bindings/python/test/test_binding.py` (needs `node`, and
   `setuptools` for the wheel test — Python 3.12+ no longer bundles it)
 - Tests exit non-zero on failure

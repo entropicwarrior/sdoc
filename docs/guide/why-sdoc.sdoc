@@ -155,7 +155,7 @@
             {[.]
                 - HTML with collapsible section headings, click-to-navigate, and a live preview in VS Code that scrolls with the editor
                 - PDF via headless Chrome with page-break-safe tables and code blocks
-                - HTML slide decks with themes, layouts, speaker notes, and mermaid diagrams, presented in a browser with an overview of every slide and clicker support
+                - HTML slide decks with themes, layouts, speaker notes, and mermaid diagrams, presented with a presenter view for the notes, an overview of every slide, and clicker support
                 - Standalone HTML for distribution
             }
 
