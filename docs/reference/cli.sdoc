@@ -25,7 +25,7 @@
 
     # VSCode Extension Commands
     {
-        The SDOC extension registers eight commands, available from the Command Palette:
+        The SDOC extension registers nine commands, available from the Command Palette:
 
         {[.]
             - **SDOC: Open Preview** (`sdoc.preview`) -- opens a rendered preview of the current `.sdoc` file
@@ -36,9 +36,21 @@
             - **SDOC: Browse Documents** (`sdoc.browseDocs`) -- starts a local document server and opens the viewer in a browser
             - **SDOC: New Knowledge File** (`sdoc.newKnowledgeFile`) -- creates a new `.sdoc` file from a template in the selected folder
             - **SDOC: Generate About** (`sdoc.generateAbout`) -- generates an About section for the current document
+            - **Open SDOC Preview** (`sdoc.previewFromExplorer`) -- opens the preview of an `.sdoc` file from its right-click menu in the Explorer
         }
 
         The preview updates automatically when the source file changes or when a `sdoc.config.json` or `.css` file is saved.
+
+        With the preview beside the source, scrolling either one scrolls the other: the line at the top of the preview is the line at the top of the editor. Scrolling the preview moves neither the cursor nor the focus. Clicking an element in the preview jumps to its source line.
+
+        # Settings
+        {
+            {[table]
+                Setting | Default | What it does
+                `sdoc.preview.scrollEditorWithPreview` | on | Scrolling the preview scrolls the source editor to the same place
+                `sdoc.preview.scrollPreviewWithEditor` | on | Scrolling the source editor scrolls the preview to the same place
+            }
+        }
 
         # Format Document
         {
@@ -117,6 +129,11 @@ node tools/build-doc.js input.sdoc --fix              # put the signposts in ord
         PowerPoint file that Drive imports as a native Google Slides deck. Each top-level
         scope becomes one slide. See
         [Slide Authoring](slide-authoring.sdoc) for the deck format and the layouts.
+
+        An HTML deck is presented in a browser. Besides the arrow keys,
+        `O` opens an overview of every slide, `T` a strip of thumbnails
+        and `F` full screen. See
+        [Navigation Controls](slide-authoring.sdoc#navigation).
 
         ```bash
 node tools/build-slides.js deck.sdoc                      # HTML output (default)

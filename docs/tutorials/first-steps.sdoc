@@ -62,7 +62,7 @@ Hello, this is my first SDOC document.
 
     # Step 3: Preview in VS Code
     {
-        Open your `.sdoc` file in VS Code and run the command **SDOC: Open Preview to the Side**. You should see a rendered view that updates as you type.
+        Open your `.sdoc` file in VS Code and run the command **SDOC: Open Preview to the Side**. You should see a rendered view that updates as you type. Scroll either side and the other follows; click anything in the preview to jump to the line that produced it.
     }
 
     # Step 4: Add Formatting

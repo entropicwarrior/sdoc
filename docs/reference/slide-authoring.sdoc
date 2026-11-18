@@ -977,18 +977,23 @@
 
         # Navigation @drilldown-navigation
         {
-            Right — advance one step. From a spine slide, move to the next
-            spine. From a detail slide, advance to the next detail in the
-            same column; at the last detail, return to the parent spine and
-            advance to the next spine (reveal.js convention).
+            The two directions are independent. Left and Right move along the
+            spine and only along it; Up and Down move within a column.
 
-            Left — mirror of Right. From a detail, previous detail or back
-            to parent spine; from spine, previous spine.
+            Right — the next spine slide. From a detail, this leaves the
+            column for the next spine slide.
 
-            Down — drill into the first detail of the current spine; from
-            within a column, advance to the next detail.
+            Left — the previous spine slide, from a detail too.
 
-            Up — return from a detail to its parent spine. No-op on a spine.
+            Down — the next detail in this column: from a spine slide, its
+            first detail.
+
+            Up — one step back up the column; from the first detail, that is
+            the spine slide. Nothing on a spine slide.
+
+            Space — presentation order: inside a column, on through its
+            details and then to the next spine slide; from a spine slide, the
+            next spine slide, since details are opened deliberately.
 
             Swipe — horizontal swipes mirror Left / Right; vertical swipes
             mirror Up / Down.
@@ -1136,7 +1141,10 @@
 
         \`theme.js\` (optional) — runtime behaviour (keyboard nav, touch support,
         slide counter). A theme that ships none inherits the default runtime,
-        so most themes should omit it.
+        so most themes should omit it. One that ships its own replaces that
+        runtime whole, the keys, clicks and swipes that move between slides
+        included: see [Navigation Controls](#navigation) for which controls
+        are the theme's and which every deck has regardless.
 
         \`theme.json\` (optional) — the design box and the print page.
 
@@ -1386,30 +1394,42 @@
 
         # Navigation Controls @navigation
         {
-            All themes include these controls by default:
+            Moving between slides belongs to the theme. These come from the
+            default theme's \`theme.js\`, which a theme without one of its own
+            inherits:
 
-            Arrow right or Space — next slide (or next detail).
+            {[table]
+                Key or gesture | What it does
+                Right, Left | The next or previous spine slide
+                Down, Up | Into a drill-down column and through it, and back up it one step at a time
+                Space | On in presentation order: through a column's details once you are in one, otherwise the next spine slide
+                Home, End | The first slide, the last spine slide
+                Click | The right half of the slide goes forward, the left half back
+                Swipe | Left and right, up and down, as the arrow keys
+            }
 
-            Arrow left — previous slide (or previous detail).
+            The rest come from the renderer, and every deck has them whatever
+            its theme:
 
-            Arrow down — drill into details (if any).
+            {[table]
+                Key or gesture | What it does
+                F | Full screen, and again to leave it. A page that may not go full screen says so rather than doing nothing
+                O | The [overview](#overview) of every slide
+                T | The [filmstrip](#filmstrip) of thumbnails
+                Pull down from the top edge | The overview, opening as you pull
+                Pull up from the bottom edge | The filmstrip
+            }
 
-            Arrow up — return from details to the spine slide.
+            The moves between slides are described in full under
+            [Drilldown Navigation](#drilldown-navigation).
 
-            Home — first slide.
-
-            End — last spine slide.
-
-            F — full screen, and again to leave it. A page that may not go
-            full screen (an embedded frame without permission) says so rather
-            than doing nothing.
-
-            T — the [filmstrip](#filmstrip). O — the [overview](#overview).
-
-            Pull down from the top edge for the overview, up from the bottom
-            edge for the filmstrip, with a mouse or a finger.
-
-            Touch swipe horizontal / vertical on mobile devices.
+            A theme with its own \`theme.js\` writes its own navigation: none
+            of the first table is there unless the theme puts it there, and
+            the default theme's file is the one to copy from. It gets the
+            second table without doing anything. The renderer's controls ask
+            two things of a theme and no more: that it goes to a slide when
+            the URL hash is set to that slide's position, and that the slide
+            on show carries the \`active\` class.
 
             Slide counter (`.slide-indicator`) shown in the bottom-right
             corner — `N / TOTAL` on spine slides, `N.K / TOTAL` on detail K
