@@ -171,7 +171,7 @@
 
     # Current State @current-state
     {
-        SDOC v0.8.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
+        SDOC v0.9.0 is the current release. The parser, HTML renderer, slide renderer, slide export pipeline (PDF, PowerPoint / Google Slides, Claude Slides) and VS Code extension are stable and published to both npm and the VS Code Marketplace (auto-updates enabled). The format supports scope types, data blocks, comment scopes, table formulas, email auto-detection, collapsible scopes in all HTML output, and a full inline formatting suite. Issues are open on github/markup and github-linguist for GitHub rendering and language recognition.
 
         The spec is expected to evolve. The core principle of explicit brace scoping is stable. Everything else is open to change, with the constraint that existing documents must remain valid or be mechanically migrateable ([R10](requirements.sdoc#r10)).
     }
@@ -204,6 +204,7 @@
             - v0.7.0 — the slide deck gets an overview on \`O\`: every spine slide in a grid that fills the window, each cell the slide itself cloned and scaled with its kicker and title set readably underneath, springing out of the current slide. Rest on a cell and a larger copy grows out of it; click it to go there. A pull down from the top edge opens the overview with its way in scrubbed under the pointer, and a pull up from the bottom raises the filmstrip, by mouse or by touch. \`F\` is full screen now, and the filmstrip moved to \`T\`. All of it is structural runtime in the renderer, built on demand, so no export or harvest sees it. Every state change has a deadline, because headless Chrome and background tabs never finish an animation
             - v0.7.1 — \`validateSignposts\` warns (\`meta-joined-pairs\`) when a \`\@meta\` value spans more than one line and holds another \`key: value\` pair: consecutive pairs with no blank line between them are one paragraph, so the first key swallows the rest (#102, #103, from an outside contributor). A value on a single line is not checked, since it may contain a colon. The grammar is unchanged. Six examples in the docs and the Python binding's regression fixture had joined pairs, and are fixed
             - v0.8.0 — the VS Code preview scrolls with the editor and the editor with the preview, aligned on the top line as the Markdown preview is (\`src/preview-sync.js\`: two pure functions over the blocks' \`data-line\` marks, serialised into the webview so the fast suite tests what runs). Two settings, \`sdoc.preview.scrollEditorWithPreview\` and \`sdoc.preview.scrollPreviewWithEditor\`, the extension's first. Headings carry their section's end line and are read as one line. Browser tests count skips and say why, and \`SDOC_SKIP_BROWSER=1\` skips them; a PDF export no longer leaves its ~3MB Chrome profile in the temp folder (#109, #110)
+            - v0.9.0 — the presenter view (\`P\`): the deck in a second window with the notes, a timer and the slides around the current one, private until Start; drawing on a slide in either window (pens, highlighter, rectangle, callouts, laser, eraser), mirrored between the two and never written to the file; Page Down and Page Up for a presentation clicker; in the overview the chosen cell wears a prominent ring and the keys no longer bring up its larger copy. See [The Presenter View](../docs/reference/slide-authoring.sdoc#presenter) (#113, #114, #115)
         }
 
         # GitHub Adoption
@@ -275,7 +276,7 @@
 
         # Presenter View and Annotations @presenter-wip
         {
-            Unreleased, on \`feat/presenter-view\`. \`P\` opens the deck again in a second
+            Released in v0.9.0. \`P\` opens the deck again in a second
             window as a presenter view: the current slide and the ones around it, the
             speaker notes, a timer, Start and Reset, a focus mode and a divider for the
             notes. Either window can draw on the current slide — pens with editable
